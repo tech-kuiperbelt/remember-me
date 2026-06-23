@@ -1,0 +1,16 @@
+services:
+  openmemory:
+    image: mem0/openmemory-mcp
+    ports:
+      - "8080:8080"
+    environment:
+      - OPENAI_API_KEY=your_key   # 如果你不用本地 embedding 可以先随便填
+
+  ui:
+    image: mem0/openmemory-ui
+    ports:
+      - "3000:3000"
+    environment:
+      - OPENMEMORY_API_URL=http://openmemory:8080
+    depends_on:
+      - openmemory
