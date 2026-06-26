@@ -30,6 +30,7 @@ STORAGE_BACKEND = os.environ.get("MEMORY_STORAGE", "sqlite")
 STORAGE_PATH = os.environ.get("MEMORY_STORAGE_PATH")
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 EMBED_MODEL = os.environ.get("EMBED_MODEL", "bge-m3")
+DEFAULT_NAMESPACE = os.environ.get("MEMORY_DEFAULT_NAMESPACE", "default")
 
 if STORAGE_BACKEND == "json":
     path = STORAGE_PATH or "memories.json"
@@ -65,7 +66,7 @@ async def handle_list_tools() -> types.ListToolsResult:
                 "properties": {
                     "text": {"type": "string", "description": "The memory text"},
                     "metadata": {"type": "object", "description": "Optional key-value metadata"},
-                    "namespace": {"type": "string", "description": "Namespace (default: 'default')"},
+                    "namespace": {"type": "string", "description": "Namespace (default: $MEMORY_DEFAULT_NAMESPACE or 'default')"},
                 },
                 "required": ["text"],
             },
@@ -146,6 +147,18 @@ async def handle_list_tools() -> types.ListToolsResult:
             description="Storage statistics and configuration.",
             inputSchema={"type": "object", "properties": {}},
         ),
+        types.Tool(
+            name="import",
+            description="Import memories from another database file. Supports .db and .json.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "description": "Path to source DB/JSON file"},
+                    "namespace_prefix": {"type": "string", "description": "Optional prefix for imported namespaces"},
+                },
+                "required": ["file_path"],
+            },
+        ),
     ])
 
 
@@ -158,7 +171,7 @@ async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
             text,
             _embed(text),
             metadata=arguments.get("metadata"),
-            namespace=arguments.get("namespace", "default"),
+            namespace=arguments.get("namespace", DEFAULT_NAMESPACE),
         )
         return _ok({"id": eid})
 
@@ -211,6 +224,14 @@ async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
         stats["embed_model"] = EMBED_MODEL
         stats["ollama_base_url"] = OLLAMA_BASE_URL
         return _ok(stats)
+
+    # -- import --
+    if name == "import":
+        src_path = arguments["file_path"]
+        src_backend = "json" if src_path.endswith(".json") else "sqlite"
+        src = create_storage(src_backend, path=src_path)
+        result = storage.merge(src, namespace_prefix=arguments.get("namespace_prefix", ""))
+        return _ok(result)
 
     raise ValueError(f"Unknown tool: {name}")
 

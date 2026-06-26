@@ -53,6 +53,10 @@ class MemoryStorage(ABC):
     def clear(self, namespace: Optional[str] = None) -> int: ...
 
     @abstractmethod
+    def merge(self, source_storage: "MemoryStorage",
+              namespace_prefix: str = "") -> dict[str, int]: ...
+
+    @abstractmethod
     def get_stats(self) -> dict[str, Any]: ...
 
 
@@ -140,6 +144,26 @@ class JSONStorage(MemoryStorage):
             self._data = {}
         self._save()
         return n
+
+    def merge(self, source_storage, namespace_prefix=""):
+        imported = 0
+        renamed = 0
+        src_memories = source_storage.list_memories(limit=10**9)
+        for m in src_memories:
+            mid = m["id"]
+            if mid in self._data:
+                mid = _new_id()
+                renamed += 1
+            ns = namespace_prefix + m["namespace"]
+            entry = {
+                "id": mid, "text": m["text"], "embedding": m["embedding"],
+                "metadata": m["metadata"], "namespace": ns,
+                "created_at": m["created_at"], "updated_at": m["updated_at"],
+            }
+            self._data[mid] = entry
+            imported += 1
+        self._save()
+        return {"imported": imported, "renamed": renamed, "total": len(src_memories)}
 
     def get_stats(self):
         namespaces = set(e["namespace"] for e in self._data.values())
@@ -257,6 +281,30 @@ class SQLiteStorage(MemoryStorage):
             self.conn.execute("DELETE FROM memories")
         self.conn.commit()
         return n
+
+    def merge(self, source_storage, namespace_prefix=""):
+        imported = 0
+        renamed = 0
+        existing_ids = set(
+            row[0] for row in self.conn.execute("SELECT id FROM memories").fetchall()
+        )
+        src_memories = source_storage.list_memories(limit=10**9)
+        for m in src_memories:
+            mid = m["id"]
+            if mid in existing_ids:
+                mid = _new_id()
+                renamed += 1
+            existing_ids.add(mid)
+            ns = namespace_prefix + m["namespace"]
+            self.conn.execute(
+                "INSERT INTO memories (id, text, embedding, metadata, namespace, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (mid, m["text"], self._serialize(m["embedding"]),
+                 json.dumps(m["metadata"]), ns, m["created_at"], m["updated_at"]),
+            )
+            imported += 1
+        self.conn.commit()
+        return {"imported": imported, "renamed": renamed, "total": len(src_memories)}
 
     def get_stats(self):
         total = self.conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]

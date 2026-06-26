@@ -26,12 +26,13 @@ SSE endpoint: `GET /sse`, client POSTs to `/messages/?session_id=...`.
 | `MEMORY_STORAGE_PATH` | `memories.db` / `memories.json` | Path for storage file |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server for embeddings |
 | `EMBED_MODEL` | `bge-m3` | Model name passed to Ollama `/api/embeddings` |
+| `MEMORY_DEFAULT_NAMESPACE` | `default` | Fallback namespace when `add` tool is called without `namespace`. Set to the project name so all LLM-written memories are scoped per project. |
 
 Ollama **must be running locally** for embeddings to work. If missing, add/search/update will fail.
 
 ## Key architecture facts
 
-- **`server.py`** — MCP tool/resource registration. 8 tools: `add`, `search`, `list`, `get`, `update`, `delete`, `clear`, `stats`. 2 resources: `memories://stats`, `memories://list`.
+- **`server.py`** — MCP tool/resource registration. 9 tools: `add`, `search`, `list`, `get`, `update`, `delete`, `clear`, `stats`, `import`. 2 resources: `memories://stats`, `memories://list`.
 - **`storage.py`** — Abstract `MemoryStorage` with `SQLiteStorage` (default) and `JSONStorage`. Embeddings are pickled into SQLite BLOBs.
 - **`embed.py`** — Single function: calls Ollama `/api/embeddings` with `{"model": …, "prompt": …}`.
 - Embeddings use **cosine similarity** (via numpy) for search scoring.
@@ -62,8 +63,6 @@ print('OK, memory id:', r['id'])
 
 ## Memory usage protocol
 
-These rules apply to **any** OpenCode agent session working on this repo:
+Follow the global memory protocol rules in `~/.config/opencode/AGENTS.md`.
 
-1. **Pre-read** — Before answering any question, always call `memory-server_search` first with the relevant query. If a matching memory exists, incorporate it into the answer.
-2. **Context compression** — Whenever you compress conversation context (e.g., due to token limits), save the compressed summary to memory via `memory-server_add` under a descriptive namespace (e.g., `session-summaries`).
-3. **Recap / summary** — After producing any recap or summary of work (e.g., end-of-session summary, task completion summary), save the result to memory immediately.
+This project's namespace is `remember-me`. Set `MEMORY_DEFAULT_NAMESPACE=remember-me` when launching the MCP server so all agent-written memories default to this namespace.
