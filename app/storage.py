@@ -61,7 +61,7 @@ class MemoryStorage(ABC):
 
 
 class JSONStorage(MemoryStorage):
-    def __init__(self, path: str = "memories.json"):
+    def __init__(self, path: str = "data/memories.json"):
         self.path = path
         self._data: dict[str, dict] = {}
         self._load()
@@ -171,7 +171,7 @@ class JSONStorage(MemoryStorage):
 
 
 class SQLiteStorage(MemoryStorage):
-    def __init__(self, path: str = "memories.db"):
+    def __init__(self, path: str = "data/memories.db"):
         self.path = path
         self.conn = sqlite3.connect(path)
         self.conn.row_factory = sqlite3.Row

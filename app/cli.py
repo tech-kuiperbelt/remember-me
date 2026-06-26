@@ -2,7 +2,7 @@ import os
 import sys
 import argparse
 
-from storage import create_storage
+from .storage import create_storage
 
 
 def _detect_backend(path: str) -> str:
@@ -17,7 +17,7 @@ def main():
     parser.add_argument("--namespace-prefix", default="",
                         help="Prefix for imported namespaces")
     parser.add_argument("--target", default=None,
-                        help="Target DB/JSON file (default: from env or ./memories.db)")
+                        help="Target DB/JSON file (default: from env or ./data/memories.db)")
     args = parser.parse_args()
 
     src_backend = _detect_backend(args.source)
@@ -25,7 +25,7 @@ def main():
 
     target_backend = os.environ.get("MEMORY_STORAGE", "sqlite")
     target_path = args.target or os.environ.get("MEMORY_STORAGE_PATH") or (
-        "memories.json" if target_backend == "json" else "memories.db"
+        "data/memories.json" if target_backend == "json" else "data/memories.db"
     )
     dst_storage = create_storage(target_backend, path=target_path)
 

@@ -15,8 +15,8 @@ from starlette.routing import Route, Mount
 from starlette.responses import Response
 import uvicorn
 
-from embed import embed as embed_fn
-from storage import create_storage
+from .embed import embed as embed_fn
+from .storage import create_storage
 
 # ---------------------------------------------------------------------------
 # CLI
@@ -33,10 +33,10 @@ EMBED_MODEL = os.environ.get("EMBED_MODEL", "bge-m3")
 DEFAULT_NAMESPACE = os.environ.get("MEMORY_DEFAULT_NAMESPACE", "default")
 
 if STORAGE_BACKEND == "json":
-    path = STORAGE_PATH or "memories.json"
+    path = STORAGE_PATH or "data/memories.json"
     storage = create_storage("json", path=path)
 else:
-    path = STORAGE_PATH or "memories.db"
+    path = STORAGE_PATH or "data/memories.db"
     storage = create_storage("sqlite", path=path)
 
 server = Server("memory-server")
@@ -311,10 +311,12 @@ async def main():
                 )
             return Response()
 
+        from .admin import admin_routes
+
         routes = [
             Route("/sse", endpoint=handle_sse, methods=["GET"]),
             Mount("/messages/", app=sse.handle_post_message),
-        ]
+        ] + admin_routes
         starlette_app = Starlette(routes=routes)
         config = uvicorn.Config(starlette_app, host="0.0.0.0", port=args.port, log_level="info")
         uv_server = uvicorn.Server(config)

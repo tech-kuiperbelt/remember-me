@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 [ -d .venv ] || { echo "Error: .venv not found. Run ./install.sh first"; exit 1; }
 source .venv/bin/activate
-exec python import.py "$@"
+exec python -m app.cli "$@"
