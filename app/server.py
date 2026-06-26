@@ -2,6 +2,7 @@ import json
 import sys
 import asyncio
 import argparse
+import logging
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -14,8 +15,11 @@ from starlette.routing import Route, Mount
 from starlette.responses import Response
 import uvicorn
 
+from . import log_config  # noqa: F401
 from .service import memory_add, memory_search, memory_list, memory_get, \
     memory_update, memory_delete, memory_clear, memory_stats, memory_import
+
+logger = logging.getLogger("server")
 
 # ---------------------------------------------------------------------------
 # CLI
@@ -141,27 +145,32 @@ async def handle_list_tools() -> types.ListToolsResult:
 
 @server.call_tool()
 async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
-    if name == "add":
-        return _ok(memory_add(arguments["text"], arguments.get("metadata"), arguments.get("namespace")))
-    if name == "search":
-        return _ok(memory_search(arguments["query"], int(arguments.get("k", 5)),
-                                 float(arguments.get("threshold", 0.0)), arguments.get("namespace")))
-    if name == "list":
-        return _ok(memory_list(arguments.get("namespace"), int(arguments.get("limit", 100)),
-                               int(arguments.get("offset", 0))))
-    if name == "get":
-        return _ok(memory_get(arguments["memory_id"]))
-    if name == "update":
-        return _ok(memory_update(arguments["memory_id"], arguments.get("text"), arguments.get("metadata")))
-    if name == "delete":
-        return _ok(memory_delete(arguments["memory_id"]))
-    if name == "clear":
-        return _ok(memory_clear(arguments.get("namespace")))
-    if name == "stats":
-        return _ok(memory_stats())
-    if name == "import":
-        return _ok(memory_import(arguments["file_path"], arguments.get("namespace_prefix", "")))
-    raise ValueError(f"Unknown tool: {name}")
+    logger.info("Tool call: %s %s", name, arguments)
+    try:
+        if name == "add":
+            return _ok(memory_add(arguments["text"], arguments.get("metadata"), arguments.get("namespace")))
+        if name == "search":
+            return _ok(memory_search(arguments["query"], int(arguments.get("k", 5)),
+                                     float(arguments.get("threshold", 0.0)), arguments.get("namespace")))
+        if name == "list":
+            return _ok(memory_list(arguments.get("namespace"), int(arguments.get("limit", 100)),
+                                   int(arguments.get("offset", 0))))
+        if name == "get":
+            return _ok(memory_get(arguments["memory_id"]))
+        if name == "update":
+            return _ok(memory_update(arguments["memory_id"], arguments.get("text"), arguments.get("metadata")))
+        if name == "delete":
+            return _ok(memory_delete(arguments["memory_id"]))
+        if name == "clear":
+            return _ok(memory_clear(arguments.get("namespace")))
+        if name == "stats":
+            return _ok(memory_stats())
+        if name == "import":
+            return _ok(memory_import(arguments["file_path"], arguments.get("namespace_prefix", "")))
+        raise ValueError(f"Unknown tool: {name}")
+    except Exception as e:
+        logger.error("Tool call '%s' failed: %s", name, e, exc_info=True)
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -188,6 +197,7 @@ async def handle_list_resources() -> types.ListResourcesResult:
 
 @server.read_resource()
 async def handle_read_resource(uri: str) -> types.ReadResourceResult:
+    logger.info("Resource read: %s", uri)
     if uri == "memories://stats":
         return types.ReadResourceResult(contents=[
             types.TextResourceContents(uri=uri, mimeType="application/json",
@@ -219,6 +229,7 @@ def _ok(data) -> types.CallToolResult:
 async def main():
     if args.port is not None:
         # ---- SSE mode ----
+        logger.info("Starting SSE server on port %d", args.port)
         sse = SseServerTransport("/messages/")
 
         async def handle_sse(request):

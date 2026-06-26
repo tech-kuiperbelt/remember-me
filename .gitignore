@@ -3,5 +3,6 @@ __pycache__/
 *.pyc
 .idea/
 data/
+logs/
 memories.db
 memories.json
