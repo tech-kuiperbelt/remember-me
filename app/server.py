@@ -1,4 +1,3 @@
-import os
 import json
 import sys
 import asyncio
@@ -15,8 +14,8 @@ from starlette.routing import Route, Mount
 from starlette.responses import Response
 import uvicorn
 
-from .embed import embed as embed_fn
-from .storage import create_storage
+from .service import memory_add, memory_search, memory_list, memory_get, \
+    memory_update, memory_delete, memory_clear, memory_stats, memory_import
 
 # ---------------------------------------------------------------------------
 # CLI
@@ -26,29 +25,7 @@ parser = argparse.ArgumentParser(description="Memory MCP Server")
 parser.add_argument("--port", type=int, default=None, help="Port for SSE mode")
 args = parser.parse_args()
 
-STORAGE_BACKEND = os.environ.get("MEMORY_STORAGE", "sqlite")
-STORAGE_PATH = os.environ.get("MEMORY_STORAGE_PATH")
-OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-EMBED_MODEL = os.environ.get("EMBED_MODEL", "bge-m3")
-DEFAULT_NAMESPACE = os.environ.get("MEMORY_DEFAULT_NAMESPACE", "default")
-
-if STORAGE_BACKEND == "json":
-    path = STORAGE_PATH or "data/memories.json"
-    storage = create_storage("json", path=path)
-else:
-    path = STORAGE_PATH or "data/memories.db"
-    storage = create_storage("sqlite", path=path)
-
 server = Server("memory-server")
-
-
-def _embed(text: str) -> list[float]:
-    return embed_fn(text, base_url=OLLAMA_BASE_URL, model=EMBED_MODEL)
-
-
-def _strip_embedding(d: dict) -> dict:
-    d.pop("embedding", None)
-    return d
 
 
 # ---------------------------------------------------------------------------
@@ -164,75 +141,26 @@ async def handle_list_tools() -> types.ListToolsResult:
 
 @server.call_tool()
 async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
-    # -- add --
     if name == "add":
-        text = arguments["text"]
-        eid = storage.add(
-            text,
-            _embed(text),
-            metadata=arguments.get("metadata"),
-            namespace=arguments.get("namespace", DEFAULT_NAMESPACE),
-        )
-        return _ok({"id": eid})
-
-    # -- search --
+        return _ok(memory_add(arguments["text"], arguments.get("metadata"), arguments.get("namespace")))
     if name == "search":
-        query_emb = _embed(arguments["query"])
-        results = storage.search(
-            query_emb,
-            k=int(arguments.get("k", 5)),
-            threshold=float(arguments.get("threshold", 0.0)),
-            namespace=arguments.get("namespace"),
-        )
-        return _ok([_strip_embedding(r) for r in results])
-
-    # -- list --
+        return _ok(memory_search(arguments["query"], int(arguments.get("k", 5)),
+                                 float(arguments.get("threshold", 0.0)), arguments.get("namespace")))
     if name == "list":
-        results = storage.list_memories(
-            namespace=arguments.get("namespace"),
-            limit=int(arguments.get("limit", 100)),
-            offset=int(arguments.get("offset", 0)),
-        )
-        return _ok([_strip_embedding(r) for r in results])
-
-    # -- get --
+        return _ok(memory_list(arguments.get("namespace"), int(arguments.get("limit", 100)),
+                               int(arguments.get("offset", 0))))
     if name == "get":
-        result = storage.get(arguments["memory_id"])
-        return _ok(_strip_embedding(result) if result else None)
-
-    # -- update --
+        return _ok(memory_get(arguments["memory_id"]))
     if name == "update":
-        mid = arguments["memory_id"]
-        text = arguments.get("text")
-        embedding = _embed(text) if text else None
-        ok = storage.update(mid, text=text, embedding=embedding, metadata=arguments.get("metadata"))
-        return _ok({"success": ok})
-
-    # -- delete --
+        return _ok(memory_update(arguments["memory_id"], arguments.get("text"), arguments.get("metadata")))
     if name == "delete":
-        ok = storage.delete(arguments["memory_id"])
-        return _ok({"success": ok})
-
-    # -- clear --
+        return _ok(memory_delete(arguments["memory_id"]))
     if name == "clear":
-        n = storage.clear(namespace=arguments.get("namespace"))
-        return _ok({"deleted": n})
-
-    # -- stats --
+        return _ok(memory_clear(arguments.get("namespace")))
     if name == "stats":
-        stats = storage.get_stats()
-        stats["embed_model"] = EMBED_MODEL
-        stats["ollama_base_url"] = OLLAMA_BASE_URL
-        return _ok(stats)
-
-    # -- import --
+        return _ok(memory_stats())
     if name == "import":
-        src_path = arguments["file_path"]
-        src_backend = "json" if src_path.endswith(".json") else "sqlite"
-        src = create_storage(src_backend, path=src_path)
-        result = storage.merge(src, namespace_prefix=arguments.get("namespace_prefix", ""))
-        return _ok(result)
-
+        return _ok(memory_import(arguments["file_path"], arguments.get("namespace_prefix", "")))
     raise ValueError(f"Unknown tool: {name}")
 
 
@@ -263,13 +191,12 @@ async def handle_read_resource(uri: str) -> types.ReadResourceResult:
     if uri == "memories://stats":
         return types.ReadResourceResult(contents=[
             types.TextResourceContents(uri=uri, mimeType="application/json",
-                                       text=json.dumps(storage.get_stats(), ensure_ascii=False)),
+                                       text=json.dumps(memory_stats(), ensure_ascii=False)),
         ])
     if uri == "memories://list":
-        results = storage.list_memories(limit=1000)
         return types.ReadResourceResult(contents=[
             types.TextResourceContents(uri=uri, mimeType="application/json",
-                                       text=json.dumps([_strip_embedding(r) for r in results],
+                                       text=json.dumps(memory_list(limit=1000),
                                                        ensure_ascii=False, default=str)),
         ])
     raise ValueError(f"Unknown resource: {uri}")

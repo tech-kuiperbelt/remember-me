@@ -5,6 +5,8 @@ from starlette.responses import Response, FileResponse
 from starlette.routing import Route
 from starlette.requests import Request
 
+from .service import memory_add, memory_search, memory_list, memory_get, \
+    memory_update, memory_delete, memory_clear, memory_stats
 
 THIS_DIR = Path(__file__).resolve().parent
 ADMIN_HTML_PATH = THIS_DIR.parent / "web" / "index.html"
@@ -15,91 +17,67 @@ async def handle_admin(request: Request):
 
 
 async def handle_list_memories(request: Request):
-    from .server import storage, _strip_embedding
     ns = request.query_params.get("namespace")
     limit = int(request.query_params.get("limit", 100))
     offset = int(request.query_params.get("offset", 0))
-    results = storage.list_memories(namespace=ns, limit=limit, offset=offset)
     return Response(
-        json.dumps([_strip_embedding(r) for r in results], ensure_ascii=False, default=str),
+        json.dumps(memory_list(namespace=ns, limit=limit, offset=offset), ensure_ascii=False, default=str),
         media_type="application/json",
     )
 
 
 async def handle_get_memory(request: Request):
-    from .server import storage, _strip_embedding
     mid = request.path_params.get("memory_id")
-    result = storage.get(mid)
+    result = memory_get(mid)
     if result is None:
         return Response(json.dumps({"detail": "Not found"}), status_code=404, media_type="application/json")
     return Response(
-        json.dumps(_strip_embedding(result), ensure_ascii=False, default=str),
+        json.dumps(result, ensure_ascii=False, default=str),
         media_type="application/json",
     )
 
 
 async def handle_add_memory(request: Request):
-    from .server import storage, _embed
     body = await request.json()
-    text = body["text"]
-    eid = storage.add(
-        text,
-        _embed(text),
-        metadata=body.get("metadata"),
-        namespace=body.get("namespace", "default"),
-    )
-    return Response(json.dumps({"id": eid}), status_code=201, media_type="application/json")
+    result = memory_add(body["text"], body.get("metadata"), body.get("namespace"))
+    return Response(json.dumps(result), status_code=201, media_type="application/json")
 
 
 async def handle_update_memory(request: Request):
-    from .server import storage, _embed
     mid = request.path_params.get("memory_id")
     body = await request.json()
-    text = body.get("text")
-    embedding = _embed(text) if text else None
-    ok = storage.update(mid, text=text, embedding=embedding, metadata=body.get("metadata"))
-    if not ok:
+    result = memory_update(mid, body.get("text"), body.get("metadata"))
+    if not result["success"]:
         return Response(json.dumps({"detail": "Not found"}), status_code=404, media_type="application/json")
-    return Response(json.dumps({"success": True}), media_type="application/json")
+    return Response(json.dumps(result), media_type="application/json")
 
 
 async def handle_delete_memory(request: Request):
-    from .server import storage
     mid = request.path_params.get("memory_id")
-    ok = storage.delete(mid)
-    if not ok:
+    result = memory_delete(mid)
+    if not result["success"]:
         return Response(json.dumps({"detail": "Not found"}), status_code=404, media_type="application/json")
-    return Response(json.dumps({"success": True}), media_type="application/json")
+    return Response(json.dumps(result), media_type="application/json")
 
 
 async def handle_clear_memories(request: Request):
-    from .server import storage
     ns = request.query_params.get("namespace")
-    n = storage.clear(namespace=ns)
-    return Response(json.dumps({"deleted": n}), media_type="application/json")
+    result = memory_clear(namespace=ns)
+    return Response(json.dumps(result), media_type="application/json")
 
 
 async def handle_search_memories(request: Request):
-    from .server import storage, _embed, _strip_embedding
     body = await request.json()
-    query = body["query"]
-    k = int(body.get("k", 5))
-    threshold = float(body.get("threshold", 0.0))
-    ns = body.get("namespace")
-    query_emb = _embed(query)
-    results = storage.search(query_emb, k=k, threshold=threshold, namespace=ns)
+    results = memory_search(body["query"], int(body.get("k", 5)),
+                            float(body.get("threshold", 0.0)), body.get("namespace"))
     return Response(
-        json.dumps([_strip_embedding(r) for r in results], ensure_ascii=False, default=str),
+        json.dumps(results, ensure_ascii=False, default=str),
         media_type="application/json",
     )
 
 
 async def handle_stats(request: Request):
-    from .server import storage, EMBED_MODEL, OLLAMA_BASE_URL
-    stats = storage.get_stats()
-    stats["embed_model"] = EMBED_MODEL
-    stats["ollama_base_url"] = OLLAMA_BASE_URL
-    return Response(json.dumps(stats, ensure_ascii=False), media_type="application/json")
+    return Response(json.dumps(memory_stats(), ensure_ascii=False), media_type="application/json")
 
 
 admin_routes = [
