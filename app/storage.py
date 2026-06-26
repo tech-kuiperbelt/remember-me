@@ -44,7 +44,8 @@ class MemoryStorage(ABC):
     @abstractmethod
     def update(self, memory_id: str, text: Optional[str] = None,
                embedding: Optional[list[float]] = None,
-               metadata: Optional[dict] = None) -> bool: ...
+               metadata: Optional[dict] = None,
+               namespace: Optional[str] = None) -> bool: ...
 
     @abstractmethod
     def delete(self, memory_id: str) -> bool: ...
@@ -112,7 +113,7 @@ class JSONStorage(MemoryStorage):
     def get(self, memory_id):
         return self._data.get(memory_id)
 
-    def update(self, memory_id, text=None, embedding=None, metadata=None):
+    def update(self, memory_id, text=None, embedding=None, metadata=None, namespace=None):
         e = self._data.get(memory_id)
         if not e:
             return False
@@ -122,6 +123,8 @@ class JSONStorage(MemoryStorage):
             e["embedding"] = embedding
         if metadata is not None:
             e["metadata"] = {**e["metadata"], **metadata}
+        if namespace is not None:
+            e["namespace"] = namespace
         e["updated_at"] = _now()
         self._save()
         return True
@@ -167,7 +170,16 @@ class JSONStorage(MemoryStorage):
 
     def get_stats(self):
         namespaces = set(e["namespace"] for e in self._data.values())
-        return {"total": len(self._data), "namespaces": list(namespaces), "backend": "json", "path": self.path}
+        ns_counts = {}
+        for ns in namespaces:
+            ns_counts[ns] = sum(1 for e in self._data.values() if e["namespace"] == ns)
+        return {
+            "total": len(self._data),
+            "namespaces": list(namespaces),
+            "namespace_counts": ns_counts,
+            "backend": "json",
+            "path": self.path,
+        }
 
 
 class SQLiteStorage(MemoryStorage):
@@ -252,7 +264,7 @@ class SQLiteStorage(MemoryStorage):
         row = self.conn.execute("SELECT * FROM memories WHERE id = ?", (memory_id,)).fetchone()
         return self._row_to_dict(row) if row else None
 
-    def update(self, memory_id, text=None, embedding=None, metadata=None):
+    def update(self, memory_id, text=None, embedding=None, metadata=None, namespace=None):
         existing = self.get(memory_id)
         if not existing:
             return False
@@ -260,9 +272,10 @@ class SQLiteStorage(MemoryStorage):
         text = text if text is not None else existing["text"]
         emb = embedding if embedding is not None else existing["embedding"]
         meta = {**existing["metadata"], **(metadata or {})}
+        ns = namespace if namespace is not None else existing["namespace"]
         self.conn.execute(
-            "UPDATE memories SET text = ?, embedding = ?, metadata = ?, updated_at = ? WHERE id = ?",
-            (text, self._serialize(emb), json.dumps(meta), now, memory_id),
+            "UPDATE memories SET text = ?, embedding = ?, metadata = ?, namespace = ?, updated_at = ? WHERE id = ?",
+            (text, self._serialize(emb), json.dumps(meta), ns, now, memory_id),
         )
         self.conn.commit()
         return True
@@ -308,10 +321,11 @@ class SQLiteStorage(MemoryStorage):
 
     def get_stats(self):
         total = self.conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
-        ns_rows = self.conn.execute("SELECT DISTINCT namespace FROM memories").fetchall()
+        ns_rows = self.conn.execute("SELECT namespace, COUNT(*) as cnt FROM memories GROUP BY namespace").fetchall()
         return {
             "total": total,
-            "namespaces": [r[0] for r in ns_rows],
+            "namespaces": [r["namespace"] for r in ns_rows],
+            "namespace_counts": {r["namespace"]: r["cnt"] for r in ns_rows},
             "backend": "sqlite",
             "path": self.path,
         }

@@ -19,10 +19,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .page.active{display:block}
 .card{background:#fff;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.08);margin-bottom:16px;overflow:hidden}
 .card-header{padding:14px 18px;border-bottom:1px solid #f0f0f0;font-weight:600;font-size:15px;display:flex;justify-content:space-between;align-items:center}
+.ns-tabs{padding:0 18px;border-bottom:1px solid #f0f0f0;display:flex;gap:4px;background:#fafafa;flex-wrap:wrap}
+.ns-tab{padding:8px 16px;font-size:13px;cursor:pointer;color:#666;border-bottom:2px solid transparent;transition:.15s;user-select:none}
+.ns-tab:hover{color:#4a90d9}
+.ns-tab.active{color:#4a90d9;border-bottom-color:#4a90d9;font-weight:600}
 .card-body{padding:18px}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th,td{text-align:left;padding:10px 12px;border-bottom:1px solid #f0f0f0}
-th{background:#fafafa;font-weight:600;color:#555;font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+th{background:#fafafa;font-weight:600;color:#555;font-size:12px;text-transform:uppercase;letter-spacing:.5px;-webkit-user-select:none;user-select:none}
+th.sortable:hover{background:#f0f4ff;color:#4a90d9}
 tr:hover{background:#f8fbff}
 tr.selected{background:#e8f4fd}
 .memory-text{max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -55,11 +60,17 @@ tr.selected{background:#e8f4fd}
 .detail-field{margin-bottom:12px}
 .detail-field .label{font-size:12px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}
 .detail-field .value{font-size:14px;word-break:break-all}
+.ns-wrapper{position:relative;overflow:visible}
+.ns-dropdown{position:absolute;top:100%;left:0;right:0;z-index:999;background:#fff;border:1px solid #ddd;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.12);max-height:160px;overflow-y:auto;display:none}
+.ns-dropdown div{padding:8px 10px;font-size:13px;cursor:pointer;transition:.1s}
+.ns-dropdown div:hover{background:#f0f4ff;color:#4a90d9}
 .metadata-view{background:#f8f9fa;padding:10px;border-radius:6px;font-family:monospace;font-size:12px;white-space:pre-wrap;max-height:200px;overflow:auto}
 pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overflow:auto;max-height:300px}
 .actions{display:flex;gap:6px;flex-wrap:wrap}
 .flex-between{display:flex;justify-content:space-between;align-items:center}
 .search-highlight{background:#fff3cd;padding:0 2px}
+.debug-ids [id]{outline:1px dashed #e53935;position:relative}
+.debug-ids [id]::before{content:attr(id);position:absolute;top:-1px;left:-1px;font-size:10px;background:#e53935;color:#fff;padding:1px 4px;border-radius:0 0 4px 0;z-index:999;font-family:monospace;line-height:1.2;white-space:nowrap}
 @media(max-width:768px){.form-row{flex-direction:column}.content{padding:12px}.nav{overflow-x:auto}.nav a{white-space:nowrap}}
 </style>
 </head>
@@ -70,14 +81,17 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
     <h1>Memory Admin</h1>
     <div class="sub" id="server-info">remember-me MCP Server</div>
   </div>
-  <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.4)" onclick="refreshStats()">Refresh</button>
+  <div>
+    <button id="btn-refresh" class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.4)" onclick="refreshStats()">Refresh</button>
+    <button id="btn-debug" class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.4);margin-left:8px" onclick="toggleDebug()">Debug</button>
+  </div>
 </div>
 
 <div class="nav" id="nav">
-  <a class="active" onclick="switchPage('memories')">Memories</a>
-  <a onclick="switchPage('search')">Search</a>
-  <a onclick="switchPage('add')">Add Memory</a>
-  <a onclick="switchPage('stats')">Stats</a>
+  <a id="nav-memories" class="active" onclick="switchPage('memories')">Memories</a>
+  <a id="nav-search" onclick="switchPage('search')">Search</a>
+  <a id="nav-add" onclick="switchPage('add')">Add Memory</a>
+  <a id="nav-stats" onclick="switchPage('stats')">Stats</a>
 </div>
 
 <div class="content">
@@ -86,13 +100,11 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
 <div class="page active" id="page-memories">
   <div class="card">
     <div class="card-header">
-      <span>All Memories</span>
-      <div style="display:flex;gap:8px;align-items:center">
-        <select id="ns-filter" style="font-size:12px;padding:4px 8px;border:1px solid #ddd;border-radius:4px" onchange="loadMemories()">
-          <option value="">All Namespaces</option>
-        </select>
-        <button class="btn btn-danger btn-sm" onclick="clearNamespace()">Clear</button>
-      </div>
+      <span id="memories-title">Memories</span>
+      <button id="btn-clear-ns" class="btn btn-danger btn-sm" onclick="clearNamespace()">Clear</button>
+    </div>
+    <div class="ns-tabs" id="ns-tabs">
+      <span class="ns-tab active" data-ns="" onclick="switchNamespace(this, '')">All Namespaces</span>
     </div>
     <div class="card-body" style="padding:0">
       <div id="memories-list"><div class="loading">Loading...</div></div>
@@ -106,7 +118,7 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
   <div class="card">
     <div class="card-header">Semantic Search</div>
     <div class="card-body">
-      <form onsubmit="doSearch(event)">
+      <form id="form-search" onsubmit="doSearch(event)">
         <div class="form-group">
           <label>Query</label>
           <input id="search-query" placeholder="Enter search text..." required>
@@ -125,7 +137,7 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
             <input id="search-ns" placeholder="(all)">
           </div>
         </div>
-        <button class="btn btn-primary" type="submit">Search</button>
+        <button id="btn-search-submit" class="btn btn-primary" type="submit">Search</button>
       </form>
       <div id="search-results" style="margin-top:16px"></div>
     </div>
@@ -137,7 +149,7 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
   <div class="card">
     <div class="card-header">Add New Memory</div>
     <div class="card-body">
-      <form onsubmit="doAdd(event)">
+      <form id="form-add" onsubmit="doAdd(event)">
         <div class="form-group">
           <label>Text *</label>
           <textarea id="add-text" required></textarea>
@@ -150,7 +162,7 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
           <label>Namespace</label>
           <input id="add-ns" value="default">
         </div>
-        <button class="btn btn-primary" type="submit">Add Memory</button>
+        <button id="btn-add-submit" class="btn btn-primary" type="submit">Add Memory</button>
       </form>
     </div>
   </div>
@@ -166,12 +178,12 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
 
 <!-- Detail modal -->
 <div id="detail-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);z-index:100;align-items:center;justify-content:center" onclick="closeDetail(event)">
-  <div style="background:#fff;border-radius:12px;width:700px;max-width:95vw;max-height:90vh;overflow:auto;box-shadow:0 8px 32px rgba(0,0,0,.2)" onclick="event.stopPropagation()">
-    <div style="padding:18px 20px;border-bottom:1px solid #f0f0f0;display:flex;justify-content:space-between;align-items:center">
+  <div style="background:#fff;border-radius:12px;width:700px;max-width:95vw;height:90vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.2)" onclick="event.stopPropagation()">
+    <div style="padding:18px 20px;border-bottom:1px solid #f0f0f0;display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
       <strong id="detail-title" style="font-size:16px">Memory Detail</strong>
-      <button class="btn btn-sm btn-outline" onclick="closeDetail()">✕</button>
+      <button id="btn-detail-close" class="btn btn-sm btn-outline" onclick="closeDetail()">✕</button>
     </div>
-    <div style="padding:20px" id="detail-body"></div>
+    <div style="padding:20px;overflow-y:auto;flex:1" id="detail-body"></div>
   </div>
 </div>
 
@@ -183,6 +195,10 @@ let memoriesOffset = 0;
 const MEMORIES_LIMIT = 20;
 let currentMemories = [];
 let allNamespaces = [];
+let currentNamespace = '';
+let statsData = null;
+let sortField = 'created_at';
+let sortDir = 'desc';
 
 // Helpers
 function $(id) { return document.getElementById(id) }
@@ -224,17 +240,47 @@ function switchPage(name) {
 
 // Memories list
 async function loadMemories() {
-  const ns = $('ns-filter').value;
   const params = new URLSearchParams({limit: MEMORIES_LIMIT, offset: memoriesOffset});
-  if (ns) params.set('namespace', ns);
+  if (currentNamespace) params.set('namespace', currentNamespace);
   $('memories-list').innerHTML = '<div class="loading">Loading...</div>';
   try {
     const data = await api('/memories?' + params.toString());
     currentMemories = data;
     renderMemories(data);
+    updateNsTabs();
   } catch(e) {
     $('memories-list').innerHTML = '<div class="empty-state">Error: ' + e.message + '</div>';
   }
+}
+
+function toggleSort(field) {
+  if (sortField === field) {
+    sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    sortField = field;
+    sortDir = 'asc';
+  }
+  renderMemories(currentMemories);
+}
+
+function sortMemories(data) {
+  if (!sortField) return data;
+  const sorted = [...data];
+  sorted.sort((a, b) => {
+    let va = a[sortField] || '';
+    let vb = b[sortField] || '';
+    if (typeof va === 'string') va = va.toLowerCase();
+    if (typeof vb === 'string') vb = vb.toLowerCase();
+    if (va < vb) return sortDir === 'asc' ? -1 : 1;
+    if (va > vb) return sortDir === 'asc' ? 1 : -1;
+    return 0;
+  });
+  return sorted;
+}
+
+function sortArrow(field) {
+  if (sortField !== field) return ' ↕';
+  return sortDir === 'asc' ? ' ↑' : ' ↓';
 }
 
 function renderMemories(data) {
@@ -243,8 +289,13 @@ function renderMemories(data) {
     $('memories-pagination').innerHTML = '';
     return;
   }
-  let html = '<table><thead><tr><th>Text</th><th>Namespace</th><th>Created</th><th style="width:160px">Actions</th></tr></thead><tbody>';
-  data.forEach(m => {
+  const sorted = sortMemories(data);
+  let html = '<table id="memories-table"><thead><tr>' +
+    `<th class="sortable" onclick="toggleSort('text')">Text${sortArrow('text')}</th>` +
+    `<th class="sortable" onclick="toggleSort('namespace')">Namespace${sortArrow('namespace')}</th>` +
+    `<th class="sortable" onclick="toggleSort('created_at')">Created${sortArrow('created_at')}</th>` +
+    '<th style="width:160px">Actions</th></tr></thead><tbody>';
+  sorted.forEach(m => {
     html += `<tr>
       <td><div class="memory-text" title="${esc(m.text)}">${esc(m.text)}</div></td>
       <td><span class="badge ns">${esc(m.namespace)}</span></td>
@@ -260,7 +311,6 @@ function renderMemories(data) {
   $('memories-list').innerHTML = html;
 
   // Pagination
-  const total = parseInt($('ns-filter').dataset.total || '0');
   const hasMore = data.length >= MEMORIES_LIMIT;
   $('memories-pagination').innerHTML = `
     <button class="btn btn-sm btn-outline" onclick="memoriesOffset=0;loadMemories()" ${memoriesOffset <= 0 ? 'disabled' : ''}>First</button>
@@ -274,54 +324,77 @@ function renderMemories(data) {
 async function viewDetail(id) {
   try {
     const m = await api('/memories/' + id);
-    showDetail(m);
+    showDetail(m, false);
   } catch(e) {
     toast(e.message, 'error');
   }
 }
 
-function showDetail(m) {
+async function editMemory(id) {
+  try {
+    const m = await api('/memories/' + id);
+    showDetail(m, true);
+  } catch(e) {
+    toast(e.message, 'error');
+  }
+}
+
+function showDetail(m, editable) {
   $('detail-title').textContent = 'Memory: ' + m.id.slice(0,8) + '…';
   const metaStr = JSON.stringify(m.metadata || {}, null, 2);
+
+  const textHtml = editable
+    ? `<div style="flex:1;display:flex;flex-direction:column"><textarea id="edit-text" style="flex:1;min-height:0;width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;font-family:inherit;resize:none">${esc(m.text)}</textarea></div>`
+    : `<div class="value" style="white-space:pre-wrap">${esc(m.text)}</div>`;
+
+  const nsHtml = editable
+    ? `<div class="ns-wrapper"><input id="edit-namespace" value="${esc(m.namespace)}" autocomplete="off" style="padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;width:100%" onfocus="showNsDropdown()" onblur="setTimeout(function(){hideNsDropdown()},150)"><div id="ns-dropdown" class="ns-dropdown">${allNamespaces.map(ns => `<div onmousedown="pickNs('${esc(ns)}')">${esc(ns)}</div>`).join('')}</div></div>`
+    : `<span class="badge ns">${esc(m.namespace)}</span>`;
+
+  const textFieldStyle = editable ? ' style="flex:1;display:flex;flex-direction:column;min-height:0"' : '';
+
+  const safeId = esc(m.id);
+  const actionsHtml = editable
+    ? `<button class="btn btn-primary btn-sm" onclick="saveEdit('${safeId}')">Save</button><button class="btn btn-outline btn-sm" onclick="closeDetail()">Cancel</button>`
+    : `<button class="btn btn-primary btn-sm" onclick="closeDetail();editMemory('${safeId}')">Edit</button><button class="btn btn-danger btn-sm" onclick="closeDetail();deleteMemory('${safeId}')">Delete</button><button class="btn btn-outline btn-sm" onclick="closeDetail()">Close</button>`;
+
+  $('detail-body').setAttribute('style', 'padding:20px;overflow-y:auto;flex:1' + (editable ? ';display:flex;flex-direction:column' : ''));
   $('detail-body').innerHTML = `
     <div class="detail-field"><div class="label">ID</div><div class="value">${m.id}</div></div>
-    <div class="detail-field"><div class="label">Text</div><div class="value" style="white-space:pre-wrap">${esc(m.text)}</div></div>
-    <div class="detail-field"><div class="label">Namespace</div><div class="value"><span class="badge ns">${esc(m.namespace)}</span></div></div>
+    <div class="detail-field"${textFieldStyle}><div class="label">Text</div>${textHtml}</div>
+    <div class="detail-field"><div class="label">Namespace</div><div class="value">${nsHtml}</div></div>
     <div class="detail-field"><div class="label">Created</div><div class="value">${formatTime(m.created_at) || '-'}</div></div>
     <div class="detail-field"><div class="label">Updated</div><div class="value">${formatTime(m.updated_at) || '-'}</div></div>
     <div class="detail-field"><div class="label">Score</div><div class="value">${m.score != null ? m.score.toFixed(6) : '-'}</div></div>
     <div class="detail-field"><div class="label">Metadata</div><div class="metadata-view">${metaStr === '{}' ? '<span style="color:#999">(empty)</span>' : esc(metaStr)}</div></div>
-    <div style="margin-top:16px;display:flex;gap:8px">
-      <button class="btn btn-primary btn-sm" onclick="closeDetail();editMemory('${m.id}')">Edit</button>
-      <button class="btn btn-danger btn-sm" onclick="closeDetail();deleteMemory('${m.id}')">Delete</button>
-      <button class="btn btn-outline btn-sm" onclick="closeDetail()">Close</button>
-    </div>
+    <div style="margin-top:16px;display:flex;gap:8px;flex-shrink:0">${actionsHtml}</div>
   `;
   $('detail-modal').style.display = 'flex';
+}
+
+async function saveEdit(id) {
+  const textEl = $('edit-text');
+  const nsEl = $('edit-namespace');
+  if (!textEl || !nsEl) { toast('Form not ready, reopen the edit dialog', 'error'); return }
+  const text = textEl.value;
+  const namespace = nsEl.value;
+  try {
+    const res = await api('/memories/' + id, {
+      method: 'PUT',
+      body: JSON.stringify({text, namespace}),
+    });
+    toast('Memory updated');
+    closeDetail();
+    loadMemories();
+    loadStats();
+  } catch(e) {
+    toast(e.message, 'error');
+  }
 }
 
 function closeDetail(e) {
   if (e && e.target !== e.currentTarget) return;
   $('detail-modal').style.display = 'none';
-}
-
-// Edit
-function editMemory(id) {
-  api('/memories/' + id).then(m => {
-    const newText = prompt('Edit text:', m.text);
-    if (newText === null) return;
-    const newMeta = prompt('Edit metadata (JSON):', JSON.stringify(m.metadata || {}, null, 2));
-    if (newMeta === null) return;
-    let metaObj;
-    try { metaObj = JSON.parse(newMeta) } catch(e) { toast('Invalid JSON', 'error'); return }
-    api('/memories/' + id, {
-      method: 'PUT',
-      body: JSON.stringify({text: newText, metadata: metaObj}),
-    }).then(() => {
-      toast('Memory updated');
-      loadMemories();
-    }).catch(e => toast(e.message, 'error'));
-  }).catch(e => toast(e.message, 'error'));
 }
 
 // Delete
@@ -338,7 +411,7 @@ async function deleteMemory(id) {
 
 // Clear namespace
 async function clearNamespace() {
-  const ns = $('ns-filter').value;
+  const ns = currentNamespace;
   if (!ns) { toast('Select a namespace first', 'error'); return }
   if (!confirm('Delete ALL memories in namespace "' + ns + '"?')) return;
   try {
@@ -425,33 +498,57 @@ async function loadStats() {
       <div class="detail-field"><div class="label">Ollama URL</div><div class="value">${s.ollama_base_url || '-'}</div></div>
       <div class="detail-field"><div class="label">Namespaces</div><div class="value">${(s.namespaces || []).map(n => '<span class="badge ns" style="margin:2px">' + esc(n) + '</span>').join(' ') || '<span style="color:#999">(none)</span>'}</div></div>
       <div style="margin-top:16px">
-        <button class="btn btn-sm btn-outline" onclick="loadStats()">Refresh</button>
+        <button id="btn-stats-refresh" class="btn btn-sm btn-outline" onclick="loadStats()">Refresh</button>
       </div>
     `;
-    // Update namespace filter
+    // Update namespace tabs
+    statsData = s;
     allNamespaces = s.namespaces || [];
-    updateNsFilter();
+    updateNsTabs();
   } catch(e) {
     $('stats-content').innerHTML = '<div class="empty-state">Error: ' + e.message + '</div>';
   }
 }
 
-function updateNsFilter() {
-  const sel = $('ns-filter');
-  const current = sel.value;
-  sel.innerHTML = '<option value="">All Namespaces</option>';
-  allNamespaces.forEach(ns => {
-    const opt = document.createElement('option');
-    opt.value = ns;
-    opt.textContent = ns + ' (' + countInNamespace(ns) + ')';
-    if (ns === current) opt.selected = true;
-    sel.appendChild(opt);
-  });
-  if (current && !allNamespaces.includes(current)) sel.value = '';
+function switchNamespace(el, ns) {
+  currentNamespace = ns;
+  document.querySelectorAll('#ns-tabs .ns-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  memoriesOffset = 0;
+  loadMemories();
 }
 
-function countInNamespace(ns) {
-  return currentMemories.filter(m => m.namespace === ns).length;
+function updateNsTabs() {
+  const container = $('ns-tabs');
+  const current = currentNamespace;
+  const counts = (statsData && statsData.namespace_counts) || {};
+  let html = `<span class="ns-tab${current === '' ? ' active' : ''}" data-ns="" onclick="switchNamespace(this, '')">All Memories</span>`;
+  allNamespaces.forEach(ns => {
+    const count = counts[ns] != null ? counts[ns] : currentMemories.filter(m => m.namespace === ns).length;
+    html += `<span class="ns-tab${ns === current ? ' active' : ''}" data-ns="${esc(ns)}" onclick="switchNamespace(this, '${esc(ns)}')">${esc(ns)} (${count})</span>`;
+  });
+  container.innerHTML = html;
+}
+
+function toggleDebug() {
+  document.body.classList.toggle('debug-ids');
+  const btn = $('btn-debug');
+  btn.textContent = document.body.classList.contains('debug-ids') ? 'Debug ON' : 'Debug';
+}
+
+function showNsDropdown() {
+  const dd = $('ns-dropdown');
+  if (dd) dd.style.display = 'block';
+}
+
+function hideNsDropdown() {
+  const dd = $('ns-dropdown');
+  if (dd) dd.style.display = 'none';
+}
+
+function pickNs(ns) {
+  $('edit-namespace').value = ns;
+  hideNsDropdown();
 }
 
 function refreshStats() {

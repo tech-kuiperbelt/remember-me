@@ -91,13 +91,14 @@ async def handle_list_tools() -> types.ListToolsResult:
         ),
         types.Tool(
             name="update",
-            description="Update a memory's text and/or metadata. If text changes, embedding is recomputed.",
+            description="Update a memory's text and/or metadata and/or namespace. If text changes, embedding is recomputed.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "memory_id": {"type": "string"},
                     "text": {"type": "string", "description": "New text"},
                     "metadata": {"type": "object", "description": "Metadata to merge"},
+                    "namespace": {"type": "string", "description": "New namespace"},
                 },
                 "required": ["memory_id"],
             },
@@ -158,7 +159,7 @@ async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
         if name == "get":
             return _ok(memory_get(arguments["memory_id"]))
         if name == "update":
-            return _ok(memory_update(arguments["memory_id"], arguments.get("text"), arguments.get("metadata")))
+            return _ok(memory_update(arguments["memory_id"], arguments.get("text"), arguments.get("metadata"), arguments.get("namespace")))
         if name == "delete":
             return _ok(memory_delete(arguments["memory_id"]))
         if name == "clear":

@@ -82,11 +82,12 @@ def memory_get(memory_id: str) -> dict | None:
 
 
 def memory_update(memory_id: str, text: str | None = None,
-                  metadata: dict | None = None) -> dict:
-    logger.info("update: id=%s has_text=%s has_metadata=%s", memory_id, text is not None, metadata is not None)
+                  metadata: dict | None = None,
+                  namespace: str | None = None) -> dict:
+    logger.info("update: id=%s has_text=%s has_metadata=%s has_ns=%s", memory_id, text is not None, metadata is not None, namespace is not None)
     try:
         embedding = embed(text) if text else None
-        ok = storage.update(memory_id, text=text, embedding=embedding, metadata=metadata)
+        ok = storage.update(memory_id, text=text, embedding=embedding, metadata=metadata, namespace=namespace)
         logger.info("update: %s", "ok" if ok else "not found")
         return {"success": ok}
     except Exception as e:

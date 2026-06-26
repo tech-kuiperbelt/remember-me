@@ -67,7 +67,7 @@ async def handle_update_memory(request: Request):
         mid = request.path_params.get("memory_id")
         body = await request.json()
         logger.info("PUT /api/memories/%s", mid)
-        result = memory_update(mid, body.get("text"), body.get("metadata"))
+        result = memory_update(mid, body.get("text"), body.get("metadata"), body.get("namespace"))
         if not result["success"]:
             return Response(json.dumps({"detail": "Not found"}), status_code=404, media_type="application/json")
         return Response(json.dumps(result), media_type="application/json")
