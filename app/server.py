@@ -17,7 +17,8 @@ import uvicorn
 
 from . import log_config  # noqa: F401
 from .service import memory_add, memory_search, memory_list, memory_get, \
-    memory_update, memory_delete, memory_clear, memory_stats, memory_import
+    memory_update, memory_delete, memory_clear, memory_stats, memory_import, \
+    memory_sync, memory_recover
 
 logger = logging.getLogger("server")
 
@@ -141,6 +142,23 @@ async def handle_list_tools() -> types.ListToolsResult:
                 "required": ["file_path"],
             },
         ),
+        types.Tool(
+            name="sync",
+            description="Force full sync: rebuild JSON backup from SQLite (dual mode only).",
+            inputSchema={"type": "object", "properties": {}},
+        ),
+        types.Tool(
+            name="recover",
+            description="Recover/rebuild target storage from source storage file. Clears target first.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "source_path": {"type": "string", "description": "Path to source storage file"},
+                    "target_path": {"type": "string", "description": "Path to target storage file (will be overwritten)"},
+                },
+                "required": ["source_path", "target_path"],
+            },
+        ),
     ])
 
 
@@ -168,6 +186,10 @@ async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
             return _ok(memory_stats())
         if name == "import":
             return _ok(memory_import(arguments["file_path"], arguments.get("namespace_prefix", "")))
+        if name == "sync":
+            return _ok(memory_sync())
+        if name == "recover":
+            return _ok(memory_recover(arguments["source_path"], arguments["target_path"]))
         raise ValueError(f"Unknown tool: {name}")
     except Exception as e:
         logger.error("Tool call '%s' failed: %s", name, e, exc_info=True)

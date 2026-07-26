@@ -8,15 +8,30 @@ logger = logging.getLogger("service")
 
 STORAGE_BACKEND = os.environ.get("MEMORY_STORAGE", "sqlite")
 STORAGE_PATH = os.environ.get("MEMORY_STORAGE_PATH")
+STORAGE_PATH_DUAL = os.environ.get("MEMORY_STORAGE_PATH_DUAL")
+SYNC_INTERVAL = int(os.environ.get("MEMORY_SYNC_INTERVAL", "300"))
+
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 EMBED_MODEL = os.environ.get("EMBED_MODEL", "bge-m3")
 DEFAULT_NAMESPACE = os.environ.get("MEMORY_DEFAULT_NAMESPACE", "default")
 
-if STORAGE_BACKEND == "json":
+if STORAGE_BACKEND == "dual":
+    primary_path = STORAGE_PATH or "data/memories.db"
+    secondary_path = STORAGE_PATH_DUAL or primary_path.replace(".db", ".json")
+    if secondary_path == primary_path:
+        secondary_path = "data/memories.json"
+    logger.info("Dual storage: primary=%s secondary=%s sync_interval=%ds",
+                primary_path, secondary_path, SYNC_INTERVAL)
+    storage = create_storage("dual", primary_path=primary_path,
+                             secondary_path=secondary_path,
+                             sync_interval=SYNC_INTERVAL)
+elif STORAGE_BACKEND == "json":
     path = STORAGE_PATH or "data/memories.json"
+    logger.info("JSON storage: %s", path)
     storage = create_storage("json", path=path)
 else:
     path = STORAGE_PATH or "data/memories.db"
+    logger.info("SQLite storage: %s", path)
     storage = create_storage("sqlite", path=path)
 
 
@@ -138,4 +153,37 @@ def memory_import(file_path: str, namespace_prefix: str = "") -> dict:
         return result
     except Exception as e:
         logger.error("import failed: %s", e, exc_info=True)
+        raise
+
+
+def memory_sync() -> dict:
+    """Manually trigger full sync of secondary from primary (dual mode only)."""
+    logger.info("sync")
+    try:
+        if hasattr(storage, "force_sync"):
+            return storage.force_sync()
+        return {"error": "storage backend does not support sync"}
+    except Exception as e:
+        logger.error("sync failed: %s", e, exc_info=True)
+        raise
+
+
+def memory_recover(source_path: str, target_path: str) -> dict:
+    """Recover/rebuild target storage file from source storage file.
+
+    Usage example (CLI):
+        python -m app.recover_cli data/memories.json data/memories.db
+    """
+    logger.info("recover: source=%s target=%s", source_path, target_path)
+    from .recovery import recover as _recover
+    try:
+        src_backend = "json" if source_path.endswith(".json") else "sqlite"
+        tgt_backend = "json" if target_path.endswith(".json") else "sqlite"
+        src = create_storage(src_backend, path=source_path)
+        tgt = create_storage(tgt_backend, path=target_path)
+        result = _recover(tgt, src)
+        logger.info("recover: %s", result)
+        return result
+    except Exception as e:
+        logger.error("recover failed: %s", e, exc_info=True)
         raise

@@ -134,7 +134,9 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
           </div>
           <div class="form-group">
             <label>Namespace</label>
-            <input id="search-ns" placeholder="(all)">
+            <select id="search-ns">
+              <option value="">(all)</option>
+            </select>
           </div>
         </div>
         <button id="btn-search-submit" class="btn btn-primary" type="submit">Search</button>
@@ -501,13 +503,24 @@ async function loadStats() {
         <button id="btn-stats-refresh" class="btn btn-sm btn-outline" onclick="loadStats()">Refresh</button>
       </div>
     `;
-    // Update namespace tabs
+    // Update namespace tabs and search dropdown
     statsData = s;
     allNamespaces = s.namespaces || [];
     updateNsTabs();
+    updateSearchNsDropdown();
   } catch(e) {
     $('stats-content').innerHTML = '<div class="empty-state">Error: ' + e.message + '</div>';
   }
+}
+
+function updateSearchNsDropdown() {
+  const sel = $('search-ns');
+  const currentVal = sel.value;
+  let html = '<option value="">(all)</option>';
+  allNamespaces.forEach(ns => {
+    html += `<option value="${esc(ns)}"${ns === currentVal ? ' selected' : ''}>${esc(ns)}</option>`;
+  });
+  sel.innerHTML = html;
 }
 
 function switchNamespace(el, ns) {

@@ -7,7 +7,7 @@ from starlette.routing import Route
 from starlette.requests import Request
 
 from .service import memory_add, memory_search, memory_list, memory_get, \
-    memory_update, memory_delete, memory_clear, memory_stats
+    memory_update, memory_delete, memory_clear, memory_stats, memory_sync, memory_recover
 
 logger = logging.getLogger("admin")
 
@@ -124,6 +124,29 @@ async def handle_stats(request: Request):
         return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
 
 
+async def handle_sync(request: Request):
+    try:
+        logger.info("POST /api/sync")
+        result = memory_sync()
+        return Response(json.dumps(result, ensure_ascii=False), media_type="application/json")
+    except Exception as e:
+        logger.error("POST /api/sync failed: %s", e, exc_info=True)
+        return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
+
+
+async def handle_recover(request: Request):
+    try:
+        body = await request.json()
+        src = body["source"]
+        tgt = body["target"]
+        logger.info("POST /api/recover source=%s target=%s", src, tgt)
+        result = memory_recover(src, tgt)
+        return Response(json.dumps(result, ensure_ascii=False), media_type="application/json")
+    except Exception as e:
+        logger.error("POST /api/recover failed: %s", e, exc_info=True)
+        return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
+
+
 admin_routes = [
     Route("/admin/console", endpoint=handle_admin, methods=["GET"]),
     Route("/api/memories", endpoint=handle_list_memories, methods=["GET"]),
@@ -134,4 +157,6 @@ admin_routes = [
     Route("/api/memories/{memory_id}", endpoint=handle_update_memory, methods=["PUT"]),
     Route("/api/memories/{memory_id}", endpoint=handle_delete_memory, methods=["DELETE"]),
     Route("/api/stats", endpoint=handle_stats, methods=["GET"]),
+    Route("/api/sync", endpoint=handle_sync, methods=["POST"]),
+    Route("/api/recover", endpoint=handle_recover, methods=["POST"]),
 ]
