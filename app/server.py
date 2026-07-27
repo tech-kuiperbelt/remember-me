@@ -18,7 +18,7 @@ import uvicorn
 from . import log_config  # noqa: F401
 from .service import memory_add, memory_search, memory_list, memory_get, \
     memory_update, memory_delete, memory_clear, memory_stats, memory_import, \
-    memory_sync, memory_recover
+    memory_sync, memory_recover, memory_namespaces
 
 logger = logging.getLogger("server")
 
@@ -159,6 +159,13 @@ async def handle_list_tools() -> types.ListToolsResult:
                 "required": ["source_path", "target_path"],
             },
         ),
+        types.Tool(
+            name="namespaces",
+            description="List all existing namespace names and their record counts. "
+                        "Use this for admin audit — do NOT call before add. "
+                        "The default namespace is set via MEMORY_DEFAULT_NAMESPACE env var.",
+            inputSchema={"type": "object", "properties": {}},
+        ),
     ])
 
 
@@ -190,6 +197,8 @@ async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
             return _ok(memory_sync())
         if name == "recover":
             return _ok(memory_recover(arguments["source_path"], arguments["target_path"]))
+        if name == "namespaces":
+            return _ok(memory_namespaces())
         raise ValueError(f"Unknown tool: {name}")
     except Exception as e:
         logger.error("Tool call '%s' failed: %s", name, e, exc_info=True)

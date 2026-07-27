@@ -168,6 +168,15 @@ def memory_sync() -> dict:
         raise
 
 
+def memory_namespaces() -> dict:
+    """Return all namespace names and their record counts."""
+    stats = storage.get_stats()
+    return {
+        "namespaces": stats.get("namespaces", []),
+        "namespace_counts": stats.get("namespace_counts", {}),
+    }
+
+
 def memory_recover(source_path: str, target_path: str) -> dict:
     """Recover/rebuild target storage file from source storage file.
 
