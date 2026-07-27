@@ -30,7 +30,7 @@ def quick_sync(storage, batch_size=500):
 
     Returns
     -------
-    dict with keys: synced, errors
+    dict with keys: synced, errors, ids
     """
     primary = storage.primary
     secondary = storage.secondary
@@ -41,6 +41,7 @@ def quick_sync(storage, batch_size=500):
     # Paginated copy from primary
     synced = 0
     errors = 0
+    all_ids = []
     offset = 0
 
     while True:
@@ -54,6 +55,7 @@ def quick_sync(storage, batch_size=500):
                     m["metadata"], m["namespace"],
                     m["created_at"], m["updated_at"],
                 )
+                all_ids.append(m["id"])
                 synced += 1
             except Exception:
                 logger.warning("quick_sync: failed to copy id=%s", m["id"], exc_info=True)
@@ -61,7 +63,7 @@ def quick_sync(storage, batch_size=500):
         offset += batch_size
 
     logger.info("quick_sync: synced=%d errors=%d", synced, errors)
-    return {"synced": synced, "errors": errors}
+    return {"synced": synced, "errors": errors, "ids": all_ids}
 
 
 def recover(target, source, batch_size=500):

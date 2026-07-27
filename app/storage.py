@@ -254,6 +254,16 @@ class SQLiteStorage(MemoryStorage):
             self.conn.execute("ALTER TABLE memories ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0")
         except sqlite3.OperationalError:
             pass  # column already exists
+        # Migration: outbox synced column (format-agnostic, not tied to JSON)
+        try:
+            self.conn.execute("ALTER TABLE memories ADD COLUMN synced INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+        # Composite index for outbox polling: WHERE synced=0 ORDER BY updated_at
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_memories_synced_updated "
+            "ON memories(synced, updated_at)"
+        )
         self.conn.commit()
 
     def _serialize(self, emb: list[float]) -> bytes:
@@ -273,27 +283,50 @@ class SQLiteStorage(MemoryStorage):
     def _add_with_id(self, memory_id, text, embedding, metadata, namespace,
                      created_at, updated_at):
         """Insert/replace with explicit ID. Internal use only (sync/recovery).
+        Sets synced=1 because data is already in (or being restored from) secondary.
         Uses INSERT OR REPLACE so that soft-deleted records can be restored.
         """
         with self._lock:
             self.conn.execute(
                 "INSERT OR REPLACE INTO memories "
-                "(id, text, embedding, metadata, namespace, created_at, updated_at, deleted) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, 0)",
+                "(id, text, embedding, metadata, namespace, created_at, updated_at, deleted, synced) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1)",
                 (memory_id, text, self._serialize(embedding),
                  json.dumps(metadata or {}), namespace, created_at, updated_at),
             )
             self.conn.commit()
 
-    def _get_updated_since(self, iso_timestamp: str) -> list[dict]:
-        """Return all memories (including deleted) with updated_at > timestamp.
-        Internal use only (DualStorage sync job).
+    # -- internal sync protocol (outbox pattern) --
+
+    def _get_unsynced(self, limit=500):
+        """Return records with synced=0 (including deleted), ordered by updated_at.
+        Internal use only (DualStorage outbox sync job).
         """
-        rows = self.conn.execute(
-            "SELECT * FROM memories WHERE updated_at > ? ORDER BY updated_at ASC",
-            (iso_timestamp,),
-        ).fetchall()
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT * FROM memories WHERE synced = 0 ORDER BY updated_at ASC LIMIT ?",
+                (limit,),
+            ).fetchall()
         return [self._row_to_dict(r) for r in rows]
+
+    def _mark_synced_batch(self, memory_ids):
+        """Batch-mark records as synced. Internal use only."""
+        if not memory_ids:
+            return
+        with self._lock:
+            placeholders = ",".join(["?"] * len(memory_ids))
+            self.conn.execute(
+                f"UPDATE memories SET synced = 1 WHERE id IN ({placeholders})",
+                memory_ids,
+            )
+            self.conn.commit()
+
+    def _count_unsynced(self) -> int:
+        """Count active records awaiting sync. Internal use only (stats)."""
+        with self._lock:
+            return self.conn.execute(
+                "SELECT COUNT(*) FROM memories WHERE synced = 0 AND deleted = 0"
+            ).fetchone()[0]
 
     # -- public API --
 
@@ -302,8 +335,8 @@ class SQLiteStorage(MemoryStorage):
         now = _now()
         with self._lock:
             self.conn.execute(
-                "INSERT INTO memories (id, text, embedding, metadata, namespace, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO memories (id, text, embedding, metadata, namespace, created_at, updated_at, synced) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, 0)",
                 (eid, text, self._serialize(embedding), json.dumps(metadata or {}), namespace, now, now),
             )
             self.conn.commit()
@@ -365,24 +398,24 @@ class SQLiteStorage(MemoryStorage):
             ns = namespace if namespace is not None else existing["namespace"]
             self.conn.execute(
                 "UPDATE memories SET text = ?, embedding = ?, metadata = ?, "
-                "namespace = ?, updated_at = ? WHERE id = ?",
+                "namespace = ?, updated_at = ?, synced = 0 WHERE id = ?",
                 (text, self._serialize(emb), json.dumps(meta), ns, now, memory_id),
             )
             self.conn.commit()
         return True
 
     def delete(self, memory_id):
-        """Soft-delete: mark as deleted instead of removing."""
+        """Soft-delete: mark as deleted and unsynced."""
         with self._lock:
             c = self.conn.execute(
-                "UPDATE memories SET deleted = 1, updated_at = ? WHERE id = ? AND deleted = 0",
+                "UPDATE memories SET deleted = 1, synced = 0, updated_at = ? WHERE id = ? AND deleted = 0",
                 (_now(), memory_id),
             )
             self.conn.commit()
         return c.rowcount > 0
 
     def clear(self, namespace=None):
-        """Soft-clear: mark all as deleted instead of removing."""
+        """Soft-clear: mark all as deleted and unsynced."""
         with self._lock:
             if namespace:
                 n = self.conn.execute(
@@ -390,7 +423,7 @@ class SQLiteStorage(MemoryStorage):
                     (namespace,),
                 ).fetchone()[0]
                 self.conn.execute(
-                    "UPDATE memories SET deleted = 1, updated_at = ? WHERE namespace = ? AND deleted = 0",
+                    "UPDATE memories SET deleted = 1, synced = 0, updated_at = ? WHERE namespace = ? AND deleted = 0",
                     (_now(), namespace),
                 )
             else:
@@ -398,7 +431,7 @@ class SQLiteStorage(MemoryStorage):
                     "SELECT COUNT(*) FROM memories WHERE deleted = 0"
                 ).fetchone()[0]
                 self.conn.execute(
-                    "UPDATE memories SET deleted = 1, updated_at = ? WHERE deleted = 0",
+                    "UPDATE memories SET deleted = 1, synced = 0, updated_at = ? WHERE deleted = 0",
                     (_now(),),
                 )
             self.conn.commit()
@@ -421,8 +454,8 @@ class SQLiteStorage(MemoryStorage):
                 existing_ids.add(mid)
                 ns = namespace_prefix + m["namespace"]
                 self.conn.execute(
-                    "INSERT INTO memories (id, text, embedding, metadata, namespace, created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO memories (id, text, embedding, metadata, namespace, created_at, updated_at, synced) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, 0)",
                     (mid, m["text"], self._serialize(m["embedding"]),
                      json.dumps(m["metadata"]), ns, m["created_at"], m["updated_at"]),
                 )
@@ -452,11 +485,15 @@ class SQLiteStorage(MemoryStorage):
 # ---------------------------------------------------------------------------
 
 class DualStorage(MemoryStorage):
-    """Dual-write via background job.
+    """Dual-write via Outbox pattern.
 
-    SQLite is the authoritative primary. A background thread periodically
-    syncs changed/deleted records to the JSON secondary using incremental
-    sync (via updated_at) with periodic full rebuild for cleanup.
+    SQLite is the authoritative primary. All writes go to SQLite with
+    synced=0. A background thread periodically polls for unsynced records
+    (synced=0) and batch-syncs them to the JSON secondary. On success,
+    records are marked synced=1.
+
+    This eliminates the need for periodic full rebuilds — the outbox
+    pattern guarantees every record is synced at-least-once.
 
     Configuration
     -------------
@@ -471,9 +508,7 @@ class DualStorage(MemoryStorage):
         self.sync_interval = sync_interval
 
         # Sync state
-        self._dirty = True   # Mark dirty on start so existing data gets synced on first cycle
-        self._last_sync_iso = "1970-01-01T00:00:00+00:00"   # ISO UTC watermark
-        self._last_sync_mono = time.monotonic()              # monotonic timing
+        self._last_sync_mono = time.monotonic()              # timing for stats
         self._sync_count = 0
         self._lock = threading.RLock()
         self._sync_mutex = threading.Lock()
@@ -489,112 +524,67 @@ class DualStorage(MemoryStorage):
 
     def _sync_loop(self):
         while not self._stop.wait(self.sync_interval):
-            # Atomic read-and-clear: if dirty, mark clean and sync.
-            # Sync-period writes will set _dirty=True again, ensuring
-            # they are picked up on the next cycle.
-            with self._lock:
-                if not self._dirty:
-                    continue
-                self._dirty = False
             try:
                 self._sync_count += 1
-                # First sync or every 12 cycles (~1 hour) → full rebuild
                 with self._sync_mutex:
-                    if self._sync_count == 1 or self._sync_count % 12 == 0:
-                        self._full_sync()
-                    else:
-                        self._incremental_sync()
+                    self._incremental_sync()
             except Exception:
                 logger.error("background sync failed", exc_info=True)
 
     def _incremental_sync(self):
-        """Delta sync: only records updated since last watermark.
-
-        Dual-watermark fix:
-        - Capture sync_start time BEFORE querying.
-        - Set watermark = sync_start AFTER syncing.
-        - Writes during the sync will have updated_at > sync_start
-          and will be picked up next cycle.
-        """
-        sync_start_iso = _now()
-        sync_start_mono = time.monotonic()
-        changed = self.primary._get_updated_since(self._last_sync_iso)
-        if not changed:
-            with self._lock:
-                self._last_sync_iso = sync_start_iso
-                self._last_sync_mono = sync_start_mono
-            return
-
+        """Batch-sync unsynced records to secondary, mark as synced."""
         synced = 0
-        for m in changed:
-            try:
-                if m.get("deleted"):
-                    # Propagate deletion to secondary
-                    self.secondary.delete(m["id"])
-                else:
-                    existing = self.secondary.get(m["id"])
-                    if existing:
-                        self.secondary.update(
-                            m["id"], text=m["text"], embedding=m["embedding"],
-                            metadata=m["metadata"], namespace=m["namespace"])
+        while True:
+            batch = self.primary._get_unsynced(limit=500)
+            if not batch:
+                break
+            ids = []
+            for m in batch:
+                try:
+                    if m.get("deleted"):
+                        self.secondary.delete(m["id"])
                     else:
-                        self.secondary._add_with_id(
-                            m["id"], m["text"], m["embedding"],
-                            m["metadata"], m["namespace"],
-                            m["created_at"], m["updated_at"])
-                synced += 1
-            except Exception:
-                logger.warning("incremental sync: failed to sync id=%s", m["id"], exc_info=True)
-
-        with self._lock:
-            self._last_sync_iso = sync_start_iso
-            self._last_sync_mono = sync_start_mono
-        logger.info("incremental sync: %d changed, %d synced", len(changed), synced)
-
-    def _full_sync(self):
-        """Full rebuild: clear secondary and copy all from primary (paginated)."""
-        from .recovery import quick_sync
-        result = quick_sync(self)
-        with self._lock:
-            self._last_sync_iso = _now()
+                        existing = self.secondary.get(m["id"])
+                        if existing:
+                            self.secondary.update(
+                                m["id"], text=m["text"], embedding=m["embedding"],
+                                metadata=m["metadata"], namespace=m["namespace"])
+                        else:
+                            self.secondary._add_with_id(
+                                m["id"], m["text"], m["embedding"],
+                                m["metadata"], m["namespace"],
+                                m["created_at"], m["updated_at"])
+                    ids.append(m["id"])
+                    synced += 1
+                except Exception:
+                    logger.warning("incremental sync: failed to sync id=%s", m["id"], exc_info=True)
+            if ids:
+                self.primary._mark_synced_batch(ids)
+        if synced:
             self._last_sync_mono = time.monotonic()
-        logger.info("full sync: %s", result)
+            logger.info("incremental sync: %d synced", synced)
 
-    # -- public API: writes → primary + dirty --
+    # -- public API: writes → primary only (synced=0 set by SQLiteStorage) --
 
     def add(self, text, embedding, metadata=None, namespace=DEFAULT_NAMESPACE):
         with self._lock:
-            eid = self.primary.add(text, embedding, metadata, namespace)
-            self._dirty = True
-        return eid
+            return self.primary.add(text, embedding, metadata, namespace)
 
     def update(self, memory_id, text=None, embedding=None, metadata=None, namespace=None):
         with self._lock:
-            ok = self.primary.update(memory_id, text, embedding, metadata, namespace)
-            if ok:
-                self._dirty = True
-        return ok
+            return self.primary.update(memory_id, text, embedding, metadata, namespace)
 
     def delete(self, memory_id):
         with self._lock:
-            ok = self.primary.delete(memory_id)
-            if ok:
-                self._dirty = True
-        return ok
+            return self.primary.delete(memory_id)
 
     def clear(self, namespace=None):
         with self._lock:
-            n = self.primary.clear(namespace)
-            if n:
-                self._dirty = True
-        return n
+            return self.primary.clear(namespace)
 
     def merge(self, source_storage, namespace_prefix=""):
         with self._lock:
-            result = self.primary.merge(source_storage, namespace_prefix)
-            if result.get("imported", 0):
-                self._dirty = True
-        return result
+            return self.primary.merge(source_storage, namespace_prefix)
 
     # -- public API: reads → primary only --
 
@@ -610,10 +600,17 @@ class DualStorage(MemoryStorage):
     # -- operations --
 
     def force_sync(self) -> dict:
-        """Manually trigger a full rebuild of secondary from primary."""
+        """Manually trigger a full rebuild of secondary from primary.
+        Uses quick_sync (clear + paginated rebuild) and marks synced
+        only for the records that were actually copied.
+        """
         with self._sync_mutex:
-            self._full_sync()
-        return {"synced": True}
+            from .recovery import quick_sync
+            result = quick_sync(self)
+            if result.get("ids"):
+                self.primary._mark_synced_batch(result["ids"])
+            self._last_sync_mono = time.monotonic()
+            return result
 
     def get_stats(self) -> dict:
         p = self.primary.get_stats()
@@ -621,12 +618,12 @@ class DualStorage(MemoryStorage):
             s = self.secondary.get_stats()
         except Exception:
             s = {"total": -1, "backend": "json", "path": "?", "error": "unavailable"}
+        pending = self.primary._count_unsynced()
         return {
             "total": p["total"],
             "backend": "dual",
-            "in_sync": not self._dirty and p["total"] == s.get("total", -1),
-            "dirty": self._dirty,
-            "last_sync_ts": self._last_sync_iso,
+            "in_sync": pending == 0 and s.get("total", -1) >= 0,
+            "pending": pending,
             "sync_count": self._sync_count,
             "sync_interval_s": self.sync_interval,
             # Bubble up namespace info from primary for UI/API compatibility
