@@ -60,9 +60,9 @@ async def handle_list_tools() -> types.ListToolsResult:
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "Search text — automatically embedded for semantic similarity matching"},
-                    "k": {"type": "integer", "description": "Max number of results to return (default: 5)"},
-                    "threshold": {"type": "number", "description": "Minimum similarity score 0-1. Higher = fewer but more relevant results (default: 0)"},
-                    "namespace": {"type": "string", "description": "Only return memories in this namespace (optional)"},
+                    "k": {"type": "integer", "description": "Max number of results to return (default: 5). Increase this (e.g. 20) when searching broadly or if results seem sparse."},
+                    "threshold": {"type": "number", "description": "Minimum similarity score 0-1 (default: 0 = no filter). Higher values return fewer but more relevant results. Keep at 0 unless you want to narrow down."},
+                    "namespace": {"type": "string", "description": "Only search within this namespace (optional). Leave empty to search all namespaces. If you get no results, call 'namespaces' first to check available namespaces."},
                 },
                 "required": ["query"],
             },
