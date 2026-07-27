@@ -549,9 +549,9 @@ function toggleDebug() {
   const on = document.body.classList.contains('debug-ids');
   $('btn-debug').textContent = on ? 'Debug ON' : 'Debug';
   if (on) {
-    document.addEventListener('click', onDebugClick);
+    document.addEventListener('click', onDebugClick, true);
   } else {
-    document.removeEventListener('click', onDebugClick);
+    document.removeEventListener('click', onDebugClick, true);
     document.querySelectorAll('.debug-focus').forEach(el => el.classList.remove('debug-focus'));
   }
 }
