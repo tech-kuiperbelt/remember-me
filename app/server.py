@@ -59,17 +59,17 @@ async def handle_list_tools() -> types.ListToolsResult:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Search query"},
-                    "k": {"type": "number", "description": "Max results (default: 5)"},
-                    "threshold": {"type": "number", "description": "Min similarity 0-1 (default: 0)"},
-                    "namespace": {"type": "string", "description": "Filter by namespace"},
+                    "query": {"type": "string", "description": "Search text — automatically embedded for semantic similarity matching"},
+                    "k": {"type": "integer", "description": "Max number of results to return (default: 5)"},
+                    "threshold": {"type": "number", "description": "Minimum similarity score 0-1. Higher = fewer but more relevant results (default: 0)"},
+                    "namespace": {"type": "string", "description": "Only return memories in this namespace (optional)"},
                 },
                 "required": ["query"],
             },
         ),
         types.Tool(
             name="list",
-            description="List memories, optionally filtered by namespace.",
+            description="List memories with pagination, optionally filtered by namespace.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -106,7 +106,7 @@ async def handle_list_tools() -> types.ListToolsResult:
         ),
         types.Tool(
             name="delete",
-            description="Delete a memory by ID.",
+            description="Soft-delete a memory by ID. It is removed from search results but can technically be restored via force_sync.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -117,7 +117,7 @@ async def handle_list_tools() -> types.ListToolsResult:
         ),
         types.Tool(
             name="clear",
-            description="Delete all memories, optionally within a namespace.",
+            description="Delete all memories (or within a namespace). Use with caution — there is no undo.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -132,7 +132,7 @@ async def handle_list_tools() -> types.ListToolsResult:
         ),
         types.Tool(
             name="import",
-            description="Import memories from another database file. Supports .db and .json.",
+            description="Import memories from another storage file. Supports .db, .jsonl and .json.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -144,12 +144,12 @@ async def handle_list_tools() -> types.ListToolsResult:
         ),
         types.Tool(
             name="sync",
-            description="Force full sync: rebuild JSON backup from SQLite (dual mode only).",
+            description="Force full rebuild of the secondary/backup storage from the primary database. Safe to call anytime — no data is lost, old backup data is replaced. Only available in dual storage mode.",
             inputSchema={"type": "object", "properties": {}},
         ),
         types.Tool(
             name="recover",
-            description="Recover/rebuild target storage from source storage file. Clears target first.",
+            description="Rebuild target storage from source storage file. Clears target first. For disaster recovery.",
             inputSchema={
                 "type": "object",
                 "properties": {
