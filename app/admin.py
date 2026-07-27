@@ -7,7 +7,8 @@ from starlette.routing import Route
 from starlette.requests import Request
 
 from .service import memory_add, memory_search, memory_list, memory_get, \
-    memory_update, memory_delete, memory_clear, memory_stats, memory_sync, memory_recover
+    memory_update, memory_delete, memory_clear, memory_stats, memory_sync, memory_recover, \
+    memory_namespaces, memory_migrate_namespace
 
 logger = logging.getLogger("admin")
 
@@ -147,6 +148,19 @@ async def handle_recover(request: Request):
         return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
 
 
+async def handle_migrate_namespace(request: Request):
+    try:
+        body = await request.json()
+        source = body["source"]
+        target = body["target"]
+        logger.info("POST /api/namespaces/migrate source=%s target=%s", source, target)
+        result = memory_migrate_namespace(source, target)
+        return Response(json.dumps(result, ensure_ascii=False), media_type="application/json")
+    except Exception as e:
+        logger.error("POST /api/namespaces/migrate failed: %s", e, exc_info=True)
+        return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
+
+
 admin_routes = [
     Route("/admin/console", endpoint=handle_admin, methods=["GET"]),
     Route("/api/memories", endpoint=handle_list_memories, methods=["GET"]),
@@ -159,4 +173,5 @@ admin_routes = [
     Route("/api/stats", endpoint=handle_stats, methods=["GET"]),
     Route("/api/sync", endpoint=handle_sync, methods=["POST"]),
     Route("/api/recover", endpoint=handle_recover, methods=["POST"]),
+    Route("/api/namespaces/migrate", endpoint=handle_migrate_namespace, methods=["POST"]),
 ]

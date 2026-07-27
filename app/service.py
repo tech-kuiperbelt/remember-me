@@ -177,6 +177,20 @@ def memory_namespaces() -> dict:
     }
 
 
+def memory_migrate_namespace(source: str, target: str) -> dict:
+    """Move all memories from source namespace to target namespace."""
+    if source == target:
+        return {"error": "source and target are the same", "migrated": 0}
+    memories = memory_list(namespace=source, limit=10 ** 9)
+    if not memories:
+        return {"error": f"no memories found in namespace '{source}'", "migrated": 0}
+    migrated = 0
+    for m in memories:
+        memory_update(m["id"], namespace=target)
+        migrated += 1
+    return {"migrated": migrated, "source": source, "target": target}
+
+
 def memory_recover(source_path: str, target_path: str) -> dict:
     """Recover/rebuild target storage file from source storage file.
 

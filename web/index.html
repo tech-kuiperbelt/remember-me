@@ -93,6 +93,7 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
   <a id="nav-search" onclick="switchPage('search')">Search</a>
   <a id="nav-add" onclick="switchPage('add')">Add Memory</a>
   <a id="nav-stats" onclick="switchPage('stats')">Stats</a>
+  <a id="nav-migrate" onclick="switchPage('migrate')">Migrate</a>
 </div>
 
 <div class="content">
@@ -190,6 +191,33 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
   </div>
 </div>
 
+<!-- Migrate -->
+<div class="page" id="page-migrate">
+  <div class="card">
+    <div class="card-header">Migrate Namespace</div>
+    <div class="card-body">
+      <div class="form-group">
+        <label>Source namespace</label>
+        <select id="migrate-source" class="ns-select"></select>
+      </div>
+      <div class="form-row">
+        <div style="text-align:center;padding:8px 0;font-size:18px;color:#888">↓</div>
+      </div>
+      <div class="form-group">
+        <label>Target namespace</label>
+        <div class="ns-wrapper">
+          <input id="migrate-target" list="migrate-target-suggestions" placeholder="Enter or select namespace..." style="padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;width:100%">
+          <datalist id="migrate-target-suggestions"></datalist>
+        </div>
+      </div>
+      <div style="margin-top:16px">
+        <button id="btn-migrate" class="btn btn-danger" onclick="doMigrate()">Migrate</button>
+        <span id="migrate-result" style="margin-left:12px;font-size:13px"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
 </div>
 
 <script>
@@ -239,6 +267,7 @@ function switchPage(name) {
   document.querySelector(`.nav a[onclick*="${name}"]`).classList.add('active');
   if (name === 'memories') loadMemories();
   if (name === 'stats') loadStats();
+  if (name === 'migrate') loadMigratePage();
 }
 
 // Memories list
@@ -591,6 +620,63 @@ function onDebugClick(e) {
   document.querySelectorAll('.debug-focus').forEach(f => f.classList.remove('debug-focus'));
   el.classList.add('debug-focus');
   navigator.clipboard.writeText(el.id).catch(() => {});
+}
+
+async function loadMigratePage() {
+  const data = await api('/api/stats');
+  const nsList = data.namespace_counts ? Object.keys(data.namespace_counts) : [];
+  nsList.sort();
+  // Source dropdown
+  const srcSelect = $('migrate-source');
+  srcSelect.innerHTML = '<option value="">Select namespace...</option>';
+  nsList.forEach(ns => {
+    const opt = document.createElement('option');
+    opt.value = ns;
+    opt.textContent = `${ns} (${data.namespace_counts[ns]})`;
+    srcSelect.appendChild(opt);
+  });
+  // Target datalist suggestions
+  const dl = $('migrate-target-suggestions');
+  dl.innerHTML = '';
+  nsList.forEach(ns => {
+    const opt = document.createElement('option');
+    opt.value = ns;
+    opt.textContent = ns;
+    dl.appendChild(opt);
+  });
+  $('migrate-result').textContent = '';
+}
+
+async function doMigrate() {
+  const source = $('migrate-source').value;
+  const target = $('migrate-target').value.trim();
+  if (!source || !target) {
+    $('migrate-result').textContent = 'Please select source and enter target.';
+    return;
+  }
+  if (!confirm(`Move ALL memories from "${source}" to "${target}"? This cannot be undone.`)) {
+    return;
+  }
+  const btn = $('btn-migrate');
+  const resultEl = $('migrate-result');
+  btn.disabled = true;
+  resultEl.textContent = 'Migrating...';
+  try {
+    const result = await api('/api/namespaces/migrate', {
+      method: 'POST',
+      body: JSON.stringify({source, target}),
+    });
+    if (result.error) {
+      resultEl.textContent = result.error;
+    } else {
+      resultEl.textContent = `✅ Migrated ${result.migrated} memories from "${source}" to "${target}".`;
+      loadMigratePage();
+    }
+  } catch(e) {
+    resultEl.textContent = 'Error: ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 function showNsDropdown() {
