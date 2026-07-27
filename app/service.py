@@ -17,9 +17,9 @@ DEFAULT_NAMESPACE = os.environ.get("MEMORY_DEFAULT_NAMESPACE", "default")
 
 if STORAGE_BACKEND == "dual":
     primary_path = STORAGE_PATH or "data/memories.db"
-    secondary_path = STORAGE_PATH_DUAL or primary_path.replace(".db", ".json")
+    secondary_path = STORAGE_PATH_DUAL or primary_path.replace(".db", ".jsonl")
     if secondary_path == primary_path:
-        secondary_path = "data/memories.json"
+        secondary_path = "data/memories.jsonl"
     logger.info("Dual storage: primary=%s secondary=%s sync_interval=%ds",
                 primary_path, secondary_path, SYNC_INTERVAL)
     storage = create_storage("dual", primary_path=primary_path,
