@@ -623,7 +623,7 @@ function onDebugClick(e) {
 }
 
 async function loadMigratePage() {
-  const data = await api('/api/stats');
+  const data = await api('/stats');
   const nsList = data.namespace_counts ? Object.keys(data.namespace_counts) : [];
   nsList.sort();
   // Source dropdown
@@ -662,7 +662,7 @@ async function doMigrate() {
   btn.disabled = true;
   resultEl.textContent = 'Migrating...';
   try {
-    const result = await api('/api/namespaces/migrate', {
+    const result = await api('/namespaces/migrate', {
       method: 'POST',
       body: JSON.stringify({source, target}),
     });
