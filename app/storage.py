@@ -476,6 +476,7 @@ class DualStorage(MemoryStorage):
         self._last_sync_mono = time.monotonic()              # monotonic timing
         self._sync_count = 0
         self._lock = threading.RLock()
+        self._sync_mutex = threading.Lock()
 
         # Background sync thread
         self._stop = threading.Event()
@@ -488,15 +489,21 @@ class DualStorage(MemoryStorage):
 
     def _sync_loop(self):
         while not self._stop.wait(self.sync_interval):
-            if not self._dirty:
-                continue
+            # Atomic read-and-clear: if dirty, mark clean and sync.
+            # Sync-period writes will set _dirty=True again, ensuring
+            # they are picked up on the next cycle.
+            with self._lock:
+                if not self._dirty:
+                    continue
+                self._dirty = False
             try:
                 self._sync_count += 1
-                # Full rebuild every 12 cycles (~1 hour) to clean up zombies
-                if self._sync_count % 12 == 0:
-                    self._full_sync()
-                else:
-                    self._incremental_sync()
+                # First sync or every 12 cycles (~1 hour) → full rebuild
+                with self._sync_mutex:
+                    if self._sync_count == 1 or self._sync_count % 12 == 0:
+                        self._full_sync()
+                    else:
+                        self._incremental_sync()
             except Exception:
                 logger.error("background sync failed", exc_info=True)
 
@@ -511,12 +518,11 @@ class DualStorage(MemoryStorage):
         """
         sync_start_iso = _now()
         sync_start_mono = time.monotonic()
-
         changed = self.primary._get_updated_since(self._last_sync_iso)
         if not changed:
-            self._last_sync_iso = sync_start_iso
-            self._last_sync_mono = sync_start_mono
-            self._dirty = False
+            with self._lock:
+                self._last_sync_iso = sync_start_iso
+                self._last_sync_mono = sync_start_mono
             return
 
         synced = 0
@@ -540,18 +546,18 @@ class DualStorage(MemoryStorage):
             except Exception:
                 logger.warning("incremental sync: failed to sync id=%s", m["id"], exc_info=True)
 
-        self._last_sync_iso = sync_start_iso
-        self._last_sync_mono = sync_start_mono
-        self._dirty = False
+        with self._lock:
+            self._last_sync_iso = sync_start_iso
+            self._last_sync_mono = sync_start_mono
         logger.info("incremental sync: %d changed, %d synced", len(changed), synced)
 
     def _full_sync(self):
         """Full rebuild: clear secondary and copy all from primary (paginated)."""
         from .recovery import quick_sync
         result = quick_sync(self)
-        self._dirty = False
-        self._last_sync_iso = _now()
-        self._last_sync_mono = time.monotonic()
+        with self._lock:
+            self._last_sync_iso = _now()
+            self._last_sync_mono = time.monotonic()
         logger.info("full sync: %s", result)
 
     # -- public API: writes → primary + dirty --
@@ -605,7 +611,8 @@ class DualStorage(MemoryStorage):
 
     def force_sync(self) -> dict:
         """Manually trigger a full rebuild of secondary from primary."""
-        self._full_sync()
+        with self._sync_mutex:
+            self._full_sync()
         return {"synced": True}
 
     def get_stats(self) -> dict:
@@ -617,7 +624,7 @@ class DualStorage(MemoryStorage):
         return {
             "total": p["total"],
             "backend": "dual",
-            "in_sync": p["total"] == s.get("total", -1),
+            "in_sync": not self._dirty and p["total"] == s.get("total", -1),
             "dirty": self._dirty,
             "last_sync_ts": self._last_sync_iso,
             "sync_count": self._sync_count,
