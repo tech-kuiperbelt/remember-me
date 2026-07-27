@@ -342,8 +342,12 @@ async function editMemory(id) {
   }
 }
 
+let _currentDetailText = '';
+let _copyBtnTimer = null;
+
 function showDetail(m, editable) {
   $('detail-title').textContent = 'Memory: ' + m.id.slice(0,8) + '…';
+  _currentDetailText = m.text;
   const metaStr = JSON.stringify(m.metadata || {}, null, 2);
 
   const textHtml = editable
@@ -357,9 +361,10 @@ function showDetail(m, editable) {
   const textFieldStyle = editable ? ' style="flex:1;display:flex;flex-direction:column;min-height:0"' : '';
 
   const safeId = esc(m.id);
+  const copyBtn = `<button class="btn btn-outline btn-sm" onclick="copyDetailText(this)">Copy</button>`;
   const actionsHtml = editable
-    ? `<button class="btn btn-primary btn-sm" onclick="saveEdit('${safeId}')">Save</button><button class="btn btn-outline btn-sm" onclick="closeDetail()">Cancel</button>`
-    : `<button class="btn btn-primary btn-sm" onclick="closeDetail();editMemory('${safeId}')">Edit</button><button class="btn btn-danger btn-sm" onclick="closeDetail();deleteMemory('${safeId}')">Delete</button><button class="btn btn-outline btn-sm" onclick="closeDetail()">Close</button>`;
+    ? `${copyBtn}<button class="btn btn-primary btn-sm" onclick="saveEdit('${safeId}')">Save</button><button class="btn btn-outline btn-sm" onclick="closeDetail()">Cancel</button>`
+    : `${copyBtn}<button class="btn btn-primary btn-sm" onclick="closeDetail();editMemory('${safeId}')">Edit</button><button class="btn btn-danger btn-sm" onclick="closeDetail();deleteMemory('${safeId}')">Delete</button><button class="btn btn-outline btn-sm" onclick="closeDetail()">Close</button>`;
 
   $('detail-body').setAttribute('style', 'padding:20px;overflow-y:auto;flex:1' + (editable ? ';display:flex;flex-direction:column' : ''));
   $('detail-body').innerHTML = `
@@ -393,6 +398,23 @@ async function saveEdit(id) {
   } catch(e) {
     toast(e.message, 'error');
   }
+}
+
+function copyDetailText(btn) {
+  const text = $('edit-text') ? $('edit-text').value : _currentDetailText;
+  navigator.clipboard.writeText(text).then(() => {
+    clearTimeout(_copyBtnTimer);
+    btn.textContent = 'Copied!';
+    btn.style.borderColor = '#4caf50';
+    btn.style.color = '#4caf50';
+    _copyBtnTimer = setTimeout(() => {
+      btn.textContent = 'Copy';
+      btn.style.borderColor = '';
+      btn.style.color = '';
+    }, 1200);
+  }).catch(() => {
+    toast('Copy failed (clipboard not available)', 'error');
+  });
 }
 
 function closeDetail(e) {
