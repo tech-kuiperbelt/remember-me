@@ -162,7 +162,8 @@ async def handle_list_tools() -> types.ListToolsResult:
         types.Tool(
             name="namespaces",
             description="List all existing namespace names and their record counts. "
-                        "Use this for admin audit — do NOT call before add. "
+                        "Use this for admin audit — check available namespaces before "
+                        "search or add to avoid missing results or creating duplicates. "
                         "The default namespace is set via MEMORY_DEFAULT_NAMESPACE env var.",
             inputSchema={"type": "object", "properties": {}},
         ),
