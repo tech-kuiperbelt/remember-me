@@ -471,7 +471,7 @@ class DualStorage(MemoryStorage):
         self.sync_interval = sync_interval
 
         # Sync state
-        self._dirty = False
+        self._dirty = True   # Mark dirty on start so existing data gets synced on first cycle
         self._last_sync_iso = "1970-01-01T00:00:00+00:00"   # ISO UTC watermark
         self._last_sync_mono = time.monotonic()              # monotonic timing
         self._sync_count = 0
