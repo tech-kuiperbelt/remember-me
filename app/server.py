@@ -55,7 +55,7 @@ async def handle_list_tools() -> types.ListToolsResult:
         ),
         types.Tool(
             name="search",
-            description="Semantic search across memories by query text.",
+            description="Semantic search across memories by query text. If no results are found, call 'namespaces' first to verify the correct namespace, then try searching again.",
             inputSchema={
                 "type": "object",
                 "properties": {
