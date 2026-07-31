@@ -60,8 +60,22 @@ def memory_add(text: str, metadata: dict | None = None, namespace: str | None = 
         raise
 
 
+def _sanitize_k(k) -> int:
+    """Coerce k to a positive int.
+
+    Non-positive k (e.g. k=-1) would slice scored[:-1] and return nearly
+    everything in Python; non-int k breaks the sort/slice entirely.
+    """
+    try:
+        k = int(k)
+    except (TypeError, ValueError):
+        return 100
+    return k if k > 0 else 100
+
+
 def memory_search(query: str, k: int = 5, threshold: float = 0.0,
                   namespace: str | None = None) -> list[dict]:
+    k = _sanitize_k(k)
     logger.info("search: query_len=%d k=%d threshold=%.3f namespace=%s", len(query), k, threshold, namespace)
     try:
         query_emb = embed(query)
