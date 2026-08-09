@@ -153,20 +153,27 @@ class SQLiteStorage(MemoryStorage):
         scored.sort(key=lambda x: x[0], reverse=True)
         return [{**d, "score": round(s, 6)} for s, d in scored[:k]]
 
-    def list_memories(self, namespace=None, limit=100, offset=0):
+    def list_memories(self, namespace=None, limit=100, offset=0, sort_by="created_at",
+                      updated_after=None, updated_before=None):
+        sort_col = sort_by if sort_by in ("created_at", "updated_at") else "created_at"
+        clauses = ["deleted = 0"]
+        params = []
+        if namespace:
+            clauses.append("namespace = ?")
+            params.append(namespace)
+        if updated_after:
+            clauses.append("updated_at > ?")
+            params.append(updated_after)
+        if updated_before:
+            clauses.append("updated_at < ?")
+            params.append(updated_before)
+        params.extend([limit, offset])
         with self._lock:
-            if namespace:
-                rows = self.conn.execute(
-                    "SELECT * FROM memories WHERE namespace = ? AND deleted = 0 "
-                    "ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                    (namespace, limit, offset),
-                ).fetchall()
-            else:
-                rows = self.conn.execute(
-                    "SELECT * FROM memories WHERE deleted = 0 "
-                    "ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                    (limit, offset),
-                ).fetchall()
+            rows = self.conn.execute(
+                f"SELECT * FROM memories WHERE {' AND '.join(clauses)} "
+                f"ORDER BY {sort_col} DESC LIMIT ? OFFSET ?",
+                params,
+            ).fetchall()
         return [self._row_to_dict(r) for r in rows]
 
     def get(self, memory_id):

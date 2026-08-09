@@ -109,11 +109,17 @@ class NDJSONStorage(MemoryStorage):
         scored.sort(key=lambda x: x[0], reverse=True)
         return [{**e, "score": round(s, 6)} for s, e in scored[:k]]
 
-    def list_memories(self, namespace=None, limit=100, offset=0):
+    def list_memories(self, namespace=None, limit=100, offset=0, sort_by="created_at",
+                      updated_after=None, updated_before=None):
+        sort_key = sort_by if sort_by in ("created_at", "updated_at") else "created_at"
         entries = list(self._data.values())
         if namespace:
             entries = [e for e in entries if e["namespace"] == namespace]
-        entries.sort(key=lambda e: e["created_at"], reverse=True)
+        if updated_after:
+            entries = [e for e in entries if e["updated_at"] > updated_after]
+        if updated_before:
+            entries = [e for e in entries if e["updated_at"] < updated_before]
+        entries.sort(key=lambda e: e[sort_key], reverse=True)
         return entries[offset:offset + limit]
 
     def get(self, memory_id):

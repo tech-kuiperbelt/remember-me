@@ -40,7 +40,9 @@ class MemoryStorage(ABC):
 
     @abstractmethod
     def list_memories(self, namespace: Optional[str] = None, limit: int = 100,
-                      offset: int = 0) -> list[dict[str, Any]]: ...
+                      offset: int = 0, sort_by: str = "created_at",
+                      updated_after: Optional[str] = None,
+                      updated_before: Optional[str] = None) -> list[dict[str, Any]]: ...
 
     @abstractmethod
     def get(self, memory_id: str) -> Optional[dict[str, Any]]: ...

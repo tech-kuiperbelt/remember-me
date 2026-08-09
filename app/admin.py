@@ -26,9 +26,15 @@ async def handle_list_memories(request: Request):
         ns = request.query_params.get("namespace")
         limit = int(request.query_params.get("limit", 100))
         offset = int(request.query_params.get("offset", 0))
-        logger.info("GET /api/memories namespace=%s limit=%d offset=%d", ns, limit, offset)
+        sort_by = request.query_params.get("sort_by", "created_at")
+        updated_after = request.query_params.get("updated_after")
+        updated_before = request.query_params.get("updated_before")
+        logger.info("GET /api/memories namespace=%s limit=%d offset=%d sort_by=%s updated_after=%s updated_before=%s",
+                    ns, limit, offset, sort_by, updated_after, updated_before)
         return Response(
-            json.dumps(memory_list(namespace=ns, limit=limit, offset=offset), ensure_ascii=False, default=str),
+            json.dumps(memory_list(namespace=ns, limit=limit, offset=offset, sort_by=sort_by,
+                                   updated_after=updated_after, updated_before=updated_before),
+                       ensure_ascii=False, default=str),
             media_type="application/json",
         )
     except Exception as e:

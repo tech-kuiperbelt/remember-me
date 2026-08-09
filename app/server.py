@@ -55,7 +55,13 @@ async def handle_list_tools() -> types.ListToolsResult:
         ),
         types.Tool(
             name="search",
-            description="Semantic search across memories by query text. If no results are found, call 'namespaces' first to verify the correct namespace, then try searching again.",
+            description="Semantic search across memories by query text. "
+                        "Use this for topic/keyword questions — e.g. \"what do we know about X\", "
+                        "\"anything related to Y\" — where you want the most semantically similar memories. "
+                        "For time-based questions (e.g. \"what did we do recently / last session\") "
+                        "use 'list' with sort_by='updated_at' instead. "
+                        "If no results are found, call 'namespaces' first to verify the correct namespace, "
+                        "then try searching again.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -69,13 +75,24 @@ async def handle_list_tools() -> types.ListToolsResult:
         ),
         types.Tool(
             name="list",
-            description="List memories with pagination, optionally filtered by namespace.",
+            description="List memories ordered by time, with pagination and optional filters "
+                        "(namespace / updated_at time range). "
+                        "Use this for time-based questions such as \"what did we do recently / last session\" "
+                        "— combine sort_by='updated_at' with a small limit to get the most recently "
+                        "written or changed memories. For topic/keyword questions use 'search' instead. "
+                        "For relative time windows (\"last week\", \"this month\"), call 'stats' first to get "
+                        "server_time, then pass concrete updated_after/updated_before timestamps. "
+                        "Ordered by the given field descending (default: created_at).",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "namespace": {"type": "string"},
-                    "limit": {"type": "number", "description": "Max results (default: 100)"},
+                    "namespace": {"type": "string", "description": "Only list memories in this namespace (optional). Leave empty to list all namespaces."},
+                    "limit": {"type": "number", "description": "Max results (default: 100). Use a small value (e.g. 5-10) for recent-memory lookups."},
                     "offset": {"type": "number", "description": "Pagination offset (default: 0)"},
+                    "sort_by": {"type": "string", "enum": ["created_at", "updated_at"],
+                                "description": "Sort field, descending. Default: created_at. Use 'updated_at' for most recently written/changed first."},
+                    "updated_after": {"type": "string", "description": "ISO8601 timestamp (e.g. '2026-07-01T00:00:00+00:00'). Only return memories updated after this moment (exclusive). If the user asks for a relative window (e.g. 'last week', 'this month') and you are unsure of the current date, call 'stats' first to get its 'server_time', then compute this value."},
+                    "updated_before": {"type": "string", "description": "ISO8601 timestamp (e.g. '2026-07-01T00:00:00+00:00'). Only return memories updated before this moment (exclusive). If the user asks for a relative window (e.g. 'last week', 'this month') and you are unsure of the current date, call 'stats' first to get its 'server_time', then compute this value."},
                 },
             },
         ),
@@ -127,7 +144,9 @@ async def handle_list_tools() -> types.ListToolsResult:
         ),
         types.Tool(
             name="stats",
-            description="Storage statistics and configuration.",
+            description="Storage statistics and configuration. Includes 'server_time' (current UTC time) — "
+                        "check this first when a user asks a time-based question (e.g. \"what did we do last week / this month\"), "
+                        "so you can compute the correct updated_after/updated_before values for the 'list' tool.",
             inputSchema={"type": "object", "properties": {}},
         ),
         types.Tool(
@@ -181,7 +200,8 @@ async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
                                      float(arguments.get("threshold", 0.0)), arguments.get("namespace")))
         if name == "list":
             return _ok(memory_list(arguments.get("namespace"), int(arguments.get("limit", 100)),
-                                   int(arguments.get("offset", 0))))
+                                   int(arguments.get("offset", 0)), arguments.get("sort_by", "created_at"),
+                                   arguments.get("updated_after"), arguments.get("updated_before")))
         if name == "get":
             return _ok(memory_get(arguments["memory_id"]))
         if name == "update":

@@ -1,10 +1,15 @@
 import os
 import logging
+from datetime import datetime, timezone
 
 from .embed import embed as embed_fn
 from .storage import create_storage
 
 logger = logging.getLogger("service")
+
+
+def _now_utc_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 STORAGE_BACKEND = os.environ.get("MEMORY_STORAGE", "sqlite")
 STORAGE_PATH = os.environ.get("MEMORY_STORAGE_PATH")
@@ -88,10 +93,17 @@ def memory_search(query: str, k: int = 5, threshold: float = 0.0,
 
 
 def memory_list(namespace: str | None = None, limit: int = 100,
-                offset: int = 0) -> list[dict]:
-    logger.info("list: namespace=%s limit=%d offset=%d", namespace, limit, offset)
+                offset: int = 0, sort_by: str = "created_at",
+                updated_after: str | None = None,
+                updated_before: str | None = None) -> list[dict]:
+    if sort_by not in ("created_at", "updated_at"):
+        sort_by = "created_at"
+    logger.info("list: namespace=%s limit=%d offset=%d sort_by=%s updated_after=%s updated_before=%s",
+                namespace, limit, offset, sort_by, updated_after, updated_before)
     try:
-        results = storage.list_memories(namespace=namespace, limit=limit, offset=offset)
+        results = storage.list_memories(namespace=namespace, limit=limit, offset=offset,
+                                        sort_by=sort_by, updated_after=updated_after,
+                                        updated_before=updated_before)
         logger.info("list: %d results", len(results))
         return [strip_embedding(r) for r in results]
     except Exception as e:
@@ -151,6 +163,7 @@ def memory_stats() -> dict:
         stats = storage.get_stats()
         stats["embed_model"] = EMBED_MODEL
         stats["ollama_base_url"] = OLLAMA_BASE_URL
+        stats["server_time"] = _now_utc_iso()
         return stats
     except Exception as e:
         logger.error("stats failed: %s", e, exc_info=True)
