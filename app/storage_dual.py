@@ -73,12 +73,14 @@ class DualStorage(MemoryStorage):
                         if existing:
                             self.secondary.update(
                                 m["id"], text=m["text"], embedding=m["embedding"],
-                                metadata=m["metadata"], namespace=m["namespace"])
+                                metadata=m["metadata"], namespace=m["namespace"],
+                                summary=m.get("summary"))
                         else:
                             self.secondary._add_with_id(
                                 m["id"], m["text"], m["embedding"],
                                 m["metadata"], m["namespace"],
-                                m["created_at"], m["updated_at"])
+                                m["created_at"], m["updated_at"],
+                                m.get("summary"))
                     ids.append(m["id"])
                     synced += 1
                 except Exception:
@@ -91,13 +93,20 @@ class DualStorage(MemoryStorage):
 
     # -- public API: writes → primary only (synced=0 set by SQLiteStorage) --
 
-    def add(self, text, embedding, metadata=None, namespace=DEFAULT_NAMESPACE):
+    def add(self, text, embedding, metadata=None, namespace=DEFAULT_NAMESPACE, summary=None):
         with self._lock:
-            return self.primary.add(text, embedding, metadata, namespace)
+            return self.primary.add(text, embedding, metadata, namespace, summary)
 
-    def update(self, memory_id, text=None, embedding=None, metadata=None, namespace=None):
+    def update(self, memory_id, text=None, embedding=None, metadata=None, namespace=None, summary=None):
         with self._lock:
-            return self.primary.update(memory_id, text, embedding, metadata, namespace)
+            return self.primary.update(memory_id, text, embedding, metadata, namespace, summary)
+
+    def update_summary(self, memory_id, summary):
+        with self._lock:
+            return self.primary.update_summary(memory_id, summary)
+
+    def get_pending_summaries(self, *args, **kwargs):
+        return self.primary.get_pending_summaries(*args, **kwargs)
 
     def delete(self, memory_id):
         with self._lock:
@@ -121,6 +130,9 @@ class DualStorage(MemoryStorage):
 
     def get(self, *args, **kwargs):
         return self.primary.get(*args, **kwargs)
+
+    def get_details(self, *args, **kwargs):
+        return self.primary.get_details(*args, **kwargs)
 
     # -- operations --
 

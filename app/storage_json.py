@@ -32,7 +32,7 @@ class JSONStorage(MemoryStorage):
     # -- internal sync protocol --
 
     def _add_with_id(self, memory_id, text, embedding, metadata, namespace,
-                     created_at, updated_at):
+                     created_at, updated_at, summary=None):
         """Insert with explicit ID. Internal use only (sync/recovery)."""
         with self._lock:
             if memory_id in self._data:
@@ -41,18 +41,20 @@ class JSONStorage(MemoryStorage):
                 "id": memory_id, "text": text, "embedding": embedding,
                 "metadata": metadata or {}, "namespace": namespace,
                 "created_at": created_at, "updated_at": updated_at,
+                "summary": summary,
             }
             self._save()
 
     # -- public API --
 
-    def add(self, text, embedding, metadata=None, namespace=DEFAULT_NAMESPACE):
+    def add(self, text, embedding, metadata=None, namespace=DEFAULT_NAMESPACE, summary=None):
         eid = _new_id()
         now = _now()
         entry = {
             "id": eid, "text": text, "embedding": embedding,
             "metadata": metadata or {}, "namespace": namespace,
             "created_at": now, "updated_at": now,
+            "summary": summary,
         }
         with self._lock:
             self._data[eid] = entry
@@ -86,7 +88,7 @@ class JSONStorage(MemoryStorage):
     def get(self, memory_id):
         return self._data.get(memory_id)
 
-    def update(self, memory_id, text=None, embedding=None, metadata=None, namespace=None):
+    def update(self, memory_id, text=None, embedding=None, metadata=None, namespace=None, summary=None):
         with self._lock:
             e = self._data.get(memory_id)
             if not e:
@@ -99,9 +101,39 @@ class JSONStorage(MemoryStorage):
                 e["metadata"] = {**e["metadata"], **metadata}
             if namespace is not None:
                 e["namespace"] = namespace
+            if summary is not None:
+                e["summary"] = summary
             e["updated_at"] = _now()
             self._save()
         return True
+
+    def update_summary(self, memory_id, summary):
+        """Update only the summary field — updated_at stays unchanged."""
+        with self._lock:
+            e = self._data.get(memory_id)
+            if not e:
+                return False
+            e["summary"] = summary
+            self._save()
+        return True
+
+    def get_pending_summaries(self, limit=1000):
+        """Records with empty summary, oldest first (background worker recovery)."""
+        with self._lock:
+            items = [e for e in self._data.values() if not e.get("summary")]
+        items.sort(key=lambda e: e.get("created_at", ""))
+        return items[:limit]
+
+    def get_details(self, memory_ids):
+        """Fetch full records by ID list. Partial success: missing IDs are reported."""
+        found, missing = [], []
+        for mid in memory_ids:
+            e = self._data.get(mid)
+            if e:
+                found.append(e)
+            else:
+                missing.append(mid)
+        return {"found": found, "missing": missing}
 
     def delete(self, memory_id):
         with self._lock:
@@ -127,6 +159,7 @@ class JSONStorage(MemoryStorage):
     def merge(self, source_storage, namespace_prefix=""):
         imported = 0
         renamed = 0
+        imported_ids = []
         src_memories = source_storage.list_memories(limit=10 ** 9)
         with self._lock:
             for m in src_memories:
@@ -139,11 +172,14 @@ class JSONStorage(MemoryStorage):
                     "id": mid, "text": m["text"], "embedding": m["embedding"],
                     "metadata": m["metadata"], "namespace": ns,
                     "created_at": m["created_at"], "updated_at": m["updated_at"],
+                    "summary": m.get("summary"),
                 }
                 self._data[mid] = entry
                 imported += 1
+                imported_ids.append(mid)
             self._save()
-        return {"imported": imported, "renamed": renamed, "total": len(src_memories)}
+        return {"imported": imported, "renamed": renamed, "total": len(src_memories),
+                "imported_ids": imported_ids}
 
     def get_stats(self):
         namespaces = set(e["namespace"] for e in self._data.values())

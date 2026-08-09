@@ -18,7 +18,8 @@ import uvicorn
 from . import log_config  # noqa: F401
 from .service import memory_add, memory_search, memory_list, memory_get, \
     memory_update, memory_delete, memory_clear, memory_stats, memory_import, \
-    memory_sync, memory_recover, memory_namespaces
+    memory_sync, memory_recover, memory_namespaces, memory_get_details, \
+    memory_summarize, _prepare_for_llm
 
 logger = logging.getLogger("server")
 
@@ -58,6 +59,8 @@ async def handle_list_tools() -> types.ListToolsResult:
             description="Semantic search across memories by query text. "
                         "Use this for topic/keyword questions — e.g. \"what do we know about X\", "
                         "\"anything related to Y\" — where you want the most semantically similar memories. "
+                        "Results return the memory summary (falling back to original text when no summary exists); "
+                        "call 'get_details' with the returned IDs to fetch full content. "
                         "For time-based questions (e.g. \"what did we do recently / last session\") "
                         "use 'list' with sort_by='updated_at' instead. "
                         "If no results are found, call 'namespaces' first to verify the correct namespace, "
@@ -77,6 +80,8 @@ async def handle_list_tools() -> types.ListToolsResult:
             name="list",
             description="List memories ordered by time, with pagination and optional filters "
                         "(namespace / updated_at time range). "
+                        "Results return the memory summary (falling back to original text when no summary exists); "
+                        "call 'get_details' with the returned IDs to fetch full content. "
                         "Use this for time-based questions such as \"what did we do recently / last session\" "
                         "— combine sort_by='updated_at' with a small limit to get the most recently "
                         "written or changed memories. For topic/keyword questions use 'search' instead. "
@@ -108,8 +113,28 @@ async def handle_list_tools() -> types.ListToolsResult:
             },
         ),
         types.Tool(
+            name="get_details",
+            description="Fetch full content for multiple memories by ID. "
+                        "Returns the complete text of each found memory plus the list of IDs that "
+                        "do not exist (partial success). Use this when a search/list summary looks "
+                        "relevant and you need the full original content.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "memory_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Array of memory IDs to fetch full content for",
+                    },
+                },
+                "required": ["memory_ids"],
+            },
+        ),
+        types.Tool(
             name="update",
-            description="Update a memory's text and/or metadata and/or namespace. If text changes, embedding is recomputed.",
+            description="Update a memory's text and/or metadata and/or namespace. "
+                        "If text changes, embedding and summary are recomputed; "
+                        "metadata-only updates leave the summary untouched.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -179,6 +204,24 @@ async def handle_list_tools() -> types.ListToolsResult:
             },
         ),
         types.Tool(
+            name="summarize",
+            description="Generate summaries for existing memories. "
+                        "mode='missing' (default) only processes memories whose summary is empty; "
+                        "mode='all' regenerates every summary (use after a summary model/algorithm change). "
+                        "Pass memory_id to process a single memory by ID. "
+                        "Summary-only updates do not change updated_at.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "namespace": {"type": "string", "description": "Optional namespace filter"},
+                    "mode": {"type": "string", "enum": ["missing", "all"],
+                             "description": "'missing' (default) = only empty summaries; 'all' = regenerate every summary"},
+                    "memory_id": {"type": "string",
+                                  "description": "Optional: only generate a summary for this memory ID"},
+                },
+            },
+        ),
+        types.Tool(
             name="namespaces",
             description="List all existing namespace names and their record counts. "
                         "Use this for admin audit — check available namespaces before "
@@ -196,14 +239,16 @@ async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
         if name == "add":
             return _ok(memory_add(arguments["text"], arguments.get("metadata"), arguments.get("namespace")))
         if name == "search":
-            return _ok(memory_search(arguments["query"], int(arguments.get("k", 5)),
-                                     float(arguments.get("threshold", 0.0)), arguments.get("namespace")))
+            return _ok(_prepare_for_llm(memory_search(arguments["query"], int(arguments.get("k", 5)),
+                                                      float(arguments.get("threshold", 0.0)), arguments.get("namespace"))))
         if name == "list":
-            return _ok(memory_list(arguments.get("namespace"), int(arguments.get("limit", 100)),
-                                   int(arguments.get("offset", 0)), arguments.get("sort_by", "created_at"),
-                                   arguments.get("updated_after"), arguments.get("updated_before")))
+            return _ok(_prepare_for_llm(memory_list(arguments.get("namespace"), int(arguments.get("limit", 100)),
+                                                    int(arguments.get("offset", 0)), arguments.get("sort_by", "created_at"),
+                                                    arguments.get("updated_after"), arguments.get("updated_before"))))
         if name == "get":
             return _ok(memory_get(arguments["memory_id"]))
+        if name == "get_details":
+            return _ok(memory_get_details(arguments["memory_ids"]))
         if name == "update":
             return _ok(memory_update(arguments["memory_id"], arguments.get("text"), arguments.get("metadata"), arguments.get("namespace")))
         if name == "delete":
@@ -218,6 +263,9 @@ async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
             return _ok(memory_sync())
         if name == "recover":
             return _ok(memory_recover(arguments["source_path"], arguments["target_path"]))
+        if name == "summarize":
+            return _ok(memory_summarize(arguments.get("namespace"), arguments.get("mode", "missing"),
+                                        arguments.get("memory_id")))
         if name == "namespaces":
             return _ok(memory_namespaces())
         raise ValueError(f"Unknown tool: {name}")
@@ -259,7 +307,7 @@ async def handle_read_resource(uri: str) -> types.ReadResourceResult:
     if uri == "memories://list":
         return types.ReadResourceResult(contents=[
             types.TextResourceContents(uri=uri, mimeType="application/json",
-                                       text=json.dumps(memory_list(limit=1000),
+                                       text=json.dumps(_prepare_for_llm(memory_list(limit=1000)),
                                                        ensure_ascii=False, default=str)),
         ])
     raise ValueError(f"Unknown resource: {uri}")
@@ -312,7 +360,11 @@ async def main():
         config = uvicorn.Config(starlette_app, host="0.0.0.0", port=args.port, log_level="info")
         uv_server = uvicorn.Server(config)
         sys.stderr.write(f"SSE server listening on http://0.0.0.0:{args.port}/sse\n")
-        await uv_server.serve()
+        try:
+            await uv_server.serve()
+        finally:
+            from . import summary_worker
+            summary_worker.shutdown()
     else:
         # ---- stdio mode ----
         async with stdio_server() as (read_stream, write_stream):

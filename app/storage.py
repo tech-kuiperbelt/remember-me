@@ -32,7 +32,7 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
 class MemoryStorage(ABC):
     @abstractmethod
     def add(self, text: str, embedding: list[float], metadata: Optional[dict] = None,
-            namespace: str = DEFAULT_NAMESPACE) -> str: ...
+            namespace: str = DEFAULT_NAMESPACE, summary: Optional[str] = None) -> str: ...
 
     @abstractmethod
     def search(self, query_embedding: list[float], k: int = 5, threshold: float = 0.0,
@@ -51,7 +51,23 @@ class MemoryStorage(ABC):
     def update(self, memory_id: str, text: Optional[str] = None,
                embedding: Optional[list[float]] = None,
                metadata: Optional[dict] = None,
-               namespace: Optional[str] = None) -> bool: ...
+               namespace: Optional[str] = None,
+               summary: Optional[str] = None) -> bool: ...
+
+    @abstractmethod
+    def get_details(self, memory_ids: list[str]) -> dict[str, Any]:
+        """Fetch full records by ID list. Returns {"found": [...], "missing": [...]}."""
+        ...
+
+    @abstractmethod
+    def update_summary(self, memory_id: str, summary: Optional[str]) -> bool:
+        """Update only the summary field, keeping updated_at unchanged."""
+        ...
+
+    @abstractmethod
+    def get_pending_summaries(self, limit: int = 1000) -> list[dict[str, Any]]:
+        """Return records whose summary is empty, oldest first (for background worker recovery)."""
+        ...
 
     @abstractmethod
     def delete(self, memory_id: str) -> bool: ...

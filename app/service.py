@@ -3,7 +3,9 @@ import logging
 from datetime import datetime, timezone
 
 from .embed import embed as embed_fn
+from .summarize import summarize as summarize_fn
 from .storage import create_storage
+from . import summary_worker
 
 logger = logging.getLogger("service")
 
@@ -18,6 +20,7 @@ SYNC_INTERVAL = int(os.environ.get("MEMORY_SYNC_INTERVAL", "300"))
 
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 EMBED_MODEL = os.environ.get("EMBED_MODEL", "bge-m3")
+SUMMARIZE_MODEL = os.environ.get("SUMMARIZE_MODEL", "qwen3:latest")
 DEFAULT_NAMESPACE = os.environ.get("MEMORY_DEFAULT_NAMESPACE", "default")
 
 if STORAGE_BACKEND == "dual":
@@ -39,6 +42,9 @@ else:
     logger.info("SQLite storage: %s", path)
     storage = create_storage("sqlite", path=path)
 
+summary_worker.set_storage(storage)
+summary_worker.start()
+
 
 def embed(text: str) -> list[float]:
     try:
@@ -48,17 +54,43 @@ def embed(text: str) -> list[float]:
         raise
 
 
+def summarize(text: str) -> str:
+    try:
+        return summarize_fn(text, base_url=OLLAMA_BASE_URL, model=SUMMARIZE_MODEL)
+    except Exception as e:
+        logger.error("summarize failed: %s", e, exc_info=True)
+        raise
+
+
 def strip_embedding(d: dict) -> dict:
     d.pop("embedding", None)
     return d
+
+
+def _prepare_for_llm(results: list[dict]) -> list[dict]:
+    """Shape search/list results for LLM consumption.
+
+    - Drop the embedding vector.
+    - Prefer ``summary``; fall back to full ``text`` when summary is empty.
+    - Never expose the full ``text`` when a summary exists.
+    """
+    for r in results:
+        r.pop("embedding", None)
+        if not r.get("summary"):
+            r["summary"] = r.get("text", "")
+        r.pop("text", None)
+    return results
 
 
 def memory_add(text: str, metadata: dict | None = None, namespace: str | None = None) -> dict:
     ns = namespace or DEFAULT_NAMESPACE
     logger.info("add: namespace=%s text_len=%d", ns, len(text))
     try:
-        eid = storage.add(text, embed(text), metadata=metadata, namespace=ns)
-        logger.info("add: ok id=%s", eid)
+        embedding = embed(text)
+        eid = storage.add(text, embedding, metadata=metadata, namespace=ns, summary=None)
+        # Summary is generated in the background — do not block the caller.
+        summary_worker.enqueue(eid, text)
+        logger.info("add: ok id=%s (summary async)", eid)
         return {"id": eid}
     except Exception as e:
         logger.error("add failed: %s", e, exc_info=True)
@@ -127,8 +159,19 @@ def memory_update(memory_id: str, text: str | None = None,
                   namespace: str | None = None) -> dict:
     logger.info("update: id=%s has_text=%s has_metadata=%s has_ns=%s", memory_id, text is not None, metadata is not None, namespace is not None)
     try:
-        embedding = embed(text) if text else None
-        ok = storage.update(memory_id, text=text, embedding=embedding, metadata=metadata, namespace=namespace)
+        if text is not None:
+            embedding = embed(text)
+            # Text changed: clear the stale summary now ("" clears it in storage),
+            # regenerate in the background worker.
+            summary = ""
+        else:
+            embedding = None
+            summary = None
+        ok = storage.update(memory_id, text=text, embedding=embedding,
+                            metadata=metadata, namespace=namespace, summary=summary)
+        if ok and text is not None:
+            # Text changed — stale summary must be cleared and regenerated async.
+            summary_worker.enqueue(memory_id, text)
         logger.info("update: %s", "ok" if ok else "not found")
         return {"success": ok}
     except Exception as e:
@@ -162,6 +205,7 @@ def memory_stats() -> dict:
     try:
         stats = storage.get_stats()
         stats["embed_model"] = EMBED_MODEL
+        stats["summarize_model"] = SUMMARIZE_MODEL
         stats["ollama_base_url"] = OLLAMA_BASE_URL
         stats["server_time"] = _now_utc_iso()
         return stats
@@ -176,10 +220,90 @@ def memory_import(file_path: str, namespace_prefix: str = "") -> dict:
         backend = "json" if file_path.endswith(".json") else "sqlite"
         src = create_storage(backend, path=file_path)
         result = storage.merge(src, namespace_prefix=namespace_prefix)
+        # Summarize imported records that carried no summary
+        summarized = 0
+        summarize_failed = 0
+        for mid in result.get("imported_ids", []):
+            mem = storage.get(mid)
+            if mem is None or mem.get("summary"):
+                continue
+            try:
+                summary = summarize(mem["text"])
+            except Exception:
+                summarize_failed += 1
+                continue
+            storage.update_summary(mid, summary)
+            summarized += 1
+        result["summarized"] = summarized
+        result["summarize_failed"] = summarize_failed
         logger.info("import: %s", result)
         return result
     except Exception as e:
         logger.error("import failed: %s", e, exc_info=True)
+        raise
+
+
+def memory_get_details(memory_ids: list[str]) -> dict:
+    """Fetch full content for a list of memory IDs (partial success).
+
+    Returns {"found": [...], "missing": [...]}. Embeddings are stripped.
+    """
+    logger.info("get_details: ids=%s", memory_ids)
+    try:
+        result = storage.get_details(memory_ids or [])
+        result["found"] = [strip_embedding(m) for m in result["found"]]
+        logger.info("get_details: found=%d missing=%d", len(result["found"]), len(result["missing"]))
+        return result
+    except Exception as e:
+        logger.error("get_details failed: %s", e, exc_info=True)
+        raise
+
+
+def memory_summarize(namespace: str | None = None, mode: str = "missing",
+                     memory_id: str | None = None) -> dict:
+    """Generate summaries for existing memories (migration entry point).
+
+    mode="missing" (default): only records with an empty summary.
+    mode="all": regenerate every summary (overwrite).
+
+    When ``memory_id`` is given, only that memory is processed (mode still applies:
+    "missing" skips records that already have a summary).
+
+    Summary-only updates never change updated_at (via storage.update_summary).
+    """
+    mode = mode if mode in ("missing", "all") else "missing"
+    logger.info("summarize migration: namespace=%s mode=%s memory_id=%s", namespace, mode, memory_id)
+    try:
+        if memory_id:
+            m = storage.get(memory_id)
+            if m is None:
+                result = {"processed": 0, "failed": 0, "mode": mode, "total": 0,
+                          "error": f"memory not found: {memory_id}", "memory_id": memory_id}
+                logger.info("summarize migration done: %s", result)
+                return result
+            memories = [m]
+        else:
+            memories = memory_list(namespace=namespace, limit=10 ** 9)
+        processed = 0
+        failed = 0
+        for m in memories:
+            if mode == "missing" and m.get("summary"):
+                continue
+            try:
+                summary = summarize(m["text"])
+            except Exception:
+                # keep summary empty so the record remains eligible for retry
+                failed += 1
+                continue
+            storage.update_summary(m["id"], summary)
+            processed += 1
+        result = {"processed": processed, "failed": failed, "mode": mode, "total": len(memories)}
+        if memory_id:
+            result["memory_id"] = memory_id
+        logger.info("summarize migration done: %s", result)
+        return result
+    except Exception as e:
+        logger.error("summarize migration failed: %s", e, exc_info=True)
         raise
 
 

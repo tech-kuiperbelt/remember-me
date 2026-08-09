@@ -54,6 +54,7 @@ def quick_sync(storage, batch_size=500):
                     m["id"], m["text"], m["embedding"],
                     m["metadata"], m["namespace"],
                     m["created_at"], m["updated_at"],
+                    m.get("summary"),
                 )
                 all_ids.append(m["id"])
                 synced += 1
@@ -101,6 +102,7 @@ def recover(target, source, batch_size=500):
                     m["id"], m["text"], m["embedding"],
                     m["metadata"], m["namespace"],
                     m["created_at"], m["updated_at"],
+                    m.get("summary"),
                 )
                 recovered += 1
             except Exception:

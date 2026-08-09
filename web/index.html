@@ -328,8 +328,9 @@ function renderMemories(data) {
     `<th class="sortable" onclick="toggleSort('created_at')">Created${sortArrow('created_at')}</th>` +
     '<th style="width:160px">Actions</th></tr></thead><tbody>';
   sorted.forEach(m => {
+    const displayText = m.summary || m.text;
     html += `<tr>
-      <td><div class="memory-text" title="${esc(m.text)}">${esc(m.text)}</div></td>
+      <td><div class="memory-text" title="${esc(displayText)}">${esc(displayText)}</div></td>
       <td><span class="badge ns">${esc(m.namespace)}</span></td>
       <td style="font-size:12px;color:#888">${formatTime(m.created_at)}</td>
       <td><div class="actions">
@@ -396,8 +397,12 @@ function showDetail(m, editable) {
     : `${copyBtn}<button class="btn btn-primary btn-sm" onclick="closeDetail();editMemory('${safeId}')">Edit</button><button class="btn btn-danger btn-sm" onclick="closeDetail();deleteMemory('${safeId}')">Delete</button><button class="btn btn-outline btn-sm" onclick="closeDetail()">Close</button>`;
 
   $('detail-body').setAttribute('style', 'padding:20px;overflow-y:auto;flex:1' + (editable ? ';display:flex;flex-direction:column' : ''));
+  const summaryHtml = m.summary
+    ? `<div class="value" style="white-space:pre-wrap">${esc(m.summary)}</div>`
+    : `<div class="value" style="color:#999">(none)</div>`;
   $('detail-body').innerHTML = `
     <div class="detail-field"><div class="label">ID</div><div class="value">${m.id}</div></div>
+    <div class="detail-field"><div class="label">Summary</div>${summaryHtml}</div>
     <div class="detail-field"${textFieldStyle}><div class="label">Text</div>${textHtml}</div>
     <div class="detail-field"><div class="label">Namespace</div><div class="value">${nsHtml}</div></div>
     <div class="detail-field"><div class="label">Created</div><div class="value">${formatTime(m.created_at) || '-'}</div></div>
@@ -504,9 +509,10 @@ function renderSearchResults(data) {
   }
   let html = '<table><thead><tr><th>Score</th><th>Text</th><th>Namespace</th><th style="width:100px">Actions</th></tr></thead><tbody>';
   data.forEach(m => {
+    const displayText = m.summary || m.text;
     html += `<tr>
       <td><span class="badge">${(m.score * 100).toFixed(1)}%</span></td>
-      <td><div class="memory-text" title="${esc(m.text)}">${esc(m.text)}</div></td>
+      <td><div class="memory-text" title="${esc(displayText)}">${esc(displayText)}</div></td>
       <td><span class="badge ns">${esc(m.namespace)}</span></td>
       <td><button class="btn btn-sm btn-outline" onclick="viewDetail('${m.id}')">View</button></td>
     </tr>`;
