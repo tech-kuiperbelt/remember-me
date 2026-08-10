@@ -166,10 +166,12 @@ async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
     logger.info("Tool call: %s %s", name, arguments)
     try:
         if name == "add":
-            return _ok(memory_add(arguments["text"], arguments.get("metadata"), arguments.get("namespace")))
+            return _ok(memory_add(arguments["text"], arguments.get("metadata"), arguments.get("namespace")),
+                       _TOOL_HINTS["add"])
         if name == "search":
             return _ok(_wrap_search(_prepare_for_llm(memory_search(arguments["query"], int(arguments.get("k", 5)),
-                                                                    float(arguments.get("threshold", 0.0)), arguments.get("namespace")))))
+                                                                    float(arguments.get("threshold", 0.0)), arguments.get("namespace")))),
+                       _TOOL_HINTS["search"])
         if name == "list":
             ns = arguments.get("namespace")
             limit = int(arguments.get("limit", 100))
@@ -177,19 +179,20 @@ async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
             sort_by = arguments.get("sort_by", "created_at")
             items = _prepare_for_llm(memory_list(ns, limit, offset, sort_by,
                                                  arguments.get("updated_after"), arguments.get("updated_before")))
-            return _ok(_wrap_list(items, ns, limit, offset, sort_by))
+            return _ok(_wrap_list(items, ns, limit, offset, sort_by), _TOOL_HINTS["list"])
         if name == "get":
             return _ok(memory_get(arguments["memory_id"]))
         if name == "get_details":
-            return _ok(memory_get_details(arguments["memory_ids"]))
+            return _ok(memory_get_details(arguments["memory_ids"]), _TOOL_HINTS["get_details"])
         if name == "update":
-            return _ok(memory_update(arguments["memory_id"], arguments.get("text"), arguments.get("metadata"), arguments.get("namespace")))
+            return _ok(memory_update(arguments["memory_id"], arguments.get("text"), arguments.get("metadata"), arguments.get("namespace")),
+                       _TOOL_HINTS["update"])
         if name == "delete":
-            return _ok(memory_delete(arguments["memory_id"]))
+            return _ok(memory_delete(arguments["memory_id"]), _TOOL_HINTS["delete"])
         if name == "clear":
             return _ok(memory_clear(arguments.get("namespace")))
         if name == "stats":
-            return _ok(_wrap_stats(memory_stats()))
+            return _ok(_wrap_stats(memory_stats()), _TOOL_HINTS["stats"])
         if name == "import":
             return _ok(memory_import(arguments["file_path"], arguments.get("namespace_prefix", "")))
         if name == "sync":
@@ -250,7 +253,27 @@ async def handle_read_resource(uri: str) -> types.ReadResourceResult:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _ok(data) -> types.CallToolResult:
+# Guidance appended to each tool's result so the LLM knows what it can do next
+# with the returned data. Kept intentionally concise.
+_TOOL_HINTS: dict[str, str] = {
+    "add": "Memory stored. You can now 'search' for it, or 'list' by namespace to confirm it appears.",
+    "search": "Results are ranked by relevance (score). Use 'get_details' with an id to read the full original text.",
+    "list": "Use 'get_details' with an id to read the full original text, or call 'search' for topic/keyword lookup.",
+    "get_details": "You now have the full text. You could 'update' a memory, or use the content to answer the user's question.",
+    "update": "Memory updated. Use 'get_details' with the id to verify the change, or 'search' to find related memories.",
+    "delete": "Memory soft-deleted. It no longer appears in 'search'/'list'. Call 'stats' to confirm the count.",
+    "stats": "Use 'namespace_counts' to pick a namespace, then 'list' or 'search' within it. Use 'server_time' for time-based queries.",
+}
+
+
+def _ok(data, hint: str = "") -> types.CallToolResult:
+    """Serialize a tool result; attach a 'hint' field guiding the LLM on next steps.
+
+    The hint is applied at the MCP tool boundary only — admin HTTP APIs are
+    unaffected.
+    """
+    if isinstance(data, dict) and hint:
+        data = {**data, "hint": hint}
     return types.CallToolResult(content=[
         types.TextContent(type="text", text=json.dumps(data, ensure_ascii=False, default=str)),
     ])
