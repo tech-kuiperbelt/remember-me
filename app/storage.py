@@ -1,4 +1,4 @@
-import uuid
+import secrets
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
@@ -16,7 +16,14 @@ def _now() -> str:
 
 
 def _new_id() -> str:
-    return str(uuid.uuid4())
+    """Generate a short memory ID: 16 hex chars (64 bits of randomness).
+
+    UUID v4 was 36 chars and too long for LLM-facing APIs. 64-bit random hex
+    keeps collision probability negligible (~1e-10 at a million records) while
+    staying short. Callers that persist IDs should check for uniqueness and
+    retry on collision (see migrate script).
+    """
+    return secrets.token_hex(8)
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
