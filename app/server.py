@@ -102,19 +102,9 @@ async def handle_list_tools() -> types.ListToolsResult:
             },
         ),
         types.Tool(
-            name="get",
-            description="Get a memory by ID.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "memory_id": {"type": "string"},
-                },
-                "required": ["memory_id"],
-            },
-        ),
-        types.Tool(
             name="get_details",
-            description="Fetch full content for multiple memories by ID. "
+            description="Fetch full content for one or more memories by ID. "
+                        "Accepts a single ID or an array of IDs. "
                         "Returns the complete text of each found memory plus the list of IDs that "
                         "do not exist (partial success). Use this when a search/list summary looks "
                         "relevant and you need the full original content.",
@@ -124,7 +114,7 @@ async def handle_list_tools() -> types.ListToolsResult:
                     "memory_ids": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Array of memory IDs to fetch full content for",
+                        "description": "Array of memory IDs to fetch full content for (a single ID also works)",
                     },
                 },
                 "required": ["memory_ids"],
@@ -158,68 +148,11 @@ async def handle_list_tools() -> types.ListToolsResult:
             },
         ),
         types.Tool(
-            name="clear",
-            description="Delete all memories (or within a namespace). Use with caution — there is no undo.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "namespace": {"type": "string"},
-                },
-            },
-        ),
-        types.Tool(
             name="stats",
             description="Storage statistics and configuration. Includes 'server_time' (current UTC time) — "
                         "check this first when a user asks a time-based question (e.g. \"what did we do last week / this month\"), "
                         "so you can compute the correct updated_after/updated_before values for the 'list' tool.",
             inputSchema={"type": "object", "properties": {}},
-        ),
-        types.Tool(
-            name="import",
-            description="Import memories from another storage file. Supports .db, .jsonl and .json.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "file_path": {"type": "string", "description": "Path to source DB/JSON file"},
-                    "namespace_prefix": {"type": "string", "description": "Optional prefix for imported namespaces"},
-                },
-                "required": ["file_path"],
-            },
-        ),
-        types.Tool(
-            name="sync",
-            description="Force full rebuild of the secondary/backup storage from the primary database. Safe to call anytime — no data is lost, old backup data is replaced. Only available in dual storage mode.",
-            inputSchema={"type": "object", "properties": {}},
-        ),
-        types.Tool(
-            name="recover",
-            description="Rebuild target storage from source storage file. Clears target first. For disaster recovery.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "source_path": {"type": "string", "description": "Path to source storage file"},
-                    "target_path": {"type": "string", "description": "Path to target storage file (will be overwritten)"},
-                },
-                "required": ["source_path", "target_path"],
-            },
-        ),
-        types.Tool(
-            name="summarize",
-            description="Generate summaries for existing memories. "
-                        "mode='missing' (default) only processes memories whose summary is empty; "
-                        "mode='all' regenerates every summary (use after a summary model/algorithm change). "
-                        "Pass memory_id to process a single memory by ID. "
-                        "Summary-only updates do not change updated_at.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "namespace": {"type": "string", "description": "Optional namespace filter"},
-                    "mode": {"type": "string", "enum": ["missing", "all"],
-                             "description": "'missing' (default) = only empty summaries; 'all' = regenerate every summary"},
-                    "memory_id": {"type": "string",
-                                  "description": "Optional: only generate a summary for this memory ID"},
-                },
-            },
         ),
         types.Tool(
             name="namespaces",
@@ -239,12 +172,16 @@ async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
         if name == "add":
             return _ok(memory_add(arguments["text"], arguments.get("metadata"), arguments.get("namespace")))
         if name == "search":
-            return _ok(_prepare_for_llm(memory_search(arguments["query"], int(arguments.get("k", 5)),
-                                                      float(arguments.get("threshold", 0.0)), arguments.get("namespace"))))
+            return _ok(_wrap_search(_prepare_for_llm(memory_search(arguments["query"], int(arguments.get("k", 5)),
+                                                                    float(arguments.get("threshold", 0.0)), arguments.get("namespace")))))
         if name == "list":
-            return _ok(_prepare_for_llm(memory_list(arguments.get("namespace"), int(arguments.get("limit", 100)),
-                                                    int(arguments.get("offset", 0)), arguments.get("sort_by", "created_at"),
-                                                    arguments.get("updated_after"), arguments.get("updated_before"))))
+            ns = arguments.get("namespace")
+            limit = int(arguments.get("limit", 100))
+            offset = int(arguments.get("offset", 0))
+            sort_by = arguments.get("sort_by", "created_at")
+            items = _prepare_for_llm(memory_list(ns, limit, offset, sort_by,
+                                                 arguments.get("updated_after"), arguments.get("updated_before")))
+            return _ok(_wrap_list(items, ns, limit, offset, sort_by))
         if name == "get":
             return _ok(memory_get(arguments["memory_id"]))
         if name == "get_details":
@@ -321,6 +258,32 @@ def _ok(data) -> types.CallToolResult:
     return types.CallToolResult(content=[
         types.TextContent(type="text", text=json.dumps(data, ensure_ascii=False, default=str)),
     ])
+
+
+def _wrap_list(items: list, namespace: str | None, limit: int, offset: int, sort_by: str) -> dict:
+    """Attach usage guidance to list results so the LLM knows how to consume them.
+
+    The raw item list must stay an array for the admin UI (/api/memories);
+    this wrapper is only applied at the MCP tool boundary.
+    """
+    scope = f"namespace={namespace!r}" if namespace else "all namespaces"
+    note = (
+        f"{len(items)} memories (limit={limit}, offset={offset}) from {scope}, "
+        f"sorted by {sort_by} descending. Items carry summary (full text when no "
+        f"summary yet). To see the complete original content, call 'get_details' "
+        f"with the returned ids."
+    )
+    return {"note": note, "total": len(items), "items": items}
+
+
+def _wrap_search(items: list) -> dict:
+    """Attach usage guidance to search results (same rationale as _wrap_list)."""
+    note = (
+        f"{len(items)} results, ranked by semantic similarity (score). Items carry "
+        f"summary (full text when no summary yet). To see the complete original "
+        f"content, call 'get_details' with the returned ids."
+    )
+    return {"note": note, "total": len(items), "items": items}
 
 
 # ---------------------------------------------------------------------------

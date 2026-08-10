@@ -93,7 +93,7 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
   <a id="nav-search" onclick="switchPage('search')">Search</a>
   <a id="nav-add" onclick="switchPage('add')">Add Memory</a>
   <a id="nav-stats" onclick="switchPage('stats')">Stats</a>
-  <a id="nav-migrate" onclick="switchPage('migrate')">Migrate</a>
+  <a id="nav-ops" onclick="switchPage('ops')">运维</a>
 </div>
 
 <div class="content">
@@ -191,8 +191,139 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
   </div>
 </div>
 
-<!-- Migrate -->
-<div class="page" id="page-migrate">
+<!-- Clear confirmation modal -->
+<div id="clear-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:200;align-items:center;justify-content:center" onclick="closeClearModal(event)">
+  <div style="background:#fff;border-radius:12px;width:480px;max-width:92vw;padding:24px;box-shadow:0 8px 32px rgba(0,0,0,.25)" onclick="event.stopPropagation()">
+    <div style="font-size:16px;font-weight:700;color:#e53935;margin-bottom:8px">⚠️ Confirm Clear</div>
+    <div style="font-size:13px;color:#666;margin-bottom:16px">
+      This will permanently delete <strong id="clear-confirm-scope"></strong>. This cannot be undone.<br>
+      To confirm, type the code below exactly:
+    </div>
+    <div style="text-align:center;font-size:28px;font-weight:700;letter-spacing:6px;font-family:monospace;background:#f8f9fa;padding:12px;border-radius:8px;margin-bottom:16px;user-select:text" id="clear-confirm-code">ABCDef12</div>
+    <div class="form-group">
+      <input id="clear-confirm-input" placeholder="Enter the code above" style="text-align:center;font-size:18px;font-family:monospace;letter-spacing:4px;text-transform:none" oninput="checkClearCode()" onkeydown="if(event.key==='Enter'){checkClearCode(true)}">
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button id="btn-clear-cancel" class="btn btn-outline" onclick="closeClearModal()">Cancel</button>
+      <button id="btn-clear-confirm" class="btn btn-danger" disabled onclick="doClearConfirmed()">Confirm Clear</button>
+    </div>
+  </div>
+</div>
+
+<!-- Ops (运维) -->
+<div class="page" id="page-ops">
+  <!-- Restart Server -->
+  <div class="card">
+    <div class="card-header">Restart Server</div>
+    <div class="card-body">
+      <p style="font-size:13px;color:#888;margin-bottom:12px">Restart the MCP server process in place. Active MCP connections will drop briefly and need to reconnect.</p>
+      <button id="btn-restart" class="btn btn-primary" onclick="doRestartServer()">Restart Server</button>
+      <span id="restart-result" style="margin-left:12px;font-size:13px"></span>
+    </div>
+  </div>
+
+  <!-- Import -->
+  <div class="card">
+    <div class="card-header">Import</div>
+    <div class="card-body">
+      <div class="form-row">
+        <div class="form-group" style="flex:2">
+          <label>File path (server path)</label>
+          <input id="import-path" placeholder="/path/to/memories.db">
+        </div>
+        <div class="form-group" style="flex:1">
+          <label>Namespace prefix (optional)</label>
+          <input id="import-prefix" placeholder="">
+        </div>
+      </div>
+      <div style="margin-top:16px">
+        <button id="btn-import" class="btn btn-primary" onclick="doImport()">Import</button>
+        <span id="import-result" style="margin-left:12px;font-size:13px"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sync -->
+  <div class="card">
+    <div class="card-header">Sync</div>
+    <div class="card-body">
+      <p style="font-size:13px;color:#888;margin-bottom:12px">Force rebuild of the secondary/backup storage from the primary database.</p>
+      <button id="btn-sync" class="btn btn-primary" onclick="doSync()">Sync Now</button>
+      <span id="sync-result" style="margin-left:12px;font-size:13px"></span>
+    </div>
+  </div>
+
+  <!-- Recover -->
+  <div class="card">
+    <div class="card-header">Recover</div>
+    <div class="card-body">
+      <p style="font-size:13px;color:#888;margin-bottom:12px">Rebuild target storage from source storage file. Clears target first.</p>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Source file</label>
+          <input id="recover-source" placeholder="data/memories.jsonl">
+        </div>
+        <div class="form-group">
+          <label>Target file</label>
+          <input id="recover-target" placeholder="data/memories.db">
+        </div>
+      </div>
+      <div style="margin-top:16px">
+        <button id="btn-recover" class="btn btn-danger" onclick="doRecover()">Recover</button>
+        <span id="recover-result" style="margin-left:12px;font-size:13px"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Summarize -->
+  <div class="card">
+    <div class="card-header">Summarize</div>
+    <div class="card-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Namespace (optional)</label>
+          <select id="summarize-ns">
+            <option value="">(all namespaces)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Memory ID (optional)</label>
+          <input id="summarize-id" placeholder="Leave empty for batch">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Mode</label>
+        <select id="summarize-mode">
+          <option value="missing">Missing only (default)</option>
+          <option value="all">Regenerate all</option>
+        </select>
+      </div>
+      <div style="margin-top:16px">
+        <button id="btn-summarize" class="btn btn-primary" onclick="doSummarize()">Generate Summaries</button>
+        <span id="summarize-result" style="margin-left:12px;font-size:13px"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Clear -->
+  <div class="card">
+    <div class="card-header">Clear</div>
+    <div class="card-body">
+      <p style="font-size:13px;color:#e53935;margin-bottom:12px">⚠️ Danger: this deletes memories. There is no undo.</p>
+      <div class="form-group">
+        <label>Namespace (optional)</label>
+        <select id="clear-ns">
+          <option value="">(all namespaces)</option>
+        </select>
+      </div>
+      <div style="margin-top:16px">
+        <button id="btn-clear" class="btn btn-danger" onclick="doClearAll()">Clear</button>
+        <span id="clear-result" style="margin-left:12px;font-size:13px"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Migrate Namespace -->
   <div class="card">
     <div class="card-header">Migrate Namespace</div>
     <div class="card-body">
@@ -267,7 +398,7 @@ function switchPage(name) {
   document.querySelector(`.nav a[onclick*="${name}"]`).classList.add('active');
   if (name === 'memories') loadMemories();
   if (name === 'stats') loadStats();
-  if (name === 'migrate') loadMigratePage();
+  if (name === 'ops') loadOpsPage();
 }
 
 // Memories list
@@ -628,7 +759,7 @@ function onDebugClick(e) {
   navigator.clipboard.writeText(el.id).catch(() => {});
 }
 
-async function loadMigratePage() {
+async function loadOpsPage() {
   const data = await api('/stats');
   const nsList = data.namespace_counts ? Object.keys(data.namespace_counts) : [];
   nsList.sort();
@@ -649,6 +780,28 @@ async function loadMigratePage() {
     opt.value = ns;
     opt.textContent = ns;
     dl.appendChild(opt);
+  });
+  // Summarize namespace dropdown
+  const sumSel = $('summarize-ns');
+  const sumCur = sumSel.value;
+  sumSel.innerHTML = '<option value="">(all namespaces)</option>';
+  nsList.forEach(ns => {
+    const opt = document.createElement('option');
+    opt.value = ns;
+    opt.textContent = ns;
+    if (ns === sumCur) opt.selected = true;
+    sumSel.appendChild(opt);
+  });
+  // Clear namespace dropdown
+  const clrSel = $('clear-ns');
+  const clrCur = clrSel.value;
+  clrSel.innerHTML = '<option value="">(all namespaces)</option>';
+  nsList.forEach(ns => {
+    const opt = document.createElement('option');
+    opt.value = ns;
+    opt.textContent = ns;
+    if (ns === clrCur) opt.selected = true;
+    clrSel.appendChild(opt);
   });
   $('migrate-result').textContent = '';
 }
@@ -676,8 +829,178 @@ async function doMigrate() {
       resultEl.textContent = result.error;
     } else {
       resultEl.textContent = `✅ Migrated ${result.migrated} memories from "${source}" to "${target}".`;
-      loadMigratePage();
+      loadOpsPage();
     }
+  } catch(e) {
+    resultEl.textContent = 'Error: ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// Ops actions
+async function doRestartServer() {
+  if (!confirm('Restart the MCP server now? MCP connections will drop and reconnect.')) return;
+  const resultEl = $('restart-result');
+  const btn = $('btn-restart');
+  btn.disabled = true;
+  resultEl.textContent = 'Restarting...';
+  try {
+    const result = await api('/restart', {method: 'POST'});
+    resultEl.textContent = `✅ Server restarting: ${result.argv.join(' ')}`;
+    setTimeout(() => { resultEl.textContent = 'Waiting for server to come back...'; }, 3000);
+  } catch(e) {
+    // Server restarts mid-request; a fetch error is expected — treat as success.
+    resultEl.textContent = '✅ Restart triggered (connection dropped as expected).';
+  }
+}
+
+async function doImport() {
+  const path = $('import-path').value.trim();
+  const prefix = $('import-prefix').value.trim();
+  const resultEl = $('import-result');
+  const btn = $('btn-import');
+  if (!path) { resultEl.textContent = 'Please enter a file path.'; return; }
+  btn.disabled = true;
+  resultEl.textContent = 'Importing...';
+  try {
+    const result = await api('/import', {
+      method: 'POST',
+      body: JSON.stringify({file_path: path, namespace_prefix: prefix}),
+    });
+    const total = result.imported_ids ? result.imported_ids.length : 0;
+    resultEl.textContent = `✅ Imported ${total} memories (summarized: ${result.summarized || 0}, failed: ${result.summarize_failed || 0}).`;
+    refreshStats();
+  } catch(e) {
+    resultEl.textContent = 'Error: ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function doSync() {
+  const resultEl = $('sync-result');
+  const btn = $('btn-sync');
+  btn.disabled = true;
+  resultEl.textContent = 'Syncing...';
+  try {
+    const result = await api('/sync', {method: 'POST'});
+    if (result.error) {
+      resultEl.textContent = result.error;
+    } else {
+      resultEl.textContent = `✅ Synced ${result.synced || 0} records (errors: ${result.errors || 0}).`;
+    }
+  } catch(e) {
+    resultEl.textContent = 'Error: ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function doRecover() {
+  const source = $('recover-source').value.trim();
+  const target = $('recover-target').value.trim();
+  const resultEl = $('recover-result');
+  const btn = $('btn-recover');
+  if (!source || !target) { resultEl.textContent = 'Please enter both source and target paths.'; return; }
+  if (!confirm(`Rebuild "${target}" from "${source}"? The target will be cleared first.`)) return;
+  btn.disabled = true;
+  resultEl.textContent = 'Recovering...';
+  try {
+    const result = await api('/recover', {
+      method: 'POST',
+      body: JSON.stringify({source, target}),
+    });
+    resultEl.textContent = `✅ Recovered (synced: ${result.synced || 0}, errors: ${result.errors || 0}).`;
+  } catch(e) {
+    resultEl.textContent = 'Error: ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function doSummarize() {
+  const ns = $('summarize-ns').value.trim() || undefined;
+  const memoryId = $('summarize-id').value.trim() || undefined;
+  const mode = $('summarize-mode').value;
+  const resultEl = $('summarize-result');
+  const btn = $('btn-summarize');
+  btn.disabled = true;
+  resultEl.textContent = 'Generating... (this may take a while)';
+  try {
+    const result = await api('/summarize', {
+      method: 'POST',
+      body: JSON.stringify({namespace: ns, mode, memory_id: memoryId}),
+    });
+    if (result.error) {
+      resultEl.textContent = result.error;
+    } else {
+      resultEl.textContent = `✅ Processed ${result.processed || 0} / total ${result.total || 0} (failed: ${result.failed || 0}).`;
+    }
+  } catch(e) {
+    resultEl.textContent = 'Error: ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// Clear — protected by a generated 8-char case-sensitive confirmation code
+let _clearScope = '';
+let _clearCode = '';
+
+const CODE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+
+function genClearCode(len = 8) {
+  let out = '';
+  const arr = new Uint32Array(len);
+  crypto.getRandomValues(arr);
+  for (let i = 0; i < len; i++) out += CODE_CHARS[arr[i] % CODE_CHARS.length];
+  return out;
+}
+
+function openClearModal(scope) {
+  _clearScope = scope;
+  _clearCode = genClearCode();
+  $('clear-confirm-scope').textContent = scope;
+  $('clear-confirm-code').textContent = _clearCode;
+  const input = $('clear-confirm-input');
+  input.value = '';
+  input.focus();
+  $('btn-clear-confirm').disabled = true;
+  $('clear-modal').style.display = 'flex';
+}
+
+function checkClearCode(confirmOnMatch = false) {
+  const ok = $('clear-confirm-input').value === _clearCode;
+  $('btn-clear-confirm').disabled = !ok;
+  if (confirmOnMatch && ok) doClearConfirmed();
+}
+
+function closeClearModal(e) {
+  if (e && e.target !== e.currentTarget) return;
+  $('clear-modal').style.display = 'none';
+  _clearScope = '';
+  _clearCode = '';
+}
+
+async function doClearAll() {
+  const ns = $('clear-ns').value.trim() || undefined;
+  const scope = ns ? `namespace "${ns}"` : 'ALL namespaces';
+  openClearModal(scope);
+}
+
+async function doClearConfirmed() {
+  const ns = $('clear-ns').value.trim() || undefined;
+  const resultEl = $('clear-result');
+  const btn = $('btn-clear');
+  closeClearModal();
+  btn.disabled = true;
+  resultEl.textContent = 'Clearing...';
+  try {
+    const q = ns ? '?namespace=' + encodeURIComponent(ns) : '';
+    const result = await api('/memories' + q, {method: 'DELETE'});
+    resultEl.textContent = `✅ Deleted ${result.deleted} memories.`;
+    refreshStats();
   } catch(e) {
     resultEl.textContent = 'Error: ' + e.message;
   } finally {

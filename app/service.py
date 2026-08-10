@@ -62,20 +62,27 @@ def summarize(text: str) -> str:
         raise
 
 
-def strip_embedding(d: dict) -> dict:
+def _strip_internal_fields(d: dict) -> dict:
+    """Remove storage-internal fields from a record before exposing it.
+
+    ``embedding`` is a large vector with no LLM value; ``deleted``/``synced``
+    are sync-protocol bookkeeping fields. All are dropped from every
+    LLM-facing API (search/list/get/get_details).
+    """
     d.pop("embedding", None)
+    d.pop("deleted", None)
+    d.pop("synced", None)
     return d
 
 
 def _prepare_for_llm(results: list[dict]) -> list[dict]:
     """Shape search/list results for LLM consumption.
 
-    - Drop the embedding vector.
+    - Internal fields (embedding/deleted/synced) are dropped by the callers.
     - Prefer ``summary``; fall back to full ``text`` when summary is empty.
     - Never expose the full ``text`` when a summary exists.
     """
     for r in results:
-        r.pop("embedding", None)
         if not r.get("summary"):
             r["summary"] = r.get("text", "")
         r.pop("text", None)
@@ -118,7 +125,7 @@ def memory_search(query: str, k: int = 5, threshold: float = 0.0,
         query_emb = embed(query)
         results = storage.search(query_emb, k=k, threshold=threshold, namespace=namespace)
         logger.info("search: %d results", len(results))
-        return [strip_embedding(r) for r in results]
+        return [_strip_internal_fields(r) for r in results]
     except Exception as e:
         logger.error("search failed: %s", e, exc_info=True)
         raise
@@ -137,7 +144,7 @@ def memory_list(namespace: str | None = None, limit: int = 100,
                                         sort_by=sort_by, updated_after=updated_after,
                                         updated_before=updated_before)
         logger.info("list: %d results", len(results))
-        return [strip_embedding(r) for r in results]
+        return [_strip_internal_fields(r) for r in results]
     except Exception as e:
         logger.error("list failed: %s", e, exc_info=True)
         raise
@@ -148,7 +155,7 @@ def memory_get(memory_id: str) -> dict | None:
     try:
         result = storage.get(memory_id)
         logger.info("get: %s", "found" if result else "not found")
-        return strip_embedding(result) if result else None
+        return _strip_internal_fields(result) if result else None
     except Exception as e:
         logger.error("get failed: %s", e, exc_info=True)
         raise
@@ -220,22 +227,16 @@ def memory_import(file_path: str, namespace_prefix: str = "") -> dict:
         backend = "json" if file_path.endswith(".json") else "sqlite"
         src = create_storage(backend, path=file_path)
         result = storage.merge(src, namespace_prefix=namespace_prefix)
-        # Summarize imported records that carried no summary
-        summarized = 0
-        summarize_failed = 0
+        # Summaries for imported records without one are generated in the
+        # background worker (like add/update) — never block the request.
+        enqueued = 0
         for mid in result.get("imported_ids", []):
             mem = storage.get(mid)
             if mem is None or mem.get("summary"):
                 continue
-            try:
-                summary = summarize(mem["text"])
-            except Exception:
-                summarize_failed += 1
-                continue
-            storage.update_summary(mid, summary)
-            summarized += 1
-        result["summarized"] = summarized
-        result["summarize_failed"] = summarize_failed
+            summary_worker.enqueue(mid, mem["text"])
+            enqueued += 1
+        result["summarize_queued"] = enqueued
         logger.info("import: %s", result)
         return result
     except Exception as e:
@@ -251,7 +252,7 @@ def memory_get_details(memory_ids: list[str]) -> dict:
     logger.info("get_details: ids=%s", memory_ids)
     try:
         result = storage.get_details(memory_ids or [])
-        result["found"] = [strip_embedding(m) for m in result["found"]]
+        result["found"] = [_strip_internal_fields(m) for m in result["found"]]
         logger.info("get_details: found=%d missing=%d", len(result["found"]), len(result["missing"]))
         return result
     except Exception as e:

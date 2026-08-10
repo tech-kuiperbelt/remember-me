@@ -1,6 +1,9 @@
 import json
 import sys
+import os
 import logging
+import threading
+import time
 from pathlib import Path
 from starlette.responses import Response, FileResponse
 from starlette.routing import Route
@@ -8,7 +11,8 @@ from starlette.requests import Request
 
 from .service import memory_add, memory_search, memory_list, memory_get, \
     memory_update, memory_delete, memory_clear, memory_stats, memory_sync, memory_recover, \
-    memory_namespaces, memory_migrate_namespace, memory_get_details, memory_summarize
+    memory_namespaces, memory_migrate_namespace, memory_get_details, memory_summarize, \
+    memory_import
 
 logger = logging.getLogger("admin")
 
@@ -136,6 +140,19 @@ async def handle_clear_memories(request: Request):
         return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
 
 
+async def handle_import_memories(request: Request):
+    try:
+        body = await request.json()
+        file_path = body["file_path"]
+        prefix = body.get("namespace_prefix", "")
+        logger.info("POST /api/import file=%s prefix=%s", file_path, prefix)
+        result = memory_import(file_path, prefix)
+        return Response(json.dumps(result, ensure_ascii=False), media_type="application/json")
+    except Exception as e:
+        logger.error("POST /api/import failed: %s", e, exc_info=True)
+        return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
+
+
 async def handle_search_memories(request: Request):
     try:
         body = await request.json()
@@ -183,6 +200,25 @@ async def handle_recover(request: Request):
         return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
 
 
+async def handle_restart(request: Request):
+    """Restart the server process in place (same argv/env).
+
+    Replies first so the browser gets a response, then re-execs after a short
+    delay from a daemon thread. Connection drops briefly; clients reconnect.
+    """
+    logger.info("POST /api/restart requested")
+    argv = [sys.executable, "-m", "app.server"] + sys.argv[1:]
+    logger.info("restart: exec argv=%s", argv)
+
+    def _do_restart():
+        time.sleep(0.5)  # let the HTTP response flush first
+        os.execv(sys.executable, argv)
+
+    threading.Thread(target=_do_restart, daemon=True).start()
+    return Response(json.dumps({"status": "restarting", "argv": argv}, ensure_ascii=False),
+                    media_type="application/json")
+
+
 async def handle_migrate_namespace(request: Request):
     try:
         body = await request.json()
@@ -207,8 +243,10 @@ admin_routes = [
     Route("/api/memories/{memory_id}", endpoint=handle_update_memory, methods=["PUT"]),
     Route("/api/memories/{memory_id}", endpoint=handle_delete_memory, methods=["DELETE"]),
     Route("/api/stats", endpoint=handle_stats, methods=["GET"]),
+    Route("/api/import", endpoint=handle_import_memories, methods=["POST"]),
     Route("/api/sync", endpoint=handle_sync, methods=["POST"]),
     Route("/api/recover", endpoint=handle_recover, methods=["POST"]),
+    Route("/api/restart", endpoint=handle_restart, methods=["POST"]),
     Route("/api/summarize", endpoint=handle_summarize, methods=["POST"]),
     Route("/api/namespaces/migrate", endpoint=handle_migrate_namespace, methods=["POST"]),
 ]
