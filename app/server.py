@@ -63,7 +63,7 @@ async def handle_list_tools() -> types.ListToolsResult:
                         "call 'get_details' with the returned IDs to fetch full content. "
                         "For time-based questions (e.g. \"what did we do recently / last session\") "
                         "use 'list' with sort_by='updated_at' instead. "
-                        "If no results are found, call 'namespaces' first to verify the correct namespace, "
+                        "If no results are found, call 'stats' first to verify the correct namespace, "
                         "then try searching again.",
             inputSchema={
                 "type": "object",
@@ -71,7 +71,7 @@ async def handle_list_tools() -> types.ListToolsResult:
                     "query": {"type": "string", "description": "Search text — automatically embedded for semantic similarity matching"},
                     "k": {"type": "integer", "description": "Max number of results to return (default: 5). Increase this (e.g. 20) when searching broadly or if results seem sparse."},
                     "threshold": {"type": "number", "description": "Minimum similarity score 0-1 (default: 0 = no filter). Higher values return fewer but more relevant results. Keep at 0 unless you want to narrow down."},
-                    "namespace": {"type": "string", "description": "Only search within this namespace (optional). Leave empty to search all namespaces. If you get no results, call 'namespaces' first to check available namespaces."},
+                    "namespace": {"type": "string", "description": "Only search within this namespace (optional). Leave empty to search all namespaces. If you get no results, call 'stats' first to check available namespaces."},
                 },
                 "required": ["query"],
             },
@@ -149,17 +149,13 @@ async def handle_list_tools() -> types.ListToolsResult:
         ),
         types.Tool(
             name="stats",
-            description="Storage statistics and configuration. Includes 'server_time' (current UTC time) — "
-                        "check this first when a user asks a time-based question (e.g. \"what did we do last week / this month\"), "
-                        "so you can compute the correct updated_after/updated_before values for the 'list' tool.",
-            inputSchema={"type": "object", "properties": {}},
-        ),
-        types.Tool(
-            name="namespaces",
-            description="List all existing namespace names and their record counts. "
-                        "Use this for admin audit — check available namespaces before "
-                        "search or add to avoid missing results or creating duplicates. "
-                        "The default namespace is set via MEMORY_DEFAULT_NAMESPACE env var.",
+            description="Storage statistics. Returns 'total' (record count), 'namespace_counts' "
+                        "(map of namespace -> record count, e.g. check namespaces before search/add to "
+                        "avoid missing results or creating duplicates), and 'server_time' (current UTC "
+                        "time). Check 'server_time' first when a user asks a time-based question "
+                        "(e.g. \"what did we do last week / this month\") so you can compute the correct "
+                        "updated_after/updated_before values for the 'list' tool. The default namespace "
+                        "is set via MEMORY_DEFAULT_NAMESPACE env var.",
             inputSchema={"type": "object", "properties": {}},
         ),
     ])
@@ -193,7 +189,7 @@ async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
         if name == "clear":
             return _ok(memory_clear(arguments.get("namespace")))
         if name == "stats":
-            return _ok(memory_stats())
+            return _ok(_wrap_stats(memory_stats()))
         if name == "import":
             return _ok(memory_import(arguments["file_path"], arguments.get("namespace_prefix", "")))
         if name == "sync":
@@ -284,6 +280,15 @@ def _wrap_search(items: list) -> dict:
         f"content, call 'get_details' with the returned ids."
     )
     return {"note": note, "total": len(items), "items": items}
+
+
+def _wrap_stats(data: dict) -> dict:
+    """Strip internal details from stats — LLM only needs counts + time.
+
+    The admin HTTP API keeps the full payload (primary/secondary/backend/…);
+    this wrapper is only applied at the MCP tool boundary.
+    """
+    return {k: data[k] for k in ("total", "namespace_counts", "server_time")}
 
 
 # ---------------------------------------------------------------------------
