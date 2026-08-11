@@ -43,7 +43,10 @@ async def handle_list_tools() -> types.ListToolsResult:
     return types.ListToolsResult(tools=[
         types.Tool(
             name="add",
-            description="Store a new memory. Text is automatically embedded for semantic search.",
+            description="Store a new memory. Text is automatically embedded for semantic search. "
+                        "Deduplicated by content+namespace: if the same text already exists in the "
+                        "target namespace, no duplicate is inserted and the existing record's id is "
+                        "returned with created=false.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -256,7 +259,7 @@ async def handle_read_resource(uri: str) -> types.ReadResourceResult:
 # Guidance appended to each tool's result so the LLM knows what it can do next
 # with the returned data. Kept intentionally concise.
 _TOOL_HINTS: dict[str, str] = {
-    "add": "Memory stored. You can now 'search' for it, or 'list' by namespace to confirm it appears.",
+    "add": "Memory stored (created=true). If created=false, an identical record already exists in this namespace and the returned id is the existing one — consider 'update' instead of re-adding.",
     "search": "Results are ranked by relevance (score). Use 'get_details' with an id to read the full original text.",
     "list": "Use 'get_details' with an id to read the full original text, or call 'search' for topic/keyword lookup.",
     "get_details": "You now have the full text. You could 'update' a memory, or use the content to answer the user's question.",

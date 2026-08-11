@@ -125,16 +125,23 @@ class SQLiteStorage(MemoryStorage):
     # -- public API --
 
     def add(self, text, embedding, metadata=None, namespace=DEFAULT_NAMESPACE, summary=None):
-        eid = _new_id()
-        now = _now()
+        """Insert a memory; dedup on (namespace, text). Returns {"id", "created"}."""
         with self._lock:
+            existing = self.conn.execute(
+                "SELECT id FROM memories WHERE namespace = ? AND text = ? AND deleted = 0 LIMIT 1",
+                (namespace, text),
+            ).fetchone()
+            if existing:
+                return {"id": existing[0], "created": False}
+            eid = _new_id()
+            now = _now()
             self.conn.execute(
                 "INSERT INTO memories (id, text, embedding, metadata, namespace, created_at, updated_at, synced, summary) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)",
                 (eid, text, self._serialize(embedding), json.dumps(metadata or {}), namespace, now, now, summary),
             )
             self.conn.commit()
-        return eid
+        return {"id": eid, "created": True}
 
     def search(self, query_embedding, k=5, threshold=0.0, namespace=None):
         with self._lock:
@@ -281,20 +288,32 @@ class SQLiteStorage(MemoryStorage):
     def merge(self, source_storage, namespace_prefix=""):
         imported = 0
         renamed = 0
+        skipped = 0
         imported_ids = []
         with self._lock:
             existing_ids = set(
                 row[0]
                 for row in self.conn.execute("SELECT id FROM memories WHERE deleted = 0").fetchall()
             )
+            existing_pairs = set(
+                (row[0], row[1])
+                for row in self.conn.execute(
+                    "SELECT namespace, text FROM memories WHERE deleted = 0"
+                ).fetchall()
+            )
             src_memories = source_storage.list_memories(limit=10 ** 9)
             for m in src_memories:
+                ns = namespace_prefix + m["namespace"]
+                # Dedup on content + namespace: already present → skip.
+                if (ns, m["text"]) in existing_pairs:
+                    skipped += 1
+                    continue
                 mid = m["id"]
                 if mid in existing_ids:
                     mid = _new_id()
                     renamed += 1
                 existing_ids.add(mid)
-                ns = namespace_prefix + m["namespace"]
+                existing_pairs.add((ns, m["text"]))
                 self.conn.execute(
                     "INSERT INTO memories (id, text, embedding, metadata, namespace, created_at, updated_at, synced, summary) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)",
@@ -305,8 +324,8 @@ class SQLiteStorage(MemoryStorage):
                 imported += 1
                 imported_ids.append(mid)
             self.conn.commit()
-        return {"imported": imported, "renamed": renamed, "total": len(src_memories),
-                "imported_ids": imported_ids}
+        return {"imported": imported, "skipped": skipped, "renamed": renamed,
+                "total": len(src_memories), "imported_ids": imported_ids}
 
     def get_stats(self):
         with self._lock:

@@ -94,11 +94,16 @@ def memory_add(text: str, metadata: dict | None = None, namespace: str | None = 
     logger.info("add: namespace=%s text_len=%d", ns, len(text))
     try:
         embedding = embed(text)
-        eid = storage.add(text, embedding, metadata=metadata, namespace=ns, summary=None)
-        # Summary is generated in the background — do not block the caller.
-        summary_worker.enqueue(eid, text)
-        logger.info("add: ok id=%s (summary async)", eid)
-        return {"id": eid}
+        result = storage.add(text, embedding, metadata=metadata, namespace=ns, summary=None)
+        eid = result["id"]
+        if result.get("created"):
+            # New record: summary is generated in the background — do not block the caller.
+            summary_worker.enqueue(eid, text)
+            logger.info("add: ok id=%s (summary async)", eid)
+        else:
+            # Duplicate (namespace + text): existing record returned untouched.
+            logger.info("add: duplicate skipped id=%s", eid)
+        return {"id": eid, "created": result.get("created", True)}
     except Exception as e:
         logger.error("add failed: %s", e, exc_info=True)
         raise

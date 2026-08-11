@@ -39,7 +39,16 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
 class MemoryStorage(ABC):
     @abstractmethod
     def add(self, text: str, embedding: list[float], metadata: Optional[dict] = None,
-            namespace: str = DEFAULT_NAMESPACE, summary: Optional[str] = None) -> str: ...
+            namespace: str = DEFAULT_NAMESPACE, summary: Optional[str] = None) -> dict[str, Any]:
+        """Insert a memory. Returns {"id": ..., "created": bool}.
+
+        Dedup rule (content + namespace): if an active (non-deleted) record
+        with the same ``text`` already exists in the same ``namespace``,
+        no insert happens and the existing record's id is returned with
+        ``created=False``. Otherwise a new id is generated and returned with
+        ``created=True``.
+        """
+        raise NotImplementedError
 
     @abstractmethod
     def search(self, query_embedding: list[float], k: int = 5, threshold: float = 0.0,
@@ -84,7 +93,15 @@ class MemoryStorage(ABC):
 
     @abstractmethod
     def merge(self, source_storage: "MemoryStorage",
-              namespace_prefix: str = "") -> dict[str, int]: ...
+              namespace_prefix: str = "") -> dict[str, Any]:
+        """Import records from another storage into this one.
+
+        Returns {"imported", "skipped", "renamed", "total", "imported_ids"}.
+        ``skipped`` counts records whose (namespace, text) already exists
+        (dedup on content + namespace). ``renamed`` counts records whose id
+        collided with an existing one but content differed (id regenerated).
+        """
+        raise NotImplementedError
 
     @abstractmethod
     def get_stats(self) -> dict[str, Any]: ...

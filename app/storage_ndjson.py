@@ -86,18 +86,22 @@ class NDJSONStorage(MemoryStorage):
     # -- public API --
 
     def add(self, text, embedding, metadata=None, namespace=DEFAULT_NAMESPACE, summary=None):
-        eid = _new_id()
-        now = _now()
-        entry = {
-            "id": eid, "text": text, "embedding": embedding,
-            "metadata": metadata or {}, "namespace": namespace,
-            "created_at": now, "updated_at": now,
-            "summary": summary,
-        }
+        """Insert a memory; dedup on (namespace, text). Returns {"id", "created"}."""
         with self._lock:
+            for e in self._data.values():
+                if e["namespace"] == namespace and e["text"] == text:
+                    return {"id": e["id"], "created": False}
+            eid = _new_id()
+            now = _now()
+            entry = {
+                "id": eid, "text": text, "embedding": embedding,
+                "metadata": metadata or {}, "namespace": namespace,
+                "created_at": now, "updated_at": now,
+                "summary": summary,
+            }
             self._data[eid] = entry
             self._append_line(entry)
-        return eid
+        return {"id": eid, "created": True}
 
     def search(self, query_embedding, k=5, threshold=0.0, namespace=None):
         scored = []
@@ -201,15 +205,22 @@ class NDJSONStorage(MemoryStorage):
     def merge(self, source_storage, namespace_prefix=""):
         imported = 0
         renamed = 0
+        skipped = 0
         imported_ids = []
         src_memories = source_storage.list_memories(limit=10 ** 9)
         with self._lock:
+            existing_pairs = {(e["namespace"], e["text"]) for e in self._data.values()}
             for m in src_memories:
+                ns = namespace_prefix + m["namespace"]
+                # Dedup on content + namespace: already present → skip.
+                if (ns, m["text"]) in existing_pairs:
+                    skipped += 1
+                    continue
                 mid = m["id"]
                 if mid in self._data:
                     mid = _new_id()
                     renamed += 1
-                ns = namespace_prefix + m["namespace"]
+                existing_pairs.add((ns, m["text"]))
                 entry = {
                     "id": mid, "text": m["text"], "embedding": m["embedding"],
                     "metadata": m["metadata"], "namespace": ns,
@@ -221,8 +232,8 @@ class NDJSONStorage(MemoryStorage):
                 imported += 1
                 imported_ids.append(mid)
             self._compact_file()
-        return {"imported": imported, "renamed": renamed, "total": len(src_memories),
-                "imported_ids": imported_ids}
+        return {"imported": imported, "skipped": skipped, "renamed": renamed,
+                "total": len(src_memories), "imported_ids": imported_ids}
 
     def _add_with_id(self, memory_id, text, embedding, metadata, namespace,
                      created_at, updated_at, summary=None):
