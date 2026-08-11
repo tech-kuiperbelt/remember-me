@@ -243,33 +243,23 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
     </div>
   </div>
 
-  <!-- Sync -->
+  <!-- Sync (manual backup) -->
   <div class="card">
-    <div class="card-header">Sync</div>
+    <div class="card-header">Sync（手动备份）</div>
     <div class="card-body">
-      <p style="font-size:13px;color:#888;margin-bottom:12px">Force rebuild of the secondary/backup storage from the primary database.</p>
-      <button id="btn-sync" class="btn btn-primary" onclick="doSync()">Sync Now</button>
+      <p style="font-size:13px;color:#888;margin-bottom:12px">手动将主库（SQLite）完整同步到灾备副本（JSONL）。<span id="sync-paths" style="color:#666"></span></p>
+      <button id="btn-sync" class="btn btn-primary" onclick="doSync()">Sync Now（SQLite → JSONL）</button>
       <span id="sync-result" style="margin-left:12px;font-size:13px"></span>
     </div>
   </div>
 
-  <!-- Recover -->
+  <!-- Recover (manual disaster recovery) -->
   <div class="card">
-    <div class="card-header">Recover</div>
+    <div class="card-header">Recover（手动恢复）</div>
     <div class="card-body">
-      <p style="font-size:13px;color:#888;margin-bottom:12px">Rebuild target storage from source storage file. Clears target first.</p>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Source file</label>
-          <input id="recover-source" placeholder="data/memories.jsonl">
-        </div>
-        <div class="form-group">
-          <label>Target file</label>
-          <input id="recover-target" placeholder="data/memories.db">
-        </div>
-      </div>
+      <p style="font-size:13px;color:#888;margin-bottom:12px">从灾备副本（JSONL）恢复主库（SQLite）。目标主库将被清空后重建。<span id="recover-paths" style="color:#666"></span></p>
       <div style="margin-top:16px">
-        <button id="btn-recover" class="btn btn-danger" onclick="doRecover()">Recover</button>
+        <button id="btn-recover" class="btn btn-danger" onclick="doRecover()">Recover（JSONL → SQLite）</button>
         <span id="recover-result" style="margin-left:12px;font-size:13px"></span>
       </div>
     </div>
@@ -898,24 +888,34 @@ async function doSync() {
 }
 
 async function doRecover() {
-  const source = $('recover-source').value.trim();
-  const target = $('recover-target').value.trim();
   const resultEl = $('recover-result');
   const btn = $('btn-recover');
-  if (!source || !target) { resultEl.textContent = 'Please enter both source and target paths.'; return; }
-  if (!confirm(`Rebuild "${target}" from "${source}"? The target will be cleared first.`)) return;
+  if (!confirm('从灾备副本（JSONL）恢复主库（SQLite）？主库将被清空后重建。')) return;
   btn.disabled = true;
   resultEl.textContent = 'Recovering...';
   try {
-    const result = await api('/recover', {
-      method: 'POST',
-      body: JSON.stringify({source, target}),
-    });
-    resultEl.textContent = `✅ Recovered (synced: ${result.synced || 0}, errors: ${result.errors || 0}).`;
+    const result = await api('/recover', {method: 'POST'});
+    const recovered = result.recovered || 0;
+    const errors = result.errors || 0;
+    resultEl.textContent = `✅ Recovered ${recovered} records${errors ? ` (errors: ${errors})` : ''}.`;
   } catch(e) {
     resultEl.textContent = 'Error: ' + e.message;
   } finally {
     btn.disabled = false;
+  }
+}
+
+async function fetchStoragePaths() {
+  try {
+    const data = await api('/storage-paths');
+    if (data.backend === 'dual' && data.primary_path && data.secondary_path) {
+      const syncEl = $('sync-paths');
+      const recEl = $('recover-paths');
+      if (syncEl) syncEl.textContent = `${data.primary_path} → ${data.secondary_path}`;
+      if (recEl) recEl.textContent = `${data.secondary_path} → ${data.primary_path}`;
+    }
+  } catch(e) {
+    // Not in dual mode — paths may be unavailable; leave placeholders empty.
   }
 }
 
@@ -1038,6 +1038,7 @@ function esc(s) {
 // Init
 loadMemories();
 loadStats();
+fetchStoragePaths();
 </script>
 </body>
 </html>

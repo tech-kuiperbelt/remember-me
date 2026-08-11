@@ -72,3 +72,72 @@ def test_memory_add_storage_error_propagates(service, mocked):
     mocked["storage"].add.side_effect = RuntimeError("disk full")
     with pytest.raises(RuntimeError):
         service.memory_add("text", namespace="ns1")
+
+
+def test_storage_paths_dual(service, monkeypatch):
+    """Dual mode exposes primary (sqlite) and secondary (jsonl) paths."""
+    storage = MagicMock()
+    storage.get_stats.return_value = {"backend": "dual"}
+    storage.primary.path = "data/memories.db"
+    storage.secondary.path = "data/memories.jsonl"
+    monkeypatch.setattr(service, "storage", storage)
+
+    result = service.memory_storage_paths()
+    assert result["backend"] == "dual"
+    assert result["primary_path"] == "data/memories.db"
+    assert result["secondary_path"] == "data/memories.jsonl"
+
+
+def test_storage_paths_single_backend(service, monkeypatch):
+    """Single-backend mode reports backend only, no replica paths."""
+    storage = MagicMock()
+    storage.get_stats.return_value = {"backend": "sqlite"}
+    # MagicMock auto-creates attributes; remove them to simulate a
+    # single-backend storage that has no primary/secondary.
+    del storage.primary
+    del storage.secondary
+    monkeypatch.setattr(service, "storage", storage)
+
+    result = service.memory_storage_paths()
+    assert result["backend"] == "sqlite"
+    assert "primary_path" not in result
+
+
+@pytest.mark.parametrize("path,expected", [
+    ("data/memories.jsonl", "ndjson"),
+    ("data/memories.ndjson", "ndjson"),
+    ("data/memories.json", "json"),
+    ("data/memories.db", "sqlite"),
+])
+def test_detect_storage_backend(path, expected):
+    """Path extension maps to the correct backend."""
+    assert service_detect_backend(path) == expected
+
+
+# pytest can't import the module attribute directly into the test signature,
+# so we use a small helper import at module level instead.
+def service_detect_backend(path):
+    from app.service import _detect_storage_backend
+    return _detect_storage_backend(path)
+
+
+def test_ndjson_rejected_as_standalone_backend():
+    """MEMORY_STORAGE=ndjson must refuse to start as a standalone backend.
+
+    Tested in a subprocess so the running pytest process's app.service module
+    state is never mutated.
+    """
+    import subprocess
+    import sys
+
+    code = (
+        "import os; os.environ['MEMORY_STORAGE']='ndjson'; "
+        "os.environ['MEMORY_STORAGE_PATH']='/tmp/never-created.jsonl'; "
+        "import app.service"
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True, text=True,
+    )
+    assert proc.returncode != 0
+    assert "no longer allowed" in proc.stderr

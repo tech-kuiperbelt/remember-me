@@ -37,6 +37,12 @@ elif STORAGE_BACKEND == "json":
     path = STORAGE_PATH or "data/memories.json"
     logger.info("JSON storage: %s", path)
     storage = create_storage("json", path=path)
+elif STORAGE_BACKEND in ("ndjson", "jsonl"):
+    raise RuntimeError(
+        f"MEMORY_STORAGE={STORAGE_BACKEND} is no longer allowed as a standalone backend. "
+        "NDJSON/JSONL serves only as the disaster-recovery replica of the SQLite primary. "
+        "Use 'sqlite' (single) or 'dual' (sqlite primary + ndjson replica)."
+    )
 else:
     path = STORAGE_PATH or "data/memories.db"
     logger.info("SQLite storage: %s", path)
@@ -334,6 +340,30 @@ def memory_namespaces() -> dict:
     }
 
 
+def memory_storage_paths() -> dict:
+    """Expose the configured storage paths for the UI.
+
+    In dual mode: primary_path is the SQLite primary, secondary_path is the
+    NDJSON disaster-recovery replica. In single-backend mode only the
+    backend type is reported (no replica paths).
+    """
+    stats = storage.get_stats()
+    result = {"backend": stats.get("backend", "?")}
+    if hasattr(storage, "primary"):
+        result["primary_path"] = getattr(storage.primary, "path", "?")
+        result["secondary_path"] = getattr(storage.secondary, "path", "?")
+    return result
+
+
+def _detect_storage_backend(path: str) -> str:
+    """Map a storage file path to its backend name."""
+    if path.endswith(".jsonl") or path.endswith(".ndjson"):
+        return "ndjson"
+    if path.endswith(".json"):
+        return "json"
+    return "sqlite"
+
+
 def memory_migrate_namespace(source: str, target: str) -> dict:
     """Move all memories from source namespace to target namespace."""
     if source == target:
@@ -357,8 +387,8 @@ def memory_recover(source_path: str, target_path: str) -> dict:
     logger.info("recover: source=%s target=%s", source_path, target_path)
     from .recovery import recover as _recover
     try:
-        src_backend = "json" if source_path.endswith(".json") else "sqlite"
-        tgt_backend = "json" if target_path.endswith(".json") else "sqlite"
+        src_backend = _detect_storage_backend(source_path)
+        tgt_backend = _detect_storage_backend(target_path)
         src = create_storage(src_backend, path=source_path)
         tgt = create_storage(tgt_backend, path=target_path)
         result = _recover(tgt, src)
