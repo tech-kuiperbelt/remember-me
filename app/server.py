@@ -72,14 +72,14 @@ async def handle_list_tools() -> types.ListToolsResult:
             },
         ),
         types.Tool(
-            name="search",
+            name="search_semantic",
             description="Semantic search across memories by query text. "
                         "Use this for topic/keyword questions — e.g. \"what do we know about X\", "
                         "\"anything related to Y\" — where you want the most semantically similar memories. "
                         "Results return the memory summary (falling back to original text when no summary exists); "
                         "call 'get_details' with the returned IDs to fetch full content. "
                         "For time-based questions (e.g. \"what did we do recently / last session\") "
-                        "use 'list' with sort_by='updated_at' instead. "
+                        "use 'search_meta' with sort_by='updated_at' instead. "
                         "If no results are found, call 'stats' first to verify the correct namespace, "
                         "then try searching again.",
             inputSchema={
@@ -94,14 +94,14 @@ async def handle_list_tools() -> types.ListToolsResult:
             },
         ),
         types.Tool(
-            name="list",
-            description="List memories ordered by time, with pagination and optional filters "
-                        "(namespace / updated_at time range / keywords). "
+            name="search_meta",
+            description="List memories by exact criteria: keywords, namespace, updated_at time range, "
+                        "sort order and pagination. "
                         "Results return the memory summary (falling back to original text when no summary exists); "
                         "call 'get_details' with the returned IDs to fetch full content. "
                         "Use this for time-based questions such as \"what did we do recently / last session\" "
                         "— combine sort_by='updated_at' with a small limit to get the most recently "
-                        "written or changed memories. For topic/keyword questions use 'search' instead. "
+                        "written or changed memories. For fuzzy/topic/keyword questions use 'search_semantic' instead. "
                         "For keyword filtering, call 'stats' first to see available keywords in "
                         "keyword_counts. Multiple keywords match ANY (OR). Keywords combine with "
                         "namespace and time filters using AND. "
@@ -131,7 +131,7 @@ async def handle_list_tools() -> types.ListToolsResult:
             description="Fetch full content for one or more memories by ID. "
                         "Accepts a single ID or an array of IDs. "
                         "Returns the complete text of each found memory plus the list of IDs that "
-                        "do not exist (partial success). Use this when a search/list summary looks "
+                        "do not exist (partial success). Use this when a search_semantic/search_meta summary looks "
                         "relevant and you need the full original content.",
             inputSchema={
                 "type": "object",
@@ -180,7 +180,7 @@ async def handle_list_tools() -> types.ListToolsResult:
                         "canonical keyword vocabulary — reuse these when adding or filtering memories), "
                         "and 'server_time' (current UTC time). Check 'server_time' first when a user asks "
                         "a time-based question (e.g. \"what did we do last week / this month\") so you can "
-                        "compute the correct updated_after/updated_before values for the 'list' tool. The "
+                        "compute the correct updated_after/updated_before values for the 'search_meta' tool. The "
                         "default namespace is set via MEMORY_DEFAULT_NAMESPACE env var.",
             inputSchema={"type": "object", "properties": {}},
         ),
@@ -194,11 +194,11 @@ async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
         if name == "add":
             return _ok(memory_add(arguments["text"], arguments.get("metadata"), arguments.get("namespace")),
                        _TOOL_HINTS["add"])
-        if name == "search":
-            return _ok(_wrap_search(_prepare_for_llm(memory_search(arguments["query"], int(arguments.get("k", 5)),
-                                                                    float(arguments.get("threshold", 0.0)), arguments.get("namespace")))),
-                       _TOOL_HINTS["search"])
-        if name == "list":
+        if name == "search_semantic":
+            return _ok(_wrap_search_semantic(_prepare_for_llm(memory_search(arguments["query"], int(arguments.get("k", 5)),
+                                                                            float(arguments.get("threshold", 0.0)), arguments.get("namespace")))),
+                       _TOOL_HINTS["search_semantic"])
+        if name == "search_meta":
             ns = arguments.get("namespace")
             limit = int(arguments.get("limit", 100))
             offset = int(arguments.get("offset", 0))
@@ -206,7 +206,7 @@ async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
             items = _prepare_for_llm(memory_list(ns, limit, offset, sort_by,
                                                  arguments.get("updated_after"), arguments.get("updated_before"),
                                                  keywords=arguments.get("keywords")))
-            return _ok(_wrap_list(items, ns, limit, offset, sort_by), _TOOL_HINTS["list"])
+            return _ok(_wrap_search_meta(items, ns, limit, offset, sort_by), _TOOL_HINTS["search_meta"])
         if name == "get":
             return _ok(memory_get(arguments["memory_id"]))
         if name == "get_details":
@@ -284,12 +284,12 @@ async def handle_read_resource(uri: str) -> types.ReadResourceResult:
 # with the returned data. Kept intentionally concise.
 _TOOL_HINTS: dict[str, str] = {
     "add": "Memory stored (created=true). If created=false, an identical record already exists in this namespace and the returned id is the existing one — consider 'update' instead of re-adding.",
-    "search": "Results are ranked by relevance (score). Use 'get_details' with an id to read the full original text.",
-    "list": "Use 'get_details' with an id to read the full original text, or call 'search' for topic/keyword lookup.",
-    "get_details": "You now have the full text, including metadata.keywords. If a memory is relevant, use list(keywords=[...]) with its keywords to find related memories.",
-    "update": "Memory updated. Use 'get_details' with the id to verify the change, or 'search' to find related memories.",
-    "delete": "Memory soft-deleted. It no longer appears in 'search'/'list'. Call 'stats' to confirm the count.",
-    "stats": "Use 'namespace_counts' to pick a namespace, then 'list' or 'search' within it. Use 'keyword_counts' as the canonical keyword vocabulary for list filtering and add. Use 'server_time' for time-based queries.",
+    "search_semantic": "Results are ranked by relevance (score). Use 'get_details' with an id to read the full original text.",
+    "search_meta": "Use 'get_details' with an id to read the full original text, or call 'search_semantic' for fuzzy/topic/keyword lookup.",
+    "get_details": "You now have the full text, including metadata.keywords. If a memory is relevant, use search_meta(keywords=[...]) with its keywords to find related memories.",
+    "update": "Memory updated. Use 'get_details' with the id to verify the change, or 'search_semantic' to find related memories.",
+    "delete": "Memory soft-deleted. It no longer appears in 'search_semantic'/'search_meta'. Call 'stats' to confirm the count.",
+    "stats": "Use 'namespace_counts' to pick a namespace, then 'search_meta' or 'search_semantic' within it. Use 'keyword_counts' as the canonical keyword vocabulary for search_meta filtering and add. Use 'server_time' for time-based queries.",
 }
 
 
@@ -306,8 +306,8 @@ def _ok(data, hint: str = "") -> types.CallToolResult:
     ])
 
 
-def _wrap_list(items: list, namespace: str | None, limit: int, offset: int, sort_by: str) -> dict:
-    """Attach usage guidance to list results so the LLM knows how to consume them.
+def _wrap_search_meta(items: list, namespace: str | None, limit: int, offset: int, sort_by: str) -> dict:
+    """Attach usage guidance to search_meta results so the LLM knows how to consume them.
 
     The raw item list must stay an array for the admin UI (/api/memories);
     this wrapper is only applied at the MCP tool boundary.
@@ -322,8 +322,8 @@ def _wrap_list(items: list, namespace: str | None, limit: int, offset: int, sort
     return {"note": note, "total": len(items), "items": items}
 
 
-def _wrap_search(items: list) -> dict:
-    """Attach usage guidance to search results (same rationale as _wrap_list)."""
+def _wrap_search_semantic(items: list) -> dict:
+    """Attach usage guidance to search_semantic results (same rationale as _wrap_search_meta)."""
     note = (
         f"{len(items)} results, ranked by semantic similarity (score). Items carry "
         f"summary (full text when no summary yet). To see the complete original "

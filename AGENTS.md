@@ -32,7 +32,7 @@ Ollama **must be running locally** for embeddings to work. If missing, add/searc
 
 ## Key architecture facts
 
-- **`server.py`** — MCP tool/resource registration. 9 tools: `add`, `search`, `list`, `get`, `update`, `delete`, `clear`, `stats`, `import`. 2 resources: `memories://stats`, `memories://list`.
+- **`server.py`** — MCP tool/resource registration. 7 tools: `add`, `search_semantic`, `search_meta`, `get_details`, `update`, `delete`, `stats`. 2 resources: `memories://stats`, `memories://list`.
 - **`storage.py`** — Abstract `MemoryStorage` with `SQLiteStorage` (default) and `JSONStorage`. Embeddings are pickled into SQLite BLOBs.
 - **`embed.py`** — Single function: calls Ollama `/api/embeddings` with `{"model": …, "prompt": …}`.
 - Embeddings use **cosine similarity** (via numpy) for search scoring.
