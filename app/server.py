@@ -16,10 +16,9 @@ from starlette.responses import Response
 import uvicorn
 
 from . import log_config  # noqa: F401
-from .service import memory_add, memory_search, memory_list, memory_get, \
-    memory_update, memory_delete, memory_clear, memory_stats, memory_import, \
-    memory_sync, memory_recover, memory_namespaces, memory_get_details, \
-    memory_summarize, _prepare_for_llm
+from .service import memory_add, memory_search, memory_list, \
+    memory_update, memory_delete, memory_stats, memory_get_details, \
+    _prepare_for_llm
 
 logger = logging.getLogger("server")
 
@@ -207,8 +206,6 @@ async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
                                                  arguments.get("updated_after"), arguments.get("updated_before"),
                                                  keywords=arguments.get("keywords")))
             return _ok(_wrap_search_meta(items, ns, limit, offset, sort_by), _TOOL_HINTS["search_meta"])
-        if name == "get":
-            return _ok(memory_get(arguments["memory_id"]))
         if name == "get_details":
             return _ok(memory_get_details(arguments["memory_ids"]), _TOOL_HINTS["get_details"])
         if name == "update":
@@ -216,21 +213,8 @@ async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
                        _TOOL_HINTS["update"])
         if name == "delete":
             return _ok(memory_delete(arguments["memory_id"]), _TOOL_HINTS["delete"])
-        if name == "clear":
-            return _ok(memory_clear(arguments.get("namespace")))
         if name == "stats":
             return _ok(_wrap_stats(memory_stats()), _TOOL_HINTS["stats"])
-        if name == "import":
-            return _ok(memory_import(arguments["file_path"], arguments.get("namespace_prefix", "")))
-        if name == "sync":
-            return _ok(memory_sync())
-        if name == "recover":
-            return _ok(memory_recover(arguments["source_path"], arguments["target_path"]))
-        if name == "summarize":
-            return _ok(memory_summarize(arguments.get("namespace"), arguments.get("mode", "missing"),
-                                        arguments.get("memory_id")))
-        if name == "namespaces":
-            return _ok(memory_namespaces())
         raise ValueError(f"Unknown tool: {name}")
     except Exception as e:
         logger.error("Tool call '%s' failed: %s", name, e, exc_info=True)
