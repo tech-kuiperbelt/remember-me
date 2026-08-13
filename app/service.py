@@ -100,6 +100,7 @@ def memory_add(text: str, metadata: dict | None = None, namespace: str | None = 
     logger.info("add: namespace=%s text_len=%d", ns, len(text))
     try:
         embedding = embed(text)
+        metadata = _apply_keywords_to_metadata(metadata)
         result = storage.add(text, embedding, metadata=metadata, namespace=ns, summary=None)
         eid = result["id"]
         if result.get("created"):
@@ -128,6 +129,41 @@ def _sanitize_k(k) -> int:
     return k if k > 0 else 100
 
 
+def _normalize_keywords(keywords) -> list[str] | None:
+    """Filter, trim, lowercase and deduplicate a keywords value.
+
+    - Non-list values → None (no keywords).
+    - Non-string items are dropped; only non-empty trimmed strings remain.
+    - Returns None when the result is empty (equivalent to no keywords).
+    """
+    if not isinstance(keywords, list):
+        return None
+    result = []
+    seen = set()
+    for kw in keywords:
+        if not isinstance(kw, str):
+            continue
+        kw = kw.strip().lower()
+        if kw and kw not in seen:
+            seen.add(kw)
+            result.append(kw)
+    return result or None
+
+
+def _apply_keywords_to_metadata(metadata: dict | None) -> dict | None:
+    """Normalize metadata.keywords in place; returns the metadata dict.
+
+    When metadata is None or has no keywords key, it is returned unchanged.
+    When the normalized result is empty, keywords is set to [] so storage
+    clears the previous keyword associations (update replace semantics).
+    """
+    if metadata is None or "keywords" not in metadata:
+        return metadata
+    normalized = _normalize_keywords(metadata.get("keywords"))
+    metadata["keywords"] = normalized or []
+    return metadata
+
+
 def memory_search(query: str, k: int = 5, threshold: float = 0.0,
                   namespace: str | None = None) -> list[dict]:
     k = _sanitize_k(k)
@@ -145,15 +181,17 @@ def memory_search(query: str, k: int = 5, threshold: float = 0.0,
 def memory_list(namespace: str | None = None, limit: int = 100,
                 offset: int = 0, sort_by: str = "created_at",
                 updated_after: str | None = None,
-                updated_before: str | None = None) -> list[dict]:
+                updated_before: str | None = None,
+                keywords: list | None = None) -> list[dict]:
     if sort_by not in ("created_at", "updated_at"):
         sort_by = "created_at"
-    logger.info("list: namespace=%s limit=%d offset=%d sort_by=%s updated_after=%s updated_before=%s",
-                namespace, limit, offset, sort_by, updated_after, updated_before)
+    kw = _normalize_keywords(keywords)
+    logger.info("list: namespace=%s limit=%d offset=%d sort_by=%s updated_after=%s updated_before=%s keywords=%s",
+                namespace, limit, offset, sort_by, updated_after, updated_before, kw)
     try:
         results = storage.list_memories(namespace=namespace, limit=limit, offset=offset,
                                         sort_by=sort_by, updated_after=updated_after,
-                                        updated_before=updated_before)
+                                        updated_before=updated_before, keywords=kw)
         logger.info("list: %d results", len(results))
         return [_strip_internal_fields(r) for r in results]
     except Exception as e:
@@ -185,6 +223,7 @@ def memory_update(memory_id: str, text: str | None = None,
         else:
             embedding = None
             summary = None
+        metadata = _apply_keywords_to_metadata(metadata)
         ok = storage.update(memory_id, text=text, embedding=embedding,
                             metadata=metadata, namespace=namespace, summary=summary)
         if ok and text is not None:
@@ -238,6 +277,10 @@ def memory_import(file_path: str, namespace_prefix: str = "") -> dict:
         backend = "json" if file_path.endswith(".json") else "sqlite"
         src = create_storage(backend, path=file_path)
         result = storage.merge(src, namespace_prefix=namespace_prefix)
+        # Imported records carry metadata.keywords; make sure the SQLite
+        # keyword index is rebuilt so list(keywords=...) stays consistent.
+        if hasattr(storage, "rebuild_keyword_index"):
+            storage.rebuild_keyword_index()
         # Summaries for imported records without one are generated in the
         # background worker (like add/update) — never block the request.
         enqueued = 0
@@ -319,6 +362,59 @@ def memory_summarize(namespace: str | None = None, mode: str = "missing",
         raise
 
 
+def memory_extract_keywords(namespace: str | None = None, mode: str = "missing",
+                            memory_id: str | None = None) -> dict:
+    """Backfill metadata.keywords for existing memories using the local LLM.
+
+    mode="missing" (default): only records without metadata.keywords.
+    mode="all": re-extract keywords for every record (overwrite).
+
+    When ``memory_id`` is given, only that memory is processed.
+
+    Keywords are written via storage.update_metadata() so updated_at is left
+    unchanged (migration must not perturb time-based list ordering). The
+    SQLite keyword index is rebuilt per record as part of the write.
+    """
+    from .keyword_extract import extract_keywords as _extract
+    mode = mode if mode in ("missing", "all") else "missing"
+    logger.info("keyword extraction migration: namespace=%s mode=%s memory_id=%s", namespace, mode, memory_id)
+    try:
+        if memory_id:
+            m = storage.get(memory_id)
+            if m is None:
+                result = {"processed": 0, "failed": 0, "mode": mode, "total": 0,
+                          "error": f"memory not found: {memory_id}", "memory_id": memory_id}
+                logger.info("keyword extraction migration done: %s", result)
+                return result
+            memories = [m]
+        else:
+            memories = memory_list(namespace=namespace, limit=10 ** 9)
+        processed = 0
+        failed = 0
+        for m in memories:
+            if mode == "missing" and m.get("metadata", {}).get("keywords"):
+                continue
+            try:
+                keywords = _extract(m["text"])
+            except Exception:
+                # keep keywords empty so the record remains eligible for retry
+                failed += 1
+                continue
+            if not keywords:
+                failed += 1
+                continue
+            storage.update_metadata(m["id"], {"keywords": keywords})
+            processed += 1
+        result = {"processed": processed, "failed": failed, "mode": mode, "total": len(memories)}
+        if memory_id:
+            result["memory_id"] = memory_id
+        logger.info("keyword extraction migration done: %s", result)
+        return result
+    except Exception as e:
+        logger.error("keyword extraction migration failed: %s", e, exc_info=True)
+        raise
+
+
 def memory_sync() -> dict:
     """Manually trigger full sync of secondary from primary (dual mode only)."""
     logger.info("sync")
@@ -392,6 +488,10 @@ def memory_recover(source_path: str, target_path: str) -> dict:
         src = create_storage(src_backend, path=source_path)
         tgt = create_storage(tgt_backend, path=target_path)
         result = _recover(tgt, src)
+        # Recovered records carry metadata.keywords in the target DB;
+        # rebuild the SQLite keyword index so list(keywords=...) works.
+        if hasattr(tgt, "rebuild_keyword_index"):
+            tgt.rebuild_keyword_index()
         logger.info("recover: %s", result)
         return result
     except Exception as e:

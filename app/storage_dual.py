@@ -105,6 +105,10 @@ class DualStorage(MemoryStorage):
         with self._lock:
             return self.primary.update_summary(memory_id, summary)
 
+    def update_metadata(self, memory_id, metadata):
+        with self._lock:
+            return self.primary.update_metadata(memory_id, metadata)
+
     def get_pending_summaries(self, *args, **kwargs):
         return self.primary.get_pending_summaries(*args, **kwargs)
 
@@ -119,6 +123,16 @@ class DualStorage(MemoryStorage):
     def merge(self, source_storage, namespace_prefix=""):
         with self._lock:
             return self.primary.merge(source_storage, namespace_prefix)
+
+    def rebuild_keyword_index(self):
+        """Rebuild the keyword index on the primary (SQLite only)."""
+        with self._lock:
+            return self.primary.rebuild_keyword_index()
+
+    def get_keyword_vocabulary(self, namespace: str | None = None) -> list[str]:
+        """Keyword vocabulary from the primary (SQLite index)."""
+        with self._lock:
+            return self.primary.get_keyword_vocabulary(namespace=namespace)
 
     # -- public API: reads → primary only --
 
@@ -165,6 +179,7 @@ class DualStorage(MemoryStorage):
             "sync_interval_s": self.sync_interval,
             "namespaces": p.get("namespaces", []),
             "namespace_counts": p.get("namespace_counts", {}),
+            "keyword_counts": p.get("keyword_counts", {}),
             "primary": p,
             "secondary": s,
         }

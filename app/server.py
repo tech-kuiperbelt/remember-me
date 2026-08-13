@@ -46,12 +46,26 @@ async def handle_list_tools() -> types.ListToolsResult:
             description="Store a new memory. Text is automatically embedded for semantic search. "
                         "Deduplicated by content+namespace: if the same text already exists in the "
                         "target namespace, no duplicate is inserted and the existing record's id is "
-                        "returned with created=false.",
+                        "returned with created=false. "
+                        "Before adding, call 'stats' to inspect keyword_counts and reuse an existing "
+                        "keyword when semantically appropriate; create a new keyword only when no "
+                        "existing keyword matches. Pass keywords as an array in metadata.keywords — "
+                        "they are content concepts (e.g. entities, topics), NOT category/type.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "text": {"type": "string", "description": "The memory text"},
-                    "metadata": {"type": "object", "description": "Optional key-value metadata"},
+                    "metadata": {
+                        "type": "object",
+                        "description": "Optional key-value metadata",
+                        "properties": {
+                            "keywords": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Content keywords (concrete concepts in the memory, not category/type). Normalized to lowercase.",
+                            },
+                        },
+                    },
                     "namespace": {"type": "string", "description": "Namespace (default: $MEMORY_DEFAULT_NAMESPACE or 'default')"},
                 },
                 "required": ["text"],
@@ -82,12 +96,15 @@ async def handle_list_tools() -> types.ListToolsResult:
         types.Tool(
             name="list",
             description="List memories ordered by time, with pagination and optional filters "
-                        "(namespace / updated_at time range). "
+                        "(namespace / updated_at time range / keywords). "
                         "Results return the memory summary (falling back to original text when no summary exists); "
                         "call 'get_details' with the returned IDs to fetch full content. "
                         "Use this for time-based questions such as \"what did we do recently / last session\" "
                         "— combine sort_by='updated_at' with a small limit to get the most recently "
                         "written or changed memories. For topic/keyword questions use 'search' instead. "
+                        "For keyword filtering, call 'stats' first to see available keywords in "
+                        "keyword_counts. Multiple keywords match ANY (OR). Keywords combine with "
+                        "namespace and time filters using AND. "
                         "For relative time windows (\"last week\", \"this month\"), call 'stats' first to get "
                         "server_time, then pass concrete updated_after/updated_before timestamps. "
                         "Ordered by the given field descending (default: created_at).",
@@ -101,6 +118,11 @@ async def handle_list_tools() -> types.ListToolsResult:
                                 "description": "Sort field, descending. Default: created_at. Use 'updated_at' for most recently written/changed first."},
                     "updated_after": {"type": "string", "description": "ISO8601 timestamp (e.g. '2026-07-01T00:00:00+00:00'). Only return memories updated after this moment (exclusive). If the user asks for a relative window (e.g. 'last week', 'this month') and you are unsure of the current date, call 'stats' first to get its 'server_time', then compute this value."},
                     "updated_before": {"type": "string", "description": "ISO8601 timestamp (e.g. '2026-07-01T00:00:00+00:00'). Only return memories updated before this moment (exclusive). If the user asks for a relative window (e.g. 'last week', 'this month') and you are unsure of the current date, call 'stats' first to get its 'server_time', then compute this value."},
+                    "keywords": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Filter by global keywords — any match is sufficient (OR). Call 'stats' first to see available keywords in keyword_counts.",
+                    },
                 },
             },
         ),
@@ -154,11 +176,12 @@ async def handle_list_tools() -> types.ListToolsResult:
             name="stats",
             description="Storage statistics. Returns 'total' (record count), 'namespace_counts' "
                         "(map of namespace -> record count, e.g. check namespaces before search/add to "
-                        "avoid missing results or creating duplicates), and 'server_time' (current UTC "
-                        "time). Check 'server_time' first when a user asks a time-based question "
-                        "(e.g. \"what did we do last week / this month\") so you can compute the correct "
-                        "updated_after/updated_before values for the 'list' tool. The default namespace "
-                        "is set via MEMORY_DEFAULT_NAMESPACE env var.",
+                        "avoid missing results or creating duplicates), 'keyword_counts' (the global "
+                        "canonical keyword vocabulary — reuse these when adding or filtering memories), "
+                        "and 'server_time' (current UTC time). Check 'server_time' first when a user asks "
+                        "a time-based question (e.g. \"what did we do last week / this month\") so you can "
+                        "compute the correct updated_after/updated_before values for the 'list' tool. The "
+                        "default namespace is set via MEMORY_DEFAULT_NAMESPACE env var.",
             inputSchema={"type": "object", "properties": {}},
         ),
     ])
@@ -181,7 +204,8 @@ async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
             offset = int(arguments.get("offset", 0))
             sort_by = arguments.get("sort_by", "created_at")
             items = _prepare_for_llm(memory_list(ns, limit, offset, sort_by,
-                                                 arguments.get("updated_after"), arguments.get("updated_before")))
+                                                 arguments.get("updated_after"), arguments.get("updated_before"),
+                                                 keywords=arguments.get("keywords")))
             return _ok(_wrap_list(items, ns, limit, offset, sort_by), _TOOL_HINTS["list"])
         if name == "get":
             return _ok(memory_get(arguments["memory_id"]))
@@ -262,10 +286,10 @@ _TOOL_HINTS: dict[str, str] = {
     "add": "Memory stored (created=true). If created=false, an identical record already exists in this namespace and the returned id is the existing one — consider 'update' instead of re-adding.",
     "search": "Results are ranked by relevance (score). Use 'get_details' with an id to read the full original text.",
     "list": "Use 'get_details' with an id to read the full original text, or call 'search' for topic/keyword lookup.",
-    "get_details": "You now have the full text. You could 'update' a memory, or use the content to answer the user's question.",
+    "get_details": "You now have the full text, including metadata.keywords. If a memory is relevant, use list(keywords=[...]) with its keywords to find related memories.",
     "update": "Memory updated. Use 'get_details' with the id to verify the change, or 'search' to find related memories.",
     "delete": "Memory soft-deleted. It no longer appears in 'search'/'list'. Call 'stats' to confirm the count.",
-    "stats": "Use 'namespace_counts' to pick a namespace, then 'list' or 'search' within it. Use 'server_time' for time-based queries.",
+    "stats": "Use 'namespace_counts' to pick a namespace, then 'list' or 'search' within it. Use 'keyword_counts' as the canonical keyword vocabulary for list filtering and add. Use 'server_time' for time-based queries.",
 }
 
 
@@ -308,13 +332,21 @@ def _wrap_search(items: list) -> dict:
     return {"note": note, "total": len(items), "items": items}
 
 
+def _trim_keyword_counts(keyword_counts: dict) -> dict:
+    """Thin wrapper — real logic lives in app.keyword_trim."""
+    from .keyword_trim import trim_keyword_counts
+    return trim_keyword_counts(keyword_counts)
+
+
 def _wrap_stats(data: dict) -> dict:
     """Strip internal details from stats — LLM only needs counts + time.
 
     The admin HTTP API keeps the full payload (primary/secondary/backend/…);
     this wrapper is only applied at the MCP tool boundary.
     """
-    return {k: data[k] for k in ("total", "namespace_counts", "server_time")}
+    out = {k: data[k] for k in ("total", "namespace_counts", "keyword_counts", "server_time")}
+    out["keyword_counts"] = _trim_keyword_counts(out["keyword_counts"])
+    return out
 
 
 # ---------------------------------------------------------------------------

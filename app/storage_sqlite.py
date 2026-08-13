@@ -58,6 +58,23 @@ class SQLiteStorage(MemoryStorage):
             "CREATE INDEX IF NOT EXISTS idx_memories_synced_updated "
             "ON memories(synced, updated_at)"
         )
+        # Keywords: global canonical vocabulary + many-to-many association.
+        # These tables are a REBUILDABLE query index — the authoritative data
+        # lives in memories.metadata["keywords"]. They are not backed up to
+        # the JSONL replica and are rebuilt from metadata after recover/import.
+        self.conn.executescript("""
+            CREATE TABLE IF NOT EXISTS keywords (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS memory_keywords (
+                memory_id TEXT NOT NULL,
+                keyword_id INTEGER NOT NULL,
+                PRIMARY KEY (memory_id, keyword_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_memory_keywords_keyword
+                ON memory_keywords(keyword_id);
+        """)
         self.conn.commit()
 
     def _serialize(self, emb: list[float]) -> bytes:
@@ -71,6 +88,138 @@ class SQLiteStorage(MemoryStorage):
         d["embedding"] = self._deserialize(d["embedding"])
         d["metadata"] = json.loads(d["metadata"])
         return d
+
+    # -- keyword index helpers (SQLite-only, rebuildable from metadata) --
+
+    @staticmethod
+    def _extract_keywords(metadata: dict) -> list[str]:
+        """Extract normalized keywords from a metadata dict.
+
+        Filter: keep only non-empty strings. Normalize: strip + lowercase +
+        deduplicate. Returns [] when absent/invalid.
+        """
+        raw = (metadata or {}).get("keywords")
+        if not isinstance(raw, list):
+            return []
+        result = []
+        seen = set()
+        for kw in raw:
+            if not isinstance(kw, str):
+                continue
+            kw = kw.strip().lower()
+            if kw and kw not in seen:
+                seen.add(kw)
+                result.append(kw)
+        return result
+
+    def _sync_keyword_index(self, memory_id: str, metadata: dict):
+        """Replace a memory's keyword associations (delete-then-insert).
+
+        Caller must hold ``self._lock`` and is responsible for committing.
+        """
+        self.conn.execute(
+            "DELETE FROM memory_keywords WHERE memory_id = ?", (memory_id,)
+        )
+        for name in self._extract_keywords(metadata):
+            self.conn.execute(
+                "INSERT OR IGNORE INTO keywords (name) VALUES (?)", (name,)
+            )
+            row = self.conn.execute(
+                "SELECT id FROM keywords WHERE name = ?", (name,)
+            ).fetchone()
+            if row is not None:
+                self.conn.execute(
+                    "INSERT OR IGNORE INTO memory_keywords (memory_id, keyword_id) "
+                    "VALUES (?, ?)", (memory_id, row["id"]),
+                )
+
+    def _remove_keyword_associations(self, memory_id: str):
+        """Remove a memory's keyword associations. Caller holds _lock."""
+        self.conn.execute(
+            "DELETE FROM memory_keywords WHERE memory_id = ?", (memory_id,)
+        )
+
+    def _rebuild_keyword_index(self) -> int:
+        """Clear both keyword tables and rebuild from memories.metadata.
+
+        Caller must hold ``self._lock`` and is responsible for committing.
+        Returns the number of (memory, keyword) associations created.
+        """
+        self.conn.execute("DELETE FROM memory_keywords")
+        self.conn.execute("DELETE FROM keywords")
+        rows = self.conn.execute(
+            "SELECT id, metadata FROM memories WHERE deleted = 0"
+        ).fetchall()
+        associations = 0
+        for row in rows:
+            try:
+                metadata = json.loads(row["metadata"] or "{}")
+            except json.JSONDecodeError:
+                continue
+            names = self._extract_keywords(metadata)
+            if not names:
+                continue
+            for name in names:
+                self.conn.execute(
+                    "INSERT OR IGNORE INTO keywords (name) VALUES (?)", (name,)
+                )
+                kw = self.conn.execute(
+                    "SELECT id FROM keywords WHERE name = ?", (name,)
+                ).fetchone()
+                if kw is not None:
+                    self.conn.execute(
+                        "INSERT OR IGNORE INTO memory_keywords (memory_id, keyword_id) "
+                        "VALUES (?, ?)", (row["id"], kw["id"]),
+                    )
+                    associations += 1
+        return associations
+
+    def rebuild_keyword_index(self) -> dict:
+        """Public: clear and rebuild the keyword index from all active memories."""
+        with self._lock:
+            associations = self._rebuild_keyword_index()
+            self.conn.commit()
+        logger.info("keyword index rebuilt: %d associations", associations)
+        return {"keyword_index_rebuilt": associations}
+
+    def _keyword_counts(self) -> dict[str, int]:
+        """Return {keyword_name: number_of_memories} for active memories."""
+        rows = self.conn.execute(
+            "SELECT k.name, COUNT(DISTINCT mk.memory_id) AS cnt "
+            "FROM keywords k "
+            "JOIN memory_keywords mk ON mk.keyword_id = k.id "
+            "JOIN memories m ON m.id = mk.memory_id "
+            "WHERE m.deleted = 0 "
+            "GROUP BY k.name "
+            "ORDER BY cnt DESC, k.name ASC"
+        ).fetchall()
+        return {r["name"]: r["cnt"] for r in rows}
+
+    def get_keyword_vocabulary(self, namespace: str | None = None) -> list[str]:
+        """Return the full keyword vocabulary (names only), ordered by frequency.
+
+        Used by the deepseek migration to seed the candidate list so new
+        records converge toward existing word forms. The index is rebuildable
+        from memories.metadata, so this is safe to call at any time.
+        """
+        if namespace:
+            rows = self.conn.execute(
+                "SELECT k.name FROM keywords k "
+                "JOIN memory_keywords mk ON mk.keyword_id = k.id "
+                "JOIN memories m ON m.id = mk.memory_id "
+                "WHERE m.deleted = 0 AND m.namespace = ? "
+                "GROUP BY k.name ORDER BY COUNT(DISTINCT mk.memory_id) DESC, k.name ASC",
+                (namespace,),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT k.name FROM keywords k "
+                "JOIN memory_keywords mk ON mk.keyword_id = k.id "
+                "JOIN memories m ON m.id = mk.memory_id "
+                "WHERE m.deleted = 0 "
+                "GROUP BY k.name ORDER BY COUNT(DISTINCT mk.memory_id) DESC, k.name ASC"
+            ).fetchall()
+        return [r["name"] for r in rows]
 
     # -- internal sync protocol --
 
@@ -88,6 +237,7 @@ class SQLiteStorage(MemoryStorage):
                 (memory_id, text, self._serialize(embedding),
                  json.dumps(metadata or {}), namespace, created_at, updated_at, summary),
             )
+            self._sync_keyword_index(memory_id, metadata or {})
             self.conn.commit()
 
     # -- internal sync protocol (outbox pattern) --
@@ -140,6 +290,7 @@ class SQLiteStorage(MemoryStorage):
                 "VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)",
                 (eid, text, self._serialize(embedding), json.dumps(metadata or {}), namespace, now, now, summary),
             )
+            self._sync_keyword_index(eid, metadata or {})
             self.conn.commit()
         return {"id": eid, "created": True}
 
@@ -166,7 +317,7 @@ class SQLiteStorage(MemoryStorage):
         return [{**d, "score": round(s, 6)} for s, d in scored[:k]]
 
     def list_memories(self, namespace=None, limit=100, offset=0, sort_by="created_at",
-                      updated_after=None, updated_before=None):
+                      updated_after=None, updated_before=None, keywords=None):
         sort_col = sort_by if sort_by in ("created_at", "updated_at") else "created_at"
         clauses = ["deleted = 0"]
         params = []
@@ -179,6 +330,16 @@ class SQLiteStorage(MemoryStorage):
         if updated_before:
             clauses.append("updated_at < ?")
             params.append(updated_before)
+        # Keyword filter (OR): match any keyword. Empty/None disables the filter.
+        kw_list = self._extract_keywords({"keywords": keywords}) if keywords else []
+        if kw_list:
+            placeholders = ",".join(["?"] * len(kw_list))
+            clauses.append(
+                f"id IN (SELECT mk.memory_id FROM memory_keywords mk "
+                f"JOIN keywords k ON k.id = mk.keyword_id "
+                f"WHERE k.name IN ({placeholders}))"
+            )
+            params.extend(kw_list)
         params.extend([limit, offset])
         with self._lock:
             rows = self.conn.execute(
@@ -210,6 +371,10 @@ class SQLiteStorage(MemoryStorage):
                 "namespace = ?, updated_at = ?, synced = 0, summary = ? WHERE id = ?",
                 (text, self._serialize(emb), json.dumps(meta), ns, now, summ, memory_id),
             )
+            # Only touch the keyword index when the caller explicitly provided
+            # a keywords key in metadata (update semantics: replace the whole array).
+            if metadata is not None and "keywords" in metadata:
+                self._sync_keyword_index(memory_id, meta)
             self.conn.commit()
         return True
 
@@ -222,6 +387,29 @@ class SQLiteStorage(MemoryStorage):
             )
             self.conn.commit()
         return c.rowcount > 0
+
+    def update_metadata(self, memory_id, metadata):
+        """Merge metadata and re-sync the keyword index — updated_at stays
+        unchanged. Used by the keyword-extraction migration so backfilled
+        keywords do not perturb time-based list ordering.
+
+        ``metadata`` keys overwrite existing ones (shallow merge). When the
+        merged metadata carries a ``keywords`` key, the index is rebuilt for
+        this memory; otherwise the keyword index is left untouched.
+        """
+        with self._lock:
+            existing = self.get(memory_id)
+            if not existing:
+                return False
+            merged = {**existing["metadata"], **(metadata or {})}
+            self.conn.execute(
+                "UPDATE memories SET metadata = ?, synced = 0 WHERE id = ? AND deleted = 0",
+                (json.dumps(merged), memory_id),
+            )
+            if metadata is not None and "keywords" in metadata:
+                self._sync_keyword_index(memory_id, merged)
+            self.conn.commit()
+        return True
 
     def get_pending_summaries(self, limit=1000):
         """Records with empty summary, oldest first (background worker recovery)."""
@@ -259,6 +447,8 @@ class SQLiteStorage(MemoryStorage):
                 "UPDATE memories SET deleted = 1, synced = 0, updated_at = ? WHERE id = ? AND deleted = 0",
                 (_now(), memory_id),
             )
+            if c.rowcount > 0:
+                self._remove_keyword_associations(memory_id)
             self.conn.commit()
         return c.rowcount > 0
 
@@ -274,6 +464,11 @@ class SQLiteStorage(MemoryStorage):
                     "UPDATE memories SET deleted = 1, synced = 0, updated_at = ? WHERE namespace = ? AND deleted = 0",
                     (_now(), namespace),
                 )
+                self.conn.execute(
+                    "DELETE FROM memory_keywords WHERE memory_id IN "
+                    "(SELECT id FROM memories WHERE namespace = ?)",
+                    (namespace,),
+                )
             else:
                 n = self.conn.execute(
                     "SELECT COUNT(*) FROM memories WHERE deleted = 0"
@@ -282,6 +477,7 @@ class SQLiteStorage(MemoryStorage):
                     "UPDATE memories SET deleted = 1, synced = 0, updated_at = ? WHERE deleted = 0",
                     (_now(),),
                 )
+                self.conn.execute("DELETE FROM memory_keywords")
             self.conn.commit()
         return n
 
@@ -321,6 +517,7 @@ class SQLiteStorage(MemoryStorage):
                      json.dumps(m["metadata"]), ns, m["created_at"], m["updated_at"],
                      m.get("summary")),
                 )
+                self._sync_keyword_index(mid, m.get("metadata") or {})
                 imported += 1
                 imported_ids.append(mid)
             self.conn.commit()
@@ -335,10 +532,12 @@ class SQLiteStorage(MemoryStorage):
             ns_rows = self.conn.execute(
                 "SELECT namespace, COUNT(*) as cnt FROM memories WHERE deleted = 0 GROUP BY namespace"
             ).fetchall()
+            keyword_counts = self._keyword_counts()
         return {
             "total": total,
             "namespaces": [r["namespace"] for r in ns_rows],
             "namespace_counts": {r["namespace"]: r["cnt"] for r in ns_rows},
+            "keyword_counts": keyword_counts,
             "backend": "sqlite",
             "path": self.path,
         }

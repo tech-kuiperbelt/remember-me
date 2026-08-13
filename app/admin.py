@@ -12,7 +12,7 @@ from starlette.requests import Request
 from .service import memory_add, memory_search, memory_list, memory_get, \
     memory_update, memory_delete, memory_clear, memory_stats, memory_sync, memory_recover, \
     memory_namespaces, memory_migrate_namespace, memory_get_details, memory_summarize, \
-    memory_import, memory_storage_paths, storage
+    memory_import, memory_storage_paths, storage, memory_extract_keywords
 
 logger = logging.getLogger("admin")
 
@@ -22,7 +22,13 @@ ADMIN_HTML_PATH = THIS_DIR.parent / "web" / "index.html"
 
 async def handle_admin(request: Request):
     logger.info("GET /admin/console")
-    return FileResponse(ADMIN_HTML_PATH)
+    # No-store: the UI is edited frequently; always serve the latest HTML
+    # instead of letting browsers serve stale cached copies.
+    return FileResponse(ADMIN_HTML_PATH, headers={
+        "Cache-Control": "no-store",
+        "Pragma": "no-cache",
+        "Expires": "0",
+    })
 
 
 async def handle_list_memories(request: Request):
@@ -33,11 +39,21 @@ async def handle_list_memories(request: Request):
         sort_by = request.query_params.get("sort_by", "created_at")
         updated_after = request.query_params.get("updated_after")
         updated_before = request.query_params.get("updated_before")
-        logger.info("GET /api/memories namespace=%s limit=%d offset=%d sort_by=%s updated_after=%s updated_before=%s",
-                    ns, limit, offset, sort_by, updated_after, updated_before)
+        # keywords 支持多值 (?keywords=a&keywords=b) 和逗号分隔两种传法
+        keywords = request.query_params.getlist("keywords")
+        if keywords:
+            merged = []
+            for kw in keywords:
+                merged.extend(kw.split(","))
+            keywords = [k.strip() for k in merged if k.strip()]
+        else:
+            keywords = None
+        logger.info("GET /api/memories namespace=%s limit=%d offset=%d sort_by=%s updated_after=%s updated_before=%s keywords=%s",
+                    ns, limit, offset, sort_by, updated_after, updated_before, keywords)
         return Response(
             json.dumps(memory_list(namespace=ns, limit=limit, offset=offset, sort_by=sort_by,
-                                   updated_after=updated_after, updated_before=updated_before),
+                                   updated_after=updated_after, updated_before=updated_before,
+                                   keywords=keywords),
                        ensure_ascii=False, default=str),
             media_type="application/json",
         )
@@ -88,6 +104,20 @@ async def handle_summarize(request: Request):
         return Response(json.dumps(result, ensure_ascii=False), media_type="application/json")
     except Exception as e:
         logger.error("POST /api/summarize failed: %s", e, exc_info=True)
+        return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
+
+
+async def handle_extract_keywords(request: Request):
+    try:
+        body = await request.json()
+        ns = body.get("namespace")
+        mode = body.get("mode", "missing")
+        memory_id = body.get("memory_id")
+        logger.info("POST /api/extract-keywords namespace=%s mode=%s memory_id=%s", ns, mode, memory_id)
+        result = memory_extract_keywords(namespace=ns, mode=mode, memory_id=memory_id)
+        return Response(json.dumps(result, ensure_ascii=False), media_type="application/json")
+    except Exception as e:
+        logger.error("POST /api/extract-keywords failed: %s", e, exc_info=True)
         return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
 
 
@@ -265,5 +295,6 @@ admin_routes = [
     Route("/api/recover", endpoint=handle_recover, methods=["POST"]),
     Route("/api/restart", endpoint=handle_restart, methods=["POST"]),
     Route("/api/summarize", endpoint=handle_summarize, methods=["POST"]),
+    Route("/api/extract-keywords", endpoint=handle_extract_keywords, methods=["POST"]),
     Route("/api/namespaces/migrate", endpoint=handle_migrate_namespace, methods=["POST"]),
 ]
