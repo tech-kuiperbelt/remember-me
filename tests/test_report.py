@@ -66,3 +66,50 @@ def test_report_returns_count_only():
 def test_report_empty_ratings_ok():
     assert memory_report("se_abcd", []) == {"recorded": True, "count": 0}
     assert memory_report("se_abcd", None) == {"recorded": True, "count": 0}
+
+
+# -- search guidance (A/B: note + hint must steer the LLM to call report) --
+
+def _load_server_ns() -> dict:
+    """Load app.server once via runpy.
+
+    server.py runs argparse at import time (module-level parse_args()), so a
+    plain `import` would swallow pytest's argv. runpy with a patched sys.argv
+    avoids that.
+    """
+    import runpy
+    import sys
+
+    real_argv = sys.argv
+    try:
+        sys.argv = ["server"]
+        return runpy.run_module("app.server", run_name="not_main")
+    finally:
+        sys.argv = real_argv
+
+
+def _wrap_for(tool: str, items: list) -> dict:
+    ns = _load_server_ns()
+    if tool == "search_semantic":
+        return ns["_wrap_search_semantic"](items)
+    return ns["_wrap_search_meta"](items, None, 100, 0, "created_at")
+
+
+@pytest.mark.parametrize("tool", ["search_semantic", "search_meta"])
+def test_search_note_guides_report(tool):
+    items = [{"id": "a", "summary": "s1"}]
+    wrapped = _wrap_for(tool, items)
+    # search_id present and the note tells the LLM to report on it
+    assert wrapped["search_id"].startswith("se_")
+    note = wrapped["note"]
+    assert "report" in note
+    assert "search_id" in note
+    assert "-10" in note  # rating range
+
+
+@pytest.mark.parametrize("tool", ["search_semantic", "search_meta"])
+def test_search_hint_guides_report(tool):
+    ns = _load_server_ns()
+    hint = ns["_TOOL_HINTS"][tool]
+    assert "report" in hint
+    assert "search_id" in hint

@@ -189,12 +189,13 @@ async def handle_list_tools() -> types.ListToolsResult:
         types.Tool(
             name="report",
             description="Report how helpful a previous search's results were for the current "
-                        "question or context. Call this AFTER search_semantic/search_meta — pass the "
-                        "search_id from that search's response plus ratings per memory id. "
-                        "rating is an integer from -10 to 10: positive = helpful (larger = more useful), "
-                        "negative = misleading/interference (more negative = stronger interference), "
-                        "0 = neither helpful nor harmful. You may rate any subset of the returned ids. "
-                        "The feedback is recorded for later search-quality analysis.",
+                        "question or context. You must call this AFTER using results from "
+                        "search_semantic/search_meta — pass the search_id from that search's "
+                        "response plus ratings per memory id. rating is an integer from -10 to 10: "
+                        "positive = helpful (larger = more useful), negative = misleading/interference "
+                        "(more negative = stronger interference), 0 = neither helpful nor harmful. "
+                        "You may rate any subset of the returned ids. The feedback is recorded for "
+                        "later search-quality analysis and takes one tool call — do not skip it.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -314,8 +315,8 @@ async def handle_read_resource(uri: str) -> types.ReadResourceResult:
 # with the returned data. Kept intentionally concise.
 _TOOL_HINTS: dict[str, str] = {
     "add": "Memory stored (created=true). If created=false, an identical record already exists in this namespace and the returned id is the existing one — consider 'update' instead of re-adding.",
-    "search_semantic": "Results are ranked by relevance (score). Use 'get_details' with an id to read the full original text.",
-    "search_meta": "Use 'get_details' with an id to read the full original text, or call 'search_semantic' for fuzzy/topic/keyword lookup.",
+    "search_semantic": "Results are ranked by relevance (score). Use 'get_details' with an id to read the full original text, then call 'report' with this search_id to rate how helpful each result was (-10..10).",
+    "search_meta": "Use 'get_details' with an id to read the full original text, or call 'search_semantic' for fuzzy/topic/keyword lookup. After using these results, call 'report' with this search_id to rate how helpful each id was (-10..10).",
     "get_details": "You now have the full text, including metadata.keywords. If a memory is relevant, use search_meta(keywords=[...]) with its keywords to find related memories.",
     "update": "Memory updated. Use 'get_details' with the id to verify the change, or 'search_semantic' to find related memories.",
     "delete": "Memory soft-deleted. It no longer appears in 'search_semantic'/'search_meta'. Call 'stats' to confirm the count.",
@@ -353,7 +354,9 @@ def _wrap_search_meta(items: list, namespace: str | None, limit: int, offset: in
         f"{len(items)} memories (limit={limit}, offset={offset}) from {scope}, "
         f"sorted by {sort_by} descending. Items carry summary (full text when no "
         f"summary yet). To see the complete original content, call 'get_details' "
-        f"with the returned ids."
+        f"with the returned ids. After using these results, call 'report' with "
+        f"this search_id and rate how helpful each id was for the current question "
+        f"(-10..10, may rate a subset)."
     )
     return {"search_id": _new_search_id(), "note": note, "total": len(items), "items": items}
 
@@ -363,7 +366,9 @@ def _wrap_search_semantic(items: list) -> dict:
     note = (
         f"{len(items)} results, ranked by semantic similarity (score). Items carry "
         f"summary (full text when no summary yet). To see the complete original "
-        f"content, call 'get_details' with the returned ids."
+        f"content, call 'get_details' with the returned ids. After using these "
+        f"results, call 'report' with this search_id and rate how helpful each id "
+        f"was for the current question (-10..10, may rate a subset)."
     )
     return {"search_id": _new_search_id(), "note": note, "total": len(items), "items": items}
 
