@@ -82,6 +82,7 @@ def _trim_result(tool: str, result) -> dict | None:
         items = result.get("items") or []
         keep_score = tool == "search_semantic"
         return {
+            "search_id": result.get("search_id"),
             "total": result.get("total", len(items)),
             "items": [
                 {"id": it.get("id"),

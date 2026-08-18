@@ -497,3 +497,49 @@ def memory_recover(source_path: str, target_path: str) -> dict:
     except Exception as e:
         logger.error("recover failed: %s", e, exc_info=True)
         raise
+
+
+def _normalize_rating(rating) -> int | None:
+    """Coerce a rating to an int in [-10, 10].
+
+    - Non-numeric values (str/None/bool/list/…) → None (skip this item).
+    - Floats are rounded to the nearest int, then clamped to [-10, 10].
+    """
+    if isinstance(rating, bool) or not isinstance(rating, (int, float)):
+        return None
+    if not isinstance(rating, int):
+        rating = round(rating)
+    return max(-10, min(10, rating))
+
+
+def memory_report(search_id, ratings) -> dict:
+    """Record LLM feedback on search result helpfulness.
+
+    Pure record-keeping: no storage writes here — the audit journal records
+    the event at the MCP tool boundary (handle_call_tool → audit.record).
+    Ratings are normalized leniently: out-of-range values are clamped to
+    [-10, 10], floats are rounded, and unparseable items are skipped so a
+    single bad entry never fails the whole call.
+
+    ``search_id`` is required (correlates with the originating search).
+    """
+    if not isinstance(search_id, str) or not search_id:
+        raise ValueError("search_id is required and must be a non-empty string")
+    if ratings is None:
+        ratings = []
+    if not isinstance(ratings, list):
+        raise ValueError("ratings must be a list of {m_id, rating} objects")
+
+    normalized = []
+    for item in ratings:
+        if not isinstance(item, dict):
+            continue
+        m_id = item.get("m_id")
+        if not isinstance(m_id, str) or not m_id:
+            continue
+        rating = _normalize_rating(item.get("rating"))
+        if rating is None:
+            continue
+        normalized.append({"m_id": m_id, "rating": rating})
+
+    return {"recorded": True, "count": len(normalized)}

@@ -1,6 +1,7 @@
 import json
 import sys
 import time
+import secrets
 import asyncio
 import argparse
 import logging
@@ -19,7 +20,7 @@ import uvicorn
 from . import log_config  # noqa: F401
 from .service import memory_add, memory_search, memory_list, \
     memory_update, memory_delete, memory_stats, memory_get_details, \
-    _prepare_for_llm
+    memory_report, _prepare_for_llm
 from .audit import record as audit_record
 
 logger = logging.getLogger("server")
@@ -185,6 +186,35 @@ async def handle_list_tools() -> types.ListToolsResult:
                         "default namespace is set via MEMORY_DEFAULT_NAMESPACE env var.",
             inputSchema={"type": "object", "properties": {}},
         ),
+        types.Tool(
+            name="report",
+            description="Report how helpful a previous search's results were for the current "
+                        "question or context. Call this AFTER search_semantic/search_meta — pass the "
+                        "search_id from that search's response plus ratings per memory id. "
+                        "rating is an integer from -10 to 10: positive = helpful (larger = more useful), "
+                        "negative = misleading/interference (more negative = stronger interference), "
+                        "0 = neither helpful nor harmful. You may rate any subset of the returned ids. "
+                        "The feedback is recorded for later search-quality analysis.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "search_id": {"type": "string", "description": "The search_id from a previous search_semantic/search_meta response"},
+                    "ratings": {
+                        "type": "array",
+                        "description": "Per-memory feedback. Rating -10..10 (out-of-range values are clamped).",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "m_id": {"type": "string", "description": "Memory id from the search results"},
+                                "rating": {"type": "integer", "description": "-10..10; positive helpful, negative interfering, 0 neutral"},
+                            },
+                            "required": ["m_id", "rating"],
+                        },
+                    },
+                },
+                "required": ["search_id", "ratings"],
+            },
+        ),
     ])
 
 
@@ -223,6 +253,9 @@ async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
         elif name == "stats":
             data = _wrap_stats(memory_stats())
             hint = _TOOL_HINTS["stats"]
+        elif name == "report":
+            data = memory_report(arguments.get("search_id"), arguments.get("ratings"))
+            hint = _TOOL_HINTS["report"]
         else:
             raise ValueError(f"Unknown tool: {name}")
         audit_record(name, arguments, data, (time.perf_counter() - start) * 1000)
@@ -287,6 +320,7 @@ _TOOL_HINTS: dict[str, str] = {
     "update": "Memory updated. Use 'get_details' with the id to verify the change, or 'search_semantic' to find related memories.",
     "delete": "Memory soft-deleted. It no longer appears in 'search_semantic'/'search_meta'. Call 'stats' to confirm the count.",
     "stats": "Use 'namespace_counts' to pick a namespace, then 'search_meta' or 'search_semantic' within it. Use 'keyword_counts' as the canonical keyword vocabulary for search_meta filtering and add. Use 'server_time' for time-based queries.",
+    "report": "Feedback recorded. Continue with the task, or run another search if the results were unhelpful.",
 }
 
 
@@ -303,6 +337,11 @@ def _ok(data, hint: str = "") -> types.CallToolResult:
     ])
 
 
+def _new_search_id() -> str:
+    """Generate a per-call search id for correlating searches with reports."""
+    return "se_" + secrets.token_hex(4)
+
+
 def _wrap_search_meta(items: list, namespace: str | None, limit: int, offset: int, sort_by: str) -> dict:
     """Attach usage guidance to search_meta results so the LLM knows how to consume them.
 
@@ -316,7 +355,7 @@ def _wrap_search_meta(items: list, namespace: str | None, limit: int, offset: in
         f"summary yet). To see the complete original content, call 'get_details' "
         f"with the returned ids."
     )
-    return {"note": note, "total": len(items), "items": items}
+    return {"search_id": _new_search_id(), "note": note, "total": len(items), "items": items}
 
 
 def _wrap_search_semantic(items: list) -> dict:
@@ -326,7 +365,7 @@ def _wrap_search_semantic(items: list) -> dict:
         f"summary (full text when no summary yet). To see the complete original "
         f"content, call 'get_details' with the returned ids."
     )
-    return {"note": note, "total": len(items), "items": items}
+    return {"search_id": _new_search_id(), "note": note, "total": len(items), "items": items}
 
 
 def _trim_keyword_counts(keyword_counts: dict) -> dict:

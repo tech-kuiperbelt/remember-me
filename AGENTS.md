@@ -34,7 +34,7 @@ Ollama **must be running locally** for embeddings to work. If missing, add/searc
 
 ## Key architecture facts
 
-- **`app/server.py`** — MCP tool/resource registration. 7 tools: `add`, `search_semantic`, `search_meta`, `get_details`, `update`, `delete`, `stats`. 2 resources: `memories://stats`, `memories://list`. All tool calls flow through `handle_call_tool` (if/elif dispatch) which records each invocation to the audit journal.
+- **`app/server.py`** — MCP tool/resource registration. 8 tools: `add`, `search_semantic`, `search_meta`, `get_details`, `update`, `delete`, `stats`, `report`. 2 resources: `memories://stats`, `memories://list`. All tool calls flow through `handle_call_tool` (if/elif dispatch) which records each invocation to the audit journal. `search_semantic`/`search_meta` responses carry a per-call `search_id` that the `report` tool uses to attach feedback on search result helpfulness.
 - **`app/audit.py`** — LLM tool-call audit journal: append-only JSONL (`data/audit.jsonl`), thread-safe, rotation at `MEMORY_AUDIT_MAX_EVENTS`, never raises, never blocks tool calls. Per-tool params/result trimming lives here (`_trim_params` / `_trim_result`).
 - **`app/service.py`** — Business layer: `memory_add/search/list/update/delete/stats/get_details`, storage bootstrap, summary worker wiring.
 - **`storage.py`** — Abstract `MemoryStorage` with `SQLiteStorage` (default) and `JSONStorage`. Embeddings are pickled into SQLite BLOBs.

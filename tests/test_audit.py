@@ -91,6 +91,25 @@ def test_search_meta_has_no_score(journal):
     assert "score" not in item
 
 
+def test_search_result_keeps_search_id(journal):
+    result = {"search_id": "se_abcd1234", "note": "...", "total": 1,
+              "items": [{"id": "a", "summary": "s1", "score": 0.9}]}
+    audit.record("search_semantic", {"query": "q", "k": 5, "namespace": "ns"}, result, 3.0)
+    ev = _read_lines(journal)[0]
+    assert ev["result"]["search_id"] == "se_abcd1234"
+
+
+def test_report_event_records_search_id_and_ratings(journal):
+    arguments = {"search_id": "se_abcd1234", "ratings": [{"m_id": "a", "rating": 8},
+                                                         {"m_id": "b", "rating": -3}]}
+    audit.record("report", arguments, {"recorded": True, "count": 2}, 1.0)
+    ev = _read_lines(journal)[0]
+    assert ev["tool"] == "report"
+    assert ev["status"] == "ok"
+    assert ev["params"] == arguments          # no content fields to trim
+    assert ev["result"] == {"recorded": True, "count": 2}
+
+
 def test_get_details_summary_keywords(journal):
     result = {"found": [{"id": "a", "summary": "s1", "metadata": {"keywords": ["kw1"]}, "text": "BODY"}],
               "missing": ["zzz"]}
