@@ -13,6 +13,7 @@ from .service import memory_add, memory_search, memory_list, memory_get, \
     memory_update, memory_delete, memory_clear, memory_stats, memory_sync, memory_recover, \
     memory_namespaces, memory_migrate_namespace, memory_get_details, memory_summarize, \
     memory_import, memory_storage_paths, storage, memory_extract_keywords
+from .audit import read_events as audit_read_events
 
 logger = logging.getLogger("admin")
 
@@ -278,6 +279,24 @@ async def handle_migrate_namespace(request: Request):
         return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
 
 
+async def handle_audit(request: Request):
+    """LLM tool-call audit journal (human-facing, newest first)."""
+    try:
+        try:
+            limit = int(request.query_params.get("limit", "500"))
+        except (TypeError, ValueError):
+            limit = 500
+        limit = max(1, min(limit, 5000))
+        tool = request.query_params.get("tool") or None
+        namespace = request.query_params.get("namespace") or None
+        logger.info("GET /api/audit limit=%d tool=%s namespace=%s", limit, tool, namespace)
+        events = audit_read_events(limit=limit, tool=tool, namespace=namespace)
+        return Response(json.dumps(events, ensure_ascii=False), media_type="application/json")
+    except Exception as e:
+        logger.error("GET /api/audit failed: %s", e, exc_info=True)
+        return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
+
+
 admin_routes = [
     Route("/admin/console", endpoint=handle_admin, methods=["GET"]),
     Route("/api/memories", endpoint=handle_list_memories, methods=["GET"]),
@@ -297,4 +316,5 @@ admin_routes = [
     Route("/api/summarize", endpoint=handle_summarize, methods=["POST"]),
     Route("/api/extract-keywords", endpoint=handle_extract_keywords, methods=["POST"]),
     Route("/api/namespaces/migrate", endpoint=handle_migrate_namespace, methods=["POST"]),
+    Route("/api/audit", endpoint=handle_audit, methods=["GET"]),
 ]

@@ -1,5 +1,6 @@
 import json
 import sys
+import time
 import asyncio
 import argparse
 import logging
@@ -19,6 +20,7 @@ from . import log_config  # noqa: F401
 from .service import memory_add, memory_search, memory_list, \
     memory_update, memory_delete, memory_stats, memory_get_details, \
     _prepare_for_llm
+from .audit import record as audit_record
 
 logger = logging.getLogger("server")
 
@@ -189,15 +191,17 @@ async def handle_list_tools() -> types.ListToolsResult:
 @server.call_tool()
 async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
     logger.info("Tool call: %s %s", name, arguments)
+    start = time.perf_counter()
     try:
         if name == "add":
-            return _ok(memory_add(arguments["text"], arguments.get("metadata"), arguments.get("namespace")),
-                       _TOOL_HINTS["add"])
-        if name == "search_semantic":
-            return _ok(_wrap_search_semantic(_prepare_for_llm(memory_search(arguments["query"], int(arguments.get("k", 5)),
-                                                                            float(arguments.get("threshold", 0.0)), arguments.get("namespace")))),
-                       _TOOL_HINTS["search_semantic"])
-        if name == "search_meta":
+            data = memory_add(arguments["text"], arguments.get("metadata"), arguments.get("namespace"))
+            hint = _TOOL_HINTS["add"]
+        elif name == "search_semantic":
+            data = _wrap_search_semantic(_prepare_for_llm(
+                memory_search(arguments["query"], int(arguments.get("k", 5)),
+                              float(arguments.get("threshold", 0.0)), arguments.get("namespace"))))
+            hint = _TOOL_HINTS["search_semantic"]
+        elif name == "search_meta":
             ns = arguments.get("namespace")
             limit = int(arguments.get("limit", 100))
             offset = int(arguments.get("offset", 0))
@@ -205,18 +209,27 @@ async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
             items = _prepare_for_llm(memory_list(ns, limit, offset, sort_by,
                                                  arguments.get("updated_after"), arguments.get("updated_before"),
                                                  keywords=arguments.get("keywords")))
-            return _ok(_wrap_search_meta(items, ns, limit, offset, sort_by), _TOOL_HINTS["search_meta"])
-        if name == "get_details":
-            return _ok(memory_get_details(arguments["memory_ids"]), _TOOL_HINTS["get_details"])
-        if name == "update":
-            return _ok(memory_update(arguments["memory_id"], arguments.get("text"), arguments.get("metadata"), arguments.get("namespace")),
-                       _TOOL_HINTS["update"])
-        if name == "delete":
-            return _ok(memory_delete(arguments["memory_id"]), _TOOL_HINTS["delete"])
-        if name == "stats":
-            return _ok(_wrap_stats(memory_stats()), _TOOL_HINTS["stats"])
-        raise ValueError(f"Unknown tool: {name}")
+            data = _wrap_search_meta(items, ns, limit, offset, sort_by)
+            hint = _TOOL_HINTS["search_meta"]
+        elif name == "get_details":
+            data = memory_get_details(arguments["memory_ids"])
+            hint = _TOOL_HINTS["get_details"]
+        elif name == "update":
+            data = memory_update(arguments["memory_id"], arguments.get("text"), arguments.get("metadata"), arguments.get("namespace"))
+            hint = _TOOL_HINTS["update"]
+        elif name == "delete":
+            data = memory_delete(arguments["memory_id"])
+            hint = _TOOL_HINTS["delete"]
+        elif name == "stats":
+            data = _wrap_stats(memory_stats())
+            hint = _TOOL_HINTS["stats"]
+        else:
+            raise ValueError(f"Unknown tool: {name}")
+        audit_record(name, arguments, data, (time.perf_counter() - start) * 1000)
+        return _ok(data, hint)
     except Exception as e:
+        audit_record(name, arguments, None, (time.perf_counter() - start) * 1000,
+                     error={"type": type(e).__name__, "message": str(e)})
         logger.error("Tool call '%s' failed: %s", name, e, exc_info=True)
         raise
 

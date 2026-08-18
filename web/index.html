@@ -94,6 +94,7 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
   <a id="nav-add" onclick="switchPage('add')">Add Memory</a>
   <a id="nav-stats" onclick="switchPage('stats')">Stats</a>
   <a id="nav-ops" onclick="switchPage('ops')">运维</a>
+  <a id="nav-audit" onclick="switchPage('audit')">Audit</a>
 </div>
 
 <div class="content">
@@ -420,6 +421,56 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
   </div>
 </div>
 
+<!-- Audit -->
+<div class="page" id="page-audit">
+  <div class="card">
+    <div class="card-header">
+      <span>Audit（LLM 工具调用日志）</span>
+      <button id="btn-audit-refresh" class="btn btn-outline btn-sm" onclick="loadAudit()">Refresh</button>
+    </div>
+    <div class="card-body">
+      <div class="form-row" style="margin-bottom:12px">
+        <div class="form-group">
+          <label>工具</label>
+          <select id="audit-tool" onchange="loadAudit()">
+            <option value="">全部</option>
+            <option value="add">add</option>
+            <option value="search_semantic">search_semantic</option>
+            <option value="search_meta">search_meta</option>
+            <option value="get_details">get_details</option>
+            <option value="update">update</option>
+            <option value="delete">delete</option>
+            <option value="stats">stats</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Namespace</label>
+          <input id="audit-namespace" placeholder="全部" style="padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px" onkeydown="if(event.key==='Enter')loadAudit()">
+        </div>
+        <div class="form-group">
+          <label>条数</label>
+          <input id="audit-limit" type="number" value="200" min="1" max="5000" style="padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;width:90px">
+        </div>
+      </div>
+      <div style="padding:0;overflow:auto;max-height:70vh">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:170px">时间</th>
+              <th style="width:90px">工具</th>
+              <th style="width:60px">状态</th>
+              <th style="width:70px">耗时(ms)</th>
+              <th style="width:120px">Namespace</th>
+              <th>参数 / 返回摘要</th>
+            </tr>
+          </thead>
+          <tbody id="audit-list"><tr><td colspan="6" class="empty-state">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
 </div>
 
 <script>
@@ -470,6 +521,7 @@ function switchPage(name) {
   if (name === 'memories') loadMemories();
   if (name === 'stats') loadStats();
   if (name === 'ops') loadOpsPage();
+  if (name === 'audit') loadAudit();
 }
 
 // Memories list
@@ -1239,6 +1291,58 @@ function pickNs(ns) {
 function refreshStats() {
   loadStats();
   loadMemories();
+}
+
+// Audit log
+function truncateJson(obj, maxLen = 160) {
+  let s;
+  try { s = JSON.stringify(obj); } catch(e) { s = String(obj); }
+  if (s.length > maxLen) return s.slice(0, maxLen) + '…';
+  return s;
+}
+
+async function loadAudit() {
+  const tool = $('audit-tool').value;
+  const namespace = $('audit-namespace').value.trim();
+  let limit = parseInt($('audit-limit').value, 10);
+  if (isNaN(limit) || limit < 1) limit = 200;
+  if (limit > 5000) limit = 5000;
+  const params = new URLSearchParams({limit: String(limit)});
+  if (tool) params.set('tool', tool);
+  if (namespace) params.set('namespace', namespace);
+  const tbody = $('audit-list');
+  tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Loading...</td></tr>';
+  try {
+    const data = await api('/audit?' + params.toString());
+    renderAudit(data);
+  } catch(e) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Error: ' + esc(e.message) + '</td></tr>';
+  }
+}
+
+function renderAudit(events) {
+  const tbody = $('audit-list');
+  if (!events || events.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">暂无审计记录</td></tr>';
+    return;
+  }
+  tbody.innerHTML = events.map(ev => {
+    const status = ev.status === 'error'
+      ? '<span style="color:#d33;font-weight:600">error</span>'
+      : '<span style="color:#2a7d3f">ok</span>';
+    const err = ev.error ? ' <span style="color:#d33;font-size:12px">' + esc(ev.error.type) + ': ' + esc(ev.error.message) + '</span>' : '';
+    const params = truncateJson(ev.params);
+    const result = truncateJson(ev.result);
+    return '<tr style="border-bottom:1px solid #f0f0f0;vertical-align:top">' +
+      '<td style="white-space:nowrap;color:#666;font-size:12px">' + esc(formatTime(ev.ts)) + '</td>' +
+      '<td>' + esc(ev.tool) + '</td>' +
+      '<td>' + status + '</td>' +
+      '<td style="color:#666">' + esc(ev.duration_ms) + '</td>' +
+      '<td style="word-break:break-all;font-size:12px">' + esc(ev.namespace || '') + '</td>' +
+      '<td style="font-size:12px;color:#444;word-break:break-all"><div>params: ' + esc(params) + '</div>' +
+      '<div style="margin-top:2px">result: ' + esc(result) + '</div>' + err + '</td>' +
+      '</tr>';
+  }).join('');
 }
 
 function esc(s) {
