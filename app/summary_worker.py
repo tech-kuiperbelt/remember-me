@@ -1,29 +1,29 @@
 """Background summary worker.
 
-memory_add / memory_update no longer wait for LLM summary generation
-(~30s per record with qwen3). Instead the record is stored immediately
-with summary=None and a (memory_id, text) task is enqueued here. A daemon
-thread picks tasks up, generates the summary via Ollama, and writes it
-back with storage.update_summary() (which keeps updated_at unchanged and
-is thread-safe via RLock).
+When memory_add / memory_update receive no usable caller summary, the record
+is stored immediately and a (memory_id, text) task is enqueued here. A daemon
+thread generates the fallback via Ollama and writes it only if that exact text
+still has no summary.
 
 Priority: fresh tasks (from add/update) are processed before bootstrap
 tasks (recovery of pre-existing records without summary), so a new memory
 gets its summary quickly even when the backlog is large.
 
 Recovery: on start(), pending records (summary IS NULL) are re-enqueued
-so a restart never loses work. Generation is idempotent — re-writing an
-existing summary is harmless.
+so a restart never loses work. Stale tasks never overwrite a caller-provided
+summary or a summary for newer text.
 """
 
 import threading
 import queue
 import logging
+import time
 
 logger = logging.getLogger("summary_worker")
 
 from .summarize import summarize
 from .storage import MemoryStorage
+from . import audit
 
 # Injected by service.py after storage creation (avoids circular import).
 _storage: MemoryStorage | None = None
@@ -94,6 +94,64 @@ def _next_task():
         return None, None
 
 
+def _process_task(memory_id: str, text: str) -> bool:
+    """Generate and conditionally store one fallback summary.
+
+    The checks before and during the write make queued work safe when a caller
+    supplies a summary or changes the memory while Ollama is generating.
+    """
+    started = time.perf_counter()
+    current = _storage.get(memory_id)
+    namespace = current.get("namespace") if current else None
+    if not current:
+        logger.info("summary worker: id=%s stale, skipped", memory_id)
+        audit.record("summary_fallback",
+                     {"memory_id": memory_id, "reason": "missing"},
+                     {"outcome": "stale_skipped"},
+                     (time.perf_counter() - started) * 1000)
+        return False
+    if current.get("summary"):
+        logger.info("summary worker: id=%s stale, skipped", memory_id)
+        audit.record("summary_fallback",
+                     {"memory_id": memory_id, "namespace": namespace,
+                      "reason": "summary_exists"},
+                     {"outcome": "stale_skipped"},
+                     (time.perf_counter() - started) * 1000)
+        return False
+    if current.get("text") != text:
+        logger.info("summary worker: id=%s stale, skipped", memory_id)
+        audit.record("summary_fallback",
+                     {"memory_id": memory_id, "namespace": namespace,
+                      "reason": "text_changed"},
+                     {"outcome": "stale_skipped"},
+                     (time.perf_counter() - started) * 1000)
+        return False
+    summary = summarize(text)
+    if not summary:
+        logger.warning("summary worker: id=%s empty response", memory_id)
+        audit.record("summary_fallback",
+                     {"memory_id": memory_id, "namespace": namespace},
+                     {"outcome": "empty"},
+                     (time.perf_counter() - started) * 1000)
+        return False
+    written = _storage.update_summary_if_pending(memory_id, text, summary)
+    if written:
+        logger.info("summary worker: id=%s ok len=%d", memory_id, len(summary))
+        audit.record("summary_fallback",
+                     {"memory_id": memory_id, "namespace": namespace},
+                     {"outcome": "generated", "summary_length": len(summary)},
+                     (time.perf_counter() - started) * 1000)
+    else:
+        logger.info("summary worker: id=%s changed during generation, skipped",
+                    memory_id)
+        audit.record("summary_fallback",
+                     {"memory_id": memory_id, "namespace": namespace,
+                      "reason": "changed_during_generation"},
+                     {"outcome": "stale_skipped"},
+                     (time.perf_counter() - started) * 1000)
+    return written
+
+
 def _loop():
     assert _storage is not None, "summary_worker.set_storage() must be called first"
     _bootstrap()
@@ -108,16 +166,14 @@ def _loop():
                 continue
         memory_id, text = task
         try:
-            summary = summarize(text)
-            if summary:
-                _storage.update_summary(memory_id, summary)
-                logger.info("summary worker: id=%s ok len=%d", memory_id, len(summary))
-            else:
-                logger.warning("summary worker: id=%s empty response", memory_id)
-        except Exception:
+            _process_task(memory_id, text)
+        except Exception as exc:
             # Keep the record pending-eligible (summary stays NULL) so it can
             # be retried after a restart. Do not crash the worker loop.
             logger.warning("summary worker: id=%s failed", memory_id, exc_info=True)
+            audit.record("summary_fallback", {"memory_id": memory_id}, None, 0,
+                         error={"type": type(exc).__name__,
+                                "message": str(exc)})
         finally:
             src.task_done()
 

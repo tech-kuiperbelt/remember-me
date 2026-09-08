@@ -95,18 +95,33 @@ def _prepare_for_llm(results: list[dict]) -> list[dict]:
     return results
 
 
-def memory_add(text: str, metadata: dict | None = None, namespace: str | None = None) -> dict:
+def _normalize_summary(summary) -> str | None:
+    """Return a caller summary stripped, or None when it is unusable."""
+    if not isinstance(summary, str):
+        return None
+    summary = summary.strip()
+    return summary or None
+
+
+def memory_add(text: str, metadata: dict | None = None,
+               namespace: str | None = None, summary: str | None = None) -> dict:
     ns = namespace or DEFAULT_NAMESPACE
-    logger.info("add: namespace=%s text_len=%d", ns, len(text))
+    summary = _normalize_summary(summary)
+    logger.info("add: namespace=%s text_len=%d has_summary=%s",
+                ns, len(text), summary is not None)
     try:
         embedding = embed(text)
         metadata = _apply_keywords_to_metadata(metadata)
-        result = storage.add(text, embedding, metadata=metadata, namespace=ns, summary=None)
+        result = storage.add(text, embedding, metadata=metadata, namespace=ns,
+                             summary=summary)
         eid = result["id"]
-        if result.get("created"):
-            # New record: summary is generated in the background — do not block the caller.
+        if result.get("created") and summary is None:
+            # No usable caller summary: generate one in the background without
+            # blocking the write path.
             summary_worker.enqueue(eid, text)
             logger.info("add: ok id=%s (summary async)", eid)
+        elif result.get("created"):
+            logger.info("add: ok id=%s (summary supplied)", eid)
         else:
             # Duplicate (namespace + text): existing record returned untouched.
             logger.info("add: duplicate skipped id=%s", eid)
@@ -212,22 +227,29 @@ def memory_get(memory_id: str) -> dict | None:
 
 def memory_update(memory_id: str, text: str | None = None,
                   metadata: dict | None = None,
-                  namespace: str | None = None) -> dict:
-    logger.info("update: id=%s has_text=%s has_metadata=%s has_ns=%s", memory_id, text is not None, metadata is not None, namespace is not None)
+                  namespace: str | None = None,
+                  summary: str | None = None) -> dict:
+    summary = _normalize_summary(summary)
+    logger.info("update: id=%s has_text=%s has_metadata=%s has_ns=%s has_summary=%s",
+                memory_id, text is not None, metadata is not None,
+                namespace is not None, summary is not None)
     try:
         if text is not None:
             embedding = embed(text)
-            # Text changed: clear the stale summary now ("" clears it in storage),
-            # regenerate in the background worker.
-            summary = ""
+            # A supplied summary belongs to the new text and is stored in the
+            # same update. Otherwise clear the stale summary for async fallback.
+            stored_summary = summary if summary is not None else ""
         else:
             embedding = None
-            summary = None
+            # None means preserve the current summary. A non-empty value allows
+            # callers to correct a summary without changing the memory text.
+            stored_summary = summary
         metadata = _apply_keywords_to_metadata(metadata)
         ok = storage.update(memory_id, text=text, embedding=embedding,
-                            metadata=metadata, namespace=namespace, summary=summary)
-        if ok and text is not None:
-            # Text changed — stale summary must be cleared and regenerated async.
+                            metadata=metadata, namespace=namespace,
+                            summary=stored_summary)
+        if ok and text is not None and summary is None:
+            # Text changed without a usable caller summary: regenerate async.
             summary_worker.enqueue(memory_id, text)
         logger.info("update: %s", "ok" if ok else "not found")
         return {"success": ok}

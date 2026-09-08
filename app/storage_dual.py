@@ -105,6 +105,10 @@ class DualStorage(MemoryStorage):
         with self._lock:
             return self.primary.update_summary(memory_id, summary)
 
+    def update_summary_if_pending(self, memory_id, expected_text, summary):
+        with self._lock:
+            return self.primary.update_summary_if_pending(memory_id, expected_text, summary)
+
     def update_metadata(self, memory_id, metadata):
         with self._lock:
             return self.primary.update_metadata(memory_id, metadata)

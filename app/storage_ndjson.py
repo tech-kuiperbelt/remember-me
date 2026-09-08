@@ -161,6 +161,16 @@ class NDJSONStorage(MemoryStorage):
             self._append_line(e)
         return True
 
+    def update_summary_if_pending(self, memory_id, expected_text, summary):
+        """Atomically fill a summary only for the text the worker processed."""
+        with self._lock:
+            e = self._data.get(memory_id)
+            if not e or e.get("text") != expected_text or e.get("summary"):
+                return False
+            e["summary"] = summary
+            self._append_line(e)
+        return True
+
     def get_pending_summaries(self, limit=1000):
         """Records with empty summary, oldest first (background worker recovery)."""
         with self._lock:

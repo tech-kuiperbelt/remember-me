@@ -1,10 +1,9 @@
-"""LLM tool-call audit — append-only event journal.
+"""Tool-call and background-work audit — append-only event journal.
 
-Records every MCP tool invocation (time, tool, status, duration, namespace,
-params summary, result summary) to a JSONL file for human review in the
-admin UI. The audit stream is deliberately *not* exposed to the LLM: it lives
-in the platform layer (see backlog item [11] and the industry research memory
-b73ca6446ed79bad).
+Records every MCP tool invocation plus summary fallback outcomes (time, tool,
+status, duration, namespace, params summary, result summary) to a JSONL file
+for human review in the admin UI. The audit stream is deliberately *not*
+exposed to the LLM: it lives in the platform layer.
 
 Guarantees:
 
@@ -30,7 +29,7 @@ AUDIT_MAX_EVENTS = int(os.environ.get("MEMORY_AUDIT_MAX_EVENTS", "10000"))
 
 # User-content keys stripped from the recorded params: the journal must not
 # duplicate memory bodies (they already live in the primary store).
-_TEXT_KEYS = ("text",)
+_TEXT_KEYS = ("text", "summary")
 
 _lock = threading.Lock()
 _file = None
@@ -56,9 +55,25 @@ def _open_file() -> None:
             _count = sum(1 for _ in fh)
 
 
-def _trim_params(tool: str, arguments: dict | None) -> dict:
+def _trim_params(tool: str, arguments: dict | None, result=None) -> dict:
     """Per-tool params record — drop user-content fields, keep metadata."""
     args = dict(arguments or {})
+    if tool == "add":
+        summary = args.get("summary")
+        if isinstance(result, dict) and result.get("created") is False:
+            args["summary_mode"] = "duplicate"
+        elif isinstance(summary, str) and summary.strip():
+            args["summary_mode"] = "input"
+        else:
+            args["summary_mode"] = "fallback"
+    elif tool == "update":
+        summary = args.get("summary")
+        if isinstance(summary, str) and summary.strip():
+            args["summary_mode"] = "input"
+        elif args.get("text") is not None:
+            args["summary_mode"] = "fallback"
+        else:
+            args["summary_mode"] = "preserved"
     for key in _TEXT_KEYS:
         args.pop(key, None)
     return args
@@ -135,7 +150,7 @@ def record(tool: str, arguments: dict | None, result, duration_ms: float,
                 "duration_ms": round(duration_ms, 1),
                 "namespace": (arguments or {}).get("namespace"),
                 "error": error,
-                "params": _trim_params(tool, arguments),
+                "params": _trim_params(tool, arguments, result),
                 "result": _trim_result(tool, result),
             }
             _file.write(json.dumps(event, ensure_ascii=False, default=str) + "\n")

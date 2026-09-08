@@ -41,6 +41,30 @@ def test_memory_add_new_enqueues_summary(service, mocked):
     mocked["storage"].add.assert_called_once()
 
 
+def test_memory_add_supplied_summary_skips_worker(service, mocked):
+    mocked["storage"].add.return_value = {"id": "abc123", "created": True}
+
+    result = service.memory_add("some text", namespace="ns1",
+                                summary="  caller summary  ")
+
+    assert result == {"id": "abc123", "created": True}
+    mocked["storage"].add.assert_called_once_with(
+        "some text", [0.1, 0.2, 0.3], metadata=None, namespace="ns1",
+        summary="caller summary",
+    )
+    mocked["enqueue"].assert_not_called()
+
+
+def test_memory_add_blank_summary_uses_worker(service, mocked):
+    mocked["storage"].add.return_value = {"id": "abc123", "created": True}
+
+    service.memory_add("some text", summary="  \n ")
+
+    _, kwargs = mocked["storage"].add.call_args
+    assert kwargs["summary"] is None
+    mocked["enqueue"].assert_called_once_with("abc123", "some text")
+
+
 def test_memory_add_duplicate_skips_summary(service, mocked):
     """created=False (duplicate) → returns existing id, NO summary enqueue."""
     mocked["storage"].add.return_value = {"id": "abc123", "created": False}
@@ -72,6 +96,53 @@ def test_memory_add_storage_error_propagates(service, mocked):
     mocked["storage"].add.side_effect = RuntimeError("disk full")
     with pytest.raises(RuntimeError):
         service.memory_add("text", namespace="ns1")
+
+
+def test_memory_update_text_with_summary_skips_worker(service, mocked):
+    mocked["storage"].update.return_value = True
+
+    result = service.memory_update("abc", text="new text",
+                                   summary="  new summary  ")
+
+    assert result == {"success": True}
+    mocked["storage"].update.assert_called_once_with(
+        "abc", text="new text", embedding=[0.1, 0.2, 0.3], metadata=None,
+        namespace=None, summary="new summary",
+    )
+    mocked["enqueue"].assert_not_called()
+
+
+@pytest.mark.parametrize("summary", [None, "", "  \n "])
+def test_memory_update_text_without_summary_uses_worker(service, mocked, summary):
+    mocked["storage"].update.return_value = True
+
+    service.memory_update("abc", text="new text", summary=summary)
+
+    _, kwargs = mocked["storage"].update.call_args
+    assert kwargs["summary"] == ""
+    mocked["enqueue"].assert_called_once_with("abc", "new text")
+
+
+def test_memory_update_summary_only(service, mocked):
+    mocked["storage"].update.return_value = True
+
+    service.memory_update("abc", summary=" corrected ")
+
+    mocked["storage"].update.assert_called_once_with(
+        "abc", text=None, embedding=None, metadata=None, namespace=None,
+        summary="corrected",
+    )
+    mocked["enqueue"].assert_not_called()
+
+
+def test_memory_update_metadata_only_preserves_summary(service, mocked):
+    mocked["storage"].update.return_value = True
+
+    service.memory_update("abc", metadata={"category": "rule"})
+
+    _, kwargs = mocked["storage"].update.call_args
+    assert kwargs["summary"] is None
+    mocked["enqueue"].assert_not_called()
 
 
 def test_storage_paths_dual(service, monkeypatch):

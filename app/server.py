@@ -46,6 +46,10 @@ async def handle_list_tools() -> types.ListToolsResult:
         types.Tool(
             name="add",
             description="Store a new memory. Text is automatically embedded for semantic search. "
+                        "You MUST provide a concise, faithful summary in the summary parameter; "
+                        "keep technical terms, ticket numbers, and business event times. The server "
+                        "still accepts a missing or blank summary and generates one asynchronously "
+                        "as a reliability fallback. "
                         "Deduplicated by content+namespace: if the same text already exists in the "
                         "target namespace, no duplicate is inserted and the existing record's id is "
                         "returned with created=false. "
@@ -57,6 +61,10 @@ async def handle_list_tools() -> types.ListToolsResult:
                 "type": "object",
                 "properties": {
                     "text": {"type": "string", "description": "The memory text"},
+                    "summary": {
+                        "type": "string",
+                        "description": "A concise summary of text. LLM callers MUST provide this; missing or blank values are tolerated and generated asynchronously as fallback.",
+                    },
                     "metadata": {
                         "type": "object",
                         "description": "Optional key-value metadata",
@@ -149,14 +157,17 @@ async def handle_list_tools() -> types.ListToolsResult:
         ),
         types.Tool(
             name="update",
-            description="Update a memory's text and/or metadata and/or namespace. "
-                        "If text changes, embedding and summary are recomputed; "
-                        "metadata-only updates leave the summary untouched.",
+            description="Update a memory's text, summary, metadata and/or namespace. "
+                        "When changing text, you MUST also provide a concise, faithful summary for "
+                        "the new text. The server still accepts an omitted or blank summary and "
+                        "generates one asynchronously as a reliability fallback. A summary may also "
+                        "be corrected without changing text; metadata-only updates leave it untouched.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "memory_id": {"type": "string"},
                     "text": {"type": "string", "description": "New text"},
+                    "summary": {"type": "string", "description": "New summary. LLM callers changing text MUST provide this; omission is tolerated and triggers asynchronous fallback."},
                     "metadata": {"type": "object", "description": "Metadata to merge"},
                     "namespace": {"type": "string", "description": "New namespace"},
                 },
@@ -225,7 +236,8 @@ async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
     start = time.perf_counter()
     try:
         if name == "add":
-            data = memory_add(arguments["text"], arguments.get("metadata"), arguments.get("namespace"))
+            data = memory_add(arguments["text"], arguments.get("metadata"),
+                              arguments.get("namespace"), arguments.get("summary"))
             hint = _TOOL_HINTS["add"]
         elif name == "search_semantic":
             data = _wrap_search_semantic(_prepare_for_llm(
@@ -246,7 +258,9 @@ async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
             data = memory_get_details(arguments["memory_ids"])
             hint = _TOOL_HINTS["get_details"]
         elif name == "update":
-            data = memory_update(arguments["memory_id"], arguments.get("text"), arguments.get("metadata"), arguments.get("namespace"))
+            data = memory_update(arguments["memory_id"], arguments.get("text"),
+                                 arguments.get("metadata"), arguments.get("namespace"),
+                                 arguments.get("summary"))
             hint = _TOOL_HINTS["update"]
         elif name == "delete":
             data = memory_delete(arguments["memory_id"])
@@ -314,11 +328,11 @@ async def handle_read_resource(uri: str) -> types.ReadResourceResult:
 # Guidance appended to each tool's result so the LLM knows what it can do next
 # with the returned data. Kept intentionally concise.
 _TOOL_HINTS: dict[str, str] = {
-    "add": "Memory stored (created=true). If created=false, an identical record already exists in this namespace and the returned id is the existing one — consider 'update' instead of re-adding.",
+    "add": "Memory stored. A supplied summary was saved directly; if it was missing or blank, asynchronous summary generation was queued. If created=false, an identical record already exists and remains untouched — consider 'update' instead.",
     "search_semantic": "Results are ranked by relevance (score). Use 'get_details' with an id to read the full original text, then call 'report' with this search_id to rate how helpful each result was (-10..10).",
     "search_meta": "Use 'get_details' with an id to read the full original text, or call 'search_semantic' for fuzzy/topic/keyword lookup. After using these results, call 'report' with this search_id to rate how helpful each id was (-10..10).",
     "get_details": "You now have the full text, including metadata.keywords. If a memory is relevant, use search_meta(keywords=[...]) with its keywords to find related memories.",
-    "update": "Memory updated. Use 'get_details' with the id to verify the change, or 'search_semantic' to find related memories.",
+    "update": "Memory updated. A supplied summary was saved directly; a text change without one queued asynchronous summary generation. Use 'get_details' with the id to verify the change.",
     "delete": "Memory soft-deleted. It no longer appears in 'search_semantic'/'search_meta'. Call 'stats' to confirm the count.",
     "stats": "Use 'namespace_counts' to pick a namespace, then 'search_meta' or 'search_semantic' within it. Use 'keyword_counts' as the canonical keyword vocabulary for search_meta filtering and add. Use 'server_time' for time-based queries.",
     "report": "Feedback recorded. Continue with the task, or run another search if the results were unhelpful.",

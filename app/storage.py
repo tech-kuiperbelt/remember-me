@@ -82,6 +82,12 @@ class MemoryStorage(ABC):
         ...
 
     @abstractmethod
+    def update_summary_if_pending(self, memory_id: str, expected_text: str,
+                                  summary: str) -> bool:
+        """Set summary only while text matches and no summary exists."""
+        ...
+
+    @abstractmethod
     def get_pending_summaries(self, limit: int = 1000) -> list[dict[str, Any]]:
         """Return records whose summary is empty, oldest first (for background worker recovery)."""
         ...

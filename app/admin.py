@@ -126,7 +126,8 @@ async def handle_add_memory(request: Request):
     try:
         body = await request.json()
         logger.info("POST /api/memories text_len=%d", len(body.get("text", "")))
-        result = memory_add(body["text"], body.get("metadata"), body.get("namespace"))
+        result = memory_add(body["text"], body.get("metadata"), body.get("namespace"),
+                            body.get("summary"))
         return Response(json.dumps(result), status_code=201, media_type="application/json")
     except Exception as e:
         logger.error("POST /api/memories failed: %s", e, exc_info=True)
@@ -138,7 +139,8 @@ async def handle_update_memory(request: Request):
         mid = request.path_params.get("memory_id")
         body = await request.json()
         logger.info("PUT /api/memories/%s", mid)
-        result = memory_update(mid, body.get("text"), body.get("metadata"), body.get("namespace"))
+        result = memory_update(mid, body.get("text"), body.get("metadata"),
+                               body.get("namespace"), body.get("summary"))
         if not result["success"]:
             return Response(json.dumps({"detail": "Not found"}), status_code=404, media_type="application/json")
         return Response(json.dumps(result), media_type="application/json")
@@ -280,7 +282,7 @@ async def handle_migrate_namespace(request: Request):
 
 
 async def handle_audit(request: Request):
-    """LLM tool-call audit journal (human-facing, newest first)."""
+    """Tool-call and background-work audit journal (newest first)."""
     try:
         try:
             limit = int(request.query_params.get("limit", "500"))

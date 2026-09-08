@@ -65,8 +65,33 @@ def test_add_strips_text_from_params(journal):
                  {"id": "abc", "created": True}, 1.0)
     ev = _read_lines(journal)[0]
     assert "text" not in ev["params"]
-    assert ev["params"] == {"namespace": "ns", "metadata": {"a": 1}}
+    assert ev["params"] == {"namespace": "ns", "metadata": {"a": 1},
+                            "summary_mode": "fallback"}
     assert ev["result"] == {"id": "abc", "created": True}
+
+
+def test_write_strips_summary_and_records_presence(journal):
+    audit.record("update", {"memory_id": "abc", "text": "body",
+                            "summary": "  concise summary  "},
+                 {"success": True}, 1.0)
+    params = _read_lines(journal)[0]["params"]
+    assert "text" not in params
+    assert "summary" not in params
+    assert params == {"memory_id": "abc", "summary_mode": "input"}
+
+
+@pytest.mark.parametrize("arguments,result,expected", [
+    ({"text": "body"}, {"id": "a", "created": True}, "fallback"),
+    ({"text": "body", "summary": "given"}, {"id": "a", "created": True}, "input"),
+    ({"text": "body", "summary": "given"}, {"id": "a", "created": False}, "duplicate"),
+    ({"memory_id": "a", "text": "new"}, {"success": True}, "fallback"),
+    ({"memory_id": "a", "summary": "fixed"}, {"success": True}, "input"),
+    ({"memory_id": "a", "metadata": {"x": 1}}, {"success": True}, "preserved"),
+])
+def test_write_summary_mode(journal, arguments, result, expected):
+    tool = "add" if "memory_id" not in arguments else "update"
+    audit.record(tool, arguments, result, 1.0)
+    assert _read_lines(journal)[0]["params"]["summary_mode"] == expected
 
 
 def test_search_semantic_keeps_score(journal):

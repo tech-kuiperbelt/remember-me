@@ -388,6 +388,18 @@ class SQLiteStorage(MemoryStorage):
             self.conn.commit()
         return c.rowcount > 0
 
+    def update_summary_if_pending(self, memory_id, expected_text, summary):
+        """Atomically fill a summary only for the text the worker processed."""
+        with self._lock:
+            c = self.conn.execute(
+                "UPDATE memories SET summary = ?, synced = 0 "
+                "WHERE id = ? AND deleted = 0 AND text = ? "
+                "AND (summary IS NULL OR summary = '')",
+                (summary, memory_id, expected_text),
+            )
+            self.conn.commit()
+        return c.rowcount > 0
+
     def update_metadata(self, memory_id, metadata):
         """Merge metadata and re-sync the keyword index — updated_at stays
         unchanged. Used by the keyword-extraction migration so backfilled
