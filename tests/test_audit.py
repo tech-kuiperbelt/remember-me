@@ -6,6 +6,7 @@ module-level writer state between tests so nothing touches real ``data/``.
 """
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -17,12 +18,12 @@ def journal(tmp_path, monkeypatch):
     """Point the audit journal at a temp file and reset its writer state."""
     path = tmp_path / "audit.jsonl"
     monkeypatch.setattr(audit, "AUDIT_PATH", str(path))
-    monkeypatch.setattr(audit, "AUDIT_MAX_EVENTS", 10000)
+    monkeypatch.setattr(audit, "AUDIT_MAX_BYTES", 10 * 1024 * 1024)
+    monkeypatch.setattr(audit, "AUDIT_MAX_FILES", 10)
+    monkeypatch.setattr(audit, "AUDIT_MAX_EVENTS", 0)
     # Reset module-level writer state so each test starts clean.
     monkeypatch.setattr(audit, "_file", None)
     monkeypatch.setattr(audit, "_count", 0)
-    monkeypatch.setattr(audit, "_stopped", False)
-    monkeypatch.setattr(audit, "_warned", False)
     return path
 
 
@@ -170,13 +171,48 @@ def test_record_error_event(journal):
 
 # -- rotation --
 
-def test_rotation_stops_after_max(journal, monkeypatch):
+def test_count_rotation_continues_after_max(journal, monkeypatch):
     monkeypatch.setattr(audit, "AUDIT_MAX_EVENTS", 3)
     for i in range(5):
         audit.record("stats", {}, {"total": i}, 1.0)
-    events = _read_lines(journal)
-    assert len(events) == 3  # only the first 3 were written
-    assert audit._stopped is True
+    assert len(_read_lines(journal)) == 2
+    assert len(_read_lines(Path(f"{journal}.1"))) == 3
+    assert [event["result"]["total"] for event in audit.read_events()] == [4, 3, 2, 1, 0]
+
+
+def test_size_rotation_uses_utf8_bytes_and_keeps_large_event(journal, monkeypatch):
+    monkeypatch.setattr(audit, "AUDIT_MAX_BYTES", 1)
+    audit.record("stats", {}, {"value": "中文"}, 1.0)
+    audit.record("stats", {}, {"value": "next"}, 1.0)
+
+    assert len(_read_lines(journal)) == 1
+    assert _read_lines(journal)[0]["result"]["value"] == "next"
+    assert _read_lines(Path(f"{journal}.1"))[0]["result"]["value"] == "中文"
+
+
+def test_rotation_discards_oldest_file(journal, monkeypatch):
+    monkeypatch.setattr(audit, "AUDIT_MAX_EVENTS", 1)
+    monkeypatch.setattr(audit, "AUDIT_MAX_FILES", 3)
+    for i in range(5):
+        audit.record("stats", {}, {"total": i}, 1.0)
+
+    assert [event["result"]["total"] for event in audit.read_events()] == [4, 3, 2]
+    assert Path(f"{journal}.2").exists()
+    assert not Path(f"{journal}.3").exists()
+
+
+def test_rotation_failure_does_not_stop_future_writes(journal, monkeypatch):
+    monkeypatch.setattr(audit, "AUDIT_MAX_EVENTS", 1)
+    audit.record("stats", {}, {"total": 1}, 1.0)
+
+    def fail_replace(*args):
+        raise OSError("rename failed")
+
+    monkeypatch.setattr(audit.os, "replace", fail_replace)
+    audit.record("stats", {}, {"total": 2}, 1.0)
+    audit.record("stats", {}, {"total": 3}, 1.0)
+
+    assert [event["result"]["total"] for event in audit.read_events()] == [3, 2, 1]
 
 
 # -- read_events --
@@ -199,6 +235,18 @@ def test_read_events_newest_first_with_filters(journal):
 
     limited = audit.read_events(limit=2)
     assert len(limited) == 2
+
+
+def test_read_events_filters_across_rotated_files(journal, monkeypatch):
+    monkeypatch.setattr(audit, "AUDIT_MAX_EVENTS", 1)
+    audit.record("add", {"namespace": "old", "text": "x"},
+                 {"id": "1", "created": True}, 1.0)
+    audit.record("delete", {"namespace": "new", "memory_id": "1"},
+                 {"success": True}, 1.0)
+
+    assert [event["tool"] for event in audit.read_events()] == ["delete", "add"]
+    assert [event["tool"] for event in audit.read_events(tool="add")] == ["add"]
+    assert [event["namespace"] for event in audit.read_events(namespace="old")] == ["old"]
 
 
 def test_read_events_skips_corrupt_lines(journal):

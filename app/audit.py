@@ -9,8 +9,8 @@ Guarantees:
 
 - Never raises: audit failures must not affect the tool call path.
 - Thread-safe: appends are protected by a lock (summary worker is a thread).
-- Bounded: after ``AUDIT_MAX_EVENTS`` records the journal stops writing and
-  logs a single warning — it never truncates or deletes historical data.
+- Bounded: files rotate by size (or an optional per-file event count), and
+  the oldest backup is discarded after the configured file-count limit.
 - Independent of the memory stores: the audit journal is separate from the
   SQLite primary / JSONL replica used for memories.
 """
@@ -25,7 +25,10 @@ from pathlib import Path
 logger = logging.getLogger("audit")
 
 AUDIT_PATH = os.environ.get("MEMORY_AUDIT_PATH", "data/audit.jsonl")
-AUDIT_MAX_EVENTS = int(os.environ.get("MEMORY_AUDIT_MAX_EVENTS", "10000"))
+AUDIT_MAX_BYTES = int(os.environ.get("MEMORY_AUDIT_MAX_BYTES", str(10 * 1024 * 1024)))
+AUDIT_MAX_FILES = max(1, int(os.environ.get("MEMORY_AUDIT_MAX_FILES", "10")))
+# Backward-compatible optional per-file limit. Zero disables count rotation.
+AUDIT_MAX_EVENTS = max(0, int(os.environ.get("MEMORY_AUDIT_MAX_EVENTS", "0")))
 
 # User-content keys stripped from the recorded params: the journal must not
 # duplicate memory bodies (they already live in the primary store).
@@ -34,8 +37,6 @@ _TEXT_KEYS = ("text", "summary")
 _lock = threading.Lock()
 _file = None
 _count = 0
-_stopped = False
-_warned = False
 
 
 def _now_utc_iso() -> str:
@@ -53,6 +54,56 @@ def _open_file() -> None:
     if path.exists() and path.stat().st_size > 0:
         with path.open("r", encoding="utf-8") as fh:
             _count = sum(1 for _ in fh)
+
+
+def _rotate() -> bool:
+    """Rotate the current journal and reopen it. Never raises.
+
+    ``AUDIT_MAX_FILES`` includes the active file, so a value of 10 keeps the
+    active journal plus ``.1`` through ``.9``. A failed rename may leave a
+    partial backup shift, but the active path is always reopened so auditing
+    can continue instead of becoming permanently disabled.
+    """
+    global _file, _count
+    path = Path(AUDIT_PATH)
+    try:
+        if _file is not None:
+            _file.close()
+            _file = None
+        if AUDIT_MAX_FILES == 1:
+            if path.exists():
+                path.unlink()
+        else:
+            for suffix in range(AUDIT_MAX_FILES - 1, 0, -1):
+                source = path if suffix == 1 else Path(f"{path}.{suffix - 1}")
+                target = Path(f"{path}.{suffix}")
+                if source.exists():
+                    os.replace(source, target)
+        _count = 0
+        return True
+    except Exception as exc:
+        logger.error("audit rotation failed: %s", exc, exc_info=True)
+        return False
+    finally:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            _file = open(path, "a", encoding="utf-8")
+            if path.exists() and path.stat().st_size > 0:
+                with path.open("r", encoding="utf-8") as fh:
+                    _count = sum(1 for _ in fh)
+        except Exception as exc:
+            _file = None
+            logger.error("audit journal reopen failed: %s", exc, exc_info=True)
+
+
+def _should_rotate(next_size: int) -> bool:
+    """Return whether the next encoded event should start a new file."""
+    path = Path(AUDIT_PATH)
+    current_size = path.stat().st_size if path.exists() else 0
+    by_size = (AUDIT_MAX_BYTES > 0 and current_size > 0 and
+               current_size + next_size > AUDIT_MAX_BYTES)
+    by_count = AUDIT_MAX_EVENTS > 0 and _count >= AUDIT_MAX_EVENTS
+    return by_size or by_count
 
 
 def _trim_params(tool: str, arguments: dict | None, result=None) -> dict:
@@ -129,20 +180,10 @@ def record(tool: str, arguments: dict | None, result, duration_ms: float,
 
     ``error`` is ``{"type": ..., "message": ...}`` for failed calls, else None.
     """
-    global _count, _stopped, _warned
+    global _count
     try:
         with _lock:
-            if _stopped:
-                return
             _open_file()
-            if _count >= AUDIT_MAX_EVENTS:
-                _stopped = True
-                if not _warned:
-                    _warned = True
-                    logger.warning("audit journal stopped: %d events (max %d). "
-                                   "Archive %s to resume recording.",
-                                   _count, AUDIT_MAX_EVENTS, AUDIT_PATH)
-                return
             event = {
                 "ts": _now_utc_iso(),
                 "tool": tool,
@@ -153,7 +194,12 @@ def record(tool: str, arguments: dict | None, result, duration_ms: float,
                 "params": _trim_params(tool, arguments, result),
                 "result": _trim_result(tool, result),
             }
-            _file.write(json.dumps(event, ensure_ascii=False, default=str) + "\n")
+            line = json.dumps(event, ensure_ascii=False, default=str) + "\n"
+            if _should_rotate(len(line.encode("utf-8"))):
+                _rotate()
+            if _file is None:
+                _open_file()
+            _file.write(line)
             _file.flush()
             _count += 1
     except Exception as e:
@@ -168,13 +214,17 @@ def read_events(limit: int = 500, tool: str | None = None,
     Lines that fail to parse are skipped so one corrupt line never breaks
     the admin UI.
     """
-    path = Path(AUDIT_PATH)
-    if not path.exists():
-        return []
     events: list[dict] = []
-    try:
-        with open(path, "r", encoding="utf-8") as fh:
-            for line in fh:
+    path = Path(AUDIT_PATH)
+    paths = [path] + [Path(f"{path}.{suffix}")
+                      for suffix in range(1, AUDIT_MAX_FILES)]
+    for candidate in paths:
+        if not candidate.exists():
+            continue
+        try:
+            with candidate.open("r", encoding="utf-8") as fh:
+                lines = fh.readlines()
+            for line in reversed(lines):
                 line = line.strip()
                 if not line:
                     continue
@@ -187,8 +237,8 @@ def read_events(limit: int = 500, tool: str | None = None,
                 if namespace and ev.get("namespace") != namespace:
                     continue
                 events.append(ev)
-    except OSError as e:
-        logger.error("audit read failed: %s", e)
-        return []
-    events.reverse()
-    return events[:limit]
+                if len(events) >= limit:
+                    return events
+        except (OSError, UnicodeError) as exc:
+            logger.error("audit read failed for %s: %s", candidate, exc)
+    return events

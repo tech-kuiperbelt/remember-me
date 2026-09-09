@@ -27,15 +27,17 @@ SSE endpoint: `GET /sse`, client POSTs to `/messages/?session_id=...`.
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server for embeddings |
 | `EMBED_MODEL` | `bge-m3` | Model name passed to Ollama `/api/embeddings` |
 | `MEMORY_DEFAULT_NAMESPACE` | `default` | Fallback namespace when `add` tool is called without `namespace`. Set to the project name so all LLM-written memories are scoped per project. |
-| `MEMORY_AUDIT_PATH` | `data/audit.jsonl` | Append-only LLM tool-call audit journal |
-| `MEMORY_AUDIT_MAX_EVENTS` | `10000` | Max events before the audit journal stops recording |
+| `MEMORY_AUDIT_PATH` | `data/audit.jsonl` | Active tool-call/background-task audit journal |
+| `MEMORY_AUDIT_MAX_BYTES` | `10485760` | Max bytes per audit file before rotation (10MB) |
+| `MEMORY_AUDIT_MAX_FILES` | `10` | Total audit files retained, including the active file |
+| `MEMORY_AUDIT_MAX_EVENTS` | `0` | Optional per-file event limit; `0` disables count-based rotation |
 
 Ollama **must be running locally** for embeddings to work. If missing, add/search/update will fail.
 
 ## Key architecture facts
 
 - **`app/server.py`** — MCP tool/resource registration. 8 tools: `add`, `search_semantic`, `search_meta`, `get_details`, `update`, `delete`, `stats`, `report`. 2 resources: `memories://stats`, `memories://list`. All tool calls flow through `handle_call_tool` (if/elif dispatch) which records each invocation to the audit journal. `search_semantic`/`search_meta` responses carry a per-call `search_id` that the `report` tool uses to attach feedback on search result helpfulness.
-- **`app/audit.py`** — LLM tool-call audit journal: append-only JSONL (`data/audit.jsonl`), thread-safe, rotation at `MEMORY_AUDIT_MAX_EVENTS`, never raises, never blocks tool calls. Per-tool params/result trimming lives here (`_trim_params` / `_trim_result`).
+- **`app/audit.py`** — Tool-call/background-task audit journal: rolling JSONL (`data/audit.jsonl` plus `.1`…`.9` by default), thread-safe, 10MB per file / 10 files by default, never raises, never blocks tool calls. Per-tool params/result trimming lives here (`_trim_params` / `_trim_result`).
 - **`app/service.py`** — Business layer: `memory_add/search/list/update/delete/stats/get_details`, storage bootstrap, summary worker wiring.
 - **`storage.py`** — Abstract `MemoryStorage` with `SQLiteStorage` (default) and `JSONStorage`. Embeddings are pickled into SQLite BLOBs.
 - **`embed.py`** — Single function: calls Ollama `/api/embeddings` with `{"model": …, "prompt": …}`.
