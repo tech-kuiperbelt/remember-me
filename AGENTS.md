@@ -31,6 +31,9 @@ SSE endpoint: `GET /sse`, client POSTs to `/messages/?session_id=...`.
 | `MEMORY_AUDIT_MAX_BYTES` | `10485760` | Max bytes per audit file before rotation (10MB) |
 | `MEMORY_AUDIT_MAX_FILES` | `10` | Total audit files retained, including the active file |
 | `MEMORY_AUDIT_MAX_EVENTS` | `0` | Optional per-file event limit; `0` disables count-based rotation |
+| `MEMORY_COMPACT_INTERVAL` | `86400` | Minimum seconds between automatic NDJSON compact checks in dual mode |
+| `MEMORY_COMPACT_MIN_BYTES` | `1048576` | Compact when at least this many NDJSON bytes are reclaimable |
+| `MEMORY_COMPACT_MIN_RATIO` | `0.25` | Compact when reclaimable NDJSON bytes reach this share of the file |
 
 Ollama **must be running locally** for embeddings to work. If missing, add/search/update will fail.
 
@@ -38,11 +41,12 @@ Ollama **must be running locally** for embeddings to work. If missing, add/searc
 
 - **`app/server.py`** — MCP tool/resource registration. 8 tools: `add`, `search_semantic`, `search_meta`, `get_details`, `update`, `delete`, `stats`, `report`. 2 resources: `memories://stats`, `memories://list`. All tool calls flow through `handle_call_tool` (if/elif dispatch) which records each invocation to the audit journal. `search_semantic`/`search_meta` responses carry a per-call `search_id` that the `report` tool uses to attach feedback on search result helpfulness.
 - **`app/audit.py`** — Tool-call/background-task audit journal: rolling JSONL (`data/audit.jsonl` plus `.1`…`.9` by default), thread-safe, 10MB per file / 10 files by default, never raises, never blocks tool calls. Per-tool params/result trimming lives here (`_trim_params` / `_trim_result`).
+- In dual mode, the NDJSON replica receives append-only incremental writes. A background compact check runs at most once per 24 hours (or on the next startup after an overdue interval), atomically removes obsolete lines/tombstones only when the configured reclaimable-space threshold is met, and reports its last result in admin stats/audit. Full Sync always produces a clean snapshot immediately.
 - **`app/service.py`** — Business layer: `memory_add/search/list/update/delete/stats/get_details`, storage bootstrap, summary worker wiring.
-- **`storage.py`** — Abstract `MemoryStorage` with `SQLiteStorage` (default) and `JSONStorage`. Embeddings are pickled into SQLite BLOBs.
+- **`storage.py`** — Abstract `MemoryStorage` with `SQLiteStorage` (default) and `JSONStorage`. Embeddings are pickled into SQLite BLOBs; the NDJSON disaster-recovery replica deliberately stores no embeddings.
 - **`embed.py`** — Single function: calls Ollama `/api/embeddings` with `{"model": …, "prompt": …}`.
 - Embeddings use **cosine similarity** (via numpy) for search scoring.
-- **`app/admin.py`** — Web UI (admin console) routes under `/admin/console` and `/api/*` (incl. `/api/audit`). Frontend is a single static file `web/index.html`.
+- **`app/admin.py`** — Web UI (admin console) routes under `/admin/console` and `/api/*` (incl. `/api/audit`). Frontend is a single static file `web/index.html`. JSONL→SQLite recovery is intentionally offline-only: stop the service, then run `python -m app.recover_cli data/memories.jsonl data/memories.db`; it regenerates embeddings using the currently configured model and atomically replaces the target DB only on success.
 
 ## Running & verification
 

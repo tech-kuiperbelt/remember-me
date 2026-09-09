@@ -138,3 +138,13 @@ def test_http_update_passes_summary(monkeypatch):
     assert response.status_code == 200
     assert json.loads(response.body) == {"success": True}
     update.assert_called_once_with("abc", "new body", None, None, "new summary")
+
+
+def test_online_recover_route_and_ui_are_removed():
+    from app.admin import admin_routes
+    from pathlib import Path
+
+    assert all(route.path != "/api/recover" for route in admin_routes)
+    ui = Path("web/index.html").read_text(encoding="utf-8")
+    assert "doRecover" not in ui
+    assert "btn-recover" not in ui

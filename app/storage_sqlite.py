@@ -37,6 +37,14 @@ class SQLiteStorage(MemoryStorage):
             CREATE INDEX IF NOT EXISTS idx_memories_namespace ON memories(namespace);
             CREATE INDEX IF NOT EXISTS idx_memories_created_at ON memories(created_at);
             CREATE INDEX IF NOT EXISTS idx_memories_updated_at ON memories(updated_at);
+
+            -- Internal, non-memory state for background maintenance jobs.
+            -- This is intentionally not part of the NDJSON disaster-recovery
+            -- replica: a recovered primary may safely run maintenance again.
+            CREATE TABLE IF NOT EXISTS storage_state (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
         """)
         # Migration for existing DBs without `deleted` column
         try:
@@ -76,6 +84,33 @@ class SQLiteStorage(MemoryStorage):
                 ON memory_keywords(keyword_id);
         """)
         self.conn.commit()
+
+    # -- internal maintenance state (not part of the MemoryStorage API) --
+
+    def _get_storage_state(self, key: str, default=None):
+        """Return a JSON-serializable maintenance value, or ``default``."""
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT value FROM storage_state WHERE key = ?", (key,)
+            ).fetchone()
+        if row is None:
+            return default
+        try:
+            return json.loads(row["value"])
+        except (TypeError, json.JSONDecodeError):
+            logger.warning("invalid storage state key=%s", key)
+            return default
+
+    def _set_storage_state(self, key: str, value) -> None:
+        """Atomically persist JSON-serializable maintenance state."""
+        encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO storage_state(key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (key, encoded),
+            )
+            self.conn.commit()
 
     def _serialize(self, emb: list[float]) -> bytes:
         return pickle.dumps(emb)

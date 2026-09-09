@@ -146,5 +146,8 @@ def create_storage(backend: str = "sqlite", **kwargs) -> MemoryStorage:
             primary=SQLiteStorage(path=primary_path),
             secondary=secondary_cls(path=secondary_path),
             sync_interval=sync_interval,
+            compact_interval=int(kwargs.get("compact_interval", 24 * 60 * 60)),
+            compact_min_bytes=int(kwargs.get("compact_min_bytes", 1024 * 1024)),
+            compact_min_ratio=float(kwargs.get("compact_min_ratio", 0.25)),
         )
     raise ValueError(f"Unknown backend: {backend}")

@@ -1,4 +1,4 @@
-"""NDJSON / JSON Lines storage — append-only, crash-safe."""
+"""NDJSON / JSON Lines disaster-recovery replica — append-only, crash-safe."""
 
 import json
 import os
@@ -7,13 +7,15 @@ import logging
 
 logger = logging.getLogger("storage_ndjson")
 
-from .storage import MemoryStorage, _now, _new_id, _cosine_similarity, DEFAULT_NAMESPACE
+from .storage import MemoryStorage, _now, _new_id, DEFAULT_NAMESPACE
 
 
 class NDJSONStorage(MemoryStorage):
     """Line-delimited JSON storage (.jsonl).
 
-    Each record is one JSON object per line. Append-only writes:
+    Each record is one JSON object per line and deliberately omits embeddings.
+    The SQLite primary is authoritative; disaster recovery recreates embeddings
+    from each record's text using the currently configured model. Append-only writes:
       add/update     → append full record line
       delete         → append tombstone line  {"id":"x","deleted":true,"updated_at":"..."}
 
@@ -62,6 +64,9 @@ class NDJSONStorage(MemoryStorage):
                     records.pop(rid, None)
                     tombstones += 1
                 else:
+                    # Legacy replicas may contain embeddings. They are ignored
+                    # so a future compact/full-sync rewrites the smaller format.
+                    m.pop("embedding", None)
                     existing = records.get(rid)
                     if not existing or m["updated_at"] >= existing["updated_at"]:
                         records[rid] = m
@@ -70,18 +75,64 @@ class NDJSONStorage(MemoryStorage):
 
     def _append_line(self, record: dict):
         """Append one JSON line to the file. Caller must hold _lock."""
-        line = json.dumps(record, ensure_ascii=False) + "\n"
+        line = json.dumps(self._without_embedding(record), ensure_ascii=False) + "\n"
         with open(self.path, "a") as f:
             f.write(line)
+
+    @staticmethod
+    def _without_embedding(record: dict) -> dict:
+        """Return a serializable replica record without derived vectors."""
+        return {key: value for key, value in record.items() if key != "embedding"}
 
     def _compact_file(self):
         """Rewrite file from _data dict, atomically, removing tombstones/dupes."""
         tmp = self.path + ".tmp"
-        with open(tmp, "w") as f:
-            for m in self._data.values():
-                f.write(json.dumps(m, ensure_ascii=False) + "\n")
-        os.replace(tmp, self.path)
+        try:
+            with open(tmp, "w") as f:
+                for m in self._data.values():
+                    f.write(json.dumps(self._without_embedding(m), ensure_ascii=False) + "\n")
+            os.replace(tmp, self.path)
+        except Exception:
+            try:
+                if os.path.exists(tmp):
+                    os.unlink(tmp)
+            except OSError:
+                logger.warning("NDJSONStorage: could not remove failed temp file %s", tmp)
+            raise
         self._tombstones = 0
+
+    def compaction_metrics(self) -> dict:
+        """Measure recoverable NDJSON redundancy without changing the file."""
+        with self._lock:
+            try:
+                file_bytes = os.path.getsize(self.path)
+            except OSError:
+                file_bytes = 0
+            compacted_bytes = sum(
+                len((json.dumps(self._without_embedding(m), ensure_ascii=False) + "\n").encode("utf-8"))
+                for m in self._data.values()
+            )
+            reclaimable_bytes = max(0, file_bytes - compacted_bytes)
+            return {
+                "file_bytes": file_bytes,
+                "compacted_bytes": compacted_bytes,
+                "reclaimable_bytes": reclaimable_bytes,
+                "reclaimable_ratio": reclaimable_bytes / file_bytes if file_bytes else 0.0,
+                "active_records": len(self._data),
+                "tombstones": self._tombstones,
+            }
+
+    def compact(self) -> dict:
+        """Atomically remove stale NDJSON lines and return before/after metrics."""
+        with self._lock:
+            before = self.compaction_metrics()
+            self._compact_file()
+            after = self.compaction_metrics()
+        return {
+            **before,
+            "after_bytes": after["file_bytes"],
+            "reclaimed_bytes": before["file_bytes"] - after["file_bytes"],
+        }
 
     # -- public API --
 
@@ -94,7 +145,7 @@ class NDJSONStorage(MemoryStorage):
             eid = _new_id()
             now = _now()
             entry = {
-                "id": eid, "text": text, "embedding": embedding,
+                "id": eid, "text": text,
                 "metadata": metadata or {}, "namespace": namespace,
                 "created_at": now, "updated_at": now,
                 "summary": summary,
@@ -104,15 +155,10 @@ class NDJSONStorage(MemoryStorage):
         return {"id": eid, "created": True}
 
     def search(self, query_embedding, k=5, threshold=0.0, namespace=None):
-        scored = []
-        for e in self._data.values():
-            if namespace and e["namespace"] != namespace:
-                continue
-            score = _cosine_similarity(query_embedding, e["embedding"])
-            if score >= threshold:
-                scored.append((score, e))
-        scored.sort(key=lambda x: x[0], reverse=True)
-        return [{**e, "score": round(s, 6)} for s, e in scored[:k]]
+        raise RuntimeError(
+            "NDJSON is a disaster-recovery replica and does not retain embeddings; "
+            "semantic search is available only from the SQLite primary"
+        )
 
     def list_memories(self, namespace=None, limit=100, offset=0, sort_by="created_at",
                       updated_after=None, updated_before=None, keywords=None):
@@ -139,8 +185,6 @@ class NDJSONStorage(MemoryStorage):
                 return False
             if text is not None:
                 e["text"] = text
-            if embedding is not None:
-                e["embedding"] = embedding
             if metadata is not None:
                 e["metadata"] = {**e["metadata"], **metadata}
             if namespace is not None:
@@ -234,7 +278,7 @@ class NDJSONStorage(MemoryStorage):
                     renamed += 1
                 existing_pairs.add((ns, m["text"]))
                 entry = {
-                    "id": mid, "text": m["text"], "embedding": m["embedding"],
+                    "id": mid, "text": m["text"],
                     "metadata": m["metadata"], "namespace": ns,
                     "created_at": m["created_at"], "updated_at": m["updated_at"],
                     "summary": m.get("summary"),
@@ -252,13 +296,32 @@ class NDJSONStorage(MemoryStorage):
         """Insert/update with explicit ID. Internal use only (sync/recovery)."""
         with self._lock:
             entry = {
-                "id": memory_id, "text": text, "embedding": embedding,
+                "id": memory_id, "text": text,
                 "metadata": metadata or {}, "namespace": namespace,
                 "created_at": created_at, "updated_at": updated_at,
                 "summary": summary,
             }
             self._data[memory_id] = entry
             self._append_line(entry)
+
+    def replace_all(self, memories: list[dict]):
+        """Atomically replace this replica with active primary records.
+
+        Used by manual full Sync. Build the complete in-memory snapshot first,
+        then compact once so an interrupted rebuild never leaves a partial file.
+        """
+        with self._lock:
+            self._data = {
+                m["id"]: {
+                    "id": m["id"], "text": m["text"],
+                    "metadata": m.get("metadata") or {},
+                    "namespace": m["namespace"],
+                    "created_at": m["created_at"], "updated_at": m["updated_at"],
+                    "summary": m.get("summary"),
+                }
+                for m in memories
+            }
+            self._compact_file()
 
     def get_stats(self):
         try:

@@ -7,11 +7,15 @@ Functions
 ---------
 quick_sync(storage)
     Full rebuild of secondary from primary (paginated).
-recover(target, source, batch_size=500)
-    Clear target and copy all memories from source.
+recover_ndjson_to_sqlite(source_path, target_path, embed_fn, batch_size=500)
+    Offline, atomic recovery from a vector-free NDJSON replica.
 """
 
 import logging
+import os
+from pathlib import Path
+
+from .storage import create_storage
 
 logger = logging.getLogger("recovery")
 
@@ -35,80 +39,86 @@ def quick_sync(storage, batch_size=500):
     primary = storage.primary
     secondary = storage.secondary
 
-    # Clear secondary
-    secondary.clear()
-
-    # Paginated copy from primary
-    synced = 0
-    errors = 0
-    all_ids = []
+    # Read the complete primary snapshot before replacing the replica. NDJSON
+    # can atomically publish it in one compact write, avoiding a partial backup.
+    memories = []
     offset = 0
-
     while True:
         batch = primary.list_memories(limit=batch_size, offset=offset)
         if not batch:
             break
-        for m in batch:
-            try:
-                secondary._add_with_id(
-                    m["id"], m["text"], m["embedding"],
-                    m["metadata"], m["namespace"],
-                    m["created_at"], m["updated_at"],
-                    m.get("summary"),
-                )
-                all_ids.append(m["id"])
-                synced += 1
-            except Exception:
-                logger.warning("quick_sync: failed to copy id=%s", m["id"], exc_info=True)
-                errors += 1
+        memories.extend(batch)
         offset += batch_size
 
-    logger.info("quick_sync: synced=%d errors=%d", synced, errors)
-    return {"synced": synced, "errors": errors, "ids": all_ids}
+    if hasattr(secondary, "replace_all"):
+        secondary.replace_all(memories)
+    else:
+        secondary.clear()
+        for m in memories:
+            secondary._add_with_id(
+                m["id"], m["text"], m["embedding"], m["metadata"],
+                m["namespace"], m["created_at"], m["updated_at"],
+                m.get("summary"),
+            )
+
+    logger.info("quick_sync: synced=%d", len(memories))
+    return {"synced": len(memories), "errors": 0,
+            "ids": [m["id"] for m in memories]}
 
 
-def recover(target, source, batch_size=500):
-    """Recover/rebuild target storage from source storage.
+def recover_ndjson_to_sqlite(source_path: str, target_path: str, embed_fn,
+                             batch_size: int = 500) -> dict:
+    """Offline, atomic rebuild of SQLite from a vector-free NDJSON backup.
 
-    Clears target completely, then copies all memories from source.
-    Preserves memory IDs via _add_with_id().
-    Use this for disaster recovery or mirroring between storage files.
-
-    Parameters
-    ----------
-    target : MemoryStorage
-        The storage to rebuild (e.g. SQLiteStorage recovering from JSON).
-    source : MemoryStorage
-        The authoritative storage to read from (e.g. JSONStorage backup).
-    batch_size : int
-        Number of records per page.
-
-    Returns
-    -------
-    dict with keys: recovered, errors
+    A temporary SQLite file is built entirely before it replaces ``target_path``.
+    Any embedding failure leaves the prior primary untouched.
     """
-    target.clear()
+    source = create_storage("ndjson", path=source_path)
+    target = Path(target_path)
+    temp = Path(f"{target}.recover.tmp")
+    temp_sidecars = [Path(f"{temp}-wal"), Path(f"{temp}-shm")]
+    target_sidecars = [Path(f"{target}-wal"), Path(f"{target}-shm")]
+    rebuilt = None
     recovered = 0
-    errors = 0
-    offset = 0
-
-    while True:
-        batch = source.list_memories(limit=batch_size, offset=offset)
-        if not batch:
-            break
-        for m in batch:
-            try:
-                target._add_with_id(
-                    m["id"], m["text"], m["embedding"],
-                    m["metadata"], m["namespace"],
-                    m["created_at"], m["updated_at"],
-                    m.get("summary"),
+    try:
+        for path in [temp, *temp_sidecars]:
+            if path.exists():
+                path.unlink()
+        rebuilt = create_storage("sqlite", path=str(temp))
+        offset = 0
+        while True:
+            batch = source.list_memories(limit=batch_size, offset=offset)
+            if not batch:
+                break
+            for memory in batch:
+                embedding = embed_fn(memory["text"])
+                if not embedding:
+                    raise RuntimeError(f"empty embedding for memory {memory['id']}")
+                rebuilt._add_with_id(
+                    memory["id"], memory["text"], embedding,
+                    memory.get("metadata") or {}, memory["namespace"],
+                    memory["created_at"], memory["updated_at"],
+                    memory.get("summary"),
                 )
                 recovered += 1
-            except Exception:
-                logger.warning("recover: failed to copy id=%s", m["id"], exc_info=True)
-                errors += 1
-        offset += batch_size
-
-    logger.info("recover: recovered=%d errors=%d", recovered, errors)
-    return {"recovered": recovered, "errors": errors}
+            offset += batch_size
+        rebuilt.rebuild_keyword_index()
+        rebuilt.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        rebuilt.conn.close()
+        rebuilt = None
+        os.replace(temp, target)
+        for path in target_sidecars:
+            try:
+                if path.exists():
+                    path.unlink()
+            except OSError:
+                logger.warning("offline recover: could not remove stale sidecar %s", path,
+                               exc_info=True)
+        logger.info("offline recover: rebuilt=%d target=%s", recovered, target)
+        return {"recovered": recovered, "errors": 0}
+    finally:
+        if rebuilt is not None:
+            rebuilt.conn.close()
+        for path in [temp, *temp_sidecars]:
+            if path.exists():
+                path.unlink()

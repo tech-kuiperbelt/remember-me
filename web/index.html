@@ -304,18 +304,6 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
     </div>
   </div>
 
-  <!-- Recover (manual disaster recovery) -->
-  <div class="card">
-    <div class="card-header">Recover（手动恢复）</div>
-    <div class="card-body">
-      <p style="font-size:13px;color:#888;margin-bottom:12px">从灾备副本（JSONL）恢复主库（SQLite）。目标主库将被清空后重建。<span id="recover-paths" style="color:#666"></span></p>
-      <div style="margin-top:16px">
-        <button id="btn-recover" class="btn btn-danger" onclick="doRecover()">Recover（JSONL → SQLite）</button>
-        <span id="recover-result" style="margin-left:12px;font-size:13px"></span>
-      </div>
-    </div>
-  </div>
-
   <!-- Summarize -->
   <div class="card">
     <div class="card-header">Summarize</div>
@@ -858,10 +846,32 @@ async function doAdd(e) {
 }
 
 // Stats
+function formatBytes(value) {
+  const bytes = Number(value) || 0;
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+}
+
+function escapeHtml(value) {
+  const node = document.createElement('span');
+  node.textContent = String(value);
+  return node.innerHTML;
+}
+
 async function loadStats() {
   $('stats-content').innerHTML = '<div class="loading">Loading...</div>';
   try {
     const s = await api('/stats');
+    const compact = s.ndjson_compact;
+    const compactHtml = compact ? `
+      <div class="detail-field"><div class="label">NDJSON Compact</div><div class="value">${compact.last_result || 'not yet checked'}</div></div>
+      <div class="detail-field"><div class="label">Last Check</div><div class="value">${compact.last_check_at || '-'}</div></div>
+      <div class="detail-field"><div class="label">Last Compact</div><div class="value">${compact.last_compact_at || '-'}</div></div>
+      <div class="detail-field"><div class="label">Last Reclaimed</div><div class="value">${formatBytes(compact.last_reclaimed_bytes || 0)} (${((compact.last_reclaimable_ratio || 0) * 100).toFixed(1)}%)</div></div>
+      <div class="detail-field"><div class="label">Next Check Due</div><div class="value">${compact.next_due_at || '-'}</div></div>
+      ${compact.last_error ? `<div class="detail-field"><div class="label">Compact Error</div><div class="value">${escapeHtml(compact.last_error)}</div></div>` : ''}
+    ` : '';
     $('stats-content').innerHTML = `
       <div class="detail-field"><div class="label">Total Memories</div><div class="value" style="font-size:28px;font-weight:700">${s.total}</div></div>
       <div class="detail-field"><div class="label">Backend</div><div class="value">${s.backend}</div></div>
@@ -870,6 +880,7 @@ async function loadStats() {
       <div class="detail-field"><div class="label">Ollama URL</div><div class="value">${s.ollama_base_url || '-'}</div></div>
       <div class="detail-field"><div class="label">Namespaces (${Object.keys(s.namespace_counts || {}).length})</div><div class="value">${renderNamespaceCounts(s.namespace_counts)}</div></div>
       <div class="detail-field"><div class="label">Keywords (${Object.keys(s.keyword_counts || {}).length})</div><div class="value">${renderKeywordCounts(s.keyword_counts)}</div></div>
+      ${compactHtml}
       <div style="margin-top:16px">
         <button id="btn-stats-refresh" class="btn btn-sm btn-outline" onclick="loadStats()">Refresh</button>
       </div>
@@ -1128,32 +1139,12 @@ async function doSync() {
   }
 }
 
-async function doRecover() {
-  const resultEl = $('recover-result');
-  const btn = $('btn-recover');
-  if (!confirm('从灾备副本（JSONL）恢复主库（SQLite）？主库将被清空后重建。')) return;
-  btn.disabled = true;
-  resultEl.textContent = 'Recovering...';
-  try {
-    const result = await api('/recover', {method: 'POST'});
-    const recovered = result.recovered || 0;
-    const errors = result.errors || 0;
-    resultEl.textContent = `✅ Recovered ${recovered} records${errors ? ` (errors: ${errors})` : ''}.`;
-  } catch(e) {
-    resultEl.textContent = 'Error: ' + e.message;
-  } finally {
-    btn.disabled = false;
-  }
-}
-
 async function fetchStoragePaths() {
   try {
     const data = await api('/storage-paths');
     if (data.backend === 'dual' && data.primary_path && data.secondary_path) {
       const syncEl = $('sync-paths');
-      const recEl = $('recover-paths');
       if (syncEl) syncEl.textContent = `${data.primary_path} → ${data.secondary_path}`;
-      if (recEl) recEl.textContent = `${data.secondary_path} → ${data.primary_path}`;
     }
   } catch(e) {
     // Not in dual mode — paths may be unavailable; leave placeholders empty.

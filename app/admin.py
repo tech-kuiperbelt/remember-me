@@ -10,7 +10,7 @@ from starlette.routing import Route
 from starlette.requests import Request
 
 from .service import memory_add, memory_search, memory_list, memory_get, \
-    memory_update, memory_delete, memory_clear, memory_stats, memory_sync, memory_recover, \
+    memory_update, memory_delete, memory_clear, memory_stats, memory_sync, \
     memory_namespaces, memory_migrate_namespace, memory_get_details, memory_summarize, \
     memory_import, memory_storage_paths, storage, memory_extract_keywords
 from .audit import read_events as audit_read_events
@@ -220,26 +220,6 @@ async def handle_sync(request: Request):
         return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
 
 
-async def handle_recover(request: Request):
-    """Manual disaster recovery: rebuild the SQLite primary from the NDJSON
-    replica using the configured fixed paths. Clears the primary first.
-    """
-    try:
-        if not hasattr(storage, "primary") or not hasattr(storage, "secondary"):
-            return Response(
-                json.dumps({"detail": "recover requires dual mode (sqlite primary + ndjson replica)"}),
-                status_code=400, media_type="application/json",
-            )
-        src_path = getattr(storage.secondary, "path", "data/memories.jsonl")
-        tgt_path = getattr(storage.primary, "path", "data/memories.db")
-        logger.info("POST /api/recover source=%s target=%s", src_path, tgt_path)
-        result = memory_recover(src_path, tgt_path)
-        return Response(json.dumps(result, ensure_ascii=False), media_type="application/json")
-    except Exception as e:
-        logger.error("POST /api/recover failed: %s", e, exc_info=True)
-        return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
-
-
 async def handle_storage_paths(request: Request):
     try:
         result = memory_storage_paths()
@@ -313,7 +293,6 @@ admin_routes = [
     Route("/api/storage-paths", endpoint=handle_storage_paths, methods=["GET"]),
     Route("/api/import", endpoint=handle_import_memories, methods=["POST"]),
     Route("/api/sync", endpoint=handle_sync, methods=["POST"]),
-    Route("/api/recover", endpoint=handle_recover, methods=["POST"]),
     Route("/api/restart", endpoint=handle_restart, methods=["POST"]),
     Route("/api/summarize", endpoint=handle_summarize, methods=["POST"]),
     Route("/api/extract-keywords", endpoint=handle_extract_keywords, methods=["POST"]),

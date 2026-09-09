@@ -17,6 +17,9 @@ STORAGE_BACKEND = os.environ.get("MEMORY_STORAGE", "sqlite")
 STORAGE_PATH = os.environ.get("MEMORY_STORAGE_PATH")
 STORAGE_PATH_DUAL = os.environ.get("MEMORY_STORAGE_PATH_DUAL")
 SYNC_INTERVAL = int(os.environ.get("MEMORY_SYNC_INTERVAL", "300"))
+COMPACT_INTERVAL = int(os.environ.get("MEMORY_COMPACT_INTERVAL", str(24 * 60 * 60)))
+COMPACT_MIN_BYTES = int(os.environ.get("MEMORY_COMPACT_MIN_BYTES", str(1024 * 1024)))
+COMPACT_MIN_RATIO = float(os.environ.get("MEMORY_COMPACT_MIN_RATIO", "0.25"))
 
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 EMBED_MODEL = os.environ.get("EMBED_MODEL", "bge-m3")
@@ -28,11 +31,14 @@ if STORAGE_BACKEND == "dual":
     secondary_path = STORAGE_PATH_DUAL or primary_path.replace(".db", ".jsonl")
     if secondary_path == primary_path:
         secondary_path = "data/memories.jsonl"
-    logger.info("Dual storage: primary=%s secondary=%s sync_interval=%ds",
-                primary_path, secondary_path, SYNC_INTERVAL)
+    logger.info("Dual storage: primary=%s secondary=%s sync_interval=%ds compact_interval=%ds",
+                primary_path, secondary_path, SYNC_INTERVAL, COMPACT_INTERVAL)
     storage = create_storage("dual", primary_path=primary_path,
                              secondary_path=secondary_path,
-                             sync_interval=SYNC_INTERVAL)
+                             sync_interval=SYNC_INTERVAL,
+                             compact_interval=COMPACT_INTERVAL,
+                             compact_min_bytes=COMPACT_MIN_BYTES,
+                             compact_min_ratio=COMPACT_MIN_RATIO)
 elif STORAGE_BACKEND == "json":
     path = STORAGE_PATH or "data/memories.json"
     logger.info("JSON storage: %s", path)
@@ -474,7 +480,7 @@ def memory_storage_paths() -> dict:
 
 
 def _detect_storage_backend(path: str) -> str:
-    """Map a storage file path to its backend name."""
+    """Map a storage file path to its backend name for maintenance tooling."""
     if path.endswith(".jsonl") or path.endswith(".ndjson"):
         return "ndjson"
     if path.endswith(".json"):
@@ -494,31 +500,6 @@ def memory_migrate_namespace(source: str, target: str) -> dict:
         memory_update(m["id"], namespace=target)
         migrated += 1
     return {"migrated": migrated, "source": source, "target": target}
-
-
-def memory_recover(source_path: str, target_path: str) -> dict:
-    """Recover/rebuild target storage file from source storage file.
-
-    Usage example (CLI):
-        python -m app.recover_cli data/memories.json data/memories.db
-    """
-    logger.info("recover: source=%s target=%s", source_path, target_path)
-    from .recovery import recover as _recover
-    try:
-        src_backend = _detect_storage_backend(source_path)
-        tgt_backend = _detect_storage_backend(target_path)
-        src = create_storage(src_backend, path=source_path)
-        tgt = create_storage(tgt_backend, path=target_path)
-        result = _recover(tgt, src)
-        # Recovered records carry metadata.keywords in the target DB;
-        # rebuild the SQLite keyword index so list(keywords=...) works.
-        if hasattr(tgt, "rebuild_keyword_index"):
-            tgt.rebuild_keyword_index()
-        logger.info("recover: %s", result)
-        return result
-    except Exception as e:
-        logger.error("recover failed: %s", e, exc_info=True)
-        raise
 
 
 def _normalize_rating(rating) -> int | None:
