@@ -131,3 +131,55 @@ def test_update_metadata_with_categories_caps_three(db):
 
 def test_update_metadata_missing_memory(db):
     assert db.update_metadata("nope", {"categories": ["x"]}) is False
+
+
+# -- storage path override (--db) --
+
+def test_build_storage_uses_db_override(monkeypatch, tmp_path):
+    from app import category_migrate_deepseek as cm
+
+    captured = {}
+    monkeypatch.setattr(cm, "create_storage",
+                        lambda backend, **kw: captured.update(backend=backend, kw=kw))
+    monkeypatch.delenv("MEMORY_STORAGE", raising=False)
+    monkeypatch.delenv("MEMORY_STORAGE_PATH", raising=False)
+
+    target = str(tmp_path / "override.db")
+    cm.build_storage(target)
+
+    assert captured["backend"] == "sqlite"
+    assert captured["kw"]["path"] == target
+
+
+def test_build_storage_falls_back_to_env_path(monkeypatch, tmp_path):
+    from app import category_migrate_deepseek as cm
+
+    captured = {}
+    monkeypatch.setattr(cm, "create_storage",
+                        lambda backend, **kw: captured.update(backend=backend, kw=kw))
+    env_path = str(tmp_path / "env.db")
+    monkeypatch.setenv("MEMORY_STORAGE_PATH", env_path)
+
+    cm.build_storage(None)
+
+    assert captured["kw"]["path"] == env_path
+
+
+def test_main_passes_db_to_build_storage(monkeypatch, tmp_path):
+    from app import category_migrate_deepseek as cm
+
+    seen = {}
+
+    class _EmptyStorage:
+        def list_memories(self, **kw):
+            return []
+
+    def fake_build(db_path=None):
+        seen["db"] = db_path
+        return _EmptyStorage()
+
+    monkeypatch.setattr(cm, "build_storage", fake_build)
+
+    target = str(tmp_path / "target.db")
+    assert cm.main(["--db", target, "--dry-run"]) == 0
+    assert seen["db"] == target

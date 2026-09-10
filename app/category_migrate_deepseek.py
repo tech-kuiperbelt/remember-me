@@ -169,11 +169,15 @@ class CategoryCandidates:
         return len(self._order)
 
 
-def build_storage():
-    """Reuse the same env-based backend resolution as service.py (dual default)."""
+def build_storage(db_path: str | None = None):
+    """Reuse the same env-based backend resolution as service.py (dual default).
+
+    ``db_path`` (CLI ``--db``) overrides the primary storage path; the backend
+    itself still comes from ``MEMORY_STORAGE``.
+    """
     backend = os.environ.get("MEMORY_STORAGE", "sqlite")
     if backend == "dual":
-        primary = os.environ.get("MEMORY_STORAGE_PATH", "data/memories.db")
+        primary = db_path or os.environ.get("MEMORY_STORAGE_PATH", "data/memories.db")
         secondary = os.environ.get("MEMORY_STORAGE_PATH_DUAL") or primary.replace(".db", ".jsonl")
         if secondary == primary:
             secondary = "data/memories.jsonl"
@@ -181,8 +185,10 @@ def build_storage():
                               secondary_path=secondary,
                               sync_interval=int(os.environ.get("MEMORY_SYNC_INTERVAL", "300")))
     if backend == "json":
-        return create_storage("json", path=os.environ.get("MEMORY_STORAGE_PATH") or "data/memories.json")
-    return create_storage("sqlite", path=os.environ.get("MEMORY_STORAGE_PATH") or "data/memories.db")
+        path = db_path or os.environ.get("MEMORY_STORAGE_PATH") or "data/memories.json"
+        return create_storage("json", path=path)
+    path = db_path or os.environ.get("MEMORY_STORAGE_PATH") or "data/memories.db"
+    return create_storage("sqlite", path=path)
 
 
 def main(argv=None) -> int:
@@ -208,9 +214,9 @@ def main(argv=None) -> int:
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-    storage = build_storage()
-    logger.info("category migration (deepseek, serial): namespace=%s mode=%s limit=%s model=%s",
-                args.namespace, args.mode, args.limit, args.model)
+    storage = build_storage(args.db)
+    logger.info("category migration (deepseek, serial): namespace=%s mode=%s limit=%s model=%s db=%s",
+                args.namespace, args.mode, args.limit, args.model, args.db)
 
     if args.memory_id:
         m = storage.get(args.memory_id)
