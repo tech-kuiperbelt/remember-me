@@ -439,7 +439,7 @@ class SQLiteStorage(MemoryStorage):
             self.conn.commit()
         return {"id": eid, "created": True}
 
-    def search(self, query_embedding, k=5, threshold=0.0, namespace=None):
+    def search(self, query_embedding, k=5, threshold=0.0, namespace=None, categories=None):
         with self._lock:
             if namespace:
                 rows = self.conn.execute(
@@ -449,8 +449,24 @@ class SQLiteStorage(MemoryStorage):
                 rows = self.conn.execute(
                     "SELECT * FROM memories WHERE deleted = 0"
                 ).fetchall()
+            # Category filter (OR): restrict scoring to memories carrying any of
+            # the given categories. Resolved under the lock before releasing, so
+            # the scored list is filtered *before* the k cutoff.
+            cat_list = normalize_categories_filter(categories) if categories else []
+            matching_ids = None
+            if cat_list:
+                placeholders = ",".join(["?"] * len(cat_list))
+                id_rows = self.conn.execute(
+                    f"SELECT DISTINCT mc.memory_id FROM memory_categories mc "
+                    f"JOIN categories c ON c.id = mc.category_id "
+                    f"WHERE c.name IN ({placeholders})",
+                    cat_list,
+                ).fetchall()
+                matching_ids = {r[0] for r in id_rows}
         scored = []
         for row in rows:
+            if matching_ids is not None and row["id"] not in matching_ids:
+                continue
             emb = self._deserialize(row["embedding"])
             score = _cosine_similarity(query_embedding, emb)
             if score >= threshold:

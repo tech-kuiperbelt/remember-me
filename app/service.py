@@ -211,12 +211,16 @@ def _apply_categories_to_metadata(metadata: dict | None) -> dict | None:
 
 
 def memory_search(query: str, k: int = 5, threshold: float = 0.0,
-                  namespace: str | None = None) -> list[dict]:
+                  namespace: str | None = None,
+                  categories: list | None = None) -> list[dict]:
     k = _sanitize_k(k)
-    logger.info("search: query_len=%d k=%d threshold=%.3f namespace=%s", len(query), k, threshold, namespace)
+    cats = normalize_categories_filter(categories)
+    logger.info("search: query_len=%d k=%d threshold=%.3f namespace=%s categories=%s",
+                len(query), k, threshold, namespace, cats)
     try:
         query_emb = embed(query)
-        results = storage.search(query_emb, k=k, threshold=threshold, namespace=namespace)
+        results = storage.search(query_emb, k=k, threshold=threshold, namespace=namespace,
+                                 categories=cats)
         logger.info("search: %d results", len(results))
         return [_strip_internal_fields(r) for r in results]
     except Exception as e:

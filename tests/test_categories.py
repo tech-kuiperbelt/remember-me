@@ -141,6 +141,68 @@ def test_list_combines_keywords_and_categories(db):
     assert [r["text"] for r in results] == ["alpha"]
 
 
+# -- search: category filtering --
+
+def test_search_categories_or_match(db):
+    add_memory(db, "alpha", categories=["bugfix"])
+    add_memory(db, "beta", categories=["design"])
+    add_memory(db, "gamma", categories=None)
+
+    results = db.search(FAKE_EMB, k=10, categories=["bugfix", "design"])
+    assert {r["text"] for r in results} == {"alpha", "beta"}
+
+
+def test_search_categories_empty_disables_filter(db):
+    add_memory(db, "alpha", categories=["bugfix"])
+    add_memory(db, "beta", categories=None)
+    assert len(db.search(FAKE_EMB, k=10, categories=[])) == 2
+
+
+def test_search_categories_filtered_before_k_cutoff(db):
+    add_memory(db, "alpha", categories=["bugfix"])
+    add_memory(db, "beta", categories=["bugfix"])
+    add_memory(db, "delta", categories=["design"])
+
+    # Filter applies BEFORE the k cutoff: only bugfix memories are candidates,
+    # so with k=1 only one of the two bugfix records is returned.
+    results = db.search(FAKE_EMB, k=1, categories=["bugfix"])
+    assert len(results) == 1
+    assert {r["text"] for r in results}.issubset({"alpha", "beta"})
+
+
+def test_search_categories_unlimited_count(db):
+    # The filter is NOT capped at 3 (only what a single memory carries is).
+    add_memory(db, "alpha", categories=["a", "b"])
+    add_memory(db, "beta", categories=["b", "c"])
+    add_memory(db, "gamma", categories=["d"])
+
+    results = db.search(FAKE_EMB, k=10, categories=["a", "b", "c", "d", "e", "f"])
+    assert {r["text"] for r in results} == {"alpha", "beta", "gamma"}
+
+
+def test_search_categories_nonexistent_returns_empty(db):
+    add_memory(db, "alpha", categories=["bugfix"])
+    assert db.search(FAKE_EMB, k=10, categories=["ghost"]) == []
+
+
+def test_search_combines_namespace_and_categories(db):
+    add_memory(db, "alpha", categories=["bugfix"], namespace="ns1")
+    add_memory(db, "beta", categories=["bugfix"], namespace="ns2")
+    results = db.search(FAKE_EMB, k=10, namespace="ns1", categories=["bugfix"])
+    assert [r["text"] for r in results] == ["alpha"]
+
+
+def test_memory_search_normalizes_categories(monkeypatch):
+    storage = MagicMock()
+    storage.search.return_value = []
+    monkeypatch.setattr(service, "storage", storage)
+    monkeypatch.setattr(service, "embed", lambda t: FAKE_EMB)
+
+    service.memory_search("q", categories=["  BUG ", "bug", "design"])
+    _, kwargs = storage.search.call_args
+    assert kwargs["categories"] == ["bug", "design"]
+
+
 # -- update: replace semantics --
 
 def test_update_replaces_categories(db):

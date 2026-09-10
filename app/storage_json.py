@@ -65,7 +65,9 @@ class JSONStorage(MemoryStorage):
             self._save()
         return {"id": eid, "created": True}
 
-    def search(self, query_embedding, k=5, threshold=0.0, namespace=None):
+    def search(self, query_embedding, k=5, threshold=0.0, namespace=None, categories=None):
+        # categories filtering is SQLite-only (rebuildable index); accepted for
+        # interface compatibility and ignored.
         scored = []
         for e in self._data.values():
             if namespace and e["namespace"] != namespace:

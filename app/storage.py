@@ -52,7 +52,8 @@ class MemoryStorage(ABC):
 
     @abstractmethod
     def search(self, query_embedding: list[float], k: int = 5, threshold: float = 0.0,
-               namespace: Optional[str] = None) -> list[dict[str, Any]]: ...
+               namespace: Optional[str] = None,
+               categories: Optional[list[str]] = None) -> list[dict[str, Any]]: ...
 
     @abstractmethod
     def list_memories(self, namespace: Optional[str] = None, limit: int = 100,

@@ -154,7 +154,7 @@ class NDJSONStorage(MemoryStorage):
             self._append_line(entry)
         return {"id": eid, "created": True}
 
-    def search(self, query_embedding, k=5, threshold=0.0, namespace=None):
+    def search(self, query_embedding, k=5, threshold=0.0, namespace=None, categories=None):
         raise RuntimeError(
             "NDJSON is a disaster-recovery replica and does not retain embeddings; "
             "semantic search is available only from the SQLite primary"
