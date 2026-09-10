@@ -137,11 +137,14 @@ def test_report_event_records_search_id_and_ratings(journal):
 
 
 def test_get_details_summary_keywords(journal):
-    result = {"found": [{"id": "a", "summary": "s1", "metadata": {"keywords": ["kw1"]}, "text": "BODY"}],
+    result = {"found": [{"id": "a", "summary": "s1",
+                         "metadata": {"keywords": ["kw1"], "categories": ["bugfix"]},
+                         "text": "BODY"}],
               "missing": ["zzz"]}
     audit.record("get_details", {"memory_ids": ["a", "zzz"]}, result, 1.0)
     ev = _read_lines(journal)[0]
-    assert ev["result"]["found"] == [{"id": "a", "summary": "s1", "keywords": ["kw1"]}]
+    assert ev["result"]["found"] == [{"id": "a", "summary": "s1",
+                                      "keywords": ["kw1"], "categories": ["bugfix"]}]
     assert "text" not in ev["result"]["found"][0]
     assert ev["result"]["missing"] == ["zzz"]
 

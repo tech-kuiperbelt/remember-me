@@ -9,6 +9,7 @@ import logging
 logger = logging.getLogger("storage_sqlite")
 
 from .storage import MemoryStorage, _now, _new_id, _cosine_similarity, DEFAULT_NAMESPACE
+from .categories import normalize_categories, normalize_categories_filter
 
 
 class SQLiteStorage(MemoryStorage):
@@ -82,6 +83,23 @@ class SQLiteStorage(MemoryStorage):
             );
             CREATE INDEX IF NOT EXISTS idx_memory_keywords_keyword
                 ON memory_keywords(keyword_id);
+        """)
+        # Categories: same pattern as keywords — a second, independent
+        # dimension for memory nature/classification (not content concepts).
+        # Rebuildable from memories.metadata["categories"]; not part of the
+        # JSONL replica (metadata already carries them).
+        self.conn.executescript("""
+            CREATE TABLE IF NOT EXISTS categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS memory_categories (
+                memory_id TEXT NOT NULL,
+                category_id INTEGER NOT NULL,
+                PRIMARY KEY (memory_id, category_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_memory_categories_category
+                ON memory_categories(category_id);
         """)
         self.conn.commit()
 
@@ -256,6 +274,96 @@ class SQLiteStorage(MemoryStorage):
             ).fetchall()
         return [r["name"] for r in rows]
 
+    # -- category index helpers (SQLite-only, rebuildable from metadata) --
+
+    @staticmethod
+    def _extract_categories(metadata: dict) -> list[str]:
+        """Normalized categories from metadata (capped at MAX_CATEGORIES)."""
+        return normalize_categories((metadata or {}).get("categories"))
+
+    def _sync_category_index(self, memory_id: str, metadata: dict):
+        """Replace a memory's category associations (delete-then-insert).
+
+        Caller must hold ``self._lock`` and is responsible for committing.
+        """
+        self.conn.execute(
+            "DELETE FROM memory_categories WHERE memory_id = ?", (memory_id,)
+        )
+        for name in self._extract_categories(metadata):
+            self.conn.execute(
+                "INSERT OR IGNORE INTO categories (name) VALUES (?)", (name,)
+            )
+            row = self.conn.execute(
+                "SELECT id FROM categories WHERE name = ?", (name,)
+            ).fetchone()
+            if row is not None:
+                self.conn.execute(
+                    "INSERT OR IGNORE INTO memory_categories (memory_id, category_id) "
+                    "VALUES (?, ?)", (memory_id, row["id"]),
+                )
+
+    def _remove_category_associations(self, memory_id: str):
+        """Remove a memory's category associations. Caller holds _lock."""
+        self.conn.execute(
+            "DELETE FROM memory_categories WHERE memory_id = ?", (memory_id,)
+        )
+
+    def _rebuild_category_index(self) -> int:
+        """Clear both category tables and rebuild from memories.metadata.
+
+        Caller must hold ``self._lock`` and is responsible for committing.
+        Returns the number of (memory, category) associations created.
+        """
+        self.conn.execute("DELETE FROM memory_categories")
+        self.conn.execute("DELETE FROM categories")
+        rows = self.conn.execute(
+            "SELECT id, metadata FROM memories WHERE deleted = 0"
+        ).fetchall()
+        associations = 0
+        for row in rows:
+            try:
+                metadata = json.loads(row["metadata"] or "{}")
+            except json.JSONDecodeError:
+                continue
+            names = self._extract_categories(metadata)
+            if not names:
+                continue
+            for name in names:
+                self.conn.execute(
+                    "INSERT OR IGNORE INTO categories (name) VALUES (?)", (name,)
+                )
+                cat = self.conn.execute(
+                    "SELECT id FROM categories WHERE name = ?", (name,)
+                ).fetchone()
+                if cat is not None:
+                    self.conn.execute(
+                        "INSERT OR IGNORE INTO memory_categories (memory_id, category_id) "
+                        "VALUES (?, ?)", (row["id"], cat["id"]),
+                    )
+                    associations += 1
+        return associations
+
+    def rebuild_category_index(self) -> dict:
+        """Public: clear and rebuild the category index from all active memories."""
+        with self._lock:
+            associations = self._rebuild_category_index()
+            self.conn.commit()
+        logger.info("category index rebuilt: %d associations", associations)
+        return {"category_index_rebuilt": associations}
+
+    def _category_counts(self) -> dict[str, int]:
+        """Return {category_name: number_of_memories} for active memories."""
+        rows = self.conn.execute(
+            "SELECT c.name, COUNT(DISTINCT mc.memory_id) AS cnt "
+            "FROM categories c "
+            "JOIN memory_categories mc ON mc.category_id = c.id "
+            "JOIN memories m ON m.id = mc.memory_id "
+            "WHERE m.deleted = 0 "
+            "GROUP BY c.name "
+            "ORDER BY cnt DESC, c.name ASC"
+        ).fetchall()
+        return {r["name"]: r["cnt"] for r in rows}
+
     # -- internal sync protocol --
 
     def _add_with_id(self, memory_id, text, embedding, metadata, namespace,
@@ -273,6 +381,7 @@ class SQLiteStorage(MemoryStorage):
                  json.dumps(metadata or {}), namespace, created_at, updated_at, summary),
             )
             self._sync_keyword_index(memory_id, metadata or {})
+            self._sync_category_index(memory_id, metadata or {})
             self.conn.commit()
 
     # -- internal sync protocol (outbox pattern) --
@@ -326,6 +435,7 @@ class SQLiteStorage(MemoryStorage):
                 (eid, text, self._serialize(embedding), json.dumps(metadata or {}), namespace, now, now, summary),
             )
             self._sync_keyword_index(eid, metadata or {})
+            self._sync_category_index(eid, metadata or {})
             self.conn.commit()
         return {"id": eid, "created": True}
 
@@ -352,7 +462,8 @@ class SQLiteStorage(MemoryStorage):
         return [{**d, "score": round(s, 6)} for s, d in scored[:k]]
 
     def list_memories(self, namespace=None, limit=100, offset=0, sort_by="created_at",
-                      updated_after=None, updated_before=None, keywords=None):
+                      updated_after=None, updated_before=None, keywords=None,
+                      categories=None):
         sort_col = sort_by if sort_by in ("created_at", "updated_at") else "created_at"
         clauses = ["deleted = 0"]
         params = []
@@ -375,6 +486,16 @@ class SQLiteStorage(MemoryStorage):
                 f"WHERE k.name IN ({placeholders}))"
             )
             params.extend(kw_list)
+        # Category filter (OR): match any category. Empty/None disables it.
+        cat_list = normalize_categories_filter(categories) if categories else []
+        if cat_list:
+            placeholders = ",".join(["?"] * len(cat_list))
+            clauses.append(
+                f"id IN (SELECT mc.memory_id FROM memory_categories mc "
+                f"JOIN categories c ON c.id = mc.category_id "
+                f"WHERE c.name IN ({placeholders}))"
+            )
+            params.extend(cat_list)
         params.extend([limit, offset])
         with self._lock:
             rows = self.conn.execute(
@@ -410,6 +531,9 @@ class SQLiteStorage(MemoryStorage):
             # a keywords key in metadata (update semantics: replace the whole array).
             if metadata is not None and "keywords" in metadata:
                 self._sync_keyword_index(memory_id, meta)
+            # Same replace semantics for categories.
+            if metadata is not None and "categories" in metadata:
+                self._sync_category_index(memory_id, meta)
             self.conn.commit()
         return True
 
@@ -455,6 +579,8 @@ class SQLiteStorage(MemoryStorage):
             )
             if metadata is not None and "keywords" in metadata:
                 self._sync_keyword_index(memory_id, merged)
+            if metadata is not None and "categories" in metadata:
+                self._sync_category_index(memory_id, merged)
             self.conn.commit()
         return True
 
@@ -496,6 +622,7 @@ class SQLiteStorage(MemoryStorage):
             )
             if c.rowcount > 0:
                 self._remove_keyword_associations(memory_id)
+                self._remove_category_associations(memory_id)
             self.conn.commit()
         return c.rowcount > 0
 
@@ -516,6 +643,11 @@ class SQLiteStorage(MemoryStorage):
                     "(SELECT id FROM memories WHERE namespace = ?)",
                     (namespace,),
                 )
+                self.conn.execute(
+                    "DELETE FROM memory_categories WHERE memory_id IN "
+                    "(SELECT id FROM memories WHERE namespace = ?)",
+                    (namespace,),
+                )
             else:
                 n = self.conn.execute(
                     "SELECT COUNT(*) FROM memories WHERE deleted = 0"
@@ -525,6 +657,7 @@ class SQLiteStorage(MemoryStorage):
                     (_now(),),
                 )
                 self.conn.execute("DELETE FROM memory_keywords")
+                self.conn.execute("DELETE FROM memory_categories")
             self.conn.commit()
         return n
 
@@ -565,6 +698,7 @@ class SQLiteStorage(MemoryStorage):
                      m.get("summary")),
                 )
                 self._sync_keyword_index(mid, m.get("metadata") or {})
+                self._sync_category_index(mid, m.get("metadata") or {})
                 imported += 1
                 imported_ids.append(mid)
             self.conn.commit()
@@ -580,11 +714,13 @@ class SQLiteStorage(MemoryStorage):
                 "SELECT namespace, COUNT(*) as cnt FROM memories WHERE deleted = 0 GROUP BY namespace"
             ).fetchall()
             keyword_counts = self._keyword_counts()
+            category_counts = self._category_counts()
         return {
             "total": total,
             "namespaces": [r["namespace"] for r in ns_rows],
             "namespace_counts": {r["namespace"]: r["cnt"] for r in ns_rows},
             "keyword_counts": keyword_counts,
+            "category_counts": category_counts,
             "backend": "sqlite",
             "path": self.path,
         }

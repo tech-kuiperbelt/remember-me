@@ -103,6 +103,7 @@ def recover_ndjson_to_sqlite(source_path: str, target_path: str, embed_fn,
                 recovered += 1
             offset += batch_size
         rebuilt.rebuild_keyword_index()
+        rebuilt.rebuild_category_index()
         rebuilt.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         rebuilt.conn.close()
         rebuilt = None

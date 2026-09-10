@@ -271,6 +271,11 @@ class DualStorage(MemoryStorage):
         with self._lock:
             return self.primary.get_keyword_vocabulary(namespace=namespace)
 
+    def rebuild_category_index(self):
+        """Rebuild the category index on the primary (SQLite only)."""
+        with self._lock:
+            return self.primary.rebuild_category_index()
+
     # -- public API: reads → primary only --
 
     def search(self, *args, **kwargs):
@@ -335,6 +340,7 @@ class DualStorage(MemoryStorage):
             "namespaces": p.get("namespaces", []),
             "namespace_counts": p.get("namespace_counts", {}),
             "keyword_counts": p.get("keyword_counts", {}),
+            "category_counts": p.get("category_counts", {}),
             "primary": p,
             "secondary": s,
             "ndjson_compact": compact if self._compact_enabled else None,

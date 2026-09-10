@@ -77,9 +77,11 @@ class JSONStorage(MemoryStorage):
         return [{**e, "score": round(s, 6)} for s, e in scored[:k]]
 
     def list_memories(self, namespace=None, limit=100, offset=0, sort_by="created_at",
-                      updated_after=None, updated_before=None, keywords=None):
-        # keywords filtering is SQLite-only (rebuildable index); JSON replicas
-        # accept the parameter for interface compatibility and ignore it.
+                      updated_after=None, updated_before=None, keywords=None,
+                      categories=None):
+        # keywords/categories filtering is SQLite-only (rebuildable indexes);
+        # JSON replicas accept the parameters for interface compatibility and
+        # ignore them.
         sort_key = sort_by if sort_by in ("created_at", "updated_at") else "created_at"
         entries = list(self._data.values())
         if namespace:

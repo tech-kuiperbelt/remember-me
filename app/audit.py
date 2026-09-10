@@ -162,7 +162,8 @@ def _trim_result(tool: str, result) -> dict | None:
         found = []
         for it in result.get("found") or []:
             found.append({"id": it.get("id"), "summary": it.get("summary"),
-                          "keywords": (it.get("metadata") or {}).get("keywords")})
+                          "keywords": (it.get("metadata") or {}).get("keywords"),
+                          "categories": (it.get("metadata") or {}).get("categories")})
         return {"found": found, "missing": result.get("missing", [])}
 
     if tool == "stats":

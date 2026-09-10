@@ -59,7 +59,8 @@ class MemoryStorage(ABC):
                       offset: int = 0, sort_by: str = "created_at",
                       updated_after: Optional[str] = None,
                       updated_before: Optional[str] = None,
-                      keywords: Optional[list[str]] = None) -> list[dict[str, Any]]: ...
+                      keywords: Optional[list[str]] = None,
+                      categories: Optional[list[str]] = None) -> list[dict[str, Any]]: ...
 
     @abstractmethod
     def get(self, memory_id: str) -> Optional[dict[str, Any]]: ...

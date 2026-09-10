@@ -22,8 +22,11 @@ from .service import memory_add, memory_search, memory_list, \
     memory_update, memory_delete, memory_stats, memory_get_details, \
     memory_report, _prepare_for_llm
 from .audit import record as audit_record
+from .categories import CATEGORY_VOCABULARY, MAX_CATEGORIES
 
 logger = logging.getLogger("server")
+
+_CATEGORIES_JOINED = ", ".join(CATEGORY_VOCABULARY)
 
 # ---------------------------------------------------------------------------
 # CLI
@@ -53,10 +56,13 @@ async def handle_list_tools() -> types.ListToolsResult:
                         "Deduplicated by content+namespace: if the same text already exists in the "
                         "target namespace, no duplicate is inserted and the existing record's id is "
                         "returned with created=false. "
-                        "Before adding, call 'stats' to inspect keyword_counts and reuse an existing "
-                        "keyword when semantically appropriate; create a new keyword only when no "
-                        "existing keyword matches. Pass keywords as an array in metadata.keywords — "
-                        "they are content concepts (e.g. entities, topics), NOT category/type.",
+                        "Before adding, call 'stats' to inspect keyword_counts and category_counts "
+                        "and reuse an existing keyword/category when semantically appropriate; "
+                        "create a new one only when no existing value matches. Pass keywords as an "
+                        "array in metadata.keywords — they are content concepts (e.g. entities, "
+                        "topics). Pass categories as an array in metadata.categories — memory "
+                        "nature/classification, up to " + str(MAX_CATEGORIES) + " values, prefer "
+                        "these canonical categories: " + _CATEGORIES_JOINED + ".",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -72,7 +78,13 @@ async def handle_list_tools() -> types.ListToolsResult:
                             "keywords": {
                                 "type": "array",
                                 "items": {"type": "string"},
-                                "description": "Content keywords (concrete concepts in the memory, not category/type). Normalized to lowercase.",
+                                "description": "Content keywords (concrete concepts in the memory, not category/type). Prefer reusing existing keywords from stats' keyword_counts; create a new keyword only when none fits. Normalized to lowercase.",
+                            },
+                            "categories": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "maxItems": MAX_CATEGORIES,
+                                "description": "Memory nature/classification, 1-%d values. Prefer the canonical categories, only introduce a new one when none fits: %s. Normalized to lowercase." % (MAX_CATEGORIES, _CATEGORIES_JOINED),
                             },
                         },
                     },
@@ -105,15 +117,17 @@ async def handle_list_tools() -> types.ListToolsResult:
         ),
         types.Tool(
             name="search_meta",
-            description="List memories by exact criteria: keywords, namespace, updated_at time range, "
+            description="List memories by exact criteria: keywords, categories, namespace, "
+                        "updated_at time range, "
                         "sort order and pagination. "
                         "Results return the memory summary (falling back to original text when no summary exists); "
                         "call 'get_details' with the returned IDs to fetch full content. "
                         "Use this for time-based questions such as \"what did we do recently / last session\" "
                         "— combine sort_by='updated_at' with a small limit to get the most recently "
                         "written or changed memories. For fuzzy/topic/keyword questions use 'search_semantic' instead. "
-                        "For keyword filtering, call 'stats' first to see available keywords in "
-                        "keyword_counts. Multiple keywords match ANY (OR). Keywords combine with "
+                        "For keyword/category filtering, call 'stats' first to see available keywords in "
+                        "keyword_counts and categories in category_counts. Multiple keywords match ANY (OR), "
+                        "and multiple categories match ANY (OR). Keywords/categories combine with "
                         "namespace and time filters using AND. "
                         "For relative time windows (\"last week\", \"this month\"), call 'stats' first to get "
                         "server_time, then pass concrete updated_after/updated_before timestamps. "
@@ -132,6 +146,11 @@ async def handle_list_tools() -> types.ListToolsResult:
                         "type": "array",
                         "items": {"type": "string"},
                         "description": "Filter by global keywords — any match is sufficient (OR). Call 'stats' first to see available keywords in keyword_counts.",
+                    },
+                    "categories": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Filter by memory categories — any match is sufficient (OR). Call 'stats' first to see canonical categories in category_counts.",
                     },
                 },
             },
@@ -161,14 +180,36 @@ async def handle_list_tools() -> types.ListToolsResult:
                         "When changing text, you MUST also provide a concise, faithful summary for "
                         "the new text. The server still accepts an omitted or blank summary and "
                         "generates one asynchronously as a reliability fallback. A summary may also "
-                        "be corrected without changing text; metadata-only updates leave it untouched.",
+                        "be corrected without changing text; metadata-only updates leave it untouched. "
+                        "When updating metadata you may pass metadata.keywords — content concepts; "
+                        "reuse existing keywords from stats' keyword_counts when one fits; an empty "
+                        "array clears. You may also pass metadata.categories — memory "
+                        "nature/classification, up to " + str(MAX_CATEGORIES) + " values, prefer the "
+                        "canonical categories from stats' category_counts: " + _CATEGORIES_JOINED + ". "
+                        "An empty array clears the memory's categories.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "memory_id": {"type": "string"},
                     "text": {"type": "string", "description": "New text"},
                     "summary": {"type": "string", "description": "New summary. LLM callers changing text MUST provide this; omission is tolerated and triggers asynchronous fallback."},
-                    "metadata": {"type": "object", "description": "Metadata to merge"},
+                    "metadata": {
+                        "type": "object",
+                        "description": "Metadata to merge",
+                        "properties": {
+                            "keywords": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Content keywords (concrete concepts in the memory, not category/type). Prefer reusing existing keywords from stats' keyword_counts; create a new keyword only when none fits. Normalized to lowercase. Empty array clears.",
+                            },
+                            "categories": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "maxItems": MAX_CATEGORIES,
+                                "description": "Memory nature/classification, 1-%d values. Prefer the canonical categories, only introduce a new one when none fits: %s. Normalized to lowercase. Empty array clears." % (MAX_CATEGORIES, _CATEGORIES_JOINED),
+                            },
+                        },
+                    },
                     "namespace": {"type": "string", "description": "New namespace"},
                 },
                 "required": ["memory_id"],
@@ -191,6 +232,8 @@ async def handle_list_tools() -> types.ListToolsResult:
                         "(map of namespace -> record count, e.g. check namespaces before search/add to "
                         "avoid missing results or creating duplicates), 'keyword_counts' (the global "
                         "canonical keyword vocabulary — reuse these when adding or filtering memories), "
+                        "'category_counts' (the canonical category vocabulary — with the seed values "
+                        "always listed, count 0 when unused; reuse these up to 3 values per memory), "
                         "and 'server_time' (current UTC time). Check 'server_time' first when a user asks "
                         "a time-based question (e.g. \"what did we do last week / this month\") so you can "
                         "compute the correct updated_after/updated_before values for the 'search_meta' tool. The "
@@ -239,6 +282,10 @@ async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
             data = memory_add(arguments["text"], arguments.get("metadata"),
                               arguments.get("namespace"), arguments.get("summary"))
             hint = _TOOL_HINTS["add"]
+            if data.get("categories_dropped"):
+                hint += (" You provided more than %d categories; only the first %d were kept — "
+                         "next time pass at most %d in metadata.categories."
+                         % (MAX_CATEGORIES, MAX_CATEGORIES, MAX_CATEGORIES))
         elif name == "search_semantic":
             data = _wrap_search_semantic(_prepare_for_llm(
                 memory_search(arguments["query"], int(arguments.get("k", 5)),
@@ -251,7 +298,8 @@ async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
             sort_by = arguments.get("sort_by", "created_at")
             items = _prepare_for_llm(memory_list(ns, limit, offset, sort_by,
                                                  arguments.get("updated_after"), arguments.get("updated_before"),
-                                                 keywords=arguments.get("keywords")))
+                                                 keywords=arguments.get("keywords"),
+                                                 categories=arguments.get("categories")))
             data = _wrap_search_meta(items, ns, limit, offset, sort_by)
             hint = _TOOL_HINTS["search_meta"]
         elif name == "get_details":
@@ -262,6 +310,10 @@ async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
                                  arguments.get("metadata"), arguments.get("namespace"),
                                  arguments.get("summary"))
             hint = _TOOL_HINTS["update"]
+            if data.get("categories_dropped"):
+                hint += (" You provided more than %d categories; only the first %d were kept — "
+                         "next time pass at most %d in metadata.categories."
+                         % (MAX_CATEGORIES, MAX_CATEGORIES, MAX_CATEGORIES))
         elif name == "delete":
             data = memory_delete(arguments["memory_id"])
             hint = _TOOL_HINTS["delete"]
@@ -328,13 +380,13 @@ async def handle_read_resource(uri: str) -> types.ReadResourceResult:
 # Guidance appended to each tool's result so the LLM knows what it can do next
 # with the returned data. Kept intentionally concise.
 _TOOL_HINTS: dict[str, str] = {
-    "add": "Memory stored. A supplied summary was saved directly; if it was missing or blank, asynchronous summary generation was queued. If created=false, an identical record already exists and remains untouched — consider 'update' instead.",
+    "add": "Memory stored. A supplied summary was saved directly; if it was missing or blank, asynchronous summary generation was queued. If created=false, an identical record already exists and remains untouched — consider 'update' instead. Reuse canonical categories from stats' category_counts (up to 3).",
     "search_semantic": "Results are ranked by relevance (score). Use 'get_details' with an id to read the full original text, then call 'report' with this search_id to rate how helpful each result was (-10..10).",
-    "search_meta": "Use 'get_details' with an id to read the full original text, or call 'search_semantic' for fuzzy/topic/keyword lookup. After using these results, call 'report' with this search_id to rate how helpful each id was (-10..10).",
-    "get_details": "You now have the full text, including metadata.keywords. If a memory is relevant, use search_meta(keywords=[...]) with its keywords to find related memories.",
-    "update": "Memory updated. A supplied summary was saved directly; a text change without one queued asynchronous summary generation. Use 'get_details' with the id to verify the change.",
+    "search_meta": "Use 'get_details' with an id to read the full original text, or call 'search_semantic' for fuzzy/topic/keyword lookup. Filter further with keywords= and/or categories=. After using these results, call 'report' with this search_id to rate how helpful each id was (-10..10).",
+    "get_details": "You now have the full text, including metadata.keywords and metadata.categories. If a memory is relevant, use search_meta(keywords=[...]) or search_meta(categories=[...]) to find related memories.",
+    "update": "Memory updated. A supplied summary was saved directly; a text change without one queued asynchronous summary generation. Use 'get_details' with the id to verify the change. Categories (if any) were taken from metadata.categories — see stats' category_counts for the canonical list (up to 3).",
     "delete": "Memory soft-deleted. It no longer appears in 'search_semantic'/'search_meta'. Call 'stats' to confirm the count.",
-    "stats": "Use 'namespace_counts' to pick a namespace, then 'search_meta' or 'search_semantic' within it. Use 'keyword_counts' as the canonical keyword vocabulary for search_meta filtering and add. Use 'server_time' for time-based queries.",
+    "stats": "Use 'namespace_counts' to pick a namespace, then 'search_meta' or 'search_semantic' within it. Use 'keyword_counts' as the canonical keyword vocabulary and 'category_counts' as the canonical category vocabulary (up to 3 per memory) for search_meta/add. Use 'server_time' for time-based queries.",
     "report": "Feedback recorded. Continue with the task, or run another search if the results were unhelpful.",
 }
 
@@ -401,6 +453,7 @@ def _wrap_stats(data: dict) -> dict:
     """
     out = {k: data[k] for k in ("total", "namespace_counts", "keyword_counts", "server_time")}
     out["keyword_counts"] = _trim_keyword_counts(out["keyword_counts"])
+    out["category_counts"] = data.get("category_counts", {})
     return out
 
 

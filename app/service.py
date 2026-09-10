@@ -6,6 +6,12 @@ from .embed import embed as embed_fn
 from .summarize import summarize as summarize_fn
 from .storage import create_storage
 from . import summary_worker
+from .categories import (
+    normalize_categories,
+    normalize_categories_filter,
+    categories_dropped,
+    category_counts_with_seeds,
+)
 
 logger = logging.getLogger("service")
 
@@ -117,7 +123,9 @@ def memory_add(text: str, metadata: dict | None = None,
                 ns, len(text), summary is not None)
     try:
         embedding = embed(text)
+        dropped = categories_dropped(metadata)
         metadata = _apply_keywords_to_metadata(metadata)
+        metadata = _apply_categories_to_metadata(metadata)
         result = storage.add(text, embedding, metadata=metadata, namespace=ns,
                              summary=summary)
         eid = result["id"]
@@ -131,7 +139,12 @@ def memory_add(text: str, metadata: dict | None = None,
         else:
             # Duplicate (namespace + text): existing record returned untouched.
             logger.info("add: duplicate skipped id=%s", eid)
-        return {"id": eid, "created": result.get("created", True)}
+        out = {"id": eid, "created": result.get("created", True)}
+        if result.get("created") and dropped:
+            # Surface the cap so the MCP hint can steer the LLM for next time.
+            out["categories_dropped"] = dropped
+            out["categories"] = normalize_categories((metadata or {}).get("categories"))
+        return out
     except Exception as e:
         logger.error("add failed: %s", e, exc_info=True)
         raise
@@ -185,6 +198,18 @@ def _apply_keywords_to_metadata(metadata: dict | None) -> dict | None:
     return metadata
 
 
+def _apply_categories_to_metadata(metadata: dict | None) -> dict | None:
+    """Normalize metadata.categories in place (trim/lower/dedupe, max 3).
+
+    Mirrors ``_apply_keywords_to_metadata``: when the normalized result is
+    empty, categories is set to [] so storage clears previous associations.
+    """
+    if metadata is None or "categories" not in metadata:
+        return metadata
+    metadata["categories"] = normalize_categories(metadata.get("categories"))
+    return metadata
+
+
 def memory_search(query: str, k: int = 5, threshold: float = 0.0,
                   namespace: str | None = None) -> list[dict]:
     k = _sanitize_k(k)
@@ -203,16 +228,19 @@ def memory_list(namespace: str | None = None, limit: int = 100,
                 offset: int = 0, sort_by: str = "created_at",
                 updated_after: str | None = None,
                 updated_before: str | None = None,
-                keywords: list | None = None) -> list[dict]:
+                keywords: list | None = None,
+                categories: list | None = None) -> list[dict]:
     if sort_by not in ("created_at", "updated_at"):
         sort_by = "created_at"
     kw = _normalize_keywords(keywords)
-    logger.info("list: namespace=%s limit=%d offset=%d sort_by=%s updated_after=%s updated_before=%s keywords=%s",
-                namespace, limit, offset, sort_by, updated_after, updated_before, kw)
+    cats = normalize_categories_filter(categories)
+    logger.info("list: namespace=%s limit=%d offset=%d sort_by=%s updated_after=%s updated_before=%s keywords=%s categories=%s",
+                namespace, limit, offset, sort_by, updated_after, updated_before, kw, cats)
     try:
         results = storage.list_memories(namespace=namespace, limit=limit, offset=offset,
                                         sort_by=sort_by, updated_after=updated_after,
-                                        updated_before=updated_before, keywords=kw)
+                                        updated_before=updated_before, keywords=kw,
+                                        categories=cats)
         logger.info("list: %d results", len(results))
         return [_strip_internal_fields(r) for r in results]
     except Exception as e:
@@ -250,7 +278,9 @@ def memory_update(memory_id: str, text: str | None = None,
             # None means preserve the current summary. A non-empty value allows
             # callers to correct a summary without changing the memory text.
             stored_summary = summary
+        dropped = categories_dropped(metadata)
         metadata = _apply_keywords_to_metadata(metadata)
+        metadata = _apply_categories_to_metadata(metadata)
         ok = storage.update(memory_id, text=text, embedding=embedding,
                             metadata=metadata, namespace=namespace,
                             summary=stored_summary)
@@ -258,7 +288,11 @@ def memory_update(memory_id: str, text: str | None = None,
             # Text changed without a usable caller summary: regenerate async.
             summary_worker.enqueue(memory_id, text)
         logger.info("update: %s", "ok" if ok else "not found")
-        return {"success": ok}
+        out = {"success": ok}
+        if ok and dropped:
+            out["categories_dropped"] = dropped
+            out["categories"] = normalize_categories((metadata or {}).get("categories"))
+        return out
     except Exception as e:
         logger.error("update failed: %s", e, exc_info=True)
         raise
@@ -289,6 +323,9 @@ def memory_clear(namespace: str | None = None) -> dict:
 def memory_stats() -> dict:
     try:
         stats = storage.get_stats()
+        # Seeds always present (count 0 when unused) so the LLM can reuse them.
+        stats["category_counts"] = category_counts_with_seeds(
+            stats.get("category_counts") or {})
         stats["embed_model"] = EMBED_MODEL
         stats["summarize_model"] = SUMMARIZE_MODEL
         stats["ollama_base_url"] = OLLAMA_BASE_URL
@@ -305,10 +342,13 @@ def memory_import(file_path: str, namespace_prefix: str = "") -> dict:
         backend = "json" if file_path.endswith(".json") else "sqlite"
         src = create_storage(backend, path=file_path)
         result = storage.merge(src, namespace_prefix=namespace_prefix)
-        # Imported records carry metadata.keywords; make sure the SQLite
-        # keyword index is rebuilt so list(keywords=...) stays consistent.
+        # Imported records carry metadata.keywords/categories; make sure the
+        # SQLite indexes are rebuilt so list(keywords=)/list(categories=) stay
+        # consistent.
         if hasattr(storage, "rebuild_keyword_index"):
             storage.rebuild_keyword_index()
+        if hasattr(storage, "rebuild_category_index"):
+            storage.rebuild_category_index()
         # Summaries for imported records without one are generated in the
         # background worker (like add/update) — never block the request.
         enqueued = 0
