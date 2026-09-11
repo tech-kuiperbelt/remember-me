@@ -80,3 +80,12 @@ print('OK, memory id:', r['id'])
 Follow the global memory protocol rules in `~/.config/opencode/AGENTS.md`.
 
 This project's namespace is `remember-me`. Set `MEMORY_DEFAULT_NAMESPACE=remember-me` when launching the MCP server so all agent-written memories default to this namespace.
+
+## Project management documents
+
+The authoritative project backlog is kept in the repository, not in a long memory record:
+
+- `docs/project-management/backlog-todo.md` — open and ignored work.
+- `docs/project-management/backlog-done.md` — completed work archive.
+
+Memory records should contain only a short pointer to these files and a compact status, so updates do not exceed the embedding model context window.
