@@ -1,12 +1,13 @@
-"""Main-case tests for the keywords feature (SQLite-only query index).
+"""Main-case tests for keywords in the generic SQLite metadata index.
 
-The keyword index (keywords / memory_keywords tables) lives only in SQLite.
-JSON/NDJSON replicas keep keywords inside metadata but do not build an index,
-so these tests exercise SQLiteStorage directly (and its service-layer
-normalization helpers).
+JSON/NDJSON replicas keep keywords inside metadata but build no query index,
+so these tests exercise SQLiteStorage directly plus service normalization.
 """
 
 from unittest.mock import MagicMock
+import asyncio
+import runpy
+import sys
 
 import pytest
 
@@ -97,6 +98,42 @@ def test_list_keywords_nonexistent_returns_empty(db):
     assert db.list_memories(keywords=["ghost"]) == []
 
 
+# -- semantic search: keyword pre-filtering --
+
+def test_search_keywords_or_match(db):
+    add_memory(db, "alpha", keywords=["project"])
+    add_memory(db, "beta", keywords=["testing"])
+    add_memory(db, "gamma", keywords=None)
+
+    results = db.search(FAKE_EMB, k=10, keywords=["project", "testing"])
+    assert {r["text"] for r in results} == {"alpha", "beta"}
+
+
+def test_search_keywords_filtered_before_k_cutoff(db):
+    add_memory(db, "alpha", keywords=["project"])
+    add_memory(db, "beta", keywords=["project"])
+    add_memory(db, "gamma", keywords=["other"])
+
+    results = db.search(FAKE_EMB, k=1, keywords=["project"])
+    assert len(results) == 1
+    assert results[0]["text"] in {"alpha", "beta"}
+
+
+def test_search_combines_keywords_and_categories(db):
+    db.add("alpha", FAKE_EMB,
+           metadata={"keywords": ["project"], "categories": ["bugfix"]},
+           namespace="ns1")
+    db.add("beta", FAKE_EMB,
+           metadata={"keywords": ["project"], "categories": ["design"]},
+           namespace="ns1")
+    db.add("gamma", FAKE_EMB,
+           metadata={"keywords": ["other"], "categories": ["bugfix"]},
+           namespace="ns1")
+
+    results = db.search(FAKE_EMB, k=10, keywords=["project"], categories=["bugfix"])
+    assert [r["text"] for r in results] == ["alpha"]
+
+
 # -- update: replace semantics --
 
 def test_update_replaces_keywords(db):
@@ -146,7 +183,10 @@ def test_rebuild_keyword_index(db):
     r1 = add_memory(db, "a", keywords=["project"])
     add_memory(db, "b", keywords=["testing"])
     # Corrupt the index deliberately.
-    db.conn.execute("DELETE FROM memory_keywords")
+    db.conn.execute(
+        "DELETE FROM memory_index_values WHERE index_value_id IN "
+        "(SELECT id FROM index_values WHERE dimension = 'keywords')"
+    )
     db.conn.commit()
     assert db.get_stats()["keyword_counts"] == {}
 
@@ -189,6 +229,31 @@ def test_memory_list_normalizes_keywords(monkeypatch):
     service.memory_list(keywords=["  PROJ ", "proj"])
     _, kwargs = storage.list_memories.call_args
     assert kwargs["keywords"] == ["proj"]
+
+
+def test_memory_search_normalizes_keywords(monkeypatch):
+    storage = MagicMock()
+    storage.search.return_value = []
+    monkeypatch.setattr(service, "storage", storage)
+    monkeypatch.setattr(service, "embed", lambda t: FAKE_EMB)
+
+    service.memory_search("q", keywords=["  PROJ ", "proj", "Testing"])
+    _, kwargs = storage.search.call_args
+    assert kwargs["keywords"] == ["proj", "testing"]
+
+
+def test_search_semantic_schema_exposes_both_index_filters():
+    real_argv = sys.argv
+    try:
+        sys.argv = ["server"]
+        namespace = runpy.run_module("app.server", run_name="not_main")
+    finally:
+        sys.argv = real_argv
+    result = asyncio.run(namespace["handle_list_tools"]())
+    tool = next(t for t in result.tools if t.name == "search_semantic")
+    properties = tool.inputSchema["properties"]
+    assert "keywords" in properties
+    assert "categories" in properties
 
 
 # ---------------------------------------------------------------------------

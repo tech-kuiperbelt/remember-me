@@ -191,7 +191,9 @@ async def handle_search_memories(request: Request):
         body = await request.json()
         logger.info("POST /api/memories/search query_len=%d", len(body.get("query", "")))
         results = memory_search(body["query"], int(body.get("k", 5)),
-                                float(body.get("threshold", 0.0)), body.get("namespace"))
+                                float(body.get("threshold", 0.0)), body.get("namespace"),
+                                keywords=body.get("keywords"),
+                                categories=body.get("categories"))
         return Response(
             json.dumps(results, ensure_ascii=False, default=str),
             media_type="application/json",

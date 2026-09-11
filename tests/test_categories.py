@@ -1,13 +1,11 @@
-"""Tests for the categories feature (SQLite-only query index).
+"""Tests for categories in the generic SQLite metadata index.
 
 Active-value reference:
 - `categories` = metadata dimension for memory nature/classification
 - keywords    = metadata dimension for content concepts
 
-The category tables (categories / memory_categories) live only in SQLite,
-mirroring the keyword index. JSON/NDJSON replicas keep categories inside
-metadata but build no index. These tests exercise SQLiteStorage directly
-plus the service-layer normalization/cap helpers.
+JSON/NDJSON replicas keep categories inside metadata but build no query index.
+These tests exercise SQLiteStorage directly plus normalization/cap helpers.
 """
 
 from unittest.mock import MagicMock
@@ -261,7 +259,10 @@ def test_rebuild_category_index(db):
     add_memory(db, "a", categories=["bugfix"])
     add_memory(db, "b", categories=["design"])
     # Corrupt the index deliberately.
-    db.conn.execute("DELETE FROM memory_categories")
+    db.conn.execute(
+        "DELETE FROM memory_index_values WHERE index_value_id IN "
+        "(SELECT id FROM index_values WHERE dimension = 'categories')"
+    )
     db.conn.commit()
     assert db.get_stats()["category_counts"] == {}
 

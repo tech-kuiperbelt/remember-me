@@ -99,10 +99,14 @@ def test_search_semantic_keeps_score(journal):
     result = {"note": "...", "total": 2,
               "items": [{"id": "a", "summary": "s1", "score": 0.9},
                         {"id": "b", "summary": "s2", "score": 0.7}]}
-    audit.record("search_semantic", {"query": "what is x", "k": 5, "threshold": 0.0, "namespace": "ns"},
+    arguments = {"query": "what is x", "k": 5, "threshold": 0.0, "namespace": "ns",
+                 "keywords": ["project"], "categories": ["design"]}
+    audit.record("search_semantic", arguments,
                  result, 3.0)
     ev = _read_lines(journal)[0]
     assert ev["params"]["query"] == "what is x"
+    assert ev["params"]["keywords"] == ["project"]
+    assert ev["params"]["categories"] == ["design"]
     assert ev["result"]["items"][0] == {"id": "a", "summary": "s1", "score": 0.9}
 
 
