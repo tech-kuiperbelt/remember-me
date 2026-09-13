@@ -4,13 +4,6 @@
 
 ## 当前待办
 
-### [25] embedding 存储优化与 Python 原生向量化
-
-- 目标：在语义质量基本不下降的前提下减少 embedding 存储空间；评估 float16、int8/标量量化、乘积量化和降维。
-- 目标：探索 FastEmbed/本地 ONNX 等 Python 原生 provider，降低对 Ollama HTTP 服务的依赖。
-- 原始设计记忆：`53c3797fa42e9cc3`（FastEmbed 本地推理 + reindex）。
-- 待验证：压缩格式、反量化、旧向量兼容、模型/维度版本、全量 reindex、质量与性能 A/B 基线。
-
 ### [24] keywords/categories 向量化与语义查询
 
 - 为词表项生成 embedding，支持 keyword/category 语义匹配。

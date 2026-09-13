@@ -20,7 +20,7 @@ import uvicorn
 from . import log_config  # noqa: F401
 from .service import memory_add, memory_search, memory_list, \
     memory_update, memory_delete, memory_stats, memory_get_details, \
-    memory_report, _prepare_for_llm
+    memory_report, _prepare_for_llm, warmup_embedding_provider
 from .audit import record as audit_record
 from .categories import CATEGORY_VOCABULARY, MAX_CATEGORIES
 
@@ -66,7 +66,7 @@ async def handle_list_tools() -> types.ListToolsResult:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "text": {"type": "string", "description": "The memory text"},
+                    "text": {"type": "string", "description": "The memory text. Keep long project documents in the repository and store only a concise summary and file path here; oversized input is rejected rather than silently truncated."},
                     "summary": {
                         "type": "string",
                         "description": "A concise summary of text. LLM callers MUST provide this; missing or blank values are tolerated and generated asynchronously as fallback.",
@@ -195,6 +195,8 @@ async def handle_list_tools() -> types.ListToolsResult:
                         "the new text. The server still accepts an omitted or blank summary and "
                         "generates one asynchronously as a reliability fallback. A summary may also "
                         "be corrected without changing text; metadata-only updates leave it untouched. "
+                        "Long project documents belong in the repository; store only their concise "
+                        "summary and path in memory. Oversized text is rejected, never silently truncated. "
                         "When updating metadata you may pass metadata.keywords — content concepts; "
                         "reuse existing keywords from stats' keyword_counts when one fits; an empty "
                         "array clears. You may also pass metadata.categories — memory "
@@ -205,7 +207,7 @@ async def handle_list_tools() -> types.ListToolsResult:
                 "type": "object",
                 "properties": {
                     "memory_id": {"type": "string"},
-                    "text": {"type": "string", "description": "New text"},
+                    "text": {"type": "string", "description": "New text. Oversized content is rejected; keep long documents in the repository and save a summary/path here."},
                     "summary": {"type": "string", "description": "New summary. LLM callers changing text MUST provide this; omission is tolerated and triggers asynchronous fallback."},
                     "metadata": {
                         "type": "object",
@@ -402,7 +404,7 @@ _TOOL_HINTS: dict[str, str] = {
     "get_details": "You now have the full text, including metadata.keywords and metadata.categories. If a memory is relevant, use search_meta(keywords=[...]) or search_meta(categories=[...]) to find related memories.",
     "update": "Memory updated. A supplied summary was saved directly; a text change without one queued asynchronous summary generation. Use 'get_details' with the id to verify the change. Categories (if any) were taken from metadata.categories — see stats' category_counts for the canonical list (up to 3).",
     "delete": "Memory soft-deleted. It no longer appears in 'search_semantic'/'search_meta'. Call 'stats' to confirm the count.",
-    "stats": "Use 'namespace_counts' to pick a namespace, then 'search_meta' or 'search_semantic' within it. Use 'keyword_counts' as the canonical keyword vocabulary and 'category_counts' as the canonical category vocabulary (up to 3 per memory) for search_meta/add. Use 'server_time' for time-based queries.",
+    "stats": "Use 'namespace_counts' to pick a namespace, then 'search_meta' or 'search_semantic' within it. Use 'keyword_counts' as the canonical keyword vocabulary and 'category_counts' as the canonical category vocabulary (up to 3 per memory) for search_meta/add. Embedding provider/model/profile describe the active comparable vector space. Use 'server_time' for time-based queries.",
     "report": "Feedback recorded. Continue with the task, or run another search if the results were unhelpful.",
 }
 
@@ -470,6 +472,10 @@ def _wrap_stats(data: dict) -> dict:
     out = {k: data[k] for k in ("total", "namespace_counts", "keyword_counts", "server_time")}
     out["keyword_counts"] = _trim_keyword_counts(out["keyword_counts"])
     out["category_counts"] = data.get("category_counts", {})
+    for key in ("embed_provider", "embed_model", "embed_dimension",
+                "embed_profile", "embed_dtype"):
+        if key in data:
+            out[key] = data[key]
     return out
 
 
@@ -478,6 +484,7 @@ def _wrap_stats(data: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 async def main():
+    warmup_embedding_provider()
     if args.port is not None:
         # ---- SSE mode ----
         logger.info("Starting SSE server on port %d", args.port)

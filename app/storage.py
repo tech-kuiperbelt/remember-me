@@ -130,7 +130,11 @@ def create_storage(backend: str = "sqlite", **kwargs) -> MemoryStorage:
         return NDJSONStorage(path=kwargs.get("path", "data/memories.jsonl"))
     if backend == "sqlite":
         from .storage_sqlite import SQLiteStorage
-        return SQLiteStorage(path=kwargs.get("path", "data/memories.db"))
+        return SQLiteStorage(
+            path=kwargs.get("path", "data/memories.db"),
+            embedding_dtype=kwargs.get("embedding_dtype", "float16"),
+            embedding_spec=kwargs.get("embedding_spec"),
+        )
     if backend == "dual":
         from .storage_json import JSONStorage
         from .storage_ndjson import NDJSONStorage
@@ -146,7 +150,11 @@ def create_storage(backend: str = "sqlite", **kwargs) -> MemoryStorage:
         else:
             secondary_cls = JSONStorage
         return DualStorage(
-            primary=SQLiteStorage(path=primary_path),
+            primary=SQLiteStorage(
+                path=primary_path,
+                embedding_dtype=kwargs.get("embedding_dtype", "float16"),
+                embedding_spec=kwargs.get("embedding_spec"),
+            ),
             secondary=secondary_cls(path=secondary_path),
             sync_interval=sync_interval,
             compact_interval=int(kwargs.get("compact_interval", 24 * 60 * 60)),

@@ -341,6 +341,8 @@ class DualStorage(MemoryStorage):
             "namespace_counts": p.get("namespace_counts", {}),
             "keyword_counts": p.get("keyword_counts", {}),
             "category_counts": p.get("category_counts", {}),
+            "embedding_storage": p.get("embedding_storage", {}),
+            "embedding_profile": p.get("embedding_profile", {}),
             "primary": p,
             "secondary": s,
             "ndjson_compact": compact if self._compact_enabled else None,

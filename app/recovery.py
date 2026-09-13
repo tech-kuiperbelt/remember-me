@@ -67,7 +67,8 @@ def quick_sync(storage, batch_size=500):
 
 
 def recover_ndjson_to_sqlite(source_path: str, target_path: str, embed_fn,
-                             batch_size: int = 500) -> dict:
+                             batch_size: int = 500, embedding_spec: dict | None = None,
+                             embedding_dtype: str = "float16") -> dict:
     """Offline, atomic rebuild of SQLite from a vector-free NDJSON backup.
 
     A temporary SQLite file is built entirely before it replaces ``target_path``.
@@ -84,7 +85,10 @@ def recover_ndjson_to_sqlite(source_path: str, target_path: str, embed_fn,
         for path in [temp, *temp_sidecars]:
             if path.exists():
                 path.unlink()
-        rebuilt = create_storage("sqlite", path=str(temp))
+        rebuilt = create_storage(
+            "sqlite", path=str(temp), embedding_spec=embedding_spec,
+            embedding_dtype=embedding_dtype,
+        )
         offset = 0
         while True:
             batch = source.list_memories(limit=batch_size, offset=offset)

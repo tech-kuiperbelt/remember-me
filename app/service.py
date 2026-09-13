@@ -2,7 +2,7 @@ import os
 import logging
 from datetime import datetime, timezone
 
-from .embed import embed as embed_fn
+from .embed import create_embedder
 from .summarize import summarize as summarize_fn
 from .storage import create_storage
 from . import summary_worker
@@ -28,9 +28,14 @@ COMPACT_MIN_BYTES = int(os.environ.get("MEMORY_COMPACT_MIN_BYTES", str(1024 * 10
 COMPACT_MIN_RATIO = float(os.environ.get("MEMORY_COMPACT_MIN_RATIO", "0.25"))
 
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-EMBED_MODEL = os.environ.get("EMBED_MODEL", "bge-m3")
+EMBED_DTYPE = os.environ.get("EMBED_DTYPE", "float16")
+EMBED_PRELOAD = os.environ.get("EMBED_PRELOAD", "true").lower() in ("1", "true", "yes")
 SUMMARIZE_MODEL = os.environ.get("SUMMARIZE_MODEL", "qwen3:latest")
 DEFAULT_NAMESPACE = os.environ.get("MEMORY_DEFAULT_NAMESPACE", "default")
+
+embedding_provider = create_embedder()
+EMBED_PROVIDER = embedding_provider.spec.provider
+EMBED_MODEL = embedding_provider.spec.model
 
 if STORAGE_BACKEND == "dual":
     primary_path = STORAGE_PATH or "data/memories.db"
@@ -41,6 +46,8 @@ if STORAGE_BACKEND == "dual":
                 primary_path, secondary_path, SYNC_INTERVAL, COMPACT_INTERVAL)
     storage = create_storage("dual", primary_path=primary_path,
                              secondary_path=secondary_path,
+                             embedding_dtype=EMBED_DTYPE,
+                             embedding_spec=embedding_provider.spec.as_dict(),
                              sync_interval=SYNC_INTERVAL,
                              compact_interval=COMPACT_INTERVAL,
                              compact_min_bytes=COMPACT_MIN_BYTES,
@@ -48,7 +55,8 @@ if STORAGE_BACKEND == "dual":
 elif STORAGE_BACKEND == "json":
     path = STORAGE_PATH or "data/memories.json"
     logger.info("JSON storage: %s", path)
-    storage = create_storage("json", path=path)
+    storage = create_storage("json", path=path, embedding_dtype=EMBED_DTYPE,
+                             embedding_spec=embedding_provider.spec.as_dict())
 elif STORAGE_BACKEND in ("ndjson", "jsonl"):
     raise RuntimeError(
         f"MEMORY_STORAGE={STORAGE_BACKEND} is no longer allowed as a standalone backend. "
@@ -58,7 +66,8 @@ elif STORAGE_BACKEND in ("ndjson", "jsonl"):
 else:
     path = STORAGE_PATH or "data/memories.db"
     logger.info("SQLite storage: %s", path)
-    storage = create_storage("sqlite", path=path)
+    storage = create_storage("sqlite", path=path, embedding_dtype=EMBED_DTYPE,
+                             embedding_spec=embedding_provider.spec.as_dict())
 
 summary_worker.set_storage(storage)
 summary_worker.start()
@@ -66,10 +75,33 @@ summary_worker.start()
 
 def embed(text: str) -> list[float]:
     try:
-        return embed_fn(text, base_url=OLLAMA_BASE_URL, model=EMBED_MODEL)
+        return embedding_provider.embed_document(text)
     except Exception as e:
         logger.error("embed failed: %s", e, exc_info=True)
         raise
+
+
+def embed_query(text: str) -> list[float]:
+    try:
+        # Ollama's current bge-m3 path has identical query/document handling.
+        # Calling the public wrapper preserves compatibility with tests and
+        # deployments that patch ``service.embed``. Prefix-aware providers use
+        # their dedicated query method.
+        if EMBED_PROVIDER == "ollama":
+            return embed(text)
+        return embedding_provider.embed_query(text)
+    except Exception as e:
+        logger.error("query embed failed: %s", e, exc_info=True)
+        raise
+
+
+def warmup_embedding_provider() -> None:
+    if not EMBED_PRELOAD:
+        return
+    logger.info("warming embedding provider=%s model=%s", EMBED_PROVIDER, EMBED_MODEL)
+    embedding_provider.warmup()
+    logger.info("embedding provider ready dimension=%d profile=%s",
+                embedding_provider.spec.dimension, embedding_provider.spec.profile_id)
 
 
 def summarize(text: str) -> str:
@@ -220,7 +252,7 @@ def memory_search(query: str, k: int = 5, threshold: float = 0.0,
     logger.info("search: query_len=%d k=%d threshold=%.3f namespace=%s keywords=%s categories=%s",
                 len(query), k, threshold, namespace, kw, cats)
     try:
-        query_emb = embed(query)
+        query_emb = embed_query(query)
         results = storage.search(query_emb, k=k, threshold=threshold, namespace=namespace,
                                  keywords=kw, categories=cats)
         logger.info("search: %d results", len(results))
@@ -333,6 +365,10 @@ def memory_stats() -> dict:
         stats["category_counts"] = category_counts_with_seeds(
             stats.get("category_counts") or {})
         stats["embed_model"] = EMBED_MODEL
+        stats["embed_provider"] = EMBED_PROVIDER
+        stats["embed_dimension"] = embedding_provider.spec.dimension
+        stats["embed_profile"] = embedding_provider.spec.profile_id
+        stats["embed_dtype"] = EMBED_DTYPE
         stats["summarize_model"] = SUMMARIZE_MODEL
         stats["ollama_base_url"] = OLLAMA_BASE_URL
         stats["server_time"] = _now_utc_iso()

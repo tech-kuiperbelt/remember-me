@@ -90,7 +90,7 @@ def test_offline_recovery_reembeds_and_preserves_original_primary_on_failure(tmp
     rebuilt = SQLiteStorage(str(target_path))
     assert result == {"recovered": 2, "errors": 0}
     assert set(calls) == {"first", "second"}
-    assert rebuilt.get(first["id"])["embedding"] == [0.9, 0.8]
+    assert rebuilt.get(first["id"])["embedding"] == pytest.approx([0.9, 0.8], abs=0.001)
     assert rebuilt.get(second["id"])["metadata"]["keywords"] == ["two"]
     assert rebuilt.get_stats()["total"] == 2
     rebuilt.conn.close()

@@ -1,0 +1,4 @@
+-r requirements.txt
+# On a CPU-only host, install torch from the official CPU wheel index first:
+# pip install torch --index-url https://download.pytorch.org/whl/cpu
+sentence-transformers>=5.0,<6.0

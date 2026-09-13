@@ -2,6 +2,16 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 [ -d .venv ] || { echo "Error: .venv not found. Run: python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt"; exit 1; }
+
+# Load local runtime configuration (embedding provider, model cache, ...).
+# Kept out of version control because it is host-specific; see AGENTS.md.
+if [ -f .env ]; then
+    set -a
+    # shellcheck disable=SC1091
+    . ./.env
+    set +a
+fi
+
 source .venv/bin/activate
 export MEMORY_STORAGE="${MEMORY_STORAGE:-dual}"
 exec python -m app.server "$@"

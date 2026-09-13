@@ -14,6 +14,7 @@ from .service import memory_add, memory_search, memory_list, memory_get, \
     memory_namespaces, memory_migrate_namespace, memory_get_details, memory_summarize, \
     memory_import, memory_storage_paths, storage, memory_extract_keywords
 from .audit import read_events as audit_read_events
+from .embed import EmbeddingInputTooLong
 
 logger = logging.getLogger("admin")
 
@@ -129,6 +130,12 @@ async def handle_add_memory(request: Request):
         result = memory_add(body["text"], body.get("metadata"), body.get("namespace"),
                             body.get("summary"))
         return Response(json.dumps(result), status_code=201, media_type="application/json")
+    except EmbeddingInputTooLong as e:
+        logger.warning("POST /api/memories rejected: %s", e)
+        return Response(
+            json.dumps({"detail": str(e), "code": "embedding_input_too_long"}),
+            status_code=413, media_type="application/json",
+        )
     except Exception as e:
         logger.error("POST /api/memories failed: %s", e, exc_info=True)
         return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
@@ -144,6 +151,13 @@ async def handle_update_memory(request: Request):
         if not result["success"]:
             return Response(json.dumps({"detail": "Not found"}), status_code=404, media_type="application/json")
         return Response(json.dumps(result), media_type="application/json")
+    except EmbeddingInputTooLong as e:
+        logger.warning("PUT /api/memories/%s rejected: %s",
+                       request.path_params.get("memory_id", ""), e)
+        return Response(
+            json.dumps({"detail": str(e), "code": "embedding_input_too_long"}),
+            status_code=413, media_type="application/json",
+        )
     except Exception as e:
         logger.error("PUT /api/memories/%s failed: %s", request.path_params.get("memory_id", ""), e, exc_info=True)
         return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
@@ -197,6 +211,12 @@ async def handle_search_memories(request: Request):
         return Response(
             json.dumps(results, ensure_ascii=False, default=str),
             media_type="application/json",
+        )
+    except EmbeddingInputTooLong as e:
+        logger.warning("POST /api/memories/search rejected: %s", e)
+        return Response(
+            json.dumps({"detail": str(e), "code": "embedding_input_too_long"}),
+            status_code=413, media_type="application/json",
         )
     except Exception as e:
         logger.error("POST /api/memories/search failed: %s", e, exc_info=True)

@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from app import summary_worker
+from app.embed import EmbeddingInputTooLong
 
 
 def test_guarded_summary_update_only_fills_matching_pending(storage, fake_emb):
@@ -138,6 +139,31 @@ def test_http_update_passes_summary(monkeypatch):
     assert response.status_code == 200
     assert json.loads(response.body) == {"success": True}
     update.assert_called_once_with("abc", "new body", None, None, "new summary")
+
+
+@pytest.mark.parametrize("handler,body", [
+    ("handle_add_memory", {"text": "long"}),
+    ("handle_update_memory", {"text": "long"}),
+    ("handle_search_memories", {"query": "long"}),
+])
+def test_http_embedding_input_too_long_returns_413(monkeypatch, handler, body):
+    from app import admin
+
+    target = {
+        "handle_add_memory": "memory_add",
+        "handle_update_memory": "memory_update",
+        "handle_search_memories": "memory_search",
+    }[handler]
+    monkeypatch.setattr(
+        admin, target,
+        MagicMock(side_effect=EmbeddingInputTooLong(9000, 8000)),
+    )
+    request = _Request(body, memory_id="abc" if handler == "handle_update_memory" else None)
+
+    response = asyncio.run(getattr(admin, handler)(request))
+
+    assert response.status_code == 413
+    assert json.loads(response.body)["code"] == "embedding_input_too_long"
 
 
 def test_online_recover_route_and_ui_are_removed():

@@ -8,9 +8,10 @@ Examples:
     python -m app.recover_cli data/memories.jsonl data/memories.db
 """
 
+import os
 import sys
 
-from .embed import embed
+from .embed import create_embedder
 from .recovery import recover_ndjson_to_sqlite
 
 
@@ -30,7 +31,12 @@ def main():
         print("Recovery requires a .jsonl/.ndjson source and .db target.", file=sys.stderr)
         sys.exit(2)
 
-    result = recover_ndjson_to_sqlite(src_path, tgt_path, embed)
+    provider = create_embedder()
+    result = recover_ndjson_to_sqlite(
+        src_path, tgt_path, provider.embed_document,
+        embedding_spec=provider.spec.as_dict(),
+        embedding_dtype=os.environ.get("EMBED_DTYPE", "float16"),
+    )
 
     print(f"Recovered: {result['recovered']}, Errors: {result['errors']}")
     print(f"  Source: {src_path}")
