@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.recovery import quick_sync, recover_ndjson_to_sqlite
-from app.storage_ndjson import NDJSONStorage
+from app.storage_ndjson import NDJSONReplica
 from app.storage_sqlite import SQLiteStorage
 from app.storage_dual import DualStorage
 import app.storage_dual as storage_dual_module
@@ -19,21 +19,29 @@ def _lines(path):
             if line.strip()]
 
 
+def _record(memory_id, text, metadata=None, namespace="default", summary=None,
+            created_at="2026-01-01T00:00:00+00:00", updated_at="2026-01-01T00:00:00+00:00"):
+    return {"id": memory_id, "text": text, "metadata": metadata or {},
+            "namespace": namespace, "created_at": created_at,
+            "updated_at": updated_at, "summary": summary}
+
+
 def test_ndjson_omits_embedding_on_write_and_legacy_load(tmp_path, fake_emb):
     path = tmp_path / "memories.jsonl"
-    replica = NDJSONStorage(str(path))
-    result = replica.add("body", fake_emb, metadata={"keywords": ["k"]}, summary="short")
+    replica = NDJSONReplica(str(path))
+    replica.upsert({**_record("one", "body", {"keywords": ["k"]}, summary="short"),
+                    "embedding": fake_emb})
 
     assert "embedding" not in _lines(path)[0]
-    assert "embedding" not in NDJSONStorage(str(path)).get(result["id"])
-    with pytest.raises(RuntimeError, match="does not retain embeddings"):
-        replica.search(fake_emb)
+    assert "embedding" not in NDJSONReplica(str(path)).list_records()[0]
+    with pytest.raises(AttributeError):
+        getattr(replica, "search")
 
     legacy = {**_lines(path)[0], "embedding": fake_emb}
     path.write_text(json.dumps(legacy) + "\n", encoding="utf-8")
-    loaded = NDJSONStorage(str(path))
-    assert "embedding" not in loaded.get(result["id"])
-    loaded.replace_all(loaded.list_memories(limit=10))
+    loaded = NDJSONReplica(str(path))
+    assert "embedding" not in loaded.list_records()[0]
+    loaded.replace_all(loaded.list_records(limit=10))
     assert "embedding" not in _lines(path)[0]
 
 
@@ -42,7 +50,7 @@ def test_full_sync_publishes_vector_free_snapshot(tmp_path, fake_emb):
     first = primary.add("first", fake_emb, metadata={"keywords": ["one"]}, namespace="ns")
     second = primary.add("second", fake_emb, metadata={"keywords": ["two"]}, namespace="ns")
     replica_path = tmp_path / "memories.jsonl"
-    secondary = NDJSONStorage(str(replica_path))
+    secondary = NDJSONReplica(str(replica_path))
 
     result = quick_sync(SimpleNamespace(primary=primary, secondary=secondary))
 
@@ -54,8 +62,8 @@ def test_full_sync_publishes_vector_free_snapshot(tmp_path, fake_emb):
 
 def test_full_sync_keeps_existing_replica_when_primary_read_fails(tmp_path, fake_emb):
     replica_path = tmp_path / "memories.jsonl"
-    secondary = NDJSONStorage(str(replica_path))
-    existing = secondary.add("existing backup", fake_emb)
+    secondary = NDJSONReplica(str(replica_path))
+    secondary.upsert(_record("existing", "existing backup"))
 
     class FailingPrimary:
         def list_memories(self, limit, offset):
@@ -67,14 +75,14 @@ def test_full_sync_keeps_existing_replica_when_primary_read_fails(tmp_path, fake
 
     with pytest.raises(RuntimeError, match="primary read failed"):
         quick_sync(SimpleNamespace(primary=FailingPrimary(), secondary=secondary), batch_size=1)
-    assert NDJSONStorage(str(replica_path)).get(existing["id"])["text"] == "existing backup"
+    assert NDJSONReplica(str(replica_path)).list_records()[0]["text"] == "existing backup"
 
 
 def test_offline_recovery_reembeds_and_preserves_original_primary_on_failure(tmp_path, fake_emb):
     source_path = tmp_path / "memories.jsonl"
-    source = NDJSONStorage(str(source_path))
-    first = source.add("first", fake_emb, metadata={"keywords": ["one"]}, namespace="ns", summary="s1")
-    second = source.add("second", fake_emb, metadata={"keywords": ["two"]}, namespace="ns", summary="s2")
+    source = NDJSONReplica(str(source_path))
+    source.upsert(_record("first-id", "first", {"keywords": ["one"]}, "ns", "s1"))
+    source.upsert(_record("second-id", "second", {"keywords": ["two"]}, "ns", "s2"))
     target_path = tmp_path / "memories.db"
     original = SQLiteStorage(str(target_path))
     original.add("old primary", fake_emb, namespace="old")
@@ -90,8 +98,8 @@ def test_offline_recovery_reembeds_and_preserves_original_primary_on_failure(tmp
     rebuilt = SQLiteStorage(str(target_path))
     assert result == {"recovered": 2, "errors": 0}
     assert set(calls) == {"first", "second"}
-    assert rebuilt.get(first["id"])["embedding"] == pytest.approx([0.9, 0.8], abs=0.001)
-    assert rebuilt.get(second["id"])["metadata"]["keywords"] == ["two"]
+    assert rebuilt.get("first-id")["embedding"] == pytest.approx([0.9, 0.8], abs=0.001)
+    assert rebuilt.get("second-id")["metadata"]["keywords"] == ["two"]
     assert rebuilt.get_stats()["total"] == 2
     rebuilt.conn.close()
 
@@ -105,7 +113,7 @@ def test_offline_recovery_reembeds_and_preserves_original_primary_on_failure(tmp
         recover_ndjson_to_sqlite(str(source_path), str(target_path), embed_fails)
     unchanged = SQLiteStorage(str(target_path))
     assert unchanged.get_stats()["total"] == 2
-    assert unchanged.get(first["id"])["text"] == "first"
+    assert unchanged.get("first-id")["text"] == "first"
     unchanged.conn.close()
 
 
@@ -117,11 +125,12 @@ def test_due_compact_reclaims_stale_lines_persists_state_and_updates_stats(
     primary_path = tmp_path / "primary.db"
     replica_path = tmp_path / "memories.jsonl"
     primary = SQLiteStorage(str(primary_path))
-    secondary = NDJSONStorage(str(replica_path))
-    first = secondary.add("first", fake_emb, namespace="ns")
-    second = secondary.add("second", fake_emb, namespace="ns")
-    secondary.update(first["id"], summary="revised")
-    secondary.delete(second["id"])
+    secondary = NDJSONReplica(str(replica_path))
+    secondary.upsert(_record("first", "first", namespace="ns"))
+    secondary.upsert(_record("second", "second", namespace="ns"))
+    secondary.upsert(_record("first", "first", namespace="ns", summary="revised",
+                             updated_at="2026-01-02T00:00:00+00:00"))
+    secondary.append_tombstone("second", "2026-01-02T00:00:00+00:00")
     before = replica_path.stat().st_size
 
     dual = DualStorage(primary, secondary, compact_interval=24 * 60 * 60,
@@ -131,7 +140,7 @@ def test_due_compact_reclaims_stale_lines_persists_state_and_updates_stats(
 
     lines = _lines(replica_path)
     assert len(lines) == 1
-    assert lines[0]["id"] == first["id"]
+    assert lines[0]["id"] == "first"
     assert lines[0]["summary"] == "revised"
     assert replica_path.stat().st_size < before
     state = dual.get_stats()["ndjson_compact"]
@@ -143,7 +152,7 @@ def test_due_compact_reclaims_stale_lines_persists_state_and_updates_stats(
 
     primary.conn.close()
     reloaded_primary = SQLiteStorage(str(primary_path))
-    reloaded = DualStorage(reloaded_primary, NDJSONStorage(str(replica_path)),
+    reloaded = DualStorage(reloaded_primary, NDJSONReplica(str(replica_path)),
                            compact_interval=24 * 60 * 60, start_background=False)
     compact_mock = MagicMock(wraps=reloaded.secondary.compact)
     reloaded.secondary.compact = compact_mock
@@ -157,9 +166,10 @@ def test_due_compact_records_error_without_touching_replica(tmp_path, fake_emb, 
     monkeypatch.setattr(storage_dual_module.audit, "record", audit_record)
     primary = SQLiteStorage(":memory:")
     replica_path = tmp_path / "memories.jsonl"
-    secondary = NDJSONStorage(str(replica_path))
-    entry = secondary.add("body", fake_emb)
-    secondary.update(entry["id"], summary="new")
+    secondary = NDJSONReplica(str(replica_path))
+    secondary.upsert(_record("entry", "body"))
+    secondary.upsert(_record("entry", "body", summary="new",
+                             updated_at="2026-01-02T00:00:00+00:00"))
     before = replica_path.read_text(encoding="utf-8")
     dual = DualStorage(primary, secondary, compact_min_bytes=0,
                        compact_min_ratio=1.0, start_background=False)

@@ -7,8 +7,7 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger("storage_dual")
 
-from .storage import MemoryStorage, DEFAULT_NAMESPACE
-from .storage_ndjson import NDJSONStorage
+from .storage import MemoryStorage, ReplicaStorage, DEFAULT_NAMESPACE
 from . import audit
 
 
@@ -21,7 +20,7 @@ class DualStorage(MemoryStorage):
 
     SQLite is the authoritative primary. All writes go to SQLite with
     synced=0. A background thread periodically polls for unsynced records
-    (synced=0) and batch-syncs them to the JSON secondary. On success,
+    (synced=0) and batch-syncs them to the NDJSON replica. On success,
     records are marked synced=1.
 
     This eliminates the need for periodic full rebuilds — the outbox
@@ -33,7 +32,7 @@ class DualStorage(MemoryStorage):
         Seconds between sync cycles (default 300 = 5 min).
     """
 
-    def __init__(self, primary: MemoryStorage, secondary: MemoryStorage,
+    def __init__(self, primary: MemoryStorage, secondary: ReplicaStorage,
                  sync_interval: int = 300, compact_interval: int = 24 * 60 * 60,
                  compact_min_bytes: int = 1024 * 1024,
                  compact_min_ratio: float = 0.25, start_background: bool = True):
@@ -43,7 +42,6 @@ class DualStorage(MemoryStorage):
         self.compact_interval = max(1, compact_interval)
         self.compact_min_bytes = max(0, compact_min_bytes)
         self.compact_min_ratio = min(1.0, max(0.0, compact_min_ratio))
-        self._compact_enabled = isinstance(secondary, NDJSONStorage)
 
         # Sync state
         self._last_sync_mono = time.monotonic()              # timing for stats
@@ -57,8 +55,8 @@ class DualStorage(MemoryStorage):
         if start_background:
             self._job = threading.Thread(target=self._sync_loop, daemon=True)
             self._job.start()
-        logger.info("DualStorage started: sync_interval=%ds secondary=%s compact=%s",
-                     sync_interval, getattr(secondary, 'path', '?'), self._compact_enabled)
+        logger.info("DualStorage started: sync_interval=%ds replica=%s",
+                    sync_interval, getattr(secondary, 'path', '?'))
 
     # -- background sync job --
 
@@ -80,8 +78,6 @@ class DualStorage(MemoryStorage):
         return datetime.fromtimestamp(value, timezone.utc).isoformat()
 
     def _compact_state(self) -> dict:
-        if not self._compact_enabled:
-            return {}
         state = self.primary._get_storage_state(_COMPACT_STATE_KEY, {})
         return state if isinstance(state, dict) else {}
 
@@ -90,8 +86,6 @@ class DualStorage(MemoryStorage):
 
     def _run_due_compact(self, trigger: str) -> None:
         """Run one due NDJSON maintenance check without blocking sync writes."""
-        if not self._compact_enabled:
-            return
         now = time.time()
         state = self._compact_state()
         last_check = state.get("last_check_at")
@@ -173,8 +167,6 @@ class DualStorage(MemoryStorage):
 
     def _record_full_sync_compaction(self, before_bytes: int, after_bytes: int) -> None:
         """Treat a successful Full Sync as a successful compact in Stats."""
-        if not self._compact_enabled:
-            return
         now = time.time()
         self._save_compact_state({
             "last_check_at": now,
@@ -200,20 +192,9 @@ class DualStorage(MemoryStorage):
             for m in batch:
                 try:
                     if m.get("deleted"):
-                        self.secondary.delete(m["id"])
+                        self.secondary.append_tombstone(m["id"], m.get("updated_at"))
                     else:
-                        existing = self.secondary.get(m["id"])
-                        if existing:
-                            self.secondary.update(
-                                m["id"], text=m["text"], embedding=m["embedding"],
-                                metadata=m["metadata"], namespace=m["namespace"],
-                                summary=m.get("summary"))
-                        else:
-                            self.secondary._add_with_id(
-                                m["id"], m["text"], m["embedding"],
-                                m["metadata"], m["namespace"],
-                                m["created_at"], m["updated_at"],
-                                m.get("summary"))
+                        self.secondary.upsert(m)
                     ids.append(m["id"])
                     synced += 1
                 except Exception:
@@ -366,7 +347,7 @@ class DualStorage(MemoryStorage):
             "embedding_profile": p.get("embedding_profile", {}),
             "primary": p,
             "secondary": s,
-            "ndjson_compact": compact if self._compact_enabled else None,
+            "ndjson_compact": compact,
         }
 
     def stop(self):

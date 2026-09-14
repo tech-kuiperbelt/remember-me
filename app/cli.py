@@ -1,41 +1,38 @@
-import os
-import sys
 import argparse
 import logging
+import os
 
 from .storage import create_storage
+from .embed import create_embedder
 from .summarize import summarize
 
 logger = logging.getLogger("cli")
 
 
-def _detect_backend(path: str) -> str:
-    if path.endswith(".json"):
-        return "json"
-    return "sqlite"
-
-
 def main():
-    parser = argparse.ArgumentParser(description="Import memories from another database")
-    parser.add_argument("source", help="Source DB/JSON file")
+    parser = argparse.ArgumentParser(description="Import memories from a matching-profile SQLite database")
+    parser.add_argument("source", help="Source SQLite .db/.sqlite/.sqlite3 file")
     parser.add_argument("--namespace-prefix", default="",
                         help="Prefix for imported namespaces")
     parser.add_argument("--target", default=None,
-                        help="Target DB/JSON file (default: from env or ./data/memories.db)")
+                        help="Target SQLite file (default: from env or ./data/memories.db)")
     parser.add_argument("--no-summarize", action="store_true",
                         help="Skip summary generation for imported records without one")
     args = parser.parse_args()
 
-    src_backend = _detect_backend(args.source)
-    src_storage = create_storage(src_backend, path=args.source)
-
-    target_backend = os.environ.get("MEMORY_STORAGE", "sqlite")
-    target_path = args.target or os.environ.get("MEMORY_STORAGE_PATH") or (
-        "data/memories.json" if target_backend == "json" else "data/memories.db"
+    if not args.source.lower().endswith((".db", ".sqlite", ".sqlite3")):
+        parser.error("source must be a SQLite .db/.sqlite/.sqlite3 file")
+    target_path = args.target or os.environ.get("MEMORY_STORAGE_PATH") or "data/memories.db"
+    provider = create_embedder()
+    src_storage = create_storage("sqlite", path=args.source, read_only=True)
+    dst_storage = create_storage(
+        "sqlite", path=target_path, embedding_spec=provider.spec.as_dict()
     )
-    dst_storage = create_storage(target_backend, path=target_path)
 
-    result = dst_storage.merge(src_storage, namespace_prefix=args.namespace_prefix)
+    try:
+        result = dst_storage.merge(src_storage, namespace_prefix=args.namespace_prefix)
+    finally:
+        src_storage.conn.close()
 
     summarized = 0
     summarize_failed = 0
@@ -59,10 +56,6 @@ def main():
           f"Total in source: {result['total']}")
     if not args.no_summarize:
         print(f"Summarized: {summarized}, Failed: {summarize_failed}")
-
-
-if __name__ == "__main__":
-    main()
 
 
 if __name__ == "__main__":

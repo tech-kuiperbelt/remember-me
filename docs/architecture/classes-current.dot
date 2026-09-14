@@ -10,10 +10,10 @@ digraph classes_current {
   Resolver [label="{IndexValueResolver|storage\lembed_query\lembed_documents\ltop_k / min_score / max_gap\l|prepare_embeddings()\lresolve()\l_exact_values()\l_semantic_values()\l}", fillcolor="#FEE2E2", color="#DC2626"];
 
   MemoryStorage [label="{«abstract» MemoryStorage||add()\lsearch()\llist_memories()\lget()\lget_details()\lupdate()\ldelete()\lclear()\lmerge()\lget_stats()\l}", fillcolor="#E2E8F0"];
+  ReplicaStorage [label="{«abstract» ReplicaStorage||upsert()\lappend_tombstone()\lreplace_all()\llist_records()\lget_stats()\l}", fillcolor="#E2E8F0"];
   SQLiteStorage [label="{SQLiteStorage|conn : sqlite3.Connection\lembedding_spec\lembedding_dtype\l_active_profile_id\l|CRUD + cosine search\lsemantic index candidates\lprofile migration/activation\lmetadata index sync\ltwo-table codec migration\l}", fillcolor="#CCFBF1", color="#0F766E"];
-  DualStorage [label="{DualStorage|primary : MemoryStorage\lsecondary : MemoryStorage\l_sync_mutex\l_job\l|CRUD delegation\lincremental sync\lfull sync\lcompact scheduling\l}", fillcolor="#DCFCE7", color="#16A34A"];
-  NDJSONStorage [label="{NDJSONStorage|path\l_lock\l|append-only writes\lload/recovery\lcompact()\lcompaction_metrics()\l}"];
-  JSONStorage [label="{JSONStorage|path\l_lock\l|CRUD\latomic save\l}"];
+  DualStorage [label="{DualStorage|primary : MemoryStorage\lsecondary : ReplicaStorage\l_sync_mutex\l_job\l|CRUD delegation\lincremental sync\lfull sync\lcompact scheduling\l}", fillcolor="#DCFCE7", color="#16A34A"];
+  NDJSONReplica [label="{NDJSONReplica|path\l_lock\l|upsert()\lappend_tombstone()\lreplace_all()\llist_records()\lcompact()\lcompaction_metrics()\l}"];
 
   Embedder [label="{«protocol» Embedder|spec : EmbeddingSpec\l|embed_document()\lembed_query()\lembed_documents()\lwarmup()\l}", fillcolor="#F3E8FF", color="#7C3AED"];
   BaseEmbedder [label="{«abstract» _BaseEmbedder|spec : EmbeddingSpec\l|_prepare()\l_validate_vector()\lembed_documents()\lwarmup()\l}", fillcolor="#F3E8FF", color="#7C3AED"];
@@ -30,10 +30,9 @@ digraph classes_current {
   Resolver -> MemoryStorage [style=dashed, label="exact + semantic candidates"];
   SQLiteStorage -> MemoryStorage [arrowhead=empty, label="implements"];
   DualStorage -> MemoryStorage [arrowhead=empty, label="implements"];
-  NDJSONStorage -> MemoryStorage [arrowhead=empty, label="implements"];
-  JSONStorage -> MemoryStorage [arrowhead=empty, label="implements"];
+  NDJSONReplica -> ReplicaStorage [arrowhead=empty, label="implements"];
   DualStorage -> SQLiteStorage [arrowhead=diamond, label="primary"];
-  DualStorage -> NDJSONStorage [arrowhead=odiamond, label="secondary"];
+  DualStorage -> NDJSONReplica [arrowhead=odiamond, label="replica"];
   Ollama -> BaseEmbedder [arrowhead=empty];
   FastEmbed -> BaseEmbedder [arrowhead=empty];
   Sentence -> BaseEmbedder [arrowhead=empty];

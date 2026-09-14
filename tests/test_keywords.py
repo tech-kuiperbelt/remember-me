@@ -196,18 +196,6 @@ def test_rebuild_keyword_index(db):
     assert {x["text"] for x in db.list_memories(keywords=["project"])} == {"a"}
 
 
-# -- merge imports keywords --
-
-def test_merge_syncs_keywords(db):
-    from app.storage_json import JSONStorage
-    src = JSONStorage("/tmp/keywords_merge_src.json")
-    src.add("imported", FAKE_EMB, metadata={"keywords": ["arch"]}, namespace="ns1")
-
-    result = db.merge(src)
-    assert result["imported"] == 1
-    assert db.get_stats()["keyword_counts"] == {"arch": 1}
-
-
 # -- service layer integration (mock storage) --
 
 def test_memory_add_normalizes_keywords(monkeypatch):

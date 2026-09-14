@@ -195,6 +195,10 @@ async def handle_import_memories(request: Request):
         logger.info("POST /api/import file=%s prefix=%s", file_path, prefix)
         result = memory_import(file_path, prefix)
         return Response(json.dumps(result, ensure_ascii=False), media_type="application/json")
+    except (ValueError, TypeError, RuntimeError) as e:
+        logger.warning("POST /api/import rejected: %s", e)
+        return Response(json.dumps({"detail": str(e)}, ensure_ascii=False),
+                        status_code=400, media_type="application/json")
     except Exception as e:
         logger.error("POST /api/import failed: %s", e, exc_info=True)
         return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")

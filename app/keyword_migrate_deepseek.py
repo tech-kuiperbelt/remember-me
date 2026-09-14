@@ -37,7 +37,7 @@ import sys
 import time
 from datetime import datetime, timezone
 
-from .storage import create_storage
+from .storage import create_storage, resolve_replica_path
 from .index_value_resolver import resolver_for_configured_profile
 
 logger = logging.getLogger("keyword_migrate_deepseek")
@@ -200,15 +200,15 @@ def build_storage(db_path: str | None = None):
     backend = os.environ.get("MEMORY_STORAGE", "sqlite")
     if backend == "dual":
         primary = db_path or os.environ.get("MEMORY_STORAGE_PATH", "data/memories.db")
-        secondary = os.environ.get("MEMORY_STORAGE_PATH_DUAL") or primary.replace(".db", ".jsonl")
-        if secondary == primary:
-            secondary = "data/memories.jsonl"
+        secondary = resolve_replica_path(
+            primary, os.environ.get("MEMORY_REPLICA_PATH"),
+            os.environ.get("MEMORY_STORAGE_PATH_DUAL")
+        )
         return create_storage("dual", primary_path=primary,
                               secondary_path=secondary,
                               sync_interval=int(os.environ.get("MEMORY_SYNC_INTERVAL", "300")))
-    if backend == "json":
-        path = db_path or os.environ.get("MEMORY_STORAGE_PATH") or "data/memories.json"
-        return create_storage("json", path=path)
+    if backend != "sqlite":
+        raise RuntimeError("keyword migration supports only MEMORY_STORAGE=sqlite or dual")
     path = db_path or os.environ.get("MEMORY_STORAGE_PATH") or "data/memories.db"
     return create_storage("sqlite", path=path)
 

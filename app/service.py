@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from .embed import create_embedder
 from .index_value_resolver import IndexValueResolver, MAX_FILTER_VALUES
 from .summarize import summarize as summarize_fn
-from .storage import create_storage
+from .storage import create_storage, resolve_replica_path
 from . import summary_worker
 from .categories import (
     normalize_categories,
@@ -22,7 +22,8 @@ def _now_utc_iso() -> str:
 
 STORAGE_BACKEND = os.environ.get("MEMORY_STORAGE", "sqlite")
 STORAGE_PATH = os.environ.get("MEMORY_STORAGE_PATH")
-STORAGE_PATH_DUAL = os.environ.get("MEMORY_STORAGE_PATH_DUAL")
+REPLICA_PATH = os.environ.get("MEMORY_REPLICA_PATH")
+LEGACY_REPLICA_PATH = os.environ.get("MEMORY_STORAGE_PATH_DUAL")
 SYNC_INTERVAL = int(os.environ.get("MEMORY_SYNC_INTERVAL", "300"))
 COMPACT_INTERVAL = int(os.environ.get("MEMORY_COMPACT_INTERVAL", str(24 * 60 * 60)))
 COMPACT_MIN_BYTES = int(os.environ.get("MEMORY_COMPACT_MIN_BYTES", str(1024 * 1024)))
@@ -41,11 +42,12 @@ embedding_provider = create_embedder()
 EMBED_PROVIDER = embedding_provider.spec.provider
 EMBED_MODEL = embedding_provider.spec.model
 
+
 if STORAGE_BACKEND == "dual":
     primary_path = STORAGE_PATH or "data/memories.db"
-    secondary_path = STORAGE_PATH_DUAL or primary_path.replace(".db", ".jsonl")
-    if secondary_path == primary_path:
-        secondary_path = "data/memories.jsonl"
+    secondary_path = resolve_replica_path(
+        primary_path, REPLICA_PATH, LEGACY_REPLICA_PATH
+    )
     logger.info("Dual storage: primary=%s secondary=%s sync_interval=%ds compact_interval=%ds",
                 primary_path, secondary_path, SYNC_INTERVAL, COMPACT_INTERVAL)
     storage = create_storage("dual", primary_path=primary_path,
@@ -56,25 +58,21 @@ if STORAGE_BACKEND == "dual":
                              compact_interval=COMPACT_INTERVAL,
                              compact_min_bytes=COMPACT_MIN_BYTES,
                              compact_min_ratio=COMPACT_MIN_RATIO)
-elif STORAGE_BACKEND == "json":
-    path = STORAGE_PATH or "data/memories.json"
-    logger.warning(
-        "MEMORY_STORAGE=json is deprecated and retained only for compatibility; "
-        "use sqlite or dual. JSON storage: %s", path
-    )
-    storage = create_storage("json", path=path, embedding_dtype=EMBED_DTYPE,
-                             embedding_spec=embedding_provider.spec.as_dict())
-elif STORAGE_BACKEND in ("ndjson", "jsonl"):
+elif STORAGE_BACKEND in ("json", "ndjson", "jsonl"):
     raise RuntimeError(
         f"MEMORY_STORAGE={STORAGE_BACKEND} is no longer allowed as a standalone backend. "
-        "NDJSON/JSONL serves only as the disaster-recovery replica of the SQLite primary. "
+        "JSON storage was removed; NDJSON serves only as the disaster-recovery replica. "
         "Use 'sqlite' (single) or 'dual' (sqlite primary + ndjson replica)."
     )
-else:
+elif STORAGE_BACKEND == "sqlite":
     path = STORAGE_PATH or "data/memories.db"
     logger.info("SQLite storage: %s", path)
     storage = create_storage("sqlite", path=path, embedding_dtype=EMBED_DTYPE,
                              embedding_spec=embedding_provider.spec.as_dict())
+else:
+    raise RuntimeError(
+        f"unknown MEMORY_STORAGE={STORAGE_BACKEND}; use 'sqlite' or 'dual'"
+    )
 
 if hasattr(storage, "index_embedding_completeness"):
     _index_completeness = storage.index_embedding_completeness()
@@ -440,20 +438,13 @@ def memory_stats() -> dict:
 def memory_import(file_path: str, namespace_prefix: str = "") -> dict:
     logger.info("import: file=%s prefix=%s", file_path, namespace_prefix)
     try:
-        backend = "json" if file_path.endswith(".json") else "sqlite"
-        src = create_storage(backend, path=file_path)
-        result = storage.merge(src, namespace_prefix=namespace_prefix)
-        # Imported records carry metadata.keywords/categories; make sure the
-        # SQLite indexes are rebuilt so list(keywords=)/list(categories=) stay
-        # consistent.
-        if hasattr(storage, "rebuild_keyword_index"):
-            storage.rebuild_keyword_index()
-        if hasattr(storage, "rebuild_category_index"):
-            storage.rebuild_category_index()
-        if hasattr(storage, "backfill_missing_index_value_embeddings"):
-            storage.backfill_missing_index_value_embeddings(
-                embed_documents
-            )
+        if not file_path.lower().endswith((".db", ".sqlite", ".sqlite3")):
+            raise ValueError("import source must be a SQLite .db/.sqlite/.sqlite3 file")
+        src = create_storage("sqlite", path=file_path, read_only=True)
+        try:
+            result = storage.merge(src, namespace_prefix=namespace_prefix)
+        finally:
+            src.conn.close()
         # Summaries for imported records without one are generated in the
         # background worker (like add/update) — never block the request.
         enqueued = 0
@@ -626,15 +617,6 @@ def memory_storage_paths() -> dict:
         result["primary_path"] = getattr(storage.primary, "path", "?")
         result["secondary_path"] = getattr(storage.secondary, "path", "?")
     return result
-
-
-def _detect_storage_backend(path: str) -> str:
-    """Map a storage file path to its backend name for maintenance tooling."""
-    if path.endswith(".jsonl") or path.endswith(".ndjson"):
-        return "ndjson"
-    if path.endswith(".json"):
-        return "json"
-    return "sqlite"
 
 
 def memory_migrate_namespace(source: str, target: str) -> dict:

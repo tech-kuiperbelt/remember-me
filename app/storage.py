@@ -1,5 +1,6 @@
 import secrets
 import logging
+import os
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -9,6 +10,24 @@ import numpy as np
 logger = logging.getLogger("storage")
 
 DEFAULT_NAMESPACE = "default"
+
+
+def resolve_replica_path(primary_path: str, configured: str | None = None,
+                         legacy: str | None = None) -> str:
+    """Resolve the NDJSON path, preferring the new env name over its legacy alias."""
+    if configured:
+        if legacy:
+            logger.warning(
+                "MEMORY_STORAGE_PATH_DUAL is deprecated and ignored because "
+                "MEMORY_REPLICA_PATH is set"
+            )
+        return configured
+    if legacy:
+        logger.warning("MEMORY_STORAGE_PATH_DUAL is deprecated; use MEMORY_REPLICA_PATH")
+        return legacy
+    if primary_path == ":memory:":
+        return "data/memories.jsonl"
+    return os.path.splitext(primary_path)[0] + ".jsonl"
 
 
 def _now() -> str:
@@ -106,7 +125,7 @@ class MemoryStorage(ABC):
     @abstractmethod
     def merge(self, source_storage: "MemoryStorage",
               namespace_prefix: str = "") -> dict[str, Any]:
-        """Import records from another storage into this one.
+        """Atomically import records from a complete, matching-profile SQLite store.
 
         Returns {"imported", "skipped", "renamed", "total", "imported_ids"}.
         ``skipped`` counts records whose (namespace, text) already exists
@@ -119,48 +138,69 @@ class MemoryStorage(ABC):
     def get_stats(self) -> dict[str, Any]: ...
 
 
+class ReplicaStorage(ABC):
+    """Narrow contract for a vector-free disaster-recovery replica."""
+
+    @abstractmethod
+    def upsert(self, record: dict) -> None: ...
+
+    @abstractmethod
+    def append_tombstone(self, memory_id: str, updated_at: str) -> None: ...
+
+    @abstractmethod
+    def replace_all(self, memories: list[dict]) -> None: ...
+
+    @abstractmethod
+    def list_records(self, limit: int = 100, offset: int = 0) -> list[dict]: ...
+
+    @abstractmethod
+    def compaction_metrics(self) -> dict[str, Any]: ...
+
+    @abstractmethod
+    def compact(self) -> dict[str, Any]: ...
+
+    @abstractmethod
+    def get_stats(self) -> dict[str, Any]: ...
+
+
 # ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
 
 def create_storage(backend: str = "sqlite", **kwargs) -> MemoryStorage:
-    if backend == "json":
-        from .storage_json import JSONStorage
-        return JSONStorage(path=kwargs.get("path", "data/memories.json"))
-    if backend == "ndjson":
-        from .storage_ndjson import NDJSONStorage
-        return NDJSONStorage(path=kwargs.get("path", "data/memories.jsonl"))
     if backend == "sqlite":
         from .storage_sqlite import SQLiteStorage
         return SQLiteStorage(
             path=kwargs.get("path", "data/memories.db"),
             embedding_dtype=kwargs.get("embedding_dtype", "float16"),
             embedding_spec=kwargs.get("embedding_spec"),
+            read_only=bool(kwargs.get("read_only", False)),
         )
     if backend == "dual":
-        from .storage_json import JSONStorage
-        from .storage_ndjson import NDJSONStorage
+        from .storage_ndjson import NDJSONReplica
         from .storage_sqlite import SQLiteStorage
         from .storage_dual import DualStorage
-        primary_path = kwargs.get("primary_path", "data/memories.db")
-        secondary_path = kwargs.get("secondary_path",
-                                    kwargs.get("path", "").replace(".db", ".jsonl")
-                                    if kwargs.get("path") else "data/memories.jsonl")
+        primary_path = kwargs.get("primary_path", kwargs.get("path", "data/memories.db"))
+        default_replica = resolve_replica_path(primary_path)
+        secondary_path = kwargs.get("secondary_path", default_replica)
         sync_interval = int(kwargs.get("sync_interval", 300))
-        if secondary_path.endswith(".jsonl"):
-            secondary_cls = NDJSONStorage
-        else:
-            secondary_cls = JSONStorage
+        if not secondary_path.lower().endswith((".jsonl", ".ndjson")):
+            raise ValueError(
+                "dual replica path must end with .jsonl or .ndjson; JSON replicas were removed"
+            )
+        if primary_path != ":memory:" and os.path.realpath(primary_path) == os.path.realpath(secondary_path):
+            raise ValueError("dual primary and replica paths must be different")
         return DualStorage(
             primary=SQLiteStorage(
                 path=primary_path,
                 embedding_dtype=kwargs.get("embedding_dtype", "float16"),
                 embedding_spec=kwargs.get("embedding_spec"),
             ),
-            secondary=secondary_cls(path=secondary_path),
+            secondary=NDJSONReplica(path=secondary_path),
             sync_interval=sync_interval,
             compact_interval=int(kwargs.get("compact_interval", 24 * 60 * 60)),
             compact_min_bytes=int(kwargs.get("compact_min_bytes", 1024 * 1024)),
             compact_min_ratio=float(kwargs.get("compact_min_ratio", 0.25)),
+            start_background=bool(kwargs.get("start_background", True)),
         )
     raise ValueError(f"Unknown backend: {backend}")

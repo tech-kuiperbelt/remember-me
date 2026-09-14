@@ -16,14 +16,15 @@ import os
 from pathlib import Path
 
 from .storage import create_storage
+from .storage_ndjson import NDJSONReplica
 
 logger = logging.getLogger("recovery")
 
 
 def quick_sync(storage, batch_size=500):
-    """Full rebuild: clear secondary (JSON) and copy all from primary (SQLite).
+    """Atomically replace the NDJSON replica from the SQLite primary.
 
-    Preserves all memory IDs by using _add_with_id() on secondary.
+    Preserves all memory IDs in one atomic replica snapshot.
     Filters out soft-deleted records from primary.
     Uses pagination to avoid OOM on large datasets.
 
@@ -50,16 +51,7 @@ def quick_sync(storage, batch_size=500):
         memories.extend(batch)
         offset += batch_size
 
-    if hasattr(secondary, "replace_all"):
-        secondary.replace_all(memories)
-    else:
-        secondary.clear()
-        for m in memories:
-            secondary._add_with_id(
-                m["id"], m["text"], m["embedding"], m["metadata"],
-                m["namespace"], m["created_at"], m["updated_at"],
-                m.get("summary"),
-            )
+    secondary.replace_all(memories)
 
     logger.info("quick_sync: synced=%d", len(memories))
     return {"synced": len(memories), "errors": 0,
@@ -75,7 +67,7 @@ def recover_ndjson_to_sqlite(source_path: str, target_path: str, embed_fn,
     A temporary SQLite file is built entirely before it replaces ``target_path``.
     Any embedding failure leaves the prior primary untouched.
     """
-    source = create_storage("ndjson", path=source_path)
+    source = NDJSONReplica(source_path)
     target = Path(target_path)
     temp = Path(f"{target}.recover.tmp")
     temp_sidecars = [Path(f"{temp}-wal"), Path(f"{temp}-shm")]
@@ -92,7 +84,7 @@ def recover_ndjson_to_sqlite(source_path: str, target_path: str, embed_fn,
         )
         offset = 0
         while True:
-            batch = source.list_memories(limit=batch_size, offset=offset)
+            batch = source.list_records(limit=batch_size, offset=offset)
             if not batch:
                 break
             for memory in batch:

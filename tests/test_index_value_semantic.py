@@ -3,8 +3,7 @@
 import pytest
 
 from app.embed import EmbeddingSpec
-from app.index_value_resolver import IndexValueResolver, SemanticIndexUnsupported
-from app.storage_json import JSONStorage
+from app.index_value_resolver import IndexValueResolver
 from app.storage_sqlite import SQLiteStorage
 
 
@@ -102,17 +101,6 @@ def test_below_threshold_produces_no_applied_values():
     assert detail["keywords"][0] == {
         "input": "unrelated", "match_type": "none", "matches": [],
     }
-
-
-def test_json_backend_rejects_only_unmatched_semantic_value(tmp_path):
-    storage = JSONStorage(str(tmp_path / "memory.json"))
-    storage.add("one", [1.0, 0.0], metadata={"keywords": ["exact"]}, namespace="ns")
-    resolver = _resolver(storage)
-
-    applied, _detail = resolver.resolve({"keywords": ["exact"]}, "ns")
-    assert applied == {"keywords": ["exact"]}
-    with pytest.raises(SemanticIndexUnsupported, match="SQLite/dual"):
-        resolver.resolve({"keywords": ["fuzzy"]}, "ns")
 
 
 def test_reindex_and_codec_cover_both_vector_tables():

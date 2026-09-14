@@ -174,26 +174,36 @@ def test_storage_paths_single_backend(service, monkeypatch):
     assert "primary_path" not in result
 
 
-@pytest.mark.parametrize("path,expected", [
-    ("data/memories.jsonl", "ndjson"),
-    ("data/memories.ndjson", "ndjson"),
-    ("data/memories.json", "json"),
-    ("data/memories.db", "sqlite"),
-])
-def test_detect_storage_backend(path, expected):
-    """Path extension maps to the correct backend."""
-    assert service_detect_backend(path) == expected
+def test_memory_import_accepts_only_sqlite_source(service, mocked):
+    with pytest.raises(ValueError, match="SQLite"):
+        service.memory_import("legacy.json")
+    mocked["storage"].merge.assert_not_called()
 
 
-# pytest can't import the module attribute directly into the test signature,
-# so we use a small helper import at module level instead.
-def service_detect_backend(path):
-    from app.service import _detect_storage_backend
-    return _detect_storage_backend(path)
+def test_memory_import_closes_source_and_queues_summary_after_merge(
+        service, mocked, monkeypatch):
+    source = MagicMock()
+    monkeypatch.setattr(service, "create_storage", MagicMock(return_value=source))
+    mocked["storage"].merge.return_value = {
+        "imported": 1, "skipped": 0, "renamed": 0, "total": 1,
+        "imported_ids": ["new-id"],
+    }
+    mocked["storage"].get.return_value = {"id": "new-id", "text": "body", "summary": None}
+
+    result = service.memory_import("source.sqlite", "old-")
+
+    service.create_storage.assert_called_once_with(
+        "sqlite", path="source.sqlite", read_only=True
+    )
+    mocked["storage"].merge.assert_called_once_with(source, namespace_prefix="old-")
+    source.conn.close.assert_called_once()
+    mocked["enqueue"].assert_called_once_with("new-id", "body")
+    assert result["summarize_queued"] == 1
 
 
-def test_ndjson_rejected_as_standalone_backend():
-    """MEMORY_STORAGE=ndjson must refuse to start as a standalone backend.
+@pytest.mark.parametrize("backend", ["json", "ndjson", "jsonl", "unknown"])
+def test_removed_backends_are_rejected(backend):
+    """Removed business backends must fail rather than silently falling back.
 
     Tested in a subprocess so the running pytest process's app.service module
     state is never mutated.
@@ -202,8 +212,8 @@ def test_ndjson_rejected_as_standalone_backend():
     import sys
 
     code = (
-        "import os; os.environ['MEMORY_STORAGE']='ndjson'; "
-        "os.environ['MEMORY_STORAGE_PATH']='/tmp/never-created.jsonl'; "
+        f"import os; os.environ['MEMORY_STORAGE']='{backend}'; "
+        "os.environ['MEMORY_STORAGE_PATH']='/tmp/never-created'; "
         "import app.service"
     )
     proc = subprocess.run(
@@ -211,4 +221,15 @@ def test_ndjson_rejected_as_standalone_backend():
         capture_output=True, text=True,
     )
     assert proc.returncode != 0
-    assert "no longer allowed" in proc.stderr
+    assert "MEMORY_STORAGE" in proc.stderr
+
+
+def test_replica_path_prefers_new_name_and_derives_default(service, caplog):
+    assert service.resolve_replica_path("data/main.sqlite", None, None) == "data/main.jsonl"
+    assert service.resolve_replica_path("data/main.db", "new.ndjson", "old.jsonl") == "new.ndjson"
+    assert "deprecated and ignored" in caplog.text
+
+
+def test_replica_path_accepts_legacy_alias_with_warning(service, caplog):
+    assert service.resolve_replica_path("data/main.db", None, "old.jsonl") == "old.jsonl"
+    assert "deprecated" in caplog.text

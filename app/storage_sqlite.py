@@ -1,9 +1,11 @@
 """SQLite storage — authoritative primary with Outbox sync protocol."""
 
 import json
+import os
 import sqlite3
 import threading
 import logging
+from pathlib import Path
 
 logger = logging.getLogger("storage_sqlite")
 
@@ -27,15 +29,25 @@ _INDEX_DIMENSIONS = {
 
 class SQLiteStorage(MemoryStorage):
     def __init__(self, path: str = "data/memories.db", embedding_dtype: str = "float16",
-                 embedding_spec: dict | None = None):
+                 embedding_spec: dict | None = None, read_only: bool = False):
         self.path = path
         self.embedding_dtype = embedding_dtype
         self.embedding_spec = embedding_spec
+        self.read_only = read_only
         self._active_profile_id = None
         self._lock = threading.RLock()
-        self.conn = sqlite3.connect(path, check_same_thread=False)
+        if read_only:
+            if path == ":memory:" or not os.path.isfile(path):
+                raise FileNotFoundError(f"SQLite import source does not exist: {path}")
+            uri = Path(path).resolve().as_uri() + "?mode=ro"
+            self.conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
+        else:
+            self.conn = sqlite3.connect(path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
-        self._init_db()
+        if read_only:
+            self._load_active_embedding_profile()
+        else:
+            self._init_db()
 
     def _init_db(self):
         self.conn.executescript("""
@@ -1340,6 +1352,65 @@ class SQLiteStorage(MemoryStorage):
         return n
 
     def merge(self, source_storage, namespace_prefix=""):
+        """Atomically import a complete SQLite snapshot in the same vector space."""
+        if not isinstance(source_storage, SQLiteStorage):
+            raise TypeError("import source must be SQLiteStorage")
+        if self.path != ":memory:" and source_storage.path != ":memory:":
+            if os.path.realpath(self.path) == os.path.realpath(source_storage.path):
+                raise ValueError("cannot import a SQLite database into itself")
+
+        source_profile = source_storage._active_profile_id
+        target_profile = self._active_profile_id
+        if not source_profile or not target_profile:
+            raise RuntimeError("source and target must both have an active embedding profile")
+        if source_profile != target_profile:
+            raise RuntimeError(
+                "source and target active embedding profiles must match: "
+                f"source={source_profile}, target={target_profile}; "
+                "cross-profile import requires memory_import v2"
+            )
+        target_index = self.index_embedding_completeness(target_profile)
+        if not target_index["complete"]:
+            raise RuntimeError(
+                "target index-value embeddings are incomplete: "
+                f"expected={target_index['expected']}, stored={target_index['stored']}"
+            )
+
+        with source_storage._lock:
+            source_total = source_storage.conn.execute(
+                "SELECT COUNT(*) FROM memories WHERE deleted = 0"
+            ).fetchone()[0]
+            source_vectors = source_storage.conn.execute(
+                "SELECT COUNT(*) FROM memory_embeddings me "
+                "JOIN memories m ON m.id=me.memory_id "
+                "WHERE me.profile_id=? AND m.deleted=0", (source_profile,)
+            ).fetchone()[0]
+            if source_vectors != source_total:
+                raise RuntimeError(
+                    "source memory embeddings are incomplete: "
+                    f"expected={source_total}, stored={source_vectors}"
+                )
+            source_index = source_storage.index_embedding_completeness(source_profile)
+            if not source_index["complete"]:
+                raise RuntimeError(
+                    "source index-value embeddings are incomplete: "
+                    f"expected={source_index['expected']}, stored={source_index['stored']}"
+                )
+            src_memories = source_storage.list_memories(limit=10 ** 9)
+            source_index_rows = source_storage.conn.execute(
+                "SELECT iv.dimension, iv.value, ive.embedding "
+                "FROM index_values iv JOIN index_value_embeddings ive "
+                "ON ive.index_value_id=iv.id AND ive.profile_id=? "
+                "JOIN memory_index_values link ON link.index_value_id=iv.id "
+                "JOIN memories m ON m.id=link.memory_id WHERE m.deleted=0 "
+                "GROUP BY iv.id, iv.dimension, iv.value, ive.embedding",
+                (source_profile,),
+            ).fetchall()
+            source_index_embeddings = {
+                (row["dimension"], row["value"]): source_storage._deserialize(row["embedding"])
+                for row in source_index_rows
+            }
+
         imported = 0
         renamed = 0
         skipped = 0
@@ -1355,32 +1426,43 @@ class SQLiteStorage(MemoryStorage):
                     "SELECT namespace, text FROM memories WHERE deleted = 0"
                 ).fetchall()
             )
-            src_memories = source_storage.list_memories(limit=10 ** 9)
-            for m in src_memories:
-                ns = namespace_prefix + m["namespace"]
-                # Dedup on content + namespace: already present → skip.
-                if (ns, m["text"]) in existing_pairs:
-                    skipped += 1
-                    continue
-                mid = m["id"]
-                if mid in existing_ids:
-                    mid = _new_id()
-                    renamed += 1
-                existing_ids.add(mid)
-                existing_pairs.add((ns, m["text"]))
-                self.conn.execute(
-                    "INSERT INTO memories (id, text, embedding, metadata, namespace, created_at, updated_at, synced, summary) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)",
-                    (mid, m["text"], None if self._active_profile_id else self._serialize(m["embedding"]),
-                     json.dumps(m["metadata"]), ns, m["created_at"], m["updated_at"],
-                     m.get("summary")),
-                )
-                if self._active_profile_id:
+            try:
+                self.conn.execute("BEGIN")
+                for m in src_memories:
+                    ns = namespace_prefix + m["namespace"]
+                    if (ns, m["text"]) in existing_pairs:
+                        skipped += 1
+                        continue
+                    mid = m["id"]
+                    id_collided = mid in existing_ids
+                    while mid in existing_ids:
+                        mid = _new_id()
+                    if id_collided:
+                        renamed += 1
+                    existing_ids.add(mid)
+                    existing_pairs.add((ns, m["text"]))
+                    self.conn.execute(
+                        "INSERT INTO memories "
+                        "(id, text, embedding, metadata, namespace, created_at, updated_at, "
+                        "synced, summary) VALUES (?, ?, NULL, ?, ?, ?, ?, 0, ?)",
+                        (mid, m["text"], json.dumps(m["metadata"]), ns,
+                         m["created_at"], m["updated_at"], m.get("summary")),
+                    )
                     self._store_active_embedding(mid, m["embedding"])
-                self._sync_metadata_indexes(mid, m.get("metadata") or {})
-                imported += 1
-                imported_ids.append(mid)
-            self.conn.commit()
+                    self._sync_metadata_indexes(mid, m.get("metadata") or {})
+                    memory_index_embeddings = {}
+                    for dimension in _INDEX_DIMENSIONS:
+                        for value in self._extract_index_values(
+                                dimension, m.get("metadata") or {}):
+                            key = (dimension, value)
+                            memory_index_embeddings[key] = source_index_embeddings[key]
+                    self._store_index_value_embeddings(memory_index_embeddings)
+                    imported += 1
+                    imported_ids.append(mid)
+                self.conn.commit()
+            except Exception:
+                self.conn.rollback()
+                raise
         return {"imported": imported, "skipped": skipped, "renamed": renamed,
                 "total": len(src_memories), "imported_ids": imported_ids}
 

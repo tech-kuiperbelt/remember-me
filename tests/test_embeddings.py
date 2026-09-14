@@ -23,7 +23,7 @@ from app.embedding_codec import (
 from app.embedding_cli import _database_maintenance_lock
 from app.storage_sqlite import SQLiteStorage
 from app.storage_dual import DualStorage
-from app.storage_ndjson import NDJSONStorage
+from app.storage_ndjson import NDJSONReplica
 
 
 def _spec(provider="ollama", model="bge-test", dimension=4):
@@ -187,7 +187,7 @@ def test_dual_stats_exposes_primary_embedding_status(tmp_path):
     primary = SQLiteStorage(str(tmp_path / "memory.db"), embedding_spec=_spec())
     primary.add("text", [0.1, 0.2, 0.3, 0.4])
     dual = DualStorage(
-        primary, NDJSONStorage(str(tmp_path / "memory.jsonl")),
+        primary, NDJSONReplica(str(tmp_path / "memory.jsonl")),
         start_background=False,
     )
 

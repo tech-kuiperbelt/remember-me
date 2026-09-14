@@ -6,11 +6,12 @@
 
 ### [30] `memory_import v2`：SQLite 跨库事务合并
 
-- 结论：独立 JSON storage 废弃后，现有 `memory_import` 不应继续沿用“JSON/SQLite 通用 merge + 复制来源 embedding”的旧流程，需要重新设计。Import 定位为 SQLite→SQLite 跨库合并；NDJSON→SQLite 灾难恢复继续独立走 `recover_cli`，不经过 import。
+- 当前边界：[22] 已删除 JSON storage，并将现有 Import 收窄为来源/目标 active profile 完全一致且两类来源向量完整的 SQLite→SQLite 原子复制；NDJSON→SQLite 灾难恢复独立走 `recover_cli`，不经过 import。
+- v2 目标：支持来源与目标 embedding profile 不同的 SQLite 跨库合并，不复制、不信任来源 embedding；统一使用目标数据库 active profile 重新生成正文向量。
 - 数据可信边界：只采用来源记录的正文、metadata、summary、namespace 和时间字段；不信任也不复制来源 embedding。无论来源 profile 是否与目标同维，都统一使用目标数据库的 active embedding profile 重新生成正文向量。
 - 原子流程：读取来源并完成去重、namespace prefix 和 ID 冲突规划；预先生成全部待导入正文向量以及缺失的 keyword/category index-value 向量；随后在单一事务中写入记忆、正文向量、索引关系和索引值向量。任一 embedding 或数据库操作失败，目标数据库保持不变。
 - 后续处理：事务成功后再为缺少 summary 的记录排队；dual 模式由既有 outbox 将成功提交的数据同步到 NDJSON；Import 作为管理操作补充独立 audit 事件和明确错误信息。
-- 收敛关系：与 [22] 协同移除 JSON import/运行时依赖，来源格式仅支持 SQLite；不得削弱现有 `recover_cli` 的临时库构建、重新向量化和原子替换保证。
+- 约束：来源格式仅支持 SQLite；不得削弱现有同 profile 原子复制或 `recover_cli` 的临时库构建、重新向量化和原子替换保证。
 - 验收：覆盖来源/目标 profile 相同与不同、同维不同模型、正文或 index-value embedding 失败、重复正文、ID 冲突、namespace prefix、summary 排队、dual outbox 和整批回滚测试。
 
 ### [29] MCP Streamable HTTP（新 SSE）传输支持
@@ -45,12 +46,6 @@
 - 建立独立的 canonical keyword vocabulary，支持展示、查询、新增、改名/合并、停用/删除。
 - 增加 blacklist，明确新记忆、迁移和历史数据命中黑名单时的处理。
 - 设计 alias/merge、归一化、管理 API/UI、权限审计及现有关键词迁移策略。
-
-### [22] 收敛 storage 后端支持
-
-- 梳理 `MemoryStorage`、factory、配置、恢复、测试和文档，移除不必要的 JSON 后端支持。
-- 保留 SQLite 业务主库和无 embedding 的 NDJSON 灾备/离线恢复链路。
-- 完成后验证 CRUD、语义搜索、索引过滤、同步、compact、Full Sync 和恢复流程。
 
 ### 其他开放项
 

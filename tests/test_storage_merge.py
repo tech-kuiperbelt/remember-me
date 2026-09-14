@@ -1,10 +1,25 @@
-"""Main-case tests for storage.merge() dedup behavior (content + namespace).
+"""Same-profile, atomic SQLite import behavior."""
 
-Parameterized over sqlite / json / ndjson via the ``storage`` fixture.
-The source storage is always an independent instance (distinct file / :memory:
-connection), so cross-contamination between source and destination is
-impossible by construction.
-"""
+import pytest
+
+from app.embed import EmbeddingSpec
+from app.index_value_resolver import IndexValueResolver
+from app.storage_sqlite import SQLiteStorage
+
+
+SPEC = EmbeddingSpec("test", "merge", 4, normalized=True).as_dict()
+
+
+@pytest.fixture
+def make_storage():
+    def create(_tag):
+        return SQLiteStorage(":memory:", embedding_spec=SPEC)
+    return create
+
+
+@pytest.fixture
+def storage(make_storage):
+    return make_storage("dst")
 
 
 def test_merge_skips_duplicate_content(storage, make_storage, fake_emb):
@@ -80,3 +95,93 @@ def test_merge_id_collision_different_content_renames(storage, make_storage, fak
     assert result["renamed"] == 1
     assert result["imported"] == 1
     assert result["skipped"] == 0
+
+
+def test_merge_rejects_different_active_profile(storage, fake_emb):
+    other_spec = EmbeddingSpec("test", "other", 4, normalized=True).as_dict()
+    source = SQLiteStorage(":memory:", embedding_spec=other_spec)
+    source.add("source", fake_emb)
+
+    with pytest.raises(RuntimeError, match="profiles must match"):
+        storage.merge(source)
+    assert storage.get_stats()["total"] == 0
+
+
+def test_merge_rejects_incomplete_source_memory_vectors(storage, make_storage, fake_emb):
+    source = make_storage("source")
+    memory_id = source.add("source", fake_emb)["id"]
+    source.conn.execute("DELETE FROM memory_embeddings WHERE memory_id=?", (memory_id,))
+    source.conn.commit()
+
+    with pytest.raises(RuntimeError, match="memory embeddings are incomplete"):
+        storage.merge(source)
+    assert storage.get_stats()["total"] == 0
+
+
+def test_merge_rejects_incomplete_source_index_vectors(storage, make_storage, fake_emb):
+    source = make_storage("source")
+    source.add("source", fake_emb, metadata={"keywords": ["project"]})
+
+    with pytest.raises(RuntimeError, match="index-value embeddings are incomplete"):
+        storage.merge(source)
+    assert storage.get_stats()["total"] == 0
+
+
+def test_merge_copies_index_vectors_in_same_transaction(storage, make_storage, fake_emb):
+    source = make_storage("source")
+    resolver = IndexValueResolver(
+        source, lambda _value: fake_emb,
+        lambda values: [fake_emb for _value in values],
+    )
+    metadata = {"keywords": ["project"], "categories": ["design"]}
+    source.add("source", fake_emb, metadata=metadata,
+               index_embeddings=resolver.prepare_embeddings(metadata))
+
+    result = storage.merge(source)
+
+    assert result["imported"] == 1
+    assert storage.index_embedding_completeness()["complete"] is True
+    assert storage.get_stats()["keyword_counts"] == {"project": 1}
+    assert storage.get_stats()["category_counts"] == {"design": 1}
+
+
+def test_merge_rolls_back_everything_on_index_vector_write_failure(
+        storage, make_storage, fake_emb, monkeypatch):
+    source = make_storage("source")
+    resolver = IndexValueResolver(
+        source, lambda _value: fake_emb,
+        lambda values: [fake_emb for _value in values],
+    )
+    metadata = {"keywords": ["project"]}
+    source.add("source", fake_emb, metadata=metadata,
+               index_embeddings=resolver.prepare_embeddings(metadata))
+
+    monkeypatch.setattr(
+        storage, "_store_index_value_embeddings",
+        lambda _vectors: (_ for _ in ()).throw(RuntimeError("write failed")),
+    )
+    with pytest.raises(RuntimeError, match="write failed"):
+        storage.merge(source)
+
+    assert storage.get_stats()["total"] == 0
+    assert storage.get_stats()["keyword_counts"] == {}
+
+
+def test_read_only_import_source_does_not_create_missing_database(tmp_path):
+    missing = tmp_path / "missing.db"
+    with pytest.raises(FileNotFoundError, match="does not exist"):
+        SQLiteStorage(str(missing), read_only=True)
+    assert not missing.exists()
+
+
+def test_read_only_import_source_does_not_mutate_schema(tmp_path, fake_emb):
+    path = tmp_path / "source.db"
+    writable = SQLiteStorage(str(path), embedding_spec=SPEC)
+    writable.add("source", fake_emb)
+    writable.conn.close()
+    before = path.stat().st_mtime_ns
+
+    source = SQLiteStorage(str(path), read_only=True)
+    assert source.list_memories()[0]["text"] == "source"
+    source.conn.close()
+    assert path.stat().st_mtime_ns == before

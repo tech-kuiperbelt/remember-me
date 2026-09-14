@@ -272,18 +272,6 @@ def test_rebuild_category_index(db):
     assert {x["text"] for x in db.list_memories(categories=["bugfix"])} == {"a"}
 
 
-# -- merge imports categories --
-
-def test_merge_syncs_categories(db):
-    from app.storage_json import JSONStorage
-    src = JSONStorage("/tmp/categories_merge_src.json")
-    src.add("imported", FAKE_EMB, metadata={"categories": ["ops"]}, namespace="ns1")
-
-    result = db.merge(src)
-    assert result["imported"] == 1
-    assert db.get_stats()["category_counts"] == {"ops": 1}
-
-
 # -- service layer integration (mock storage) --
 
 def test_memory_add_normalizes_and_reports_truncation(monkeypatch):
