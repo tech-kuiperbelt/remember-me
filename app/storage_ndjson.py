@@ -136,7 +136,8 @@ class NDJSONStorage(MemoryStorage):
 
     # -- public API --
 
-    def add(self, text, embedding, metadata=None, namespace=DEFAULT_NAMESPACE, summary=None):
+    def add(self, text, embedding, metadata=None, namespace=DEFAULT_NAMESPACE, summary=None,
+            index_embeddings=None):
         """Insert a memory; dedup on (namespace, text). Returns {"id", "created"}."""
         with self._lock:
             for e in self._data.values():
@@ -181,7 +182,8 @@ class NDJSONStorage(MemoryStorage):
     def get(self, memory_id):
         return self._data.get(memory_id)
 
-    def update(self, memory_id, text=None, embedding=None, metadata=None, namespace=None, summary=None):
+    def update(self, memory_id, text=None, embedding=None, metadata=None, namespace=None, summary=None,
+               index_embeddings=None):
         with self._lock:
             e = self._data.get(memory_id)
             if not e:
@@ -344,3 +346,9 @@ class NDJSONStorage(MemoryStorage):
             "backend": "ndjson",
             "path": self.path,
         }
+    def exact_index_values(self, dimension, values, namespace=None):
+        wanted = set(values or [])
+        found = set()
+        for memory in self.list_memories(namespace=namespace, limit=10 ** 9):
+            found.update(wanted & set((memory.get("metadata") or {}).get(dimension) or []))
+        return found

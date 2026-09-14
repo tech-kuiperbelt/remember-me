@@ -38,6 +38,7 @@ import time
 from datetime import datetime, timezone
 
 from .storage import create_storage
+from .index_value_resolver import resolver_for_configured_profile
 
 logger = logging.getLogger("keyword_migrate_deepseek")
 
@@ -268,6 +269,8 @@ def main(argv=None) -> int:
                           "dry_run": True}))
         return 0
 
+    index_resolver = resolver_for_configured_profile(storage)
+
     # Seed the vocabulary with all keywords already present in the store so
     # previously migrated records keep their word forms and new records
     # converge toward them.
@@ -299,7 +302,18 @@ def main(argv=None) -> int:
             counters["failed"] += 1
             failures.append({"id": m["id"], "error": "empty keywords"})
             return
-        storage.update_metadata(m["id"], {"keywords": keywords})
+        try:
+            metadata_update = {"keywords": keywords}
+            index_embeddings = (index_resolver.prepare_embeddings(metadata_update)
+                                if index_resolver else None)
+            storage.update_metadata(
+                m["id"], metadata_update, index_embeddings=index_embeddings
+            )
+        except Exception as e:
+            counters["failed"] += 1
+            failures.append({"id": m["id"], "error": str(e)[:200]})
+            logger.warning("failed id=%s: %s", m["id"], e)
+            return
         # Vocabulary grows as new concepts appear; later records reuse them.
         vocabulary.add_many(keywords)
         counters["processed"] += 1

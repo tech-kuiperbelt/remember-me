@@ -96,7 +96,11 @@ def test_write_summary_mode(journal, arguments, result, expected):
 
 
 def test_search_semantic_keeps_score(journal):
-    result = {"note": "...", "total": 2,
+    resolution = {"config": {"top_k": 3, "min_score": 0.65, "max_gap": 0.05},
+                  "keywords": [{"input": "project", "match_type": "exact",
+                                "matches": [{"value": "project", "score": None,
+                                             "accepted": True}]}]}
+    result = {"note": "...", "total": 2, "filter_resolution": resolution,
               "items": [{"id": "a", "summary": "s1", "score": 0.9},
                         {"id": "b", "summary": "s2", "score": 0.7}]}
     arguments = {"query": "what is x", "k": 5, "threshold": 0.0, "namespace": "ns",
@@ -108,6 +112,34 @@ def test_search_semantic_keeps_score(journal):
     assert ev["params"]["keywords"] == ["project"]
     assert ev["params"]["categories"] == ["design"]
     assert ev["result"]["items"][0] == {"id": "a", "summary": "s1", "score": 0.9}
+    assert ev["result"]["filter_resolution"] == resolution
+
+
+def test_search_semantic_caps_filter_values_in_params_and_resolution(journal):
+    values = [f"keyword-{i}" for i in range(25)]
+    records = [
+        {"input": value, "match_type": "semantic",
+         "matches": [{"value": f"match-{j}", "score": 0.9 - j / 100,
+                       "accepted": True} for j in range(5)]}
+        for value in values
+    ]
+    audit.record(
+        "search_semantic",
+        {"query": "q", "keywords": values},
+        {"items": [], "filter_resolution": {"config": {}, "keywords": records}},
+        1.0,
+    )
+
+    event = _read_lines(journal)[0]
+    assert len(event["params"]["keywords"]) == 20
+    assert event["params"]["keywords_total"] == 25
+    assert event["params"]["keywords_truncated"] is True
+    resolution = event["result"]["filter_resolution"]
+    assert len(resolution["keywords"]) == 20
+    assert resolution["keywords_total"] == 25
+    assert resolution["keywords_truncated"] is True
+    assert len(resolution["keywords"][0]["matches"]) == 3
+    assert resolution["keywords"][0]["matches_total"] == 5
 
 
 def test_search_meta_has_no_score(journal):

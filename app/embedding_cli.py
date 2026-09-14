@@ -6,6 +6,7 @@ Examples:
     python -m app.embedding_cli status data/memories.db
     EMBED_PROVIDER=fastembed python -m app.embedding_cli download-model
     EMBED_PROVIDER=fastembed python -m app.embedding_cli reindex data/memories.db
+    python -m app.embedding_cli reindex-index-values data/memories.db
     python -m app.embedding_cli activate data/memories.db ep_0123456789abcdef
 """
 
@@ -66,6 +67,14 @@ def main() -> None:
     reindex.add_argument("database")
     reindex.add_argument("--batch-size", type=int, default=50)
 
+    reindex_values = sub.add_parser(
+        "reindex-index-values",
+        help="Build keyword/category vectors for an existing profile",
+    )
+    reindex_values.add_argument("database")
+    reindex_values.add_argument("--profile-id")
+    reindex_values.add_argument("--batch-size", type=int, default=50)
+
     activate = sub.add_parser("activate", help="Activate a complete retained profile")
     activate.add_argument("database")
     activate.add_argument("profile_id")
@@ -78,7 +87,9 @@ def main() -> None:
         print(json.dumps(provider.spec.as_dict(), ensure_ascii=False, indent=2))
         return
 
-    mutating = args.command in ("migrate-codec", "reindex", "activate")
+    mutating = args.command in (
+        "migrate-codec", "reindex", "reindex-index-values", "activate"
+    )
     lock = _database_maintenance_lock(args.database) if mutating else nullcontext()
     with lock:
         storage = _storage(args.database)
@@ -93,6 +104,45 @@ def main() -> None:
                 result = storage.reencode_active_embeddings(args.dtype)
             elif args.command == "activate":
                 result = storage.activate_embedding_profile(args.profile_id)
+            elif args.command == "reindex-index-values":
+                provider = create_embedder()
+                target_profile = args.profile_id or storage.get_stats()["embedding_profile"]["active"]
+                if not target_profile:
+                    raise RuntimeError("database has no active embedding profile")
+                if provider.spec.profile_id != target_profile:
+                    raise RuntimeError(
+                        "configured provider does not match target profile: "
+                        f"configured={provider.spec.profile_id}, target={target_profile}"
+                    )
+                started = time.perf_counter()
+
+                def show_index_progress(completed: int, total: int) -> None:
+                    print(json.dumps({
+                        "event": "index_value_reindex_progress",
+                        "completed": completed,
+                        "total": total,
+                    }), file=sys.stderr, flush=True)
+
+                try:
+                    result = storage.reindex_index_values(
+                        target_profile, provider.embed_documents, args.batch_size,
+                        progress_callback=show_index_progress,
+                    )
+                    audit.record(
+                        "index_value_reindex",
+                        {"database": args.database, "profile": provider.spec.as_dict(),
+                         "batch_size": args.batch_size},
+                        result, (time.perf_counter() - started) * 1000,
+                    )
+                except Exception as exc:
+                    audit.record(
+                        "index_value_reindex",
+                        {"database": args.database, "profile": provider.spec.as_dict(),
+                         "batch_size": args.batch_size},
+                        None, (time.perf_counter() - started) * 1000,
+                        error={"type": type(exc).__name__, "message": str(exc)},
+                    )
+                    raise
             else:
                 provider = create_embedder()
                 started = time.perf_counter()

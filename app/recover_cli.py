@@ -36,6 +36,7 @@ def main():
         src_path, tgt_path, provider.embed_document,
         embedding_spec=provider.spec.as_dict(),
         embedding_dtype=os.environ.get("EMBED_DTYPE", "float16"),
+        embed_documents=provider.embed_documents,
     )
 
     print(f"Recovered: {result['recovered']}, Errors: {result['errors']}")

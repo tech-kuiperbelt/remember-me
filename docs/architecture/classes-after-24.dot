@@ -1,0 +1,42 @@
+digraph classes_after_24 {
+  graph [label="remember-me class diagram — after TODO [24]", labelloc=t, fontsize=22,
+         fontname="DejaVu Sans", rankdir=LR, bgcolor="white", pad=0.3,
+         nodesep=0.55, ranksep=0.9, splines=polyline];
+  node [shape=record, style="rounded,filled", fillcolor="#F8FAFC",
+        color="#64748B", fontname="DejaVu Sans", fontsize=10, margin="0.12,0.08"];
+  edge [fontname="DejaVu Sans", fontsize=9, color="#475569", arrowsize=0.8];
+
+  Service [label="{«module» app.service|embedding_provider : Embedder\lstorage : MemoryStorage\lindex_value_resolver : IndexValueResolver\l|memory_add()\lmemory_search()\lmemory_list()\lmemory_update()\lmemory_delete()\l}", fillcolor="#DBEAFE", color="#2563EB"];
+  MemoryStorage [label="{«abstract» MemoryStorage||add()\lsearch()\llist_memories()\lget()\lupdate()\ldelete()\lget_stats()\l}", fillcolor="#E2E8F0"];
+  SQLiteStorage [label="{SQLiteStorage|conn\lembedding_spec\l_active_profile_id\l|CRUD + cosine search\lresolve candidate IDs\lstore index-value vectors\lprofile reindex/activate\l}", fillcolor="#CCFBF1", color="#0F766E"];
+  DualStorage [label="{DualStorage|primary : MemoryStorage\lsecondary : MemoryStorage\l|CRUD delegation\lincremental sync\lcompact scheduling\l}", fillcolor="#DCFCE7", color="#16A34A"];
+  NDJSONStorage [label="{NDJSONStorage|path\l|append-only replica\lcompact()\l}"];
+
+  Embedder [label="{«protocol» Embedder|spec : EmbeddingSpec\l|embed_document()\lembed_query()\lembed_documents()\lwarmup()\l}", fillcolor="#F3E8FF", color="#7C3AED"];
+  Providers [label="{OllamaEmbedder\lFastEmbedEmbedder\lSentenceTransformersEmbedder||implement Embedder\l}", fillcolor="#F3E8FF", color="#7C3AED"];
+  Spec [label="{«dataclass» EmbeddingSpec|provider\lmodel\ldimension\lnormalized\lquery/document_prefix\l|profile_id\las_dict()\l}", fillcolor="#F3E8FF", color="#7C3AED"];
+  Codec [label="{«module» embedding_codec||encode_vector()\ldecode_vector()\linspect_blob()\l}", fillcolor="#FEF3C7", color="#D97706"];
+
+  Resolver [label="{IndexValueResolver|storage\lembed_query\lembed_documents\ltop_k / min_score / max_gap\l|prepare_embeddings()\lresolve()\l_exact_values()\l_semantic_values()\l}", fillcolor="#FEE2E2", color="#DC2626", penwidth=2];
+  Match [label="{«response» filter_resolution|input\lmatches[]\lvalue\lscore\lmatch_type : exact / semantic / none\laccepted : bool\l}", fillcolor="#FEE2E2", color="#DC2626", penwidth=2];
+  Reindex [label="{«module» embedding_cli|shadow profile\l|reindex memories\lreindex index values\lvalidate both sets\lactivate / rollback\l}", fillcolor="#FEE2E2", color="#DC2626", penwidth=2];
+
+  Service -> MemoryStorage [label="uses"];
+  Service -> Resolver [label="resolve filters", color="#DC2626"];
+  SQLiteStorage -> MemoryStorage [arrowhead=empty, label="implements"];
+  DualStorage -> MemoryStorage [arrowhead=empty, label="implements"];
+  NDJSONStorage -> MemoryStorage [arrowhead=empty, label="implements"];
+  DualStorage -> SQLiteStorage [arrowhead=diamond, label="primary"];
+  DualStorage -> NDJSONStorage [arrowhead=odiamond, label="secondary"];
+  Providers -> Embedder [style=dashed, arrowhead=empty, label="conform"];
+  Embedder -> Spec [arrowhead=diamond, label="spec"];
+  SQLiteStorage -> Spec [style=dashed, label="active profile"];
+  SQLiteStorage -> Codec [style=dashed, label="both vector tables"];
+  Resolver -> SQLiteStorage [label="index values + vectors", color="#DC2626"];
+  Resolver -> Embedder [label="query embedding", color="#DC2626"];
+  Resolver -> Match [arrowhead=diamond, label="returns", color="#DC2626"];
+  Reindex -> SQLiteStorage [label="build + validate", color="#DC2626"];
+  Reindex -> Embedder [label="batch embedding", color="#DC2626"];
+
+  legend [shape=note, fontsize=10, label="红色 = TODO [24] 新增/调整\nIndexValueResolver 对 keywords/categories 采用同一流程\n解析值约束候选；正文 cosine 负责最终排序"];
+}

@@ -226,13 +226,32 @@ class DualStorage(MemoryStorage):
 
     # -- public API: writes → primary only (synced=0 set by SQLiteStorage) --
 
-    def add(self, text, embedding, metadata=None, namespace=DEFAULT_NAMESPACE, summary=None):
+    def add(self, text, embedding, metadata=None, namespace=DEFAULT_NAMESPACE, summary=None,
+            index_embeddings=None):
         with self._lock:
-            return self.primary.add(text, embedding, metadata, namespace, summary)
+            return self.primary.add(text, embedding, metadata, namespace, summary,
+                                    index_embeddings=index_embeddings)
 
-    def update(self, memory_id, text=None, embedding=None, metadata=None, namespace=None, summary=None):
+    def update(self, memory_id, text=None, embedding=None, metadata=None, namespace=None, summary=None,
+               index_embeddings=None):
         with self._lock:
-            return self.primary.update(memory_id, text, embedding, metadata, namespace, summary)
+            return self.primary.update(memory_id, text, embedding, metadata, namespace, summary,
+                                       index_embeddings=index_embeddings)
+
+    def missing_index_value_embeddings(self, *args, **kwargs):
+        return self.primary.missing_index_value_embeddings(*args, **kwargs)
+
+    def exact_index_values(self, *args, **kwargs):
+        return self.primary.exact_index_values(*args, **kwargs)
+
+    def semantic_index_values(self, *args, **kwargs):
+        return self.primary.semantic_index_values(*args, **kwargs)
+
+    def index_embedding_completeness(self, *args, **kwargs):
+        return self.primary.index_embedding_completeness(*args, **kwargs)
+
+    def backfill_missing_index_value_embeddings(self, *args, **kwargs):
+        return self.primary.backfill_missing_index_value_embeddings(*args, **kwargs)
 
     def update_summary(self, memory_id, summary):
         with self._lock:
@@ -242,9 +261,11 @@ class DualStorage(MemoryStorage):
         with self._lock:
             return self.primary.update_summary_if_pending(memory_id, expected_text, summary)
 
-    def update_metadata(self, memory_id, metadata):
+    def update_metadata(self, memory_id, metadata, index_embeddings=None):
         with self._lock:
-            return self.primary.update_metadata(memory_id, metadata)
+            return self.primary.update_metadata(
+                memory_id, metadata, index_embeddings=index_embeddings
+            )
 
     def get_pending_summaries(self, *args, **kwargs):
         return self.primary.get_pending_summaries(*args, **kwargs)

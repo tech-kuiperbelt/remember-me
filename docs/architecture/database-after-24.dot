@@ -1,0 +1,83 @@
+digraph database_after_24 {
+  graph [label="remember-me SQLite schema — after TODO [24]", labelloc=t, fontsize=22,
+         fontname="DejaVu Sans", rankdir=LR, bgcolor="white", pad=0.3,
+         nodesep=0.65, ranksep=1.0, splines=polyline];
+  node [shape=plain, fontname="DejaVu Sans"];
+  edge [fontname="DejaVu Sans", fontsize=10, color="#475569", arrowsize=0.8];
+
+  memories [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#2563EB">
+      <TR><TD BGCOLOR="#2563EB"><FONT COLOR="white"><B>memories</B></FONT></TD><TD BGCOLOR="#2563EB"><FONT COLOR="white">正文主表</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT"><B>PK id</B></TD><TD ALIGN="LEFT">TEXT</TD></TR>
+      <TR><TD ALIGN="LEFT">text / summary</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+      <TR><TD ALIGN="LEFT">metadata</TD><TD ALIGN="LEFT">TEXT / JSON</TD></TR>
+      <TR><TD ALIGN="LEFT">namespace</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+      <TR><TD ALIGN="LEFT">created_at / updated_at</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+      <TR><TD ALIGN="LEFT">deleted / synced</TD><TD ALIGN="LEFT">INTEGER</TD></TR>
+      <TR><TD ALIGN="LEFT">embedding</TD><TD ALIGN="LEFT">BLOB, legacy</TD></TR>
+    </TABLE>>];
+
+  profiles [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#7C3AED">
+      <TR><TD BGCOLOR="#7C3AED"><FONT COLOR="white"><B>embedding_profiles</B></FONT></TD><TD BGCOLOR="#7C3AED"><FONT COLOR="white">共享 active profile</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT"><B>PK profile_id</B></TD><TD ALIGN="LEFT">TEXT</TD></TR>
+      <TR><TD ALIGN="LEFT">provider / model</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+      <TR><TD ALIGN="LEFT">dimension / normalized</TD><TD ALIGN="LEFT">INTEGER</TD></TR>
+      <TR><TD ALIGN="LEFT">query/document_prefix</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+      <TR><TD ALIGN="LEFT">codec / dtype / status</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+      <TR><TD ALIGN="LEFT">created_at / updated_at</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+      <TR><TD ALIGN="LEFT">error</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+    </TABLE>>];
+
+  memory_embeddings [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#0F766E">
+      <TR><TD BGCOLOR="#0F766E" COLSPAN="2"><FONT COLOR="white"><B>memory_embeddings</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT"><B>PK, FK memory_id</B></TD><TD ALIGN="LEFT">TEXT</TD></TR>
+      <TR><TD ALIGN="LEFT"><B>PK, FK profile_id</B></TD><TD ALIGN="LEFT">TEXT</TD></TR>
+      <TR><TD ALIGN="LEFT">embedding</TD><TD ALIGN="LEFT">BLOB</TD></TR>
+      <TR><TD ALIGN="LEFT" COLSPAN="2"><FONT POINT-SIZE="9">正文最终 cosine 排序</FONT></TD></TR>
+    </TABLE>>];
+
+  index_values [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#D97706">
+      <TR><TD BGCOLOR="#D97706" COLSPAN="2"><FONT COLOR="white"><B>index_values</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT"><B>PK id</B></TD><TD ALIGN="LEFT">INTEGER</TD></TR>
+      <TR><TD ALIGN="LEFT">dimension</TD><TD ALIGN="LEFT">keywords / categories</TD></TR>
+      <TR><TD ALIGN="LEFT">value</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+      <TR><TD ALIGN="LEFT" COLSPAN="2"><FONT POINT-SIZE="9">UNIQUE (dimension, value)</FONT></TD></TR>
+    </TABLE>>];
+
+  index_value_embeddings [label=<
+    <TABLE BORDER="2" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#DC2626">
+      <TR><TD BGCOLOR="#DC2626" COLSPAN="2"><FONT COLOR="white"><B>index_value_embeddings [NEW]</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT"><B>PK, FK index_value_id</B></TD><TD ALIGN="LEFT">INTEGER</TD></TR>
+      <TR><TD ALIGN="LEFT"><B>PK, FK profile_id</B></TD><TD ALIGN="LEFT">TEXT</TD></TR>
+      <TR><TD ALIGN="LEFT">embedding</TD><TD ALIGN="LEFT">BLOB</TD></TR>
+      <TR><TD ALIGN="LEFT" COLSPAN="2"><FONT POINT-SIZE="9">输入值 → 系统索引值语义解析</FONT></TD></TR>
+    </TABLE>>];
+
+  memory_index_values [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#D97706">
+      <TR><TD BGCOLOR="#D97706" COLSPAN="2"><FONT COLOR="white"><B>memory_index_values</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT"><B>PK memory_id</B></TD><TD ALIGN="LEFT">TEXT</TD></TR>
+      <TR><TD ALIGN="LEFT"><B>PK index_value_id</B></TD><TD ALIGN="LEFT">INTEGER</TD></TR>
+      <TR><TD ALIGN="LEFT" COLSPAN="2"><FONT POINT-SIZE="9">解析后执行精确候选过滤</FONT></TD></TR>
+    </TABLE>>];
+
+  storage_state [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="6" COLOR="#64748B">
+      <TR><TD BGCOLOR="#64748B" COLSPAN="2"><FONT COLOR="white"><B>storage_state</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT"><B>PK key</B></TD><TD ALIGN="LEFT">TEXT</TD></TR>
+      <TR><TD ALIGN="LEFT">value</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+    </TABLE>>];
+
+  memories -> memory_embeddings [label=" 1 : N  FK", dir=both, arrowtail=tee, arrowhead=crow];
+  profiles -> memory_embeddings [label=" 1 : N  FK", dir=both, arrowtail=tee, arrowhead=crow];
+  index_values -> index_value_embeddings [label=" 1 : N  FK", dir=both, arrowtail=tee, arrowhead=crow, color="#DC2626"];
+  profiles -> index_value_embeddings [label=" 1 : N  FK", dir=both, arrowtail=tee, arrowhead=crow, color="#DC2626"];
+  memories -> memory_index_values [label=" 1 : N  logical", style=dashed, dir=both, arrowtail=tee, arrowhead=crow];
+  index_values -> memory_index_values [label=" 1 : N  logical", style=dashed, dir=both, arrowtail=tee, arrowhead=crow];
+
+  legend [shape=note, fontsize=10, label="红色 = TODO [24] 新增\n实线 = SQLite FOREIGN KEY\n虚线 = 代码维护的逻辑关联\n正文与索引值共享同一 active profile"];
+  storage_state -> legend [style=invis];
+}

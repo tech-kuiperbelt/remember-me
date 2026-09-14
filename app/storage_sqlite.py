@@ -128,6 +128,16 @@ class SQLiteStorage(MemoryStorage):
             );
             CREATE INDEX IF NOT EXISTS idx_memory_embeddings_profile
                 ON memory_embeddings(profile_id, memory_id);
+            CREATE TABLE IF NOT EXISTS index_value_embeddings (
+                index_value_id INTEGER NOT NULL,
+                profile_id TEXT NOT NULL,
+                embedding BLOB NOT NULL,
+                PRIMARY KEY (index_value_id, profile_id),
+                FOREIGN KEY (index_value_id) REFERENCES index_values(id),
+                FOREIGN KEY (profile_id) REFERENCES embedding_profiles(profile_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_index_value_embeddings_profile
+                ON index_value_embeddings(profile_id, index_value_id);
         """)
         self._migrate_legacy_metadata_indexes()
         self.conn.commit()
@@ -263,6 +273,21 @@ class SQLiteStorage(MemoryStorage):
                                 (self._serialize(vector), row["memory_id"], self._active_profile_id),
                             )
                             recoded += 1
+                    index_rows = self.conn.execute(
+                        "SELECT index_value_id, embedding FROM index_value_embeddings "
+                        "WHERE profile_id = ?", (self._active_profile_id,),
+                    ).fetchall()
+                    for row in index_rows:
+                        info = inspect_embedding_blob(row["embedding"])
+                        if info.format != "rmev" or info.dtype != self.embedding_dtype:
+                            vector = self._deserialize(row["embedding"])
+                            self.conn.execute(
+                                "UPDATE index_value_embeddings SET embedding = ? "
+                                "WHERE index_value_id = ? AND profile_id = ?",
+                                (self._serialize(vector), row["index_value_id"],
+                                 self._active_profile_id),
+                            )
+                            recoded += 1
                     self.conn.execute(
                         "UPDATE embedding_profiles SET codec='rmev1', dtype=?, updated_at=? "
                         "WHERE profile_id=?",
@@ -287,6 +312,10 @@ class SQLiteStorage(MemoryStorage):
                 "SELECT memory_id, embedding FROM memory_embeddings WHERE profile_id = ?",
                 (self._active_profile_id,),
             ).fetchall()
+            index_rows = self.conn.execute(
+                "SELECT index_value_id, embedding FROM index_value_embeddings WHERE profile_id = ?",
+                (self._active_profile_id,),
+            ).fetchall()
             try:
                 self.conn.execute("BEGIN")
                 self.embedding_dtype = dtype
@@ -296,6 +325,13 @@ class SQLiteStorage(MemoryStorage):
                         "WHERE memory_id = ? AND profile_id = ?",
                         (self._serialize(self._deserialize(row["embedding"])),
                          row["memory_id"], self._active_profile_id),
+                    )
+                for row in index_rows:
+                    self.conn.execute(
+                        "UPDATE index_value_embeddings SET embedding = ? "
+                        "WHERE index_value_id = ? AND profile_id = ?",
+                        (self._serialize(self._deserialize(row["embedding"])),
+                         row["index_value_id"], self._active_profile_id),
                     )
                 self.conn.execute(
                     "UPDATE embedding_profiles SET dtype=?, codec='rmev1', updated_at=? "
@@ -308,7 +344,90 @@ class SQLiteStorage(MemoryStorage):
                 self.embedding_dtype = previous_dtype
                 raise
         return {"profile_id": self._active_profile_id, "dtype": dtype,
-                "reencoded": len(rows)}
+                "reencoded": len(rows), "index_values_reencoded": len(index_rows)}
+
+    def _queryable_index_values(self) -> list[sqlite3.Row]:
+        return self.conn.execute(
+            "SELECT iv.id, iv.dimension, iv.value FROM index_values iv "
+            "JOIN memory_index_values link ON link.index_value_id = iv.id "
+            "JOIN memories m ON m.id = link.memory_id WHERE m.deleted = 0 "
+            "GROUP BY iv.id, iv.dimension, iv.value ORDER BY iv.dimension, iv.value"
+        ).fetchall()
+
+    def index_embedding_completeness(self, profile_id: str | None = None) -> dict:
+        profile_id = profile_id or self._active_profile_id
+        if not profile_id:
+            return {"profile_id": None, "expected": 0, "stored": 0, "complete": True}
+        with self._lock:
+            expected = len(self._queryable_index_values())
+            stored = self.conn.execute(
+                "SELECT COUNT(DISTINCT ive.index_value_id) FROM index_value_embeddings ive "
+                "JOIN memory_index_values link ON link.index_value_id = ive.index_value_id "
+                "JOIN memories m ON m.id = link.memory_id "
+                "WHERE ive.profile_id = ? AND m.deleted = 0",
+                (profile_id,),
+            ).fetchone()[0]
+        return {"profile_id": profile_id, "expected": expected, "stored": stored,
+                "complete": stored == expected}
+
+    def reindex_index_values(self, profile_id: str, embed_documents,
+                             batch_size: int = 50, progress_callback=None) -> dict:
+        """Rebuild all live index-value vectors for one existing profile."""
+        batch_size = max(1, int(batch_size))
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM embedding_profiles WHERE profile_id = ?", (profile_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"unknown embedding profile: {profile_id}")
+            values = self._queryable_index_values()
+        prior_spec = self.embedding_spec
+        prior_dtype = self.embedding_dtype
+        self.embedding_spec = {
+            "profile_id": row["profile_id"], "provider": row["provider"],
+            "model": row["model"], "dimension": row["dimension"],
+            "normalized": bool(row["normalized"]), "query_prefix": row["query_prefix"],
+            "document_prefix": row["document_prefix"],
+        }
+        self.embedding_dtype = row["dtype"]
+        completed = 0
+        try:
+            for offset in range(0, len(values), batch_size):
+                batch = values[offset:offset + batch_size]
+                vectors = embed_documents([item["value"] for item in batch])
+                if len(vectors) != len(batch):
+                    raise ValueError(
+                        f"provider returned {len(vectors)} index vectors for {len(batch)} values"
+                    )
+                with self._lock:
+                    self.conn.execute("BEGIN")
+                    try:
+                        for item, vector in zip(batch, vectors):
+                            self.conn.execute(
+                                "INSERT INTO index_value_embeddings "
+                                "(index_value_id, profile_id, embedding) VALUES (?, ?, ?) "
+                                "ON CONFLICT(index_value_id, profile_id) DO UPDATE SET "
+                                "embedding=excluded.embedding",
+                                (item["id"], profile_id, self._serialize(vector)),
+                            )
+                        self.conn.commit()
+                    except Exception:
+                        self.conn.rollback()
+                        raise
+                completed += len(batch)
+                if progress_callback:
+                    progress_callback(completed, len(values))
+            completeness = self.index_embedding_completeness(profile_id)
+            if not completeness["complete"]:
+                raise RuntimeError(
+                    "index-value reindex validation failed: "
+                    f"expected {completeness['expected']}, stored {completeness['stored']}"
+                )
+            return {"profile_id": profile_id, "reindexed": completed,
+                    "status": "complete"}
+        finally:
+            self.embedding_spec = prior_spec
+            self.embedding_dtype = prior_dtype
 
     def reindex_embeddings(self, spec: dict, embed_documents, batch_size: int = 50,
                            progress_callback=None) -> dict:
@@ -332,6 +451,10 @@ class SQLiteStorage(MemoryStorage):
                 self._insert_profile(record, "building")
                 self.conn.execute(
                     "DELETE FROM memory_embeddings WHERE profile_id = ?",
+                    (record["profile_id"],),
+                )
+                self.conn.execute(
+                    "DELETE FROM index_value_embeddings WHERE profile_id = ?",
                     (record["profile_id"],),
                 )
                 self.conn.commit()
@@ -376,6 +499,10 @@ class SQLiteStorage(MemoryStorage):
                 if progress_callback is not None:
                     progress_callback(completed, len(memories))
 
+            index_result = self.reindex_index_values(
+                record["profile_id"], embed_documents, batch_size,
+            )
+
             with self._lock:
                 stored = self.conn.execute(
                     "SELECT COUNT(*) FROM memory_embeddings WHERE profile_id = ?",
@@ -401,7 +528,8 @@ class SQLiteStorage(MemoryStorage):
                     raise
                 self._active_profile_id = record["profile_id"]
             return {"profile_id": record["profile_id"], "previous_profile": old_profile,
-                    "reindexed": completed, "status": "active"}
+                    "reindexed": completed,
+                    "index_values_reindexed": index_result["reindexed"], "status": "active"}
         except Exception as exc:
             with self._lock:
                 self.conn.execute(
@@ -417,6 +545,11 @@ class SQLiteStorage(MemoryStorage):
     def activate_embedding_profile(self, profile_id: str) -> dict:
         """Atomically activate a complete retained profile for rollback."""
         with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM embedding_profiles WHERE profile_id=?", (profile_id,)
+            ).fetchone()
+            if not row:
+                raise ValueError(f"unknown embedding profile: {profile_id}")
             active_memories = self.conn.execute(
                 "SELECT COUNT(*) FROM memories WHERE deleted = 0"
             ).fetchone()[0]
@@ -429,11 +562,13 @@ class SQLiteStorage(MemoryStorage):
                 raise RuntimeError(
                     f"profile is incomplete: expected {active_memories}, stored {stored}"
                 )
-            row = self.conn.execute(
-                "SELECT * FROM embedding_profiles WHERE profile_id=?", (profile_id,)
-            ).fetchone()
-            if not row:
-                raise ValueError(f"unknown embedding profile: {profile_id}")
+            index_completeness = self.index_embedding_completeness(profile_id)
+            if not index_completeness["complete"]:
+                raise RuntimeError(
+                    "profile index-value embeddings are incomplete: "
+                    f"expected {index_completeness['expected']}, "
+                    f"stored {index_completeness['stored']}; run reindex-index-values first"
+                )
             previous = self._active_profile_id
             self.conn.execute("BEGIN")
             try:
@@ -623,6 +758,133 @@ class SQLiteStorage(MemoryStorage):
                     (memory_id, row["id"]),
                 )
 
+    def _store_index_value_embeddings(self, index_embeddings: dict | None) -> None:
+        """Upsert prepared vectors for the active profile inside the caller transaction."""
+        if not self._active_profile_id or not index_embeddings:
+            return
+        for key, vector in index_embeddings.items():
+            dimension, value = key
+            self._index_spec(dimension)
+            row = self.conn.execute(
+                "SELECT id FROM index_values WHERE dimension = ? AND value = ?",
+                (dimension, value),
+            ).fetchone()
+            if row is None:
+                raise RuntimeError(
+                    f"index value was not created before storing its embedding: {dimension}/{value}"
+                )
+            self.conn.execute(
+                "INSERT INTO index_value_embeddings(index_value_id, profile_id, embedding) "
+                "VALUES (?, ?, ?) ON CONFLICT(index_value_id, profile_id) DO UPDATE SET "
+                "embedding=excluded.embedding",
+                (row["id"], self._active_profile_id, self._serialize(vector)),
+            )
+
+    def missing_index_value_embeddings(self, metadata: dict | None) -> list[tuple[str, str]]:
+        """Return metadata index values missing a vector in the active profile."""
+        if not self._active_profile_id:
+            return []
+        missing = []
+        with self._lock:
+            for dimension in _INDEX_DIMENSIONS:
+                for value in self._extract_index_values(dimension, metadata or {}):
+                    row = self.conn.execute(
+                        "SELECT ive.index_value_id FROM index_values iv "
+                        "LEFT JOIN index_value_embeddings ive ON ive.index_value_id = iv.id "
+                        "AND ive.profile_id = ? WHERE iv.dimension = ? AND iv.value = ?",
+                        (self._active_profile_id, dimension, value),
+                    ).fetchone()
+                    if row is None or row["index_value_id"] is None:
+                        missing.append((dimension, value))
+        return missing
+
+    def missing_queryable_index_value_embeddings(self) -> list[tuple[str, str]]:
+        """Return all live index values missing a vector in the active profile."""
+        if not self._active_profile_id:
+            return []
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT iv.dimension, iv.value FROM index_values iv "
+                "JOIN memory_index_values link ON link.index_value_id = iv.id "
+                "JOIN memories m ON m.id = link.memory_id "
+                "LEFT JOIN index_value_embeddings ive ON ive.index_value_id = iv.id "
+                "AND ive.profile_id = ? WHERE m.deleted = 0 AND ive.index_value_id IS NULL "
+                "GROUP BY iv.id, iv.dimension, iv.value ORDER BY iv.dimension, iv.value",
+                (self._active_profile_id,),
+            ).fetchall()
+        return [(row["dimension"], row["value"]) for row in rows]
+
+    def backfill_missing_index_value_embeddings(self, embed_documents) -> int:
+        missing = self.missing_queryable_index_value_embeddings()
+        if not missing:
+            return 0
+        vectors = embed_documents([value for _dimension, value in missing])
+        if len(vectors) != len(missing):
+            raise ValueError(
+                f"provider returned {len(vectors)} index vectors for {len(missing)} values"
+            )
+        with self._lock:
+            try:
+                self._store_index_value_embeddings(dict(zip(missing, vectors)))
+                self.conn.commit()
+            except Exception:
+                self.conn.rollback()
+                raise
+        return len(missing)
+
+    def exact_index_values(self, dimension: str, values: list[str],
+                           namespace: str | None = None) -> set[str]:
+        """Return supplied values associated with at least one live memory in scope."""
+        self._index_spec(dimension)
+        if not values:
+            return set()
+        placeholders = ",".join(["?"] * len(values))
+        sql = (
+            "SELECT DISTINCT iv.value FROM index_values iv "
+            "JOIN memory_index_values link ON link.index_value_id = iv.id "
+            "JOIN memories m ON m.id = link.memory_id "
+            f"WHERE iv.dimension = ? AND iv.value IN ({placeholders}) AND m.deleted = 0"
+        )
+        params = [dimension, *values]
+        if namespace:
+            sql += " AND m.namespace = ?"
+            params.append(namespace)
+        with self._lock:
+            return {row["value"] for row in self.conn.execute(sql, params).fetchall()}
+
+    def semantic_index_values(self, dimension: str, query_embedding: list[float],
+                              namespace: str | None = None) -> list[dict]:
+        """Score all live, in-scope index values in one dimension."""
+        self._index_spec(dimension)
+        if not self._active_profile_id:
+            raise RuntimeError("semantic index filtering requires an active embedding profile")
+        sql = (
+            "SELECT DISTINCT iv.id, iv.value, ive.embedding FROM index_values iv "
+            "JOIN index_value_embeddings ive ON ive.index_value_id = iv.id "
+            "AND ive.profile_id = ? "
+            "JOIN memory_index_values link ON link.index_value_id = iv.id "
+            "JOIN memories m ON m.id = link.memory_id "
+            "WHERE iv.dimension = ? AND m.deleted = 0"
+        )
+        params = [self._active_profile_id, dimension]
+        if namespace:
+            sql += " AND m.namespace = ?"
+            params.append(namespace)
+        with self._lock:
+            rows = self.conn.execute(sql, params).fetchall()
+        scored = []
+        for row in rows:
+            vector = self._deserialize(row["embedding"])
+            if len(vector) != len(query_embedding):
+                raise ValueError(
+                    f"index value embedding dimension mismatch for {dimension}/{row['value']}: "
+                    f"query={len(query_embedding)}, stored={len(vector)}"
+                )
+            scored.append({"id": row["id"], "value": row["value"],
+                           "score": round(_cosine_similarity(query_embedding, vector), 6)})
+        scored.sort(key=lambda item: item["score"], reverse=True)
+        return scored
+
     def _sync_metadata_indexes(self, memory_id: str, metadata: dict,
                                changed_dimensions=None):
         for dimension in _INDEX_DIMENSIONS:
@@ -641,7 +903,9 @@ class SQLiteStorage(MemoryStorage):
             "DELETE FROM memory_index_values WHERE index_value_id IN "
             "(SELECT id FROM index_values WHERE dimension = ?)", (dimension,)
         )
-        self.conn.execute("DELETE FROM index_values WHERE dimension = ?", (dimension,))
+        # Keep stable value IDs (and their profile vectors). Values with no live
+        # associations are harmless: counts and semantic resolution both join
+        # through active memories, so stale values remain invisible.
         rows = self.conn.execute(
             "SELECT id, metadata FROM memories WHERE deleted = 0"
         ).fetchall()
@@ -813,27 +1077,33 @@ class SQLiteStorage(MemoryStorage):
 
     # -- public API --
 
-    def add(self, text, embedding, metadata=None, namespace=DEFAULT_NAMESPACE, summary=None):
+    def add(self, text, embedding, metadata=None, namespace=DEFAULT_NAMESPACE, summary=None,
+            index_embeddings=None):
         """Insert a memory; dedup on (namespace, text). Returns {"id", "created"}."""
         with self._lock:
-            existing = self.conn.execute(
-                "SELECT id FROM memories WHERE namespace = ? AND text = ? AND deleted = 0 LIMIT 1",
-                (namespace, text),
-            ).fetchone()
-            if existing:
-                return {"id": existing[0], "created": False}
-            eid = _new_id()
-            now = _now()
-            self.conn.execute(
-                "INSERT INTO memories (id, text, embedding, metadata, namespace, created_at, updated_at, synced, summary) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)",
-                (eid, text, None if self._active_profile_id else self._serialize(embedding),
-                 json.dumps(metadata or {}), namespace, now, now, summary),
-            )
-            if self._active_profile_id:
-                self._store_active_embedding(eid, embedding)
-            self._sync_metadata_indexes(eid, metadata or {})
-            self.conn.commit()
+            try:
+                existing = self.conn.execute(
+                    "SELECT id FROM memories WHERE namespace = ? AND text = ? AND deleted = 0 LIMIT 1",
+                    (namespace, text),
+                ).fetchone()
+                if existing:
+                    return {"id": existing[0], "created": False}
+                eid = _new_id()
+                now = _now()
+                self.conn.execute(
+                    "INSERT INTO memories (id, text, embedding, metadata, namespace, created_at, updated_at, synced, summary) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)",
+                    (eid, text, None if self._active_profile_id else self._serialize(embedding),
+                     json.dumps(metadata or {}), namespace, now, now, summary),
+                )
+                if self._active_profile_id:
+                    self._store_active_embedding(eid, embedding)
+                self._sync_metadata_indexes(eid, metadata or {})
+                self._store_index_value_embeddings(index_embeddings)
+                self.conn.commit()
+            except Exception:
+                self.conn.rollback()
+                raise
         return {"id": eid, "created": True}
 
     def search(self, query_embedding, k=5, threshold=0.0, namespace=None,
@@ -910,28 +1180,34 @@ class SQLiteStorage(MemoryStorage):
         ).fetchone()
         return self._row_to_dict(row) if row else None
 
-    def update(self, memory_id, text=None, embedding=None, metadata=None, namespace=None, summary=None):
+    def update(self, memory_id, text=None, embedding=None, metadata=None, namespace=None, summary=None,
+               index_embeddings=None):
         with self._lock:
             existing = self.get(memory_id)
             if not existing:
                 return False
-            now = _now()
-            text = text if text is not None else existing["text"]
-            emb = embedding if embedding is not None else existing["embedding"]
-            meta = {**existing["metadata"], **(metadata or {})}
-            ns = namespace if namespace is not None else existing["namespace"]
-            summ = summary if summary is not None else existing.get("summary")
-            self.conn.execute(
-                "UPDATE memories SET text = ?, embedding = ?, metadata = ?, "
-                "namespace = ?, updated_at = ?, synced = 0, summary = ? WHERE id = ?",
-                (text, None if self._active_profile_id else self._serialize(emb),
-                 json.dumps(meta), ns, now, summ, memory_id),
-            )
-            if embedding is not None and self._active_profile_id:
-                self._store_active_embedding(memory_id, embedding)
-            # Only dimensions explicitly present in metadata are replaced.
-            self._sync_metadata_indexes(memory_id, meta, changed_dimensions=metadata or {})
-            self.conn.commit()
+            try:
+                now = _now()
+                text = text if text is not None else existing["text"]
+                emb = embedding if embedding is not None else existing["embedding"]
+                meta = {**existing["metadata"], **(metadata or {})}
+                ns = namespace if namespace is not None else existing["namespace"]
+                summ = summary if summary is not None else existing.get("summary")
+                self.conn.execute(
+                    "UPDATE memories SET text = ?, embedding = ?, metadata = ?, "
+                    "namespace = ?, updated_at = ?, synced = 0, summary = ? WHERE id = ?",
+                    (text, None if self._active_profile_id else self._serialize(emb),
+                     json.dumps(meta), ns, now, summ, memory_id),
+                )
+                if embedding is not None and self._active_profile_id:
+                    self._store_active_embedding(memory_id, embedding)
+                # Only dimensions explicitly present in metadata are replaced.
+                self._sync_metadata_indexes(memory_id, meta, changed_dimensions=metadata or {})
+                self._store_index_value_embeddings(index_embeddings)
+                self.conn.commit()
+            except Exception:
+                self.conn.rollback()
+                raise
         return True
 
     def update_summary(self, memory_id, summary):
@@ -956,7 +1232,7 @@ class SQLiteStorage(MemoryStorage):
             self.conn.commit()
         return c.rowcount > 0
 
-    def update_metadata(self, memory_id, metadata):
+    def update_metadata(self, memory_id, metadata, index_embeddings=None):
         """Merge metadata and re-sync the keyword index — updated_at stays
         unchanged. Used by the keyword-extraction migration so backfilled
         keywords do not perturb time-based list ordering.
@@ -970,12 +1246,27 @@ class SQLiteStorage(MemoryStorage):
             if not existing:
                 return False
             merged = {**existing["metadata"], **(metadata or {})}
-            self.conn.execute(
-                "UPDATE memories SET metadata = ?, synced = 0 WHERE id = ? AND deleted = 0",
-                (json.dumps(merged), memory_id),
-            )
-            self._sync_metadata_indexes(memory_id, merged, changed_dimensions=metadata or {})
-            self.conn.commit()
+            missing = set(self.missing_index_value_embeddings(metadata))
+            prepared = set((index_embeddings or {}).keys())
+            unprepared = missing - prepared
+            if unprepared:
+                values = ", ".join(
+                    f"{dimension}/{value}" for dimension, value in sorted(unprepared)
+                )
+                raise RuntimeError(
+                    "metadata update would create index values without embeddings: " + values
+                )
+            try:
+                self.conn.execute(
+                    "UPDATE memories SET metadata = ?, synced = 0 WHERE id = ? AND deleted = 0",
+                    (json.dumps(merged), memory_id),
+                )
+                self._sync_metadata_indexes(memory_id, merged, changed_dimensions=metadata or {})
+                self._store_index_value_embeddings(index_embeddings)
+                self.conn.commit()
+            except Exception:
+                self.conn.rollback()
+                raise
         return True
 
     def get_pending_summaries(self, limit=1000):
@@ -1120,7 +1411,12 @@ class SQLiteStorage(MemoryStorage):
                 "ep.codec, ep.dtype, ep.status, "
                 "(SELECT COUNT(*) FROM memory_embeddings me "
                 " JOIN memories m ON m.id = me.memory_id "
-                " WHERE me.profile_id = ep.profile_id AND m.deleted = 0) AS vector_count "
+                " WHERE me.profile_id = ep.profile_id AND m.deleted = 0) AS vector_count, "
+                "(SELECT COUNT(DISTINCT ive.index_value_id) FROM index_value_embeddings ive "
+                " JOIN memory_index_values link ON link.index_value_id = ive.index_value_id "
+                " JOIN memories im ON im.id = link.memory_id "
+                " WHERE ive.profile_id = ep.profile_id AND im.deleted = 0) "
+                "AS index_vector_count "
                 "FROM embedding_profiles ep ORDER BY ep.created_at"
             ).fetchall()
             embedding_formats = {}
@@ -1149,6 +1445,7 @@ class SQLiteStorage(MemoryStorage):
             "embedding_profile": {
                 "active": self._active_profile_id,
                 "profiles": [dict(row) for row in profile_rows],
+                "index_values": self.index_embedding_completeness(),
             },
             "backend": "sqlite",
             "path": self.path,

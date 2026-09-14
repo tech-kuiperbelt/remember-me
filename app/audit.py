@@ -33,6 +33,8 @@ AUDIT_MAX_EVENTS = max(0, int(os.environ.get("MEMORY_AUDIT_MAX_EVENTS", "0")))
 # User-content keys stripped from the recorded params: the journal must not
 # duplicate memory bodies (they already live in the primary store).
 _TEXT_KEYS = ("text", "summary")
+_MAX_FILTER_VALUES = 20
+_MAX_FILTER_MATCHES = 3
 
 _lock = threading.Lock()
 _file = None
@@ -127,7 +129,41 @@ def _trim_params(tool: str, arguments: dict | None, result=None) -> dict:
             args["summary_mode"] = "preserved"
     for key in _TEXT_KEYS:
         args.pop(key, None)
+    if tool == "search_semantic":
+        for dimension in ("keywords", "categories"):
+            values = args.get(dimension)
+            if isinstance(values, list) and len(values) > _MAX_FILTER_VALUES:
+                args[dimension] = values[:_MAX_FILTER_VALUES]
+                args[f"{dimension}_total"] = len(values)
+                args[f"{dimension}_truncated"] = True
     return args
+
+
+def _trim_filter_resolution(resolution):
+    if not isinstance(resolution, dict):
+        return resolution
+    trimmed = {"config": resolution.get("config")}
+    for dimension in ("keywords", "categories"):
+        records = resolution.get(dimension)
+        if not isinstance(records, list):
+            continue
+        kept = []
+        for record in records[:_MAX_FILTER_VALUES]:
+            if not isinstance(record, dict):
+                continue
+            item = dict(record)
+            matches = item.get("matches")
+            if isinstance(matches, list):
+                item["matches"] = matches[:_MAX_FILTER_MATCHES]
+                if len(matches) > _MAX_FILTER_MATCHES:
+                    item["matches_total"] = len(matches)
+                    item["matches_truncated"] = True
+            kept.append(item)
+        trimmed[dimension] = kept
+        if len(records) > _MAX_FILTER_VALUES:
+            trimmed[f"{dimension}_total"] = len(records)
+            trimmed[f"{dimension}_truncated"] = True
+    return trimmed
 
 
 def _trim_result(tool: str, result) -> dict | None:
@@ -150,6 +186,9 @@ def _trim_result(tool: str, result) -> dict | None:
         return {
             "search_id": result.get("search_id"),
             "total": result.get("total", len(items)),
+            **({"filter_resolution": _trim_filter_resolution(result.get("filter_resolution"))}
+               if tool == "search_semantic" and result.get("filter_resolution") is not None
+               else {}),
             "items": [
                 {"id": it.get("id"),
                  "summary": it.get("summary"),

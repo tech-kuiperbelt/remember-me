@@ -254,6 +254,12 @@ def test_reindex_builds_shadow_then_switches_and_can_roll_back(tmp_path):
     assert storage.get(second)["embedding"] == pytest.approx([0.0, 1.0])
     assert progress == [(1, 2), (2, 2)]
 
+    with pytest.raises(RuntimeError, match="index-value embeddings are incomplete"):
+        storage.activate_embedding_profile(old_spec["profile_id"])
+    storage.reindex_index_values(
+        old_spec["profile_id"],
+        lambda texts: [[1, 0, 0, 0] for _text in texts],
+    )
     rollback = storage.activate_embedding_profile(old_spec["profile_id"])
     assert rollback["previous_profile"] == new_spec["profile_id"]
     assert storage.search([0, 1, 0, 0], k=1)[0]["id"] == second

@@ -103,9 +103,11 @@ async def handle_list_tools() -> types.ListToolsResult:
                         "For time-based questions (e.g. \"what did we do recently / last session\") "
                         "use 'search_meta' with sort_by='updated_at' instead. "
                         "You may optionally pass keywords= and/or categories= to pre-filter candidates "
-                        "before similarity scoring. Values within each dimension use OR; keywords and "
-                        "categories combine with each other and namespace using AND. Call 'stats' first "
-                        "to see keyword_counts and category_counts. "
+                        "before similarity scoring. Exact index values are used directly; unmatched values "
+                        "are semantically resolved to the closest existing values in the same dimension and "
+                        "namespace. The response reports the applied mapping in filter_resolution. "
+                        "Values within each dimension use OR; keywords and "
+                        "categories combine with each other and namespace using AND. "
                         "If no results are found, call 'stats' first to verify the correct namespace, "
                         "then try searching again.",
             inputSchema={
@@ -117,13 +119,15 @@ async def handle_list_tools() -> types.ListToolsResult:
                     "namespace": {"type": "string", "description": "Only search within this namespace (optional). Leave empty to search all namespaces. If you get no results, call 'stats' first to check available namespaces."},
                     "keywords": {
                         "type": "array",
+                        "maxItems": 20,
                         "items": {"type": "string"},
-                        "description": "Restrict the search to memories carrying any of these keywords (OR). Combined with categories and namespace using AND. Call 'stats' first to see keyword_counts.",
+                        "description": "Restrict the search to memories carrying any of these keywords (OR). Exact values are preferred; natural-language or alternate forms are semantically resolved within the same namespace. Combined with categories and namespace using AND.",
                     },
                     "categories": {
                         "type": "array",
+                        "maxItems": 20,
                         "items": {"type": "string"},
-                        "description": "Restrict the search to memories carrying any of these categories (OR). Combined with keywords and namespace using AND. Call 'stats' first to see category_counts.",
+                        "description": "Restrict the search to memories carrying any of these categories (OR). Exact values are preferred; natural-language or alternate forms are semantically resolved within the same namespace. Combined with keywords and namespace using AND.",
                     },
                 },
                 "required": ["query"],
@@ -303,11 +307,13 @@ async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
                          "next time pass at most %d in metadata.categories."
                          % (MAX_CATEGORIES, MAX_CATEGORIES, MAX_CATEGORIES))
         elif name == "search_semantic":
-            data = _wrap_search_semantic(_prepare_for_llm(
-                memory_search(arguments["query"], int(arguments.get("k", 5)),
-                              float(arguments.get("threshold", 0.0)), arguments.get("namespace"),
-                              keywords=arguments.get("keywords"),
-                              categories=arguments.get("categories"))))
+            search_result = memory_search(
+                arguments["query"], int(arguments.get("k", 5)),
+                float(arguments.get("threshold", 0.0)), arguments.get("namespace"),
+                keywords=arguments.get("keywords"),
+                categories=arguments.get("categories"), return_resolution=True)
+            search_result["items"] = _prepare_for_llm(search_result["items"])
+            data = _wrap_search_semantic(search_result)
             hint = _TOOL_HINTS["search_semantic"]
         elif name == "search_meta":
             ns = arguments.get("namespace")
@@ -399,7 +405,7 @@ async def handle_read_resource(uri: str) -> types.ReadResourceResult:
 # with the returned data. Kept intentionally concise.
 _TOOL_HINTS: dict[str, str] = {
     "add": "Memory stored. A supplied summary was saved directly; if it was missing or blank, asynchronous summary generation was queued. If created=false, an identical record already exists and remains untouched — consider 'update' instead. Reuse canonical categories from stats' category_counts (up to 3).",
-    "search_semantic": "Results are ranked by relevance (score). Use 'get_details' with an id to read the full original text, then call 'report' with this search_id to rate how helpful each result was (-10..10). keywords/categories pre-filter candidates before scoring: values within one dimension use OR, while dimensions combine using AND. The 3-category cap applies only to a memory, not a filter. Use stats for canonical values; if results are sparse, widen or drop filters.",
+    "search_semantic": "Results are ranked by relevance (score). Use 'get_details' with an id to read the full original text, then call 'report' with this search_id to rate how helpful each result was (-10..10). filter_resolution shows how exact or semantic keywords/categories constrained candidates before scoring. Values within one dimension use OR, while dimensions combine using AND. If a whole supplied dimension could not be resolved, the result is empty.",
     "search_meta": "Use 'get_details' with an id to read the full original text, or call 'search_semantic' for fuzzy/topic/keyword lookup. Filter further with keywords= and/or categories=. After using these results, call 'report' with this search_id to rate how helpful each id was (-10..10).",
     "get_details": "You now have the full text, including metadata.keywords and metadata.categories. If a memory is relevant, use search_meta(keywords=[...]) or search_meta(categories=[...]) to find related memories.",
     "update": "Memory updated. A supplied summary was saved directly; a text change without one queued asynchronous summary generation. Use 'get_details' with the id to verify the change. Categories (if any) were taken from metadata.categories — see stats' category_counts for the canonical list (up to 3).",
@@ -445,8 +451,13 @@ def _wrap_search_meta(items: list, namespace: str | None, limit: int, offset: in
     return {"search_id": _new_search_id(), "note": note, "total": len(items), "items": items}
 
 
-def _wrap_search_semantic(items: list) -> dict:
+def _wrap_search_semantic(search_result: dict) -> dict:
     """Attach usage guidance to search_semantic results (same rationale as _wrap_search_meta)."""
+    # Accept a bare list for compatibility with small integrations/tests that
+    # use this response helper directly.
+    if isinstance(search_result, list):
+        search_result = {"items": search_result, "filter_resolution": None}
+    items = search_result["items"]
     note = (
         f"{len(items)} results, ranked by semantic similarity (score). Items carry "
         f"summary (full text when no summary yet). To see the complete original "
@@ -454,7 +465,11 @@ def _wrap_search_semantic(items: list) -> dict:
         f"results, call 'report' with this search_id and rate how helpful each id "
         f"was for the current question (-10..10, may rate a subset)."
     )
-    return {"search_id": _new_search_id(), "note": note, "total": len(items), "items": items}
+    result = {"search_id": _new_search_id(), "note": note,
+              "total": len(items), "items": items}
+    if search_result.get("filter_resolution") is not None:
+        result["filter_resolution"] = search_result["filter_resolution"]
+    return result
 
 
 def _trim_keyword_counts(keyword_counts: dict) -> dict:

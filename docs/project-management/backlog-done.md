@@ -2,6 +2,7 @@
 
 本文件归档已完成的项目待办。详细实现记录保留在 git 提交和项目变更日志中。
 
+- [24] keywords/categories 索引值语义解析（2026-09-13 实现，尚未提交）：新增按 embedding profile 版本化的 `index_value_embeddings`，keyword/category 共用 exact-first、namespace-aware 的自适应 Top-3 解析（最低分 0.65、最大分差 0.05）；解析值约束候选，正文 cosine 负责最终排序。`filter_resolution` 同时返回并写入 audit；add/update、metadata 迁移、完整 reindex、activate、codec migration 和 NDJSON 恢复均覆盖索引值向量。独立 JSON 后端已标记 deprecated。生产 active profile `ep_6134c0b15d2bb471` 已离线补全并验证 1,916/1,916 个索引值向量。
 - [25] embedding 存储优化与 Python 原生向量化（2026-09-11 实现，2026-09-13 提交并切换生产，commit `539163d`）：完成 RMEV float16 codec、旧 pickle 兼容迁移、provider/profile 抽象、可选 FastEmbed 与 sentence-transformers、本地模型缓存、影子 reindex/原子切换与回滚、超长文本保护、管理统计和离线 `embedding_cli`。生产副本向量存储减少约 77.7%，完整测试 225 项通过。Jina v2 zh 用 155 条 audit 实际标注查询 A/B 后 Recall@10 比 bge-m3 低 18.0pp，未采用。2026-09-13 生产 embedding provider 由 `ollama/bge-m3` 切换为 `sentence_transformers/BAAI/bge-m3`（active `ep_6134c0b15d2bb471`，旧 ollama profile 保留 retired 可回滚），并用 gitignored `.env` + `bin/start.sh` 持久化 provider 配置。详见 [`plans/25-embedding-storage-and-provider.md`](plans/25-embedding-storage-and-provider.md)。
 - [14] categories 维度：词表、索引、过滤、统计和迁移（commit `71005a0`）。
 - [14] 后续：通用 metadata 索引（commit `f209ad3`）、`search_semantic` categories 过滤（`f66f946`）、迁移 CLI `--db` 修正（`935920f`）、deepseek 全量分类回填 857 条 0 失败（`1735e78`，2026-09-10）。

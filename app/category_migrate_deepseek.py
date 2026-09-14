@@ -34,6 +34,7 @@ import time
 from datetime import datetime, timezone
 
 from .storage import create_storage
+from .index_value_resolver import resolver_for_configured_profile
 from .categories import CATEGORY_VOCABULARY, normalize_categories
 
 logger = logging.getLogger("category_migrate_deepseek")
@@ -247,6 +248,8 @@ def main(argv=None) -> int:
                           "dry_run": True}))
         return 0
 
+    index_resolver = resolver_for_configured_profile(storage)
+
     # Seed the candidates with the canonical vocabulary plus any categories
     # already present in the store so previously migrated records keep their
     # forms and new records converge toward them.
@@ -276,7 +279,18 @@ def main(argv=None) -> int:
             counters["failed"] += 1
             failures.append({"id": m["id"], "error": "empty categories"})
             return
-        storage.update_metadata(m["id"], {"categories": categories})
+        try:
+            metadata_update = {"categories": categories}
+            index_embeddings = (index_resolver.prepare_embeddings(metadata_update)
+                                if index_resolver else None)
+            storage.update_metadata(
+                m["id"], metadata_update, index_embeddings=index_embeddings
+            )
+        except Exception as e:
+            counters["failed"] += 1
+            failures.append({"id": m["id"], "error": str(e)[:200]})
+            logger.warning("failed id=%s: %s", m["id"], e)
+            return
         # Extras grow as genuinely new categories are introduced.
         candidates.add_many(categories)
         counters["processed"] += 1

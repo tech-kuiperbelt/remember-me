@@ -68,7 +68,8 @@ def quick_sync(storage, batch_size=500):
 
 def recover_ndjson_to_sqlite(source_path: str, target_path: str, embed_fn,
                              batch_size: int = 500, embedding_spec: dict | None = None,
-                             embedding_dtype: str = "float16") -> dict:
+                             embedding_dtype: str = "float16",
+                             embed_documents=None) -> dict:
     """Offline, atomic rebuild of SQLite from a vector-free NDJSON backup.
 
     A temporary SQLite file is built entirely before it replaces ``target_path``.
@@ -108,6 +109,11 @@ def recover_ndjson_to_sqlite(source_path: str, target_path: str, embed_fn,
             offset += batch_size
         rebuilt.rebuild_keyword_index()
         rebuilt.rebuild_category_index()
+        if embedding_spec:
+            batch_embed = embed_documents or (lambda values: [embed_fn(value) for value in values])
+            rebuilt.reindex_index_values(
+                embedding_spec["profile_id"], batch_embed, batch_size=batch_size
+            )
         rebuilt.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         rebuilt.conn.close()
         rebuilt = None

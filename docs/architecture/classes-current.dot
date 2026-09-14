@@ -1,0 +1,44 @@
+digraph classes_current {
+  graph [label="remember-me class diagram — current", labelloc=t, fontsize=22,
+         fontname="DejaVu Sans", rankdir=LR, bgcolor="white", pad=0.3,
+         nodesep=0.55, ranksep=0.9, splines=polyline];
+  node [shape=record, style="rounded,filled", fillcolor="#F8FAFC",
+        color="#64748B", fontname="DejaVu Sans", fontsize=10, margin="0.12,0.08"];
+  edge [fontname="DejaVu Sans", fontsize=9, color="#475569", arrowsize=0.8];
+
+  Service [label="{«module» app.service|embedding_provider : Embedder\lstorage : MemoryStorage\l|memory_add()\lmemory_search()\lmemory_list()\lmemory_update()\lmemory_delete()\lembed()\lembed_query()\l}", fillcolor="#DBEAFE", color="#2563EB"];
+  Resolver [label="{IndexValueResolver|storage\lembed_query\lembed_documents\ltop_k / min_score / max_gap\l|prepare_embeddings()\lresolve()\l_exact_values()\l_semantic_values()\l}", fillcolor="#FEE2E2", color="#DC2626"];
+
+  MemoryStorage [label="{«abstract» MemoryStorage||add()\lsearch()\llist_memories()\lget()\lget_details()\lupdate()\ldelete()\lclear()\lmerge()\lget_stats()\l}", fillcolor="#E2E8F0"];
+  SQLiteStorage [label="{SQLiteStorage|conn : sqlite3.Connection\lembedding_spec\lembedding_dtype\l_active_profile_id\l|CRUD + cosine search\lsemantic index candidates\lprofile migration/activation\lmetadata index sync\ltwo-table codec migration\l}", fillcolor="#CCFBF1", color="#0F766E"];
+  DualStorage [label="{DualStorage|primary : MemoryStorage\lsecondary : MemoryStorage\l_sync_mutex\l_job\l|CRUD delegation\lincremental sync\lfull sync\lcompact scheduling\l}", fillcolor="#DCFCE7", color="#16A34A"];
+  NDJSONStorage [label="{NDJSONStorage|path\l_lock\l|append-only writes\lload/recovery\lcompact()\lcompaction_metrics()\l}"];
+  JSONStorage [label="{JSONStorage|path\l_lock\l|CRUD\latomic save\l}"];
+
+  Embedder [label="{«protocol» Embedder|spec : EmbeddingSpec\l|embed_document()\lembed_query()\lembed_documents()\lwarmup()\l}", fillcolor="#F3E8FF", color="#7C3AED"];
+  BaseEmbedder [label="{«abstract» _BaseEmbedder|spec : EmbeddingSpec\l|_prepare()\l_validate_vector()\lembed_documents()\lwarmup()\l}", fillcolor="#F3E8FF", color="#7C3AED"];
+  Ollama [label="{OllamaEmbedder||embed_document()\lembed_query()\l}"];
+  FastEmbed [label="{FastEmbedEmbedder||embed_document()\lembed_query()\lembed_documents()\l}"];
+  Sentence [label="{SentenceTransformersEmbedder||embed_document()\lembed_query()\lembed_documents()\l}"];
+  Spec [label="{«dataclass» EmbeddingSpec|provider\lmodel\ldimension\lnormalized\lquery_prefix\ldocument_prefix\lmax_input_chars\lmax_input_tokens\l|profile_id\las_dict()\l}", fillcolor="#F3E8FF", color="#7C3AED"];
+  Codec [label="{«module» embedding_codec|EmbeddingBlobInfo\lEmbeddingCodecError\l|encode_vector()\ldecode_vector()\linspect_blob()\l}", fillcolor="#FEF3C7", color="#D97706"];
+
+  Service -> MemoryStorage [label="uses"];
+  Service -> Embedder [label="uses"];
+  Service -> Resolver [label="creates"];
+  Resolver -> Embedder [style=dashed, label="query/document embedding"];
+  Resolver -> MemoryStorage [style=dashed, label="exact + semantic candidates"];
+  SQLiteStorage -> MemoryStorage [arrowhead=empty, label="implements"];
+  DualStorage -> MemoryStorage [arrowhead=empty, label="implements"];
+  NDJSONStorage -> MemoryStorage [arrowhead=empty, label="implements"];
+  JSONStorage -> MemoryStorage [arrowhead=empty, label="implements"];
+  DualStorage -> SQLiteStorage [arrowhead=diamond, label="primary"];
+  DualStorage -> NDJSONStorage [arrowhead=odiamond, label="secondary"];
+  Ollama -> BaseEmbedder [arrowhead=empty];
+  FastEmbed -> BaseEmbedder [arrowhead=empty];
+  Sentence -> BaseEmbedder [arrowhead=empty];
+  BaseEmbedder -> Embedder [style=dashed, arrowhead=empty, label="conforms"];
+  Embedder -> Spec [arrowhead=diamond, label="spec"];
+  SQLiteStorage -> Spec [style=dashed, label="profile identity"];
+  SQLiteStorage -> Codec [style=dashed, label="encode/decode"];
+}

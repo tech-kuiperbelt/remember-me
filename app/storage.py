@@ -39,7 +39,8 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
 class MemoryStorage(ABC):
     @abstractmethod
     def add(self, text: str, embedding: list[float], metadata: Optional[dict] = None,
-            namespace: str = DEFAULT_NAMESPACE, summary: Optional[str] = None) -> dict[str, Any]:
+            namespace: str = DEFAULT_NAMESPACE, summary: Optional[str] = None,
+            index_embeddings: Optional[dict] = None) -> dict[str, Any]:
         """Insert a memory. Returns {"id": ..., "created": bool}.
 
         Dedup rule (content + namespace): if an active (non-deleted) record
@@ -72,7 +73,8 @@ class MemoryStorage(ABC):
                embedding: Optional[list[float]] = None,
                metadata: Optional[dict] = None,
                namespace: Optional[str] = None,
-               summary: Optional[str] = None) -> bool: ...
+               summary: Optional[str] = None,
+               index_embeddings: Optional[dict] = None) -> bool: ...
 
     @abstractmethod
     def get_details(self, memory_ids: list[str]) -> dict[str, Any]:

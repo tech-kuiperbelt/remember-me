@@ -3,6 +3,7 @@ import logging
 from datetime import datetime, timezone
 
 from .embed import create_embedder
+from .index_value_resolver import IndexValueResolver, MAX_FILTER_VALUES
 from .summarize import summarize as summarize_fn
 from .storage import create_storage
 from . import summary_worker
@@ -32,6 +33,9 @@ EMBED_DTYPE = os.environ.get("EMBED_DTYPE", "float16")
 EMBED_PRELOAD = os.environ.get("EMBED_PRELOAD", "true").lower() in ("1", "true", "yes")
 SUMMARIZE_MODEL = os.environ.get("SUMMARIZE_MODEL", "qwen3:latest")
 DEFAULT_NAMESPACE = os.environ.get("MEMORY_DEFAULT_NAMESPACE", "default")
+INDEX_SEMANTIC_TOP_K = int(os.environ.get("MEMORY_INDEX_SEMANTIC_TOP_K", "3"))
+INDEX_SEMANTIC_MIN_SCORE = float(os.environ.get("MEMORY_INDEX_SEMANTIC_MIN_SCORE", "0.65"))
+INDEX_SEMANTIC_MAX_GAP = float(os.environ.get("MEMORY_INDEX_SEMANTIC_MAX_GAP", "0.05"))
 
 embedding_provider = create_embedder()
 EMBED_PROVIDER = embedding_provider.spec.provider
@@ -54,7 +58,10 @@ if STORAGE_BACKEND == "dual":
                              compact_min_ratio=COMPACT_MIN_RATIO)
 elif STORAGE_BACKEND == "json":
     path = STORAGE_PATH or "data/memories.json"
-    logger.info("JSON storage: %s", path)
+    logger.warning(
+        "MEMORY_STORAGE=json is deprecated and retained only for compatibility; "
+        "use sqlite or dual. JSON storage: %s", path
+    )
     storage = create_storage("json", path=path, embedding_dtype=EMBED_DTYPE,
                              embedding_spec=embedding_provider.spec.as_dict())
 elif STORAGE_BACKEND in ("ndjson", "jsonl"):
@@ -68,6 +75,16 @@ else:
     logger.info("SQLite storage: %s", path)
     storage = create_storage("sqlite", path=path, embedding_dtype=EMBED_DTYPE,
                              embedding_spec=embedding_provider.spec.as_dict())
+
+if hasattr(storage, "index_embedding_completeness"):
+    _index_completeness = storage.index_embedding_completeness()
+    if not _index_completeness["complete"]:
+        raise RuntimeError(
+            "active embedding profile is missing keyword/category vectors: "
+            f"expected={_index_completeness['expected']}, "
+            f"stored={_index_completeness['stored']}. Stop the service and run "
+            "'python -m app.embedding_cli reindex-index-values data/memories.db'."
+        )
 
 summary_worker.set_storage(storage)
 summary_worker.start()
@@ -93,6 +110,23 @@ def embed_query(text: str) -> list[float]:
     except Exception as e:
         logger.error("query embed failed: %s", e, exc_info=True)
         raise
+
+
+def embed_documents(texts) -> list[list[float]]:
+    # Preserve the patchable legacy embed() seam used by Ollama deployments
+    # and tests; native batch providers use their efficient batch path.
+    if EMBED_PROVIDER == "ollama":
+        return [embed(text) for text in texts]
+    return embedding_provider.embed_documents(texts)
+
+
+def _index_resolver() -> IndexValueResolver:
+    return IndexValueResolver(
+        storage, embed_query, embed_documents,
+        top_k=INDEX_SEMANTIC_TOP_K,
+        min_score=INDEX_SEMANTIC_MIN_SCORE,
+        max_gap=INDEX_SEMANTIC_MAX_GAP,
+    )
 
 
 def warmup_embedding_provider() -> None:
@@ -158,8 +192,10 @@ def memory_add(text: str, metadata: dict | None = None,
         dropped = categories_dropped(metadata)
         metadata = _apply_keywords_to_metadata(metadata)
         metadata = _apply_categories_to_metadata(metadata)
+        index_embeddings = _index_resolver().prepare_embeddings(metadata)
+        write_kwargs = {"index_embeddings": index_embeddings} if index_embeddings else {}
         result = storage.add(text, embedding, metadata=metadata, namespace=ns,
-                             summary=summary)
+                             summary=summary, **write_kwargs)
         eid = result["id"]
         if result.get("created") and summary is None:
             # No usable caller summary: generate one in the background without
@@ -245,18 +281,38 @@ def _apply_categories_to_metadata(metadata: dict | None) -> dict | None:
 def memory_search(query: str, k: int = 5, threshold: float = 0.0,
                   namespace: str | None = None,
                   categories: list | None = None,
-                  keywords: list | None = None) -> list[dict]:
+                  keywords: list | None = None,
+                  return_resolution: bool = False):
     k = _sanitize_k(k)
     kw = _normalize_keywords(keywords)
     cats = normalize_categories_filter(categories)
+    for dimension, values in (("keywords", kw), ("categories", cats)):
+        if values and len(values) > MAX_FILTER_VALUES:
+            raise ValueError(
+                f"{dimension} accepts at most {MAX_FILTER_VALUES} filter values"
+            )
     logger.info("search: query_len=%d k=%d threshold=%.3f namespace=%s keywords=%s categories=%s",
                 len(query), k, threshold, namespace, kw, cats)
     try:
-        query_emb = embed_query(query)
-        results = storage.search(query_emb, k=k, threshold=threshold, namespace=namespace,
-                                 keywords=kw, categories=cats)
+        filters = {"keywords": kw, "categories": cats}
+        supplied_filters = any(filters.values())
+        resolved, resolution = _index_resolver().resolve(filters, namespace)
+        if supplied_filters and any(
+                filters[dimension] and not resolved.get(dimension)
+                for dimension in filters):
+            results = []
+        else:
+            query_emb = embed_query(query)
+            results = storage.search(
+                query_emb, k=k, threshold=threshold, namespace=namespace,
+                keywords=resolved.get("keywords"), categories=resolved.get("categories"),
+            )
         logger.info("search: %d results", len(results))
-        return [_strip_internal_fields(r) for r in results]
+        items = [_strip_internal_fields(r) for r in results]
+        if return_resolution:
+            return {"items": items,
+                    "filter_resolution": resolution if supplied_filters else None}
+        return items
     except Exception as e:
         logger.error("search failed: %s", e, exc_info=True)
         raise
@@ -319,9 +375,12 @@ def memory_update(memory_id: str, text: str | None = None,
         dropped = categories_dropped(metadata)
         metadata = _apply_keywords_to_metadata(metadata)
         metadata = _apply_categories_to_metadata(metadata)
+        index_embeddings = _index_resolver().prepare_embeddings(metadata)
+        write_kwargs = {"index_embeddings": index_embeddings} if index_embeddings else {}
         ok = storage.update(memory_id, text=text, embedding=embedding,
                             metadata=metadata, namespace=namespace,
-                            summary=stored_summary)
+                            summary=stored_summary,
+                            **write_kwargs)
         if ok and text is not None and summary is None:
             # Text changed without a usable caller summary: regenerate async.
             summary_worker.enqueue(memory_id, text)
@@ -391,6 +450,10 @@ def memory_import(file_path: str, namespace_prefix: str = "") -> dict:
             storage.rebuild_keyword_index()
         if hasattr(storage, "rebuild_category_index"):
             storage.rebuild_category_index()
+        if hasattr(storage, "backfill_missing_index_value_embeddings"):
+            storage.backfill_missing_index_value_embeddings(
+                embed_documents
+            )
         # Summaries for imported records without one are generated in the
         # background worker (like add/update) — never block the request.
         enqueued = 0
@@ -513,7 +576,11 @@ def memory_extract_keywords(namespace: str | None = None, mode: str = "missing",
             if not keywords:
                 failed += 1
                 continue
-            storage.update_metadata(m["id"], {"keywords": keywords})
+            metadata_update = {"keywords": keywords}
+            index_embeddings = _index_resolver().prepare_embeddings(metadata_update)
+            storage.update_metadata(
+                m["id"], metadata_update, index_embeddings=index_embeddings
+            )
             processed += 1
         result = {"processed": processed, "failed": failed, "mode": mode, "total": len(memories)}
         if memory_id:
