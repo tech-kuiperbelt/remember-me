@@ -50,17 +50,21 @@ def test_dual_add_duplicate_flag_passthrough(dual, mock_primary):
     assert result == {"id": "abc123", "created": False}
 
 
-def test_dual_merge_delegates_to_primary(dual, mock_primary):
-    """merge() delegates and returns primary's result with skipped count."""
-    mock_primary.merge.return_value = {
-        "imported": 1, "skipped": 2, "renamed": 0, "total": 3, "imported_ids": ["x"],
-    }
+def test_dual_import_records_delegates_to_primary(dual, mock_primary):
+    """Prepared JSONL imports are committed only by the SQLite primary."""
+    expected = {"imported": 1, "skipped": 0, "renamed": 0,
+                "imported_ids": ["x"]}
+    mock_primary.import_records.return_value = expected
+    records = [{"id": "x"}]
+    memory_vectors = {"x": [0.1]}
+    index_vectors = {("keywords", "k"): [0.1]}
 
-    result = dual.merge(MagicMock(), namespace_prefix="p_")
+    result = dual.import_records(records, memory_vectors, index_vectors, "profile")
 
-    assert result["skipped"] == 2
-    assert result["imported"] == 1
-    mock_primary.merge.assert_called_once()
+    assert result == expected
+    mock_primary.import_records.assert_called_once_with(
+        records, memory_vectors, index_vectors, "profile"
+    )
 
 
 def test_dual_update_delete_clear_delegate(dual, mock_primary):

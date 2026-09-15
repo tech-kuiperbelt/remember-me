@@ -3,6 +3,8 @@
 import threading
 import time
 import logging
+import os
+import shutil
 from datetime import datetime, timezone
 
 logger = logging.getLogger("storage_dual")
@@ -48,6 +50,9 @@ class DualStorage(MemoryStorage):
         self._sync_count = 0
         self._lock = threading.RLock()
         self._sync_mutex = threading.Lock()
+        acquire = getattr(type(secondary), "acquire_writer_lock", None)
+        if callable(acquire):
+            secondary.acquire_writer_lock()
 
         # Background sync thread
         self._stop = threading.Event()
@@ -259,9 +264,15 @@ class DualStorage(MemoryStorage):
         with self._lock:
             return self.primary.clear(namespace)
 
-    def merge(self, source_storage, namespace_prefix=""):
+    def export_records(self, namespace=None):
         with self._lock:
-            return self.primary.merge(source_storage, namespace_prefix)
+            return self.primary.export_records(namespace)
+
+    def import_records(self, records, memory_embeddings, index_embeddings, expected_profile):
+        with self._lock:
+            return self.primary.import_records(
+                records, memory_embeddings, index_embeddings, expected_profile
+            )
 
     def rebuild_keyword_index(self):
         """Rebuild the keyword index on the primary (SQLite only)."""
@@ -296,10 +307,10 @@ class DualStorage(MemoryStorage):
 
     def force_sync(self) -> dict:
         """Manually trigger a full rebuild of secondary from primary.
-        Uses quick_sync (clear + paginated rebuild) and marks synced
+        Uses quick_sync (one SQLite snapshot + atomic replacement) and marks synced
         only for the records that were actually copied.
         """
-        with self._sync_mutex:
+        with self._lock, self._sync_mutex:
             from .recovery import quick_sync
             before_bytes = self.secondary.get_stats().get("file_bytes", 0)
             result = quick_sync(self)
@@ -309,6 +320,40 @@ class DualStorage(MemoryStorage):
                 self.primary._mark_synced_batch(result["ids"])
             self._last_sync_mono = time.monotonic()
             return result
+
+    def export_full_snapshot(self, destination: str) -> dict:
+        """Full-sync, verify, then copy an immutable download snapshot."""
+        with self._lock, self._sync_mutex:
+            from .recovery import quick_sync
+            from .jsonl_transfer import load_jsonl, sha256_file
+            before_bytes = self.secondary.get_stats().get("file_bytes", 0)
+            result = quick_sync(self)
+            primary_records = self.primary.export_records()
+            replica_records = load_jsonl(self.secondary.path)["records"]
+            primary_by_id = {item["id"]: item for item in primary_records}
+            replica_by_id = {item["id"]: item for item in replica_records}
+            if primary_by_id != replica_by_id:
+                missing = sorted(set(primary_by_id) - set(replica_by_id))
+                extra = sorted(set(replica_by_id) - set(primary_by_id))
+                mismatched = sum(
+                    primary_by_id[memory_id] != replica_by_id[memory_id]
+                    for memory_id in set(primary_by_id) & set(replica_by_id)
+                )
+                raise RuntimeError(
+                    "replica integrity check failed: "
+                    f"missing={len(missing)}, extra={len(extra)}, mismatched={mismatched}"
+                )
+            shutil.copyfile(self.secondary.path, destination)
+            after_bytes = os.path.getsize(self.secondary.path)
+            self._record_full_sync_compaction(before_bytes, after_bytes)
+            self.primary._mark_synced_batch(result.get("ids", []))
+            self._last_sync_mono = time.monotonic()
+            return {"records": len(primary_records), "bytes": os.path.getsize(destination),
+                    "sha256": sha256_file(destination), "path": destination,
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                    "source_path": self.secondary.path,
+                    "integrity": {"missing": 0, "extra": 0, "mismatched": 0,
+                                  "corrupt_lines": 0}}
 
     def get_stats(self) -> dict:
         p = self.primary.get_stats()
@@ -332,11 +377,25 @@ class DualStorage(MemoryStorage):
                 "min_reclaimable_bytes": self.compact_min_bytes,
                 "min_reclaimable_ratio": self.compact_min_ratio,
             }
+        primary_ids = {item["id"] for item in self.primary.export_records()}
+        inspected_ids = s.pop("_integrity_ids", None)
+        secondary_ids = (set(inspected_ids) if inspected_ids is not None else
+                         {item["id"] for item in self.secondary.list_records(limit=10 ** 9)})
+        secondary_integrity = s.get("integrity", {})
+        corrupt_lines = secondary_integrity.get("corrupt_lines", 0)
+        missing = primary_ids - secondary_ids
+        extra = secondary_ids - primary_ids
         return {
             "total": p["total"],
             "backend": "dual",
-            "in_sync": pending == 0 and s.get("total", -1) >= 0,
+            "in_sync": pending == 0 and not missing and not extra and corrupt_lines == 0,
             "pending": pending,
+            "replica_integrity": {
+                "missing": len(missing), "extra": len(extra),
+                "corrupt_lines": corrupt_lines,
+                "checked_at": secondary_integrity.get("checked_at"),
+                "checked": True,
+            },
             "sync_count": self._sync_count,
             "sync_interval_s": self.sync_interval,
             "namespaces": p.get("namespaces", []),
@@ -353,3 +412,8 @@ class DualStorage(MemoryStorage):
     def stop(self):
         """Gracefully stop the background sync thread."""
         self._stop.set()
+        if self._job is not None and self._job.is_alive():
+            self._job.join(timeout=max(1, min(self.sync_interval + 1, 10)))
+        release = getattr(type(self.secondary), "release_writer_lock", None)
+        if callable(release) and (self._job is None or not self._job.is_alive()):
+            self.secondary.release_writer_lock()

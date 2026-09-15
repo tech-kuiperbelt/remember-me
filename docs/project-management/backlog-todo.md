@@ -4,15 +4,24 @@
 
 ## 当前待办
 
-### [30] `memory_import v2`：SQLite 跨库事务合并
+### [32] 移除服务端 Summary 自动与手工生成流程
 
-- 当前边界：[22] 已删除 JSON storage，并将现有 Import 收窄为来源/目标 active profile 完全一致且两类来源向量完整的 SQLite→SQLite 原子复制；NDJSON→SQLite 灾难恢复独立走 `recover_cli`，不经过 import。
-- v2 目标：支持来源与目标 embedding profile 不同的 SQLite 跨库合并，不复制、不信任来源 embedding；统一使用目标数据库 active profile 重新生成正文向量。
-- 数据可信边界：只采用来源记录的正文、metadata、summary、namespace 和时间字段；不信任也不复制来源 embedding。无论来源 profile 是否与目标同维，都统一使用目标数据库的 active embedding profile 重新生成正文向量。
-- 原子流程：读取来源并完成去重、namespace prefix 和 ID 冲突规划；预先生成全部待导入正文向量以及缺失的 keyword/category index-value 向量；随后在单一事务中写入记忆、正文向量、索引关系和索引值向量。任一 embedding 或数据库操作失败，目标数据库保持不变。
-- 后续处理：事务成功后再为缺少 summary 的记录排队；dual 模式由既有 outbox 将成功提交的数据同步到 NDJSON；Import 作为管理操作补充独立 audit 事件和明确错误信息。
-- 约束：来源格式仅支持 SQLite；不得削弱现有同 profile 原子复制或 `recover_cli` 的临时库构建、重新向量化和原子替换保证。
-- 验收：覆盖来源/目标 profile 相同与不同、同维不同模型、正文或 index-value embedding 失败、重复正文、ID 冲突、namespace prefix、summary 排队、dual outbox 和整批回滚测试。
+- 背景：当前 summary worker、启动时缺失 summary 扫描以及管理台手工 Summarize 都依赖 Ollama；这与项目减少非必要模型依赖、由调用方直接提供高质量结构化内容的大目标不一致。
+- 目标：删除服务端自动和手工 summary 生成能力，包括 worker 生命周期、任务队列、启动补偿扫描、管理 API/UI、摘要模型调用、专用存储接口及对应 audit/tests/config/docs。
+- 保留边界：`summary` 字段和调用方写入能力继续保留；已有 summary 不迁移、不清空。调用方未提供 summary 时正常保存为空，搜索结果继续沿用正文 fallback。
+- 与 [30] 的边界：[30] 的 JSONL Import 对缺失 summary 不阻断、保持为空且不调用 worker；除此之外，[30] 不拆除 add/update 的现有 worker 接入、手工 Summarize 或全局 summary 基础设施。
+- 交付约束：本项后续单独设计、实现、测试和提交，不与 [30] 的 Export/Import 改造混合。
+- 验收：运行时不再启动 summary 线程或调用 Ollama 生成摘要；add/update/import 缺失 summary 均不产生后台任务；caller 提供及历史 summary 正常保存、导出、导入和展示；无 summary 的搜索结果仍可用正文回退；全量测试通过。
+
+### [31] NDJSON 灾备副本的多进程一致性与真实健康状态
+
+- 已确认的问题：2026-09-11 多个 `dual` 服务实例共享同一 SQLite/JSONL 时，一个实例用自身过期的 NDJSON 内存快照执行 compact，覆盖了其他实例已经追加的记录；SQLite 中这些记录已经被标记 `synced=1`，因此 outbox 不会重试。最终主库 918 条、副本 912 条，而 Stats 仍错误显示 `in_sync=true`。2026-09-14 已通过 Full Sync 恢复为 918/918。
+- 当前缓解：Codex/OpenCode 客户端统一连接单个 `127.0.0.1:1314` 服务，不再为每个会话直接启动 `bin/start.sh`；但底层实现仍没有跨进程安全保证。
+- 目标：明确并实现单写者约束或可靠的跨进程协调；append、incremental sync、compact 和 Full Sync 不得相互覆盖，compact 必须以 SQLite 权威快照或加锁后重新读取的完整副本为输入，不能直接发布可能过期的进程内 `_data`。
+- 健康检查：`in_sync` 不能只依据 `pending == 0`；至少校验主副有效记录数，管理操作应支持精确 ID 差集/完整性校验，并明确报告 missing、extra、损坏行和最后一次完整校验时间。
+- 恢复策略：发现漂移时不得继续报告健康；提供安全的 Full Sync 修复提示，并评估启动时低成本自动核验或定期深度核验。
+- 验收：增加多进程/强制交错测试，覆盖一个实例追加、另一个实例 compact，两个实例竞争 outbox、compact 与 Full Sync 并发、进程在 append/mark-synced 边界退出，以及 Stats 对副本漂移的识别；单实例现有行为与离线恢复不回归。
+- 2026-09-14 前置修复已随 [30] 实现：每个 replica path 使用生命周期 OS writer lock，第二个 dual 进程启动即失败；Full Sync 从 SQLite 快照构建；Stats 精确扫描磁盘 JSONL 并报告 missing/extra/corrupt_lines/checked_at，任一异常时 `in_sync=false`。剩余项是更广泛的强制交错、崩溃边界和定期深度核验测试，不阻断单写者部署下的 [30]。
 
 ### [29] MCP Streamable HTTP（新 SSE）传输支持
 

@@ -6,7 +6,7 @@ All methods operate on MemoryStorage instances via public/internal API.
 Functions
 ---------
 quick_sync(storage)
-    Full rebuild of secondary from primary (paginated).
+    Full rebuild of secondary from one primary snapshot.
 recover_ndjson_to_sqlite(source_path, target_path, embed_fn, batch_size=500)
     Offline, atomic recovery from a vector-free NDJSON replica.
 """
@@ -16,7 +16,7 @@ import os
 from pathlib import Path
 
 from .storage import create_storage
-from .storage_ndjson import NDJSONReplica
+from .jsonl_transfer import load_jsonl
 
 logger = logging.getLogger("recovery")
 
@@ -26,7 +26,7 @@ def quick_sync(storage, batch_size=500):
 
     Preserves all memory IDs in one atomic replica snapshot.
     Filters out soft-deleted records from primary.
-    Uses pagination to avoid OOM on large datasets.
+    Reads through the SQLite snapshot export contract.
 
     Parameters
     ----------
@@ -40,16 +40,7 @@ def quick_sync(storage, batch_size=500):
     primary = storage.primary
     secondary = storage.secondary
 
-    # Read the complete primary snapshot before replacing the replica. NDJSON
-    # can atomically publish it in one compact write, avoiding a partial backup.
-    memories = []
-    offset = 0
-    while True:
-        batch = primary.list_memories(limit=batch_size, offset=offset)
-        if not batch:
-            break
-        memories.extend(batch)
-        offset += batch_size
+    memories = primary.export_records()
 
     secondary.replace_all(memories)
 
@@ -67,7 +58,7 @@ def recover_ndjson_to_sqlite(source_path: str, target_path: str, embed_fn,
     A temporary SQLite file is built entirely before it replaces ``target_path``.
     Any embedding failure leaves the prior primary untouched.
     """
-    source = NDJSONReplica(source_path)
+    source_records = load_jsonl(source_path)["records"]
     target = Path(target_path)
     temp = Path(f"{target}.recover.tmp")
     temp_sidecars = [Path(f"{temp}-wal"), Path(f"{temp}-shm")]
@@ -82,11 +73,8 @@ def recover_ndjson_to_sqlite(source_path: str, target_path: str, embed_fn,
             "sqlite", path=str(temp), embedding_spec=embedding_spec,
             embedding_dtype=embedding_dtype,
         )
-        offset = 0
-        while True:
-            batch = source.list_records(limit=batch_size, offset=offset)
-            if not batch:
-                break
+        for offset in range(0, len(source_records), batch_size):
+            batch = source_records[offset:offset + batch_size]
             for memory in batch:
                 embedding = embed_fn(memory["text"])
                 if not embedding:
@@ -98,7 +86,6 @@ def recover_ndjson_to_sqlite(source_path: str, target_path: str, embed_fn,
                     memory.get("summary"),
                 )
                 recovered += 1
-            offset += batch_size
         rebuilt.rebuild_keyword_index()
         rebuilt.rebuild_category_index()
         if embedding_spec:

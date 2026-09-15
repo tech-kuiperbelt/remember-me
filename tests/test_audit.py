@@ -197,6 +197,19 @@ def test_stats_drops_keyword_counts_and_base_url(journal):
     assert ev["result"]["total"] == 10
 
 
+def test_transfer_audit_drops_paths_and_imported_ids(journal):
+    audit.record(
+        "memory_import",
+        {"filename": "backup.jsonl", "path": "/secret/upload", "sha256": "abc"},
+        {"imported": 1, "imported_ids": ["one"], "path": "/secret/result",
+         "source_path": "/secret/replica"},
+        5.0,
+    )
+    event = _read_lines(journal)[0]
+    assert event["params"] == {"filename": "backup.jsonl", "sha256": "abc"}
+    assert event["result"] == {"imported": 1}
+
+
 # -- error path --
 
 def test_record_error_event(journal):

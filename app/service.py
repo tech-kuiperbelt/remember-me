@@ -1,5 +1,8 @@
 import os
 import logging
+import threading
+import time
+from collections import OrderedDict
 from datetime import datetime, timezone
 
 from .embed import create_embedder
@@ -7,6 +10,8 @@ from .index_value_resolver import IndexValueResolver, MAX_FILTER_VALUES
 from .summarize import summarize as summarize_fn
 from .storage import create_storage, resolve_replica_path
 from . import summary_worker
+from . import audit
+from .jsonl_transfer import load_jsonl, write_clean_jsonl, sha256_file, unlink_quietly
 from .categories import (
     normalize_categories,
     normalize_categories_filter,
@@ -37,6 +42,8 @@ DEFAULT_NAMESPACE = os.environ.get("MEMORY_DEFAULT_NAMESPACE", "default")
 INDEX_SEMANTIC_TOP_K = int(os.environ.get("MEMORY_INDEX_SEMANTIC_TOP_K", "3"))
 INDEX_SEMANTIC_MIN_SCORE = float(os.environ.get("MEMORY_INDEX_SEMANTIC_MIN_SCORE", "0.65"))
 INDEX_SEMANTIC_MAX_GAP = float(os.environ.get("MEMORY_INDEX_SEMANTIC_MAX_GAP", "0.05"))
+IMPORT_MAX_BYTES = int(os.environ.get("MEMORY_IMPORT_MAX_BYTES", str(64 * 1024 * 1024)))
+IMPORT_MAX_RECORDS = int(os.environ.get("MEMORY_IMPORT_MAX_RECORDS", "10000"))
 
 embedding_provider = create_embedder()
 EMBED_PROVIDER = embedding_provider.spec.provider
@@ -435,31 +442,190 @@ def memory_stats() -> dict:
         raise
 
 
-def memory_import(file_path: str, namespace_prefix: str = "") -> dict:
-    logger.info("import: file=%s prefix=%s", file_path, namespace_prefix)
+def _primary_storage():
+    # Avoid duck-typing here: mocks and proxy objects commonly synthesize a
+    # ``primary`` attribute, which would route imports to the wrong object.
+    from .storage_dual import DualStorage
+    return storage.primary if isinstance(storage, DualStorage) else storage
+
+
+def memory_export_full(destination: str) -> dict:
+    from .storage_dual import DualStorage
+    if not isinstance(storage, DualStorage):
+        raise RuntimeError("Full Export requires MEMORY_STORAGE=dual")
+    return storage.export_full_snapshot(destination)
+
+
+def memory_export_namespace(namespace: str, destination: str) -> dict:
+    namespace = (namespace or "").strip()
+    if not namespace:
+        raise ValueError("namespace is required")
+    records = _primary_storage().export_records(namespace)
+    if not records:
+        raise LookupError(f"namespace not found: {namespace}")
+    write_clean_jsonl(records, destination)
+    return {"records": len(records), "bytes": os.path.getsize(destination),
+            "sha256": sha256_file(destination), "path": destination,
+            "namespace": namespace}
+
+
+_import_jobs_lock = threading.Lock()
+_import_jobs = OrderedDict()
+_active_import_id = None
+
+
+def _set_import_job(import_id, **changes):
+    with _import_jobs_lock:
+        _import_jobs[import_id].update(changes)
+
+
+def memory_import_status(import_id: str) -> dict | None:
+    with _import_jobs_lock:
+        job = _import_jobs.get(import_id)
+        return dict(job) if job else None
+
+
+def _deduplicate_source(records):
+    chosen = {}
+    for position, record in enumerate(records):
+        key = (record["namespace"], record["text"])
+        marker = (datetime.fromisoformat(record["updated_at"].replace("Z", "+00:00")), position)
+        if key not in chosen or marker >= chosen[key][0]:
+            chosen[key] = (marker, record)
+    return [item[1] for item in chosen.values()]
+
+
+def _run_import_job(import_id, file_path, original_name, namespace_prefix):
+    global _active_import_id
+    started = time.perf_counter()
+    audit_args = {"import_id": import_id, "filename": original_name,
+                  "namespace_prefix": namespace_prefix}
+    timings = {}
+    phase_started = time.perf_counter()
     try:
-        if not file_path.lower().endswith((".db", ".sqlite", ".sqlite3")):
-            raise ValueError("import source must be a SQLite .db/.sqlite/.sqlite3 file")
-        src = create_storage("sqlite", path=file_path, read_only=True)
-        try:
-            result = storage.merge(src, namespace_prefix=namespace_prefix)
-        finally:
-            src.conn.close()
-        # Summaries for imported records without one are generated in the
-        # background worker (like add/update) — never block the request.
-        enqueued = 0
-        for mid in result.get("imported_ids", []):
-            mem = storage.get(mid)
-            if mem is None or mem.get("summary"):
-                continue
-            summary_worker.enqueue(mid, mem["text"])
-            enqueued += 1
-        result["summarize_queued"] = enqueued
-        logger.info("import: %s", result)
-        return result
-    except Exception as e:
-        logger.error("import failed: %s", e, exc_info=True)
+        audit_args.update({"bytes": os.path.getsize(file_path),
+                           "sha256": sha256_file(file_path)})
+        _set_import_job(import_id, status="validating", phase="validating")
+        loaded = load_jsonl(file_path, max_records=IMPORT_MAX_RECORDS)
+        source_total = len(loaded["records"])
+        records = []
+        for item in loaded["records"]:
+            copied = dict(item)
+            copied["namespace"] = namespace_prefix + copied["namespace"]
+            records.append(copied)
+        records = _deduplicate_source(records)
+        effective_total = len(records)
+        primary = _primary_storage()
+        target_pairs = {(item["namespace"], item["text"])
+                        for item in primary.export_records()}
+        pre_skipped = source_total - effective_total
+        planned = []
+        for item in records:
+            if (item["namespace"], item["text"]) in target_pairs:
+                pre_skipped += 1
+            else:
+                planned.append(item)
+        timings["validating"] = round((time.perf_counter() - phase_started) * 1000, 3)
+        profile = primary.get_stats().get("embedding_profile", {}).get("active")
+        if not profile:
+            raise RuntimeError("target database has no active embedding profile")
+
+        _set_import_job(import_id, status="embedding_memories", phase="embedding_memories",
+                        source_total=source_total, effective_total=effective_total,
+                        progress={"completed": 0, "total": len(planned)},
+                        target_profile=profile, timings_ms=dict(timings))
+        phase_started = time.perf_counter()
+        vectors = embed_documents([item["text"] for item in planned]) if planned else []
+        if len(vectors) != len(planned):
+            raise RuntimeError("embedding provider returned the wrong number of memory vectors")
+        memory_vectors = {item["id"]: vector for item, vector in zip(planned, vectors)}
+        timings["embedding_memories"] = round(
+            (time.perf_counter() - phase_started) * 1000, 3
+        )
+        _set_import_job(import_id, progress={"completed": len(planned), "total": len(planned)},
+                        status="embedding_index_values", phase="embedding_index_values",
+                        timings_ms=dict(timings))
+
+        phase_started = time.perf_counter()
+        missing = set()
+        for item in planned:
+            missing.update(primary.missing_index_value_embeddings(item.get("metadata") or {}))
+        missing = sorted(missing)
+        index_vectors_list = (
+            embed_documents([value for _dimension, value in missing]) if missing else []
+        )
+        if len(index_vectors_list) != len(missing):
+            raise RuntimeError("embedding provider returned the wrong number of index vectors")
+        index_vectors = dict(zip(missing, index_vectors_list))
+        timings["embedding_index_values"] = round(
+            (time.perf_counter() - phase_started) * 1000, 3
+        )
+
+        _set_import_job(import_id, status="committing", phase="committing",
+                        timings_ms=dict(timings))
+        phase_started = time.perf_counter()
+        result = storage.import_records(planned, memory_vectors, index_vectors, profile)
+        timings["committing"] = round((time.perf_counter() - phase_started) * 1000, 3)
+        result.update({"source_total": source_total, "effective_total": effective_total,
+                       "skipped": result["skipped"] + pre_skipped,
+                       "target_profile": profile, "timings_ms": timings})
+        completed_at = _now_utc_iso()
+        _set_import_job(import_id, status="completed", phase="completed", result=result,
+                        completed_at=completed_at)
+        audit.record("memory_import", audit_args, result,
+                     (time.perf_counter() - started) * 1000)
+    except Exception as exc:
+        logger.error("JSONL import failed id=%s", import_id, exc_info=True)
+        error = {"type": type(exc).__name__, "message": str(exc)}
+        _set_import_job(import_id, status="failed", phase="failed", error=error,
+                        timings_ms=timings,
+                        completed_at=_now_utc_iso())
+        audit.record("memory_import", audit_args, None,
+                     (time.perf_counter() - started) * 1000, error=error)
+    finally:
+        unlink_quietly(file_path)
+        with _import_jobs_lock:
+            if _active_import_id == import_id:
+                _active_import_id = None
+
+
+def memory_import_start(file_path: str, original_name: str,
+                        namespace_prefix: str = "") -> dict:
+    global _active_import_id
+    if not original_name.lower().endswith((".jsonl", ".ndjson")):
+        raise ValueError("import file must end with .jsonl or .ndjson")
+    file_bytes = os.path.getsize(file_path)
+    if file_bytes > IMPORT_MAX_BYTES:
+        raise ValueError(f"import file exceeds {IMPORT_MAX_BYTES} bytes")
+    file_sha256 = sha256_file(file_path)
+    import_id = "im_" + os.urandom(8).hex()
+    with _import_jobs_lock:
+        if _active_import_id is not None:
+            raise RuntimeError("another import is already running")
+        _active_import_id = import_id
+        _import_jobs[import_id] = {
+            "import_id": import_id, "status": "queued", "phase": "queued",
+            "filename": os.path.basename(original_name), "bytes": file_bytes,
+            "sha256": file_sha256, "namespace_prefix": namespace_prefix,
+            "created_at": _now_utc_iso(), "progress": {"completed": 0, "total": 0},
+            "result": None, "error": None,
+        }
+        while len(_import_jobs) > 20:
+            _import_jobs.popitem(last=False)
+    worker = threading.Thread(
+        target=_run_import_job,
+        args=(import_id, file_path, os.path.basename(original_name), namespace_prefix),
+        daemon=True, name=f"memory-import-{import_id}",
+    )
+    try:
+        worker.start()
+    except Exception:
+        with _import_jobs_lock:
+            _import_jobs.pop(import_id, None)
+            if _active_import_id == import_id:
+                _active_import_id = None
         raise
+    return {"import_id": import_id, "status": "queued"}
 
 
 def memory_get_details(memory_ids: list[str]) -> dict:

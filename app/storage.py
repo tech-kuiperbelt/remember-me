@@ -123,15 +123,14 @@ class MemoryStorage(ABC):
     def clear(self, namespace: Optional[str] = None) -> int: ...
 
     @abstractmethod
-    def merge(self, source_storage: "MemoryStorage",
-              namespace_prefix: str = "") -> dict[str, Any]:
-        """Atomically import records from a complete, matching-profile SQLite store.
+    def export_records(self, namespace: Optional[str] = None) -> list[dict[str, Any]]:
+        """Return one consistent, vector-free snapshot of live records."""
+        raise NotImplementedError
 
-        Returns {"imported", "skipped", "renamed", "total", "imported_ids"}.
-        ``skipped`` counts records whose (namespace, text) already exists
-        (dedup on content + namespace). ``renamed`` counts records whose id
-        collided with an existing one but content differed (id regenerated).
-        """
+    @abstractmethod
+    def import_records(self, records, memory_embeddings, index_embeddings,
+                       expected_profile: str) -> dict[str, Any]:
+        """Atomically merge prepared records and target-profile vectors."""
         raise NotImplementedError
 
     @abstractmethod

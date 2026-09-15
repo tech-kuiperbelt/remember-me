@@ -4,17 +4,26 @@ import os
 import logging
 import threading
 import time
+import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from starlette.responses import Response, FileResponse
+from starlette.background import BackgroundTask
 from starlette.routing import Route
 from starlette.requests import Request
 
-from .service import memory_add, memory_search, memory_list, memory_get, \
-    memory_update, memory_delete, memory_clear, memory_stats, memory_sync, \
-    memory_namespaces, memory_migrate_namespace, memory_get_details, memory_summarize, \
-    memory_import, memory_storage_paths, storage, memory_extract_keywords
+from .service import (
+    memory_add, memory_search, memory_list, memory_get,
+    memory_update, memory_delete, memory_clear, memory_stats, memory_sync,
+    memory_namespaces, memory_migrate_namespace, memory_get_details, memory_summarize,
+    memory_import_start, memory_import_status, memory_export_full,
+    memory_export_namespace, memory_storage_paths, storage, memory_extract_keywords,
+    IMPORT_MAX_BYTES,
+)
 from .audit import read_events as audit_read_events
+from . import audit
 from .embed import EmbeddingInputTooLong
+from .jsonl_transfer import safe_filename_part, unlink_quietly
 
 logger = logging.getLogger("admin")
 
@@ -188,20 +197,158 @@ async def handle_clear_memories(request: Request):
 
 
 async def handle_import_memories(request: Request):
+    temp_path = None
+    started = time.perf_counter()
+    original_name = "upload.jsonl"
+    prefix = ""
+    total = 0
+    try:
+        form = await request.form()
+        upload = form.get("file")
+        if upload is None or not hasattr(upload, "read"):
+            raise ValueError("multipart field 'file' is required")
+        prefix = str(form.get("namespace_prefix") or "")
+        handle = tempfile.NamedTemporaryFile(
+            prefix="remember-me-import-", suffix=".jsonl", delete=False
+        )
+        temp_path = handle.name
+        try:
+            while True:
+                chunk = await upload.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > IMPORT_MAX_BYTES:
+                    raise ValueError(f"import file exceeds {IMPORT_MAX_BYTES} bytes")
+                handle.write(chunk)
+        finally:
+            handle.close()
+        original_name = getattr(upload, "filename", None) or "upload.jsonl"
+        logger.info("POST /api/import file=%s bytes=%d prefix=%s",
+                    os.path.basename(original_name), total, prefix)
+        result = memory_import_start(temp_path, original_name, prefix)
+        temp_path = None  # background job owns cleanup
+        return Response(json.dumps(result), status_code=202, media_type="application/json")
+    except RuntimeError as e:
+        unlink_quietly(temp_path)
+        audit.record(
+            "memory_import",
+            {"filename": os.path.basename(original_name), "bytes": total,
+             "namespace_prefix": prefix}, None,
+            (time.perf_counter() - started) * 1000,
+            error={"type": type(e).__name__, "message": str(e)},
+        )
+        return Response(json.dumps({"detail": str(e)}), status_code=409,
+                        media_type="application/json")
+    except (ValueError, TypeError) as e:
+        unlink_quietly(temp_path)
+        logger.warning("POST /api/import rejected: %s", e)
+        audit.record(
+            "memory_import",
+            {"filename": os.path.basename(original_name), "bytes": total,
+             "namespace_prefix": prefix}, None,
+            (time.perf_counter() - started) * 1000,
+            error={"type": type(e).__name__, "message": str(e)},
+        )
+        return Response(json.dumps({"detail": str(e)}, ensure_ascii=False),
+                        status_code=413 if "exceeds" in str(e) else 400,
+                        media_type="application/json")
+    except Exception as e:
+        unlink_quietly(temp_path)
+        logger.error("POST /api/import failed: %s", e, exc_info=True)
+        audit.record(
+            "memory_import",
+            {"filename": os.path.basename(original_name), "bytes": total,
+             "namespace_prefix": prefix}, None,
+            (time.perf_counter() - started) * 1000,
+            error={"type": type(e).__name__, "message": str(e)},
+        )
+        return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
+
+
+async def handle_import_status(request: Request):
+    result = memory_import_status(request.path_params["import_id"])
+    if result is None:
+        return Response(json.dumps({"detail": "Import job not found"}), status_code=404,
+                        media_type="application/json")
+    return Response(json.dumps(result, ensure_ascii=False), media_type="application/json")
+
+
+def _export_response(result, filename):
+    return FileResponse(
+        result["path"], filename=filename, media_type="application/x-ndjson",
+        headers={"X-Memory-Count": str(result["records"]),
+                 "X-Content-SHA256": result["sha256"]},
+        background=BackgroundTask(unlink_quietly, result["path"]),
+    )
+
+
+async def handle_export_full(request: Request):
+    started = time.perf_counter()
+    fd, path = tempfile.mkstemp(prefix="remember-me-export-full-", suffix=".jsonl")
+    os.close(fd)
+    try:
+        result = memory_export_full(path)
+        audit.record("memory_export", {"type": "full"}, result,
+                     (time.perf_counter() - started) * 1000)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        return _export_response(result, f"remember-me-full-{stamp}.jsonl")
+    except RuntimeError as exc:
+        unlink_quietly(path)
+        audit.record("memory_export", {"type": "full"}, None,
+                     (time.perf_counter() - started) * 1000,
+                     error={"type": type(exc).__name__, "message": str(exc)})
+        return Response(json.dumps({"detail": str(exc)}), status_code=409,
+                        media_type="application/json")
+    except Exception as exc:
+        unlink_quietly(path)
+        logger.error("Full Export failed", exc_info=True)
+        audit.record("memory_export", {"type": "full"}, None,
+                     (time.perf_counter() - started) * 1000,
+                     error={"type": type(exc).__name__, "message": str(exc)})
+        return Response(json.dumps({"detail": "Internal error"}), status_code=500,
+                        media_type="application/json")
+
+
+async def handle_export_namespace(request: Request):
+    started = time.perf_counter()
+    path = None
+    namespace = ""
     try:
         body = await request.json()
-        file_path = body["file_path"]
-        prefix = body.get("namespace_prefix", "")
-        logger.info("POST /api/import file=%s prefix=%s", file_path, prefix)
-        result = memory_import(file_path, prefix)
-        return Response(json.dumps(result, ensure_ascii=False), media_type="application/json")
-    except (ValueError, TypeError, RuntimeError) as e:
-        logger.warning("POST /api/import rejected: %s", e)
-        return Response(json.dumps({"detail": str(e)}, ensure_ascii=False),
-                        status_code=400, media_type="application/json")
-    except Exception as e:
-        logger.error("POST /api/import failed: %s", e, exc_info=True)
-        return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
+        namespace = body.get("namespace", "")
+        fd, path = tempfile.mkstemp(prefix="remember-me-export-ns-", suffix=".jsonl")
+        os.close(fd)
+        result = memory_export_namespace(namespace, path)
+        audit.record("memory_export", {"type": "namespace", "namespace": namespace}, result,
+                     (time.perf_counter() - started) * 1000)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        safe_ns = safe_filename_part(namespace)
+        return _export_response(
+            result, f"remember-me-namespace-{safe_ns}-{stamp}.jsonl"
+        )
+    except LookupError as exc:
+        unlink_quietly(path)
+        audit.record("memory_export", {"type": "namespace", "namespace": namespace}, None,
+                     (time.perf_counter() - started) * 1000,
+                     error={"type": type(exc).__name__, "message": str(exc)})
+        return Response(json.dumps({"detail": str(exc)}), status_code=404,
+                        media_type="application/json")
+    except (ValueError, TypeError) as exc:
+        unlink_quietly(path)
+        audit.record("memory_export", {"type": "namespace", "namespace": namespace}, None,
+                     (time.perf_counter() - started) * 1000,
+                     error={"type": type(exc).__name__, "message": str(exc)})
+        return Response(json.dumps({"detail": str(exc)}), status_code=400,
+                        media_type="application/json")
+    except Exception as exc:
+        unlink_quietly(path)
+        logger.error("Namespace Export failed", exc_info=True)
+        audit.record("memory_export", {"type": "namespace", "namespace": namespace}, None,
+                     (time.perf_counter() - started) * 1000,
+                     error={"type": type(exc).__name__, "message": str(exc)})
+        return Response(json.dumps({"detail": "Internal error"}), status_code=500,
+                        media_type="application/json")
 
 
 async def handle_search_memories(request: Request):
@@ -318,6 +465,9 @@ admin_routes = [
     Route("/api/stats", endpoint=handle_stats, methods=["GET"]),
     Route("/api/storage-paths", endpoint=handle_storage_paths, methods=["GET"]),
     Route("/api/import", endpoint=handle_import_memories, methods=["POST"]),
+    Route("/api/import/{import_id}", endpoint=handle_import_status, methods=["GET"]),
+    Route("/api/export/full", endpoint=handle_export_full, methods=["POST"]),
+    Route("/api/export/namespace", endpoint=handle_export_namespace, methods=["POST"]),
     Route("/api/sync", endpoint=handle_sync, methods=["POST"]),
     Route("/api/restart", endpoint=handle_restart, methods=["POST"]),
     Route("/api/summarize", endpoint=handle_summarize, methods=["POST"]),

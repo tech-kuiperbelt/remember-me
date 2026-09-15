@@ -20,7 +20,7 @@ import uvicorn
 from . import log_config  # noqa: F401
 from .service import memory_add, memory_search, memory_list, \
     memory_update, memory_delete, memory_stats, memory_get_details, \
-    memory_report, _prepare_for_llm, warmup_embedding_provider
+    memory_report, _prepare_for_llm, warmup_embedding_provider, storage
 from .audit import record as audit_record
 from .categories import CATEGORY_VOCABULARY, MAX_CATEGORIES
 
@@ -537,21 +537,29 @@ async def main():
         finally:
             from . import summary_worker
             summary_worker.shutdown()
+            if hasattr(storage, "stop"):
+                storage.stop()
     else:
         # ---- stdio mode ----
-        async with stdio_server() as (read_stream, write_stream):
-            await server.run(
-                read_stream,
-                write_stream,
-                InitializationOptions(
-                    server_name="memory-server",
-                    server_version="1.0.0",
-                    capabilities=ServerCapabilities(
-                        tools=ToolsCapability(listChanged=False),
-                        resources=ResourcesCapability(subscribe=False),
+        try:
+            async with stdio_server() as (read_stream, write_stream):
+                await server.run(
+                    read_stream,
+                    write_stream,
+                    InitializationOptions(
+                        server_name="memory-server",
+                        server_version="1.0.0",
+                        capabilities=ServerCapabilities(
+                            tools=ToolsCapability(listChanged=False),
+                            resources=ResourcesCapability(subscribe=False),
+                        ),
                     ),
-                ),
-            )
+                )
+        finally:
+            from . import summary_worker
+            summary_worker.shutdown()
+            if hasattr(storage, "stop"):
+                storage.stop()
 
 
 if __name__ == "__main__":

@@ -4,6 +4,8 @@ import json
 import os
 import threading
 import logging
+import fcntl
+from datetime import datetime, timezone
 
 logger = logging.getLogger("storage_ndjson")
 
@@ -31,7 +33,34 @@ class NDJSONReplica(ReplicaStorage):
         self._lock = threading.RLock()
         self._data: dict[str, dict] = {}
         self._tombstones = 0
+        self._writer_lock_file = None
         self._load()
+
+    def acquire_writer_lock(self):
+        """Hold a lifetime single-writer lock for one DualStorage instance."""
+        if self._writer_lock_file is not None:
+            return
+        lock_path = self.path + ".writer.lock"
+        os.makedirs(os.path.dirname(lock_path) or ".", exist_ok=True)
+        handle = open(lock_path, "a+")
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            handle.close()
+            raise RuntimeError(
+                f"NDJSON replica already has an active writer: {self.path}; "
+                "connect clients to the single HTTP service instead of starting another dual instance"
+            ) from exc
+        self._writer_lock_file = handle
+
+    def release_writer_lock(self):
+        handle = self._writer_lock_file
+        self._writer_lock_file = None
+        if handle is not None:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            finally:
+                handle.close()
 
     # -- I/O internals --
 
@@ -49,17 +78,24 @@ class NDJSONReplica(ReplicaStorage):
     def _scan_lines(self):
         records: dict[str, dict] = {}
         tombstones = 0
-        with open(self.path) as f:
+        with open(self.path, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line:
                     continue
                 try:
                     m = json.loads(line)
-                except json.JSONDecodeError:
+                    if not isinstance(m, dict):
+                        raise ValueError("record is not an object")
+                    rid = m.get("id")
+                    if not isinstance(rid, str) or not rid:
+                        raise ValueError("record has no id")
+                    if m.get("deleted") is not True and not isinstance(
+                            m.get("updated_at"), str):
+                        raise ValueError("live record has no updated_at")
+                except (json.JSONDecodeError, ValueError):
                     logger.warning("NDJSONReplica: corrupt line in %s, skipped", self.path)
                     continue
-                rid = m["id"]
                 if m.get("deleted"):
                     records.pop(rid, None)
                     tombstones += 1
@@ -76,7 +112,7 @@ class NDJSONReplica(ReplicaStorage):
     def _append_line(self, record: dict):
         """Append one JSON line to the file. Caller must hold _lock."""
         line = json.dumps(self._without_embedding(record), ensure_ascii=False) + "\n"
-        with open(self.path, "a") as f:
+        with open(self.path, "a", encoding="utf-8") as f:
             f.write(line)
 
     @staticmethod
@@ -88,7 +124,7 @@ class NDJSONReplica(ReplicaStorage):
         """Rewrite file from _data dict, atomically, removing tombstones/dupes."""
         tmp = self.path + ".tmp"
         try:
-            with open(tmp, "w") as f:
+            with open(tmp, "w", encoding="utf-8") as f:
                 for m in self._data.values():
                     f.write(json.dumps(self._without_embedding(m), ensure_ascii=False) + "\n")
             os.replace(tmp, self.path)
@@ -178,6 +214,13 @@ class NDJSONReplica(ReplicaStorage):
             self._compact_file()
 
     def get_stats(self):
+        from .jsonl_transfer import inspect_jsonl
+        try:
+            integrity = inspect_jsonl(self.path)
+        except FileNotFoundError:
+            integrity = {"records": [], "corrupt_lines": 0, "errors": []}
+        except (OSError, UnicodeError) as exc:
+            integrity = {"records": [], "corrupt_lines": 1, "errors": [str(exc)]}
         try:
             fsize = os.path.getsize(self.path)
         except OSError:
@@ -192,6 +235,13 @@ class NDJSONReplica(ReplicaStorage):
             "tombstones": self._tombstones,
             "namespaces": list(namespaces),
             "namespace_counts": ns_counts,
+            "integrity": {
+                "checked_at": datetime.now(timezone.utc).isoformat(),
+                "records": len(integrity["records"]),
+                "corrupt_lines": integrity["corrupt_lines"],
+                "errors": integrity["errors"],
+            },
+            "_integrity_ids": [record["id"] for record in integrity["records"]],
             "backend": "ndjson",
             "path": self.path,
         }

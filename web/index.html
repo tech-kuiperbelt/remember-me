@@ -275,12 +275,12 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
 
   <!-- Import -->
   <div class="card">
-    <div class="card-header">Import</div>
+    <div class="card-header">JSONL Import</div>
     <div class="card-body">
       <div class="form-row">
         <div class="form-group" style="flex:2">
-          <label>SQLite file path (same active profile required)</label>
-          <input id="import-path" placeholder="/path/to/memories.db" accept=".db,.sqlite,.sqlite3">
+          <label>JSONL file (max 64 MiB / 10,000 live records)</label>
+          <input id="import-file" type="file" accept=".jsonl,.ndjson,application/x-ndjson">
         </div>
         <div class="form-group" style="flex:1">
           <label>Namespace prefix (optional)</label>
@@ -290,6 +290,25 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
       <div style="margin-top:16px">
         <button id="btn-import" class="btn btn-primary" onclick="doImport()">Import</button>
         <span id="import-result" style="margin-left:12px;font-size:13px"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Export -->
+  <div class="card">
+    <div class="card-header">JSONL Export</div>
+    <div class="card-body">
+      <p style="font-size:13px;color:#888;margin-bottom:12px">Full Export refreshes and verifies the disaster-recovery JSONL before download. Namespace Export creates an independent partial snapshot.</p>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Namespace</label>
+          <select id="export-namespace"><option value="">Select namespace...</option></select>
+        </div>
+      </div>
+      <div style="margin-top:16px">
+        <button id="btn-export-full" class="btn btn-primary" onclick="doExportFull()">Full Export</button>
+        <button id="btn-export-ns" class="btn btn-outline" onclick="doExportNamespace()">Export Namespace</button>
+        <span id="export-result" style="margin-left:12px;font-size:13px"></span>
       </div>
     </div>
   </div>
@@ -1041,6 +1060,16 @@ async function loadOpsPage() {
     if (ns === sumCur) opt.selected = true;
     sumSel.appendChild(opt);
   });
+  const exportSel = $('export-namespace');
+  const exportCur = exportSel.value;
+  exportSel.innerHTML = '<option value="">Select namespace...</option>';
+  nsList.forEach(ns => {
+    const opt = document.createElement('option');
+    opt.value = ns;
+    opt.textContent = `${ns} (${data.namespace_counts[ns]})`;
+    if (ns === exportCur) opt.selected = true;
+    exportSel.appendChild(opt);
+  });
   // Extract-keywords namespace dropdown
   const kwSel = $('kw-ns');
   const kwCur = kwSel.value;
@@ -1116,26 +1145,79 @@ async function doRestartServer() {
 }
 
 async function doImport() {
-  const path = $('import-path').value.trim();
+  const file = $('import-file').files[0];
   const prefix = $('import-prefix').value.trim();
   const resultEl = $('import-result');
   const btn = $('btn-import');
-  if (!path) { resultEl.textContent = 'Please enter a file path.'; return; }
+  if (!file) { resultEl.textContent = 'Please select a JSONL file.'; return; }
   btn.disabled = true;
   resultEl.textContent = 'Importing...';
   try {
-    const result = await api('/import', {
-      method: 'POST',
-      body: JSON.stringify({file_path: path, namespace_prefix: prefix}),
-    });
-    const total = result.imported_ids ? result.imported_ids.length : 0;
-    resultEl.textContent = `✅ Imported ${total} memories (summarized: ${result.summarized || 0}, failed: ${result.summarize_failed || 0}).`;
+    const form = new FormData();
+    form.append('file', file);
+    form.append('namespace_prefix', prefix);
+    const response = await fetch('/api/import', {method: 'POST', body: form});
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || response.statusText);
+    resultEl.textContent = `Import ${result.import_id}: queued`;
+    while (true) {
+      await new Promise(resolve => setTimeout(resolve, 750));
+      const status = await api('/import/' + encodeURIComponent(result.import_id));
+      resultEl.textContent = `Import ${result.import_id}: ${status.phase}`;
+      if (status.status === 'completed') {
+        resultEl.textContent = `✅ Imported ${status.result.imported}; skipped ${status.result.skipped}; renamed ${status.result.renamed}.`;
+        break;
+      }
+      if (status.status === 'failed') throw new Error(status.error.message);
+    }
     refreshStats();
   } catch(e) {
     resultEl.textContent = 'Error: ' + e.message;
   } finally {
     btn.disabled = false;
   }
+}
+
+async function downloadExport(path, options) {
+  const response = await fetch('/api' + path, options);
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || response.statusText);
+  }
+  const blob = await response.blob();
+  const disposition = response.headers.get('Content-Disposition') || '';
+  const match = disposition.match(/filename="?([^";]+)"?/i);
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = match ? match[1] : 'remember-me-export.jsonl';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(link.href);
+  return response.headers.get('X-Memory-Count') || '?';
+}
+
+async function doExportFull() {
+  const resultEl = $('export-result');
+  resultEl.textContent = 'Full Sync and export in progress...';
+  try {
+    const count = await downloadExport('/export/full', {method: 'POST'});
+    resultEl.textContent = `✅ Downloaded full snapshot (${count} records).`;
+  } catch (e) { resultEl.textContent = 'Error: ' + e.message; }
+}
+
+async function doExportNamespace() {
+  const namespace = $('export-namespace').value;
+  const resultEl = $('export-result');
+  if (!namespace) { resultEl.textContent = 'Please select a namespace.'; return; }
+  resultEl.textContent = 'Exporting namespace...';
+  try {
+    const count = await downloadExport('/export/namespace', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({namespace}),
+    });
+    resultEl.textContent = `✅ Downloaded ${namespace} (${count} records).`;
+  } catch (e) { resultEl.textContent = 'Error: ' + e.message; }
 }
 
 async function doSync() {

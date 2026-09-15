@@ -38,7 +38,7 @@ class SQLiteStorage(MemoryStorage):
         self._lock = threading.RLock()
         if read_only:
             if path == ":memory:" or not os.path.isfile(path):
-                raise FileNotFoundError(f"SQLite import source does not exist: {path}")
+                raise FileNotFoundError(f"SQLite database does not exist: {path}")
             uri = Path(path).resolve().as_uri() + "?mode=ro"
             self.conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
         else:
@@ -1351,120 +1351,85 @@ class SQLiteStorage(MemoryStorage):
             self.conn.commit()
         return n
 
-    def merge(self, source_storage, namespace_prefix=""):
-        """Atomically import a complete SQLite snapshot in the same vector space."""
-        if not isinstance(source_storage, SQLiteStorage):
-            raise TypeError("import source must be SQLiteStorage")
-        if self.path != ":memory:" and source_storage.path != ":memory:":
-            if os.path.realpath(self.path) == os.path.realpath(source_storage.path):
-                raise ValueError("cannot import a SQLite database into itself")
-
-        source_profile = source_storage._active_profile_id
-        target_profile = self._active_profile_id
-        if not source_profile or not target_profile:
-            raise RuntimeError("source and target must both have an active embedding profile")
-        if source_profile != target_profile:
-            raise RuntimeError(
-                "source and target active embedding profiles must match: "
-                f"source={source_profile}, target={target_profile}; "
-                "cross-profile import requires memory_import v2"
-            )
-        target_index = self.index_embedding_completeness(target_profile)
-        if not target_index["complete"]:
-            raise RuntimeError(
-                "target index-value embeddings are incomplete: "
-                f"expected={target_index['expected']}, stored={target_index['stored']}"
-            )
-
-        with source_storage._lock:
-            source_total = source_storage.conn.execute(
-                "SELECT COUNT(*) FROM memories WHERE deleted = 0"
-            ).fetchone()[0]
-            source_vectors = source_storage.conn.execute(
-                "SELECT COUNT(*) FROM memory_embeddings me "
-                "JOIN memories m ON m.id=me.memory_id "
-                "WHERE me.profile_id=? AND m.deleted=0", (source_profile,)
-            ).fetchone()[0]
-            if source_vectors != source_total:
-                raise RuntimeError(
-                    "source memory embeddings are incomplete: "
-                    f"expected={source_total}, stored={source_vectors}"
-                )
-            source_index = source_storage.index_embedding_completeness(source_profile)
-            if not source_index["complete"]:
-                raise RuntimeError(
-                    "source index-value embeddings are incomplete: "
-                    f"expected={source_index['expected']}, stored={source_index['stored']}"
-                )
-            src_memories = source_storage.list_memories(limit=10 ** 9)
-            source_index_rows = source_storage.conn.execute(
-                "SELECT iv.dimension, iv.value, ive.embedding "
-                "FROM index_values iv JOIN index_value_embeddings ive "
-                "ON ive.index_value_id=iv.id AND ive.profile_id=? "
-                "JOIN memory_index_values link ON link.index_value_id=iv.id "
-                "JOIN memories m ON m.id=link.memory_id WHERE m.deleted=0 "
-                "GROUP BY iv.id, iv.dimension, iv.value, ive.embedding",
-                (source_profile,),
-            ).fetchall()
-            source_index_embeddings = {
-                (row["dimension"], row["value"]): source_storage._deserialize(row["embedding"])
-                for row in source_index_rows
-            }
-
-        imported = 0
-        renamed = 0
-        skipped = 0
-        imported_ids = []
+    def export_records(self, namespace=None):
+        """Return a consistent vector-free snapshot in one SQLite statement."""
+        sql = ("SELECT id, text, metadata, namespace, created_at, updated_at, summary "
+               "FROM memories WHERE deleted = 0")
+        params = []
+        if namespace is not None:
+            sql += " AND namespace = ?"
+            params.append(namespace)
+        sql += " ORDER BY created_at, id"
         with self._lock:
-            existing_ids = set(
-                row[0]
-                for row in self.conn.execute("SELECT id FROM memories WHERE deleted = 0").fetchall()
-            )
-            existing_pairs = set(
-                (row[0], row[1])
-                for row in self.conn.execute(
-                    "SELECT namespace, text FROM memories WHERE deleted = 0"
-                ).fetchall()
-            )
+            rows = self.conn.execute(sql, params).fetchall()
+        return [{
+            "id": row["id"], "text": row["text"],
+            "metadata": json.loads(row["metadata"]), "namespace": row["namespace"],
+            "created_at": row["created_at"], "updated_at": row["updated_at"],
+            "summary": row["summary"],
+        } for row in rows]
+
+    def import_records(self, records, memory_embeddings, index_embeddings,
+                       expected_profile):
+        """Atomically merge prepared JSONL records into the active profile."""
+        with self._lock:
             try:
-                self.conn.execute("BEGIN")
-                for m in src_memories:
-                    ns = namespace_prefix + m["namespace"]
-                    if (ns, m["text"]) in existing_pairs:
+                self.conn.execute("BEGIN IMMEDIATE")
+                if self._active_profile_id != expected_profile:
+                    raise RuntimeError(
+                        "active embedding profile changed during import: "
+                        f"expected={expected_profile}, active={self._active_profile_id}"
+                    )
+                existing_ids = {row[0] for row in self.conn.execute(
+                    # Soft-deleted rows still occupy the primary key. Imports
+                    # must rename collisions with both live and deleted rows.
+                    "SELECT id FROM memories"
+                ).fetchall()}
+                existing_pairs = {(row[0], row[1]) for row in self.conn.execute(
+                    "SELECT namespace, text FROM memories WHERE deleted = 0"
+                ).fetchall()}
+                imported_ids = []
+                skipped = renamed = 0
+                used_index_keys = set()
+                for memory in records:
+                    pair = (memory["namespace"], memory["text"])
+                    if pair in existing_pairs:
                         skipped += 1
                         continue
-                    mid = m["id"]
-                    id_collided = mid in existing_ids
-                    while mid in existing_ids:
-                        mid = _new_id()
-                    if id_collided:
-                        renamed += 1
-                    existing_ids.add(mid)
-                    existing_pairs.add((ns, m["text"]))
+                    source_id = memory["id"]
+                    memory_id = source_id
+                    collided = memory_id in existing_ids
+                    while memory_id in existing_ids:
+                        memory_id = _new_id()
+                    renamed += int(collided)
+                    existing_ids.add(memory_id)
+                    existing_pairs.add(pair)
                     self.conn.execute(
                         "INSERT INTO memories "
                         "(id, text, embedding, metadata, namespace, created_at, updated_at, "
                         "synced, summary) VALUES (?, ?, NULL, ?, ?, ?, ?, 0, ?)",
-                        (mid, m["text"], json.dumps(m["metadata"]), ns,
-                         m["created_at"], m["updated_at"], m.get("summary")),
+                        (memory_id, memory["text"], json.dumps(memory.get("metadata") or {}),
+                         memory["namespace"], memory["created_at"], memory["updated_at"],
+                         memory.get("summary")),
                     )
-                    self._store_active_embedding(mid, m["embedding"])
-                    self._sync_metadata_indexes(mid, m.get("metadata") or {})
-                    memory_index_embeddings = {}
+                    self._store_active_embedding(memory_id, memory_embeddings[source_id])
+                    self._sync_metadata_indexes(memory_id, memory.get("metadata") or {})
                     for dimension in _INDEX_DIMENSIONS:
-                        for value in self._extract_index_values(
-                                dimension, m.get("metadata") or {}):
-                            key = (dimension, value)
-                            memory_index_embeddings[key] = source_index_embeddings[key]
-                    self._store_index_value_embeddings(memory_index_embeddings)
-                    imported += 1
-                    imported_ids.append(mid)
+                        used_index_keys.update(
+                            (dimension, value) for value in self._extract_index_values(
+                                dimension, memory.get("metadata") or {})
+                        )
+                    imported_ids.append(memory_id)
+                self._store_index_value_embeddings({
+                    key: vector for key, vector in index_embeddings.items()
+                    if key in used_index_keys
+                })
                 self.conn.commit()
             except Exception:
                 self.conn.rollback()
                 raise
-        return {"imported": imported, "skipped": skipped, "renamed": renamed,
-                "total": len(src_memories), "imported_ids": imported_ids}
+        return {"imported": len(imported_ids), "skipped": skipped,
+                "renamed": renamed, "imported_ids": imported_ids}
 
     def get_stats(self):
         with self._lock:

@@ -7,7 +7,9 @@ globals (storage, embed, summary_worker.enqueue) so no Ollama call and no
 background summary work ever happens.
 """
 
-from unittest.mock import MagicMock, patch
+import json
+import time
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -174,31 +176,58 @@ def test_storage_paths_single_backend(service, monkeypatch):
     assert "primary_path" not in result
 
 
-def test_memory_import_accepts_only_sqlite_source(service, mocked):
-    with pytest.raises(ValueError, match="SQLite"):
-        service.memory_import("legacy.json")
-    mocked["storage"].merge.assert_not_called()
+def test_memory_import_accepts_only_jsonl(service, tmp_path):
+    path = tmp_path / "legacy.sqlite"
+    path.write_bytes(b"SQLite format 3\0")
+    with pytest.raises(ValueError, match="jsonl or .ndjson"):
+        service.memory_import_start(str(path), "legacy.sqlite")
 
 
-def test_memory_import_closes_source_and_queues_summary_after_merge(
-        service, mocked, monkeypatch):
-    source = MagicMock()
-    monkeypatch.setattr(service, "create_storage", MagicMock(return_value=source))
-    mocked["storage"].merge.return_value = {
-        "imported": 1, "skipped": 0, "renamed": 0, "total": 1,
-        "imported_ids": ["new-id"],
+def test_memory_import_background_job_preserves_missing_summary_without_worker(
+        service, mocked, monkeypatch, tmp_path):
+    path = tmp_path / "backup.jsonl"
+    path.write_text(json.dumps({
+        "id": "source-id", "text": "body", "metadata": {}, "namespace": "old",
+        "created_at": "2026-01-01T00:00:00+00:00",
+        "updated_at": "2026-01-01T00:00:00+00:00", "summary": None,
+    }) + "\n", encoding="utf-8")
+    mocked["storage"].export_records.return_value = []
+    mocked["storage"].get_stats.return_value = {
+        "embedding_profile": {"active": "profile"}
     }
-    mocked["storage"].get.return_value = {"id": "new-id", "text": "body", "summary": None}
+    mocked["storage"].missing_index_value_embeddings.return_value = []
+    mocked["storage"].import_records.return_value = {
+        "imported": 1, "skipped": 0, "renamed": 0, "imported_ids": ["source-id"],
+    }
+    monkeypatch.setattr(service, "embed_documents", lambda texts: [[0.1] for _ in texts])
+    monkeypatch.setattr(service.audit, "record", MagicMock())
 
-    result = service.memory_import("source.sqlite", "old-")
+    started = service.memory_import_start(str(path), "backup.jsonl", "archive-")
+    deadline = time.time() + 2
+    while time.time() < deadline:
+        job = service.memory_import_status(started["import_id"])
+        if job["status"] in ("completed", "failed"):
+            break
+        time.sleep(0.01)
 
-    service.create_storage.assert_called_once_with(
-        "sqlite", path="source.sqlite", read_only=True
-    )
-    mocked["storage"].merge.assert_called_once_with(source, namespace_prefix="old-")
-    source.conn.close.assert_called_once()
-    mocked["enqueue"].assert_called_once_with("new-id", "body")
-    assert result["summarize_queued"] == 1
+    assert job["status"] == "completed"
+    assert job["result"]["imported"] == 1
+    records = mocked["storage"].import_records.call_args.args[0]
+    assert records[0]["namespace"] == "archive-old"
+    assert records[0]["summary"] is None
+    mocked["enqueue"].assert_not_called()
+    assert not path.exists()
+
+
+def test_memory_import_rejects_concurrent_job(service, monkeypatch, tmp_path):
+    path = tmp_path / "backup.jsonl"
+    path.write_text("", encoding="utf-8")
+    monkeypatch.setattr(service, "_active_import_id", "im_running")
+
+    with pytest.raises(RuntimeError, match="already running"):
+        service.memory_import_start(str(path), "backup.jsonl")
+
+    assert path.exists()  # ownership stays with the rejected caller
 
 
 @pytest.mark.parametrize("backend", ["json", "ndjson", "jsonl", "unknown"])

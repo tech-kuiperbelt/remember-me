@@ -60,17 +60,37 @@ def test_full_sync_publishes_vector_free_snapshot(tmp_path, fake_emb):
     assert secondary.get_stats()["total"] == 2
 
 
+def test_full_export_syncs_verifies_and_copies_immutable_snapshot(tmp_path, fake_emb):
+    primary = SQLiteStorage(":memory:")
+    added = primary.add("exported", fake_emb, namespace="ns")
+    replica_path = tmp_path / "memories.jsonl"
+    export_path = tmp_path / "download.jsonl"
+    dual = DualStorage(primary, NDJSONReplica(str(replica_path)), start_background=False)
+    try:
+        result = dual.export_full_snapshot(str(export_path))
+        before = export_path.read_bytes()
+        primary.add("later", fake_emb, namespace="ns")
+
+        assert result["records"] == 1
+        assert result["integrity"] == {
+            "missing": 0, "extra": 0, "mismatched": 0, "corrupt_lines": 0,
+        }
+        assert result["generated_at"]
+        load_ids = {item["id"] for item in NDJSONReplica(
+            str(export_path)).list_records(limit=10)}
+        assert load_ids == {added["id"]}
+        assert export_path.read_bytes() == before
+    finally:
+        dual.stop()
+
+
 def test_full_sync_keeps_existing_replica_when_primary_read_fails(tmp_path, fake_emb):
     replica_path = tmp_path / "memories.jsonl"
     secondary = NDJSONReplica(str(replica_path))
     secondary.upsert(_record("existing", "existing backup"))
 
     class FailingPrimary:
-        def list_memories(self, limit, offset):
-            if offset == 0:
-                return [{"id": "new", "text": "new", "embedding": fake_emb,
-                         "metadata": {}, "namespace": "ns", "created_at": "1",
-                         "updated_at": "1", "summary": None}]
+        def export_records(self):
             raise RuntimeError("primary read failed")
 
     with pytest.raises(RuntimeError, match="primary read failed"):
@@ -150,6 +170,7 @@ def test_due_compact_reclaims_stale_lines_persists_state_and_updates_stats(
     assert audit_record.call_args.args[0] == "ndjson_compact"
     assert audit_record.call_args.args[2]["outcome"] == "compacted"
 
+    dual.stop()
     primary.conn.close()
     reloaded_primary = SQLiteStorage(str(primary_path))
     reloaded = DualStorage(reloaded_primary, NDJSONReplica(str(replica_path)),
@@ -158,6 +179,7 @@ def test_due_compact_reclaims_stale_lines_persists_state_and_updates_stats(
     reloaded.secondary.compact = compact_mock
     reloaded._run_due_compact("startup")
     assert compact_mock.call_count == 0
+    reloaded.stop()
     reloaded_primary.conn.close()
 
 
@@ -185,3 +207,36 @@ def test_due_compact_records_error_without_touching_replica(tmp_path, fake_emb, 
     assert state["last_result"] == "error"
     assert "disk full" in state["last_error"]
     assert audit_record.call_args.kwargs["error"]["type"] == "OSError"
+    dual.stop()
+
+
+def test_dual_rejects_a_second_writer_for_the_same_replica(tmp_path):
+    replica_path = tmp_path / "memories.jsonl"
+    first = DualStorage(SQLiteStorage(":memory:"), NDJSONReplica(str(replica_path)),
+                        start_background=False)
+    try:
+        with pytest.raises(RuntimeError, match="active writer"):
+            DualStorage(SQLiteStorage(":memory:"), NDJSONReplica(str(replica_path)),
+                        start_background=False)
+    finally:
+        first.stop()
+
+
+def test_stats_detects_id_drift_and_corrupt_lines(tmp_path, fake_emb):
+    primary = SQLiteStorage(":memory:")
+    primary.add("primary-only", fake_emb)
+    replica_path = tmp_path / "memories.jsonl"
+    secondary = NDJSONReplica(str(replica_path))
+    secondary.upsert(_record("extra", "replica-only"))
+    with replica_path.open("a", encoding="utf-8") as handle:
+        handle.write("{broken}\n")
+    dual = DualStorage(primary, secondary, start_background=False)
+    try:
+        stats = dual.get_stats()
+        assert stats["in_sync"] is False
+        assert stats["replica_integrity"]["missing"] == 1
+        assert stats["replica_integrity"]["extra"] == 1
+        assert stats["replica_integrity"]["corrupt_lines"] == 1
+        assert stats["replica_integrity"]["checked_at"]
+    finally:
+        dual.stop()

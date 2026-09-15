@@ -127,6 +127,8 @@ def _trim_params(tool: str, arguments: dict | None, result=None) -> dict:
             args["summary_mode"] = "fallback"
         else:
             args["summary_mode"] = "preserved"
+    elif tool in ("memory_import", "memory_export"):
+        args.pop("path", None)
     for key in _TEXT_KEYS:
         args.pop(key, None)
     if tool == "search_semantic":
@@ -210,6 +212,10 @@ def _trim_result(tool: str, result) -> dict | None:
         # journal on every stats call) and provider URLs (config, not stats).
         return {k: v for k, v in result.items()
                 if k not in ("keyword_counts", "ollama_base_url")}
+
+    if tool in ("memory_import", "memory_export"):
+        return {key: value for key, value in result.items()
+                if key not in ("path", "source_path", "imported_ids")}
 
     return dict(result)
 
