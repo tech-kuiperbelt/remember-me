@@ -1,9 +1,9 @@
-"""Batch keyword backfill for existing memories using deepseek-v4-flash.
+"""Explicit offline keyword backfill for existing memories using deepseek-v4-flash.
 
-A drop-in replacement for the local-Ollama migration (service.memory_extract_keywords
-+ app/keyword_extract.py). The local qwen3 path proved unstable and very slow on
-pure CPU; deepseek-v4-flash via the `opencode run` CLI returns a clean JSON array
-in ~11s per record with consistent quality.
+The previous local-Ollama migration was removed from the service and admin UI.
+This CLI is intentionally separate: an operator explicitly invokes it with
+``opencode run`` when a historical backfill is desired. It does not create a
+runtime MCP or HTTP dependency on a generative model.
 
 Design:
 - STRICTLY SERIAL: each record's extraction depends on the accumulated keyword

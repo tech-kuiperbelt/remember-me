@@ -613,63 +613,6 @@ def memory_get_details(memory_ids: list[str]) -> dict:
         raise
 
 
-def memory_extract_keywords(namespace: str | None = None, mode: str = "missing",
-                            memory_id: str | None = None) -> dict:
-    """Backfill metadata.keywords for existing memories using the local LLM.
-
-    mode="missing" (default): only records without metadata.keywords.
-    mode="all": re-extract keywords for every record (overwrite).
-
-    When ``memory_id`` is given, only that memory is processed.
-
-    Keywords are written via storage.update_metadata() so updated_at is left
-    unchanged (migration must not perturb time-based list ordering). The
-    SQLite keyword index is rebuilt per record as part of the write.
-    """
-    from .keyword_extract import extract_keywords as _extract
-    mode = mode if mode in ("missing", "all") else "missing"
-    logger.info("keyword extraction migration: namespace=%s mode=%s memory_id=%s", namespace, mode, memory_id)
-    try:
-        if memory_id:
-            m = storage.get(memory_id)
-            if m is None:
-                result = {"processed": 0, "failed": 0, "mode": mode, "total": 0,
-                          "error": f"memory not found: {memory_id}", "memory_id": memory_id}
-                logger.info("keyword extraction migration done: %s", result)
-                return result
-            memories = [m]
-        else:
-            memories = memory_list(namespace=namespace, limit=10 ** 9)
-        processed = 0
-        failed = 0
-        for m in memories:
-            if mode == "missing" and m.get("metadata", {}).get("keywords"):
-                continue
-            try:
-                keywords = _extract(m["text"])
-            except Exception:
-                # keep keywords empty so the record remains eligible for retry
-                failed += 1
-                continue
-            if not keywords:
-                failed += 1
-                continue
-            metadata_update = {"keywords": keywords}
-            index_embeddings = _index_resolver().prepare_embeddings(metadata_update)
-            storage.update_metadata(
-                m["id"], metadata_update, index_embeddings=index_embeddings
-            )
-            processed += 1
-        result = {"processed": processed, "failed": failed, "mode": mode, "total": len(memories)}
-        if memory_id:
-            result["memory_id"] = memory_id
-        logger.info("keyword extraction migration done: %s", result)
-        return result
-    except Exception as e:
-        logger.error("keyword extraction migration failed: %s", e, exc_info=True)
-        raise
-
-
 def memory_sync() -> dict:
     """Manually trigger full sync of secondary from primary (dual mode only)."""
     logger.info("sync")

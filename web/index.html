@@ -323,37 +323,6 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
     </div>
   </div>
 
-  <!-- Extract Keywords (migration) -->
-  <div class="card">
-    <div class="card-header">Extract Keywords</div>
-    <div class="card-body">
-      <p style="font-size:13px;color:#888;margin-bottom:12px">Backfill metadata.keywords for existing memories using the local LLM (qwen). Missing mode only processes records without keywords; updated_at is not changed.</p>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Namespace (optional)</label>
-          <select id="kw-ns">
-            <option value="">(all namespaces)</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Memory ID (optional)</label>
-          <input id="kw-id" placeholder="Leave empty for batch">
-        </div>
-      </div>
-      <div class="form-group">
-        <label>Mode</label>
-        <select id="kw-mode">
-          <option value="missing">Missing only (default)</option>
-          <option value="all">Re-extract all</option>
-        </select>
-      </div>
-      <div style="margin-top:16px">
-        <button id="btn-kw" class="btn btn-primary" onclick="doExtractKeywords()">Extract Keywords</button>
-        <span id="kw-result" style="margin-left:12px;font-size:13px"></span>
-      </div>
-    </div>
-  </div>
-
   <!-- Clear -->
   <div class="card">
     <div class="card-header">Clear</div>
@@ -1028,17 +997,6 @@ async function loadOpsPage() {
     if (ns === exportCur) opt.selected = true;
     exportSel.appendChild(opt);
   });
-  // Extract-keywords namespace dropdown
-  const kwSel = $('kw-ns');
-  const kwCur = kwSel.value;
-  kwSel.innerHTML = '<option value="">(all namespaces)</option>';
-  nsList.forEach(ns => {
-    const opt = document.createElement('option');
-    opt.value = ns;
-    opt.textContent = ns;
-    if (ns === kwCur) opt.selected = true;
-    kwSel.appendChild(opt);
-  });
   // Clear namespace dropdown
   const clrSel = $('clear-ns');
   const clrCur = clrSel.value;
@@ -1206,31 +1164,6 @@ async function fetchStoragePaths() {
     }
   } catch(e) {
     // Not in dual mode — paths may be unavailable; leave placeholders empty.
-  }
-}
-
-async function doExtractKeywords() {
-  const ns = $('kw-ns').value.trim() || undefined;
-  const memoryId = $('kw-id').value.trim() || undefined;
-  const mode = $('kw-mode').value;
-  const resultEl = $('kw-result');
-  const btn = $('btn-kw');
-  btn.disabled = true;
-  resultEl.textContent = 'Extracting... (this may take a while)';
-  try {
-    const result = await api('/extract-keywords', {
-      method: 'POST',
-      body: JSON.stringify({namespace: ns, mode, memory_id: memoryId}),
-    });
-    if (result.error) {
-      resultEl.textContent = result.error;
-    } else {
-      resultEl.textContent = `✅ Processed ${result.processed || 0} / total ${result.total || 0} (failed: ${result.failed || 0}).`;
-    }
-  } catch(e) {
-    resultEl.textContent = 'Error: ' + e.message;
-  } finally {
-    btn.disabled = false;
   }
 }
 
