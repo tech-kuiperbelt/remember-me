@@ -403,6 +403,11 @@ class DualStorage(MemoryStorage):
         self._stop.set()
         if self._job is not None and self._job.is_alive():
             self._job.join(timeout=max(1, min(self.sync_interval + 1, 10)))
-        release = getattr(type(self.secondary), "release_writer_lock", None)
-        if callable(release) and (self._job is None or not self._job.is_alive()):
-            self.secondary.release_writer_lock()
+        try:
+            release = getattr(type(self.secondary), "release_writer_lock", None)
+            if callable(release) and (self._job is None or not self._job.is_alive()):
+                self.secondary.release_writer_lock()
+        finally:
+            stop_primary = getattr(self.primary, "stop", None)
+            if callable(stop_primary):
+                stop_primary()

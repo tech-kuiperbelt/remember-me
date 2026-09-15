@@ -13,6 +13,7 @@ from .storage import MemoryStorage, _now, _new_id, _cosine_similarity, DEFAULT_N
 from .categories import MAX_CATEGORIES
 from .embedding_codec import decode_embedding, encode_embedding, inspect_embedding_blob
 from .summary_policy import summary_for_add, summary_for_update
+from .database_lock import DatabaseWriterLock
 
 
 # Both dimensions are persisted in memories.metadata and indexed through one
@@ -30,25 +31,53 @@ _INDEX_DIMENSIONS = {
 
 class SQLiteStorage(MemoryStorage):
     def __init__(self, path: str = "data/memories.db", embedding_dtype: str = "float16",
-                 embedding_spec: dict | None = None, read_only: bool = False):
+                 embedding_spec: dict | None = None, read_only: bool = False,
+                 writer_lock: bool = False):
         self.path = path
         self.embedding_dtype = embedding_dtype
         self.embedding_spec = embedding_spec
         self.read_only = read_only
         self._active_profile_id = None
         self._lock = threading.RLock()
-        if read_only:
-            if path == ":memory:" or not os.path.isfile(path):
-                raise FileNotFoundError(f"SQLite database does not exist: {path}")
-            uri = Path(path).resolve().as_uri() + "?mode=ro"
-            self.conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
-        else:
-            self.conn = sqlite3.connect(path, check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row
-        if read_only:
-            self._load_active_embedding_profile()
-        else:
-            self._init_db()
+        self._writer_lock = (DatabaseWriterLock(path)
+                             if writer_lock and not read_only and path != ":memory:"
+                             else None)
+        self.conn = None
+        try:
+            if self._writer_lock is not None:
+                self._writer_lock.acquire()
+            if read_only:
+                if path == ":memory:" or not os.path.isfile(path):
+                    raise FileNotFoundError(f"SQLite database does not exist: {path}")
+                uri = Path(path).resolve().as_uri() + "?mode=ro"
+                self.conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
+            else:
+                self.conn = sqlite3.connect(path, check_same_thread=False)
+            self.conn.row_factory = sqlite3.Row
+            if read_only:
+                self._load_active_embedding_profile()
+            else:
+                self._init_db()
+        except Exception:
+            if self.conn is not None:
+                self.conn.close()
+                self.conn = None
+            if self._writer_lock is not None:
+                self._writer_lock.release()
+            raise
+
+    def close(self):
+        """Close the SQLite connection and release an optional writer lock."""
+        with self._lock:
+            if self.conn is not None:
+                self.conn.close()
+                self.conn = None
+            if self._writer_lock is not None:
+                self._writer_lock.release()
+
+    def stop(self):
+        """Storage lifecycle hook used by the server shutdown path."""
+        self.close()
 
     def _init_db(self):
         self.conn.executescript("""

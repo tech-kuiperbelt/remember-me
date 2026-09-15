@@ -12,7 +12,8 @@
 - 健康检查：`in_sync` 不能只依据 `pending == 0`；至少校验主副有效记录数，管理操作应支持精确 ID 差集/完整性校验，并明确报告 missing、extra、损坏行和最后一次完整校验时间。
 - 恢复策略：发现漂移时不得继续报告健康；提供安全的 Full Sync 修复提示，并评估启动时低成本自动核验或定期深度核验。
 - 验收：增加多进程/强制交错测试，覆盖一个实例追加、另一个实例 compact，两个实例竞争 outbox、compact 与 Full Sync 并发、进程在 append/mark-synced 边界退出，以及 Stats 对副本漂移的识别；单实例现有行为与离线恢复不回归。
-- 2026-09-14 前置修复已随 [30] 实现：每个 replica path 使用生命周期 OS writer lock，第二个 dual 进程启动即失败；Full Sync 从 SQLite 快照构建；Stats 精确扫描磁盘 JSONL 并报告 missing/extra/corrupt_lines/checked_at，任一异常时 `in_sync=false`。剩余项是更广泛的强制交错、崩溃边界和定期深度核验测试，不阻断单写者部署下的 [30]。
+- 2026-09-14 前置修复已随 [30] 实现：每个 replica path 使用生命周期 OS writer lock，第二个 dual 进程启动即失败；Full Sync 从 SQLite 快照构建；Stats 精确扫描磁盘 JSONL 并报告 missing/extra/corrupt_lines/checked_at，任一异常时 `in_sync=false`。
+- 2026-09-15 进一步收敛为单 SQLite 主写者：所有 factory 创建的可写 SQLite/dual 服务，以及 embedding、DeepSeek migration 和 recovery 等写入维护流程，都持有同一个主库 `<db>.writer.lock` 的非阻塞 OS `flock`；只读诊断不占锁。replica lock 仍作为 dual 的第二道保护。剩余项是更广泛的强制交错、崩溃边界和定期深度核验测试，不阻断单写者部署下的 [30]。
 
 ### [29] MCP Streamable HTTP（新 SSE）传输支持
 

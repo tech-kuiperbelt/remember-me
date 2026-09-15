@@ -13,41 +13,29 @@ Examples:
 from __future__ import annotations
 
 import argparse
-import fcntl
 import json
 import os
 import sys
 import time
-from contextlib import contextmanager, nullcontext
+from contextlib import nullcontext
 
 from . import audit
 from .embed import create_embedder
 from .storage_sqlite import SQLiteStorage
+from .database_lock import DatabaseWriterLock
 
 
-def _storage(path: str) -> SQLiteStorage:
+def _storage(path: str, read_only: bool = False) -> SQLiteStorage:
     return SQLiteStorage(
         path,
         embedding_dtype=os.environ.get("EMBED_DTYPE", "float16"),
+        read_only=read_only,
     )
 
 
-@contextmanager
 def _database_maintenance_lock(path: str):
-    """Prevent concurrent offline embedding mutations of one database."""
-    lock_path = os.path.abspath(path) + ".embedding.lock"
-    lock_file = open(lock_path, "a+", encoding="utf-8")
-    try:
-        try:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
-            raise RuntimeError(
-                f"another embedding maintenance command is already running for {path}"
-            ) from exc
-        yield
-    finally:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-        lock_file.close()
+    """Compatibility seam for the shared SQLite primary writer lock."""
+    return DatabaseWriterLock(path)
 
 
 def main() -> None:
@@ -92,7 +80,7 @@ def main() -> None:
     )
     lock = _database_maintenance_lock(args.database) if mutating else nullcontext()
     with lock:
-        storage = _storage(args.database)
+        storage = _storage(args.database, read_only=args.command == "status")
         try:
             if args.command == "status":
                 stats = storage.get_stats()
@@ -178,7 +166,7 @@ def main() -> None:
                     raise
             print(json.dumps(result, ensure_ascii=False, indent=2))
         finally:
-            storage.conn.close()
+            storage.close()
 
 
 if __name__ == "__main__":

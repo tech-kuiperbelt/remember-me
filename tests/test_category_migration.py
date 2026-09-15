@@ -174,8 +174,9 @@ def test_main_passes_db_to_build_storage(monkeypatch, tmp_path):
         def list_memories(self, **kw):
             return []
 
-    def fake_build(db_path=None):
+    def fake_build(db_path=None, read_only=False):
         seen["db"] = db_path
+        seen["read_only"] = read_only
         return _EmptyStorage()
 
     monkeypatch.setattr(cm, "build_storage", fake_build)
@@ -183,3 +184,4 @@ def test_main_passes_db_to_build_storage(monkeypatch, tmp_path):
     target = str(tmp_path / "target.db")
     assert cm.main(["--db", target, "--dry-run"]) == 0
     assert seen["db"] == target
+    assert seen["read_only"] is True

@@ -158,6 +158,7 @@ def create_storage(backend: str = "sqlite", **kwargs) -> MemoryStorage:
             embedding_dtype=kwargs.get("embedding_dtype", "float16"),
             embedding_spec=kwargs.get("embedding_spec"),
             read_only=bool(kwargs.get("read_only", False)),
+            writer_lock=not bool(kwargs.get("read_only", False)),
         )
     if backend == "dual":
         from .storage_ndjson import NDJSONReplica
@@ -173,17 +174,23 @@ def create_storage(backend: str = "sqlite", **kwargs) -> MemoryStorage:
             )
         if primary_path != ":memory:" and os.path.realpath(primary_path) == os.path.realpath(secondary_path):
             raise ValueError("dual primary and replica paths must be different")
-        return DualStorage(
-            primary=SQLiteStorage(
+        primary = SQLiteStorage(
                 path=primary_path,
                 embedding_dtype=kwargs.get("embedding_dtype", "float16"),
                 embedding_spec=kwargs.get("embedding_spec"),
-            ),
-            secondary=NDJSONReplica(path=secondary_path),
-            sync_interval=sync_interval,
-            compact_interval=int(kwargs.get("compact_interval", 24 * 60 * 60)),
-            compact_min_bytes=int(kwargs.get("compact_min_bytes", 1024 * 1024)),
-            compact_min_ratio=float(kwargs.get("compact_min_ratio", 0.25)),
-            start_background=bool(kwargs.get("start_background", True)),
-        )
+                writer_lock=True,
+            )
+        try:
+            return DualStorage(
+                primary=primary,
+                secondary=NDJSONReplica(path=secondary_path),
+                sync_interval=sync_interval,
+                compact_interval=int(kwargs.get("compact_interval", 24 * 60 * 60)),
+                compact_min_bytes=int(kwargs.get("compact_min_bytes", 1024 * 1024)),
+                compact_min_ratio=float(kwargs.get("compact_min_ratio", 0.25)),
+                start_background=bool(kwargs.get("start_background", True)),
+            )
+        except Exception:
+            primary.close()
+            raise
     raise ValueError(f"Unknown backend: {backend}")

@@ -171,7 +171,6 @@ def test_due_compact_reclaims_stale_lines_persists_state_and_updates_stats(
     assert audit_record.call_args.args[2]["outcome"] == "compacted"
 
     dual.stop()
-    primary.conn.close()
     reloaded_primary = SQLiteStorage(str(primary_path))
     reloaded = DualStorage(reloaded_primary, NDJSONReplica(str(replica_path)),
                            compact_interval=24 * 60 * 60, start_background=False)
@@ -180,7 +179,6 @@ def test_due_compact_reclaims_stale_lines_persists_state_and_updates_stats(
     reloaded._run_due_compact("startup")
     assert compact_mock.call_count == 0
     reloaded.stop()
-    reloaded_primary.conn.close()
 
 
 def test_due_compact_records_error_without_touching_replica(tmp_path, fake_emb, monkeypatch):

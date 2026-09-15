@@ -296,6 +296,6 @@ def test_float16_preserves_sample_top_k_order():
 def test_embedding_maintenance_lock_rejects_parallel_command(tmp_path):
     database = str(tmp_path / "memory.db")
     with _database_maintenance_lock(database):
-        with pytest.raises(RuntimeError, match="already running"):
+        with pytest.raises(RuntimeError, match="active remember-me writer"):
             with _database_maintenance_lock(database):
                 pass

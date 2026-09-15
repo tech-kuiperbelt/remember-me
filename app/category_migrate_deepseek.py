@@ -170,12 +170,19 @@ class CategoryCandidates:
         return len(self._order)
 
 
-def build_storage(db_path: str | None = None):
+def build_storage(db_path: str | None = None, read_only: bool = False):
     """Reuse the same env-based backend resolution as service.py (dual default).
 
     ``db_path`` (CLI ``--db``) overrides the primary storage path; the backend
     itself still comes from ``MEMORY_STORAGE``.
     """
+    # A dry run is a diagnostic read and must not claim either writer lock.
+    # It also deliberately bypasses dual mode: no replica worker is needed to
+    # inspect the primary database.
+    if read_only:
+        path = db_path or os.environ.get("MEMORY_STORAGE_PATH") or "data/memories.db"
+        return create_storage("sqlite", path=path, read_only=True)
+
     backend = os.environ.get("MEMORY_STORAGE", "sqlite")
     if backend == "dual":
         primary = db_path or os.environ.get("MEMORY_STORAGE_PATH", "data/memories.db")
@@ -215,7 +222,12 @@ def main(argv=None) -> int:
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-    storage = build_storage(args.db)
+    storage = build_storage(args.db, read_only=args.dry_run)
+
+    def close_storage():
+        stop = getattr(storage, "stop", None)
+        if callable(stop):
+            stop()
     logger.info("category migration (deepseek, serial): namespace=%s mode=%s limit=%s model=%s db=%s",
                 args.namespace, args.mode, args.limit, args.model, args.db)
 
@@ -226,6 +238,7 @@ def main(argv=None) -> int:
             print(json.dumps({"processed": 0, "failed": 0, "total": 0,
                               "error": f"memory not found: {args.memory_id}",
                               "memory_id": args.memory_id}))
+            close_storage()
             return 1
     else:
         memories = storage.list_memories(namespace=args.namespace,
@@ -246,6 +259,7 @@ def main(argv=None) -> int:
         print(json.dumps({"mode": args.mode, "candidates": len(to_process),
                           "skipped": skipped, "total": len(memories),
                           "dry_run": True}))
+        close_storage()
         return 0
 
     index_resolver = resolver_for_configured_profile(storage)
@@ -322,6 +336,7 @@ def main(argv=None) -> int:
         report["sample"] = results[:5]
     logger.info("category migration done: %s", report)
     print(json.dumps(report, ensure_ascii=False, indent=2))
+    close_storage()
     return 0 if counters["failed"] == 0 else 2
 
 
