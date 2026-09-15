@@ -1,6 +1,6 @@
-"""Tool-call and background-work audit — append-only event journal.
+"""Tool-call and maintenance-work audit — append-only event journal.
 
-Records every MCP tool invocation plus summary fallback outcomes (time, tool,
+Records MCP tool invocations and selected maintenance outcomes (time, tool,
 status, duration, namespace, params summary, result summary) to a JSONL file
 for human review in the admin UI. The audit stream is deliberately *not*
 exposed to the LLM: it lives in the platform layer.
@@ -8,7 +8,7 @@ exposed to the LLM: it lives in the platform layer.
 Guarantees:
 
 - Never raises: audit failures must not affect the tool call path.
-- Thread-safe: appends are protected by a lock (summary worker is a thread).
+- Thread-safe: appends are protected by a lock.
 - Bounded: files rotate by size (or an optional per-file event count), and
   the oldest backup is discarded after the configured file-count limit.
 - Independent of the memory stores: the audit journal is separate from the
@@ -118,13 +118,13 @@ def _trim_params(tool: str, arguments: dict | None, result=None) -> dict:
         elif isinstance(summary, str) and summary.strip():
             args["summary_mode"] = "input"
         else:
-            args["summary_mode"] = "fallback"
+            args["summary_mode"] = "text_extract"
     elif tool == "update":
         summary = args.get("summary")
         if isinstance(summary, str) and summary.strip():
             args["summary_mode"] = "input"
         elif args.get("text") is not None:
-            args["summary_mode"] = "fallback"
+            args["summary_mode"] = "text_extract"
         else:
             args["summary_mode"] = "preserved"
     elif tool in ("memory_import", "memory_export"):

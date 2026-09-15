@@ -67,7 +67,7 @@ def test_add_strips_text_from_params(journal):
     ev = _read_lines(journal)[0]
     assert "text" not in ev["params"]
     assert ev["params"] == {"namespace": "ns", "metadata": {"a": 1},
-                            "summary_mode": "fallback"}
+                            "summary_mode": "text_extract"}
     assert ev["result"] == {"id": "abc", "created": True}
 
 
@@ -82,10 +82,10 @@ def test_write_strips_summary_and_records_presence(journal):
 
 
 @pytest.mark.parametrize("arguments,result,expected", [
-    ({"text": "body"}, {"id": "a", "created": True}, "fallback"),
+    ({"text": "body"}, {"id": "a", "created": True}, "text_extract"),
     ({"text": "body", "summary": "given"}, {"id": "a", "created": True}, "input"),
     ({"text": "body", "summary": "given"}, {"id": "a", "created": False}, "duplicate"),
-    ({"memory_id": "a", "text": "new"}, {"success": True}, "fallback"),
+    ({"memory_id": "a", "text": "new"}, {"success": True}, "text_extract"),
     ({"memory_id": "a", "summary": "fixed"}, {"success": True}, "input"),
     ({"memory_id": "a", "metadata": {"x": 1}}, {"success": True}, "preserved"),
 ])
@@ -188,7 +188,7 @@ def test_get_details_summary_keywords(journal):
 def test_stats_drops_keyword_counts_and_base_url(journal):
     result = {"total": 10, "namespace_counts": {"default": 10},
               "keyword_counts": {"kw": 3}, "embed_model": "bge-m3",
-              "summarize_model": "qwen3:latest", "ollama_base_url": "http://localhost:11434",
+              "ollama_base_url": "http://localhost:11434",
               "server_time": "2026-08-18T00:00:00+00:00"}
     audit.record("stats", {}, result, 5.0)
     ev = _read_lines(journal)[0]

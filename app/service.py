@@ -7,10 +7,9 @@ from datetime import datetime, timezone
 
 from .embed import create_embedder
 from .index_value_resolver import IndexValueResolver, MAX_FILTER_VALUES
-from .summarize import summarize as summarize_fn
 from .storage import create_storage, resolve_replica_path
-from . import summary_worker
 from . import audit
+from .summary_policy import derive_summary, normalize_summary
 from .jsonl_transfer import load_jsonl, write_clean_jsonl, sha256_file, unlink_quietly
 from .categories import (
     normalize_categories,
@@ -37,7 +36,6 @@ COMPACT_MIN_RATIO = float(os.environ.get("MEMORY_COMPACT_MIN_RATIO", "0.25"))
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 EMBED_DTYPE = os.environ.get("EMBED_DTYPE", "float16")
 EMBED_PRELOAD = os.environ.get("EMBED_PRELOAD", "true").lower() in ("1", "true", "yes")
-SUMMARIZE_MODEL = os.environ.get("SUMMARIZE_MODEL", "qwen3:latest")
 DEFAULT_NAMESPACE = os.environ.get("MEMORY_DEFAULT_NAMESPACE", "default")
 INDEX_SEMANTIC_TOP_K = int(os.environ.get("MEMORY_INDEX_SEMANTIC_TOP_K", "3"))
 INDEX_SEMANTIC_MIN_SCORE = float(os.environ.get("MEMORY_INDEX_SEMANTIC_MIN_SCORE", "0.65"))
@@ -91,10 +89,6 @@ if hasattr(storage, "index_embedding_completeness"):
             "'python -m app.embedding_cli reindex-index-values data/memories.db'."
         )
 
-summary_worker.set_storage(storage)
-summary_worker.start()
-
-
 def embed(text: str) -> list[float]:
     try:
         return embedding_provider.embed_document(text)
@@ -143,14 +137,6 @@ def warmup_embedding_provider() -> None:
                 embedding_provider.spec.dimension, embedding_provider.spec.profile_id)
 
 
-def summarize(text: str) -> str:
-    try:
-        return summarize_fn(text, base_url=OLLAMA_BASE_URL, model=SUMMARIZE_MODEL)
-    except Exception as e:
-        logger.error("summarize failed: %s", e, exc_info=True)
-        raise
-
-
 def _strip_internal_fields(d: dict) -> dict:
     """Remove storage-internal fields from a record before exposing it.
 
@@ -168,22 +154,19 @@ def _prepare_for_llm(results: list[dict]) -> list[dict]:
     """Shape search/list results for LLM consumption.
 
     - Internal fields (embedding/deleted/synced) are dropped by the callers.
-    - Prefer ``summary``; fall back to full ``text`` when summary is empty.
+    - Prefer ``summary``; derive a deterministic lead when summary is empty.
     - Never expose the full ``text`` when a summary exists.
     """
     for r in results:
         if not r.get("summary"):
-            r["summary"] = r.get("text", "")
+            r["summary"] = derive_summary(r.get("text", ""))
         r.pop("text", None)
     return results
 
 
 def _normalize_summary(summary) -> str | None:
     """Return a caller summary stripped, or None when it is unusable."""
-    if not isinstance(summary, str):
-        return None
-    summary = summary.strip()
-    return summary or None
+    return normalize_summary(summary)
 
 
 def memory_add(text: str, metadata: dict | None = None,
@@ -202,13 +185,9 @@ def memory_add(text: str, metadata: dict | None = None,
         result = storage.add(text, embedding, metadata=metadata, namespace=ns,
                              summary=summary, **write_kwargs)
         eid = result["id"]
-        if result.get("created") and summary is None:
-            # No usable caller summary: generate one in the background without
-            # blocking the write path.
-            summary_worker.enqueue(eid, text)
-            logger.info("add: ok id=%s (summary async)", eid)
-        elif result.get("created"):
-            logger.info("add: ok id=%s (summary supplied)", eid)
+        if result.get("created"):
+            logger.info("add: ok id=%s (summary %s)", eid,
+                        "supplied" if summary is not None else "text extract")
         else:
             # Duplicate (namespace + text): existing record returned untouched.
             logger.info("add: duplicate skipped id=%s", eid)
@@ -369,14 +348,8 @@ def memory_update(memory_id: str, text: str | None = None,
     try:
         if text is not None:
             embedding = embed(text)
-            # A supplied summary belongs to the new text and is stored in the
-            # same update. Otherwise clear the stale summary for async fallback.
-            stored_summary = summary if summary is not None else ""
         else:
             embedding = None
-            # None means preserve the current summary. A non-empty value allows
-            # callers to correct a summary without changing the memory text.
-            stored_summary = summary
         dropped = categories_dropped(metadata)
         metadata = _apply_keywords_to_metadata(metadata)
         metadata = _apply_categories_to_metadata(metadata)
@@ -384,11 +357,8 @@ def memory_update(memory_id: str, text: str | None = None,
         write_kwargs = {"index_embeddings": index_embeddings} if index_embeddings else {}
         ok = storage.update(memory_id, text=text, embedding=embedding,
                             metadata=metadata, namespace=namespace,
-                            summary=stored_summary,
+                            summary=summary,
                             **write_kwargs)
-        if ok and text is not None and summary is None:
-            # Text changed without a usable caller summary: regenerate async.
-            summary_worker.enqueue(memory_id, text)
         logger.info("update: %s", "ok" if ok else "not found")
         out = {"success": ok}
         if ok and dropped:
@@ -433,7 +403,6 @@ def memory_stats() -> dict:
         stats["embed_dimension"] = embedding_provider.spec.dimension
         stats["embed_profile"] = embedding_provider.spec.profile_id
         stats["embed_dtype"] = EMBED_DTYPE
-        stats["summarize_model"] = SUMMARIZE_MODEL
         stats["ollama_base_url"] = OLLAMA_BASE_URL
         stats["server_time"] = _now_utc_iso()
         return stats
@@ -641,54 +610,6 @@ def memory_get_details(memory_ids: list[str]) -> dict:
         return result
     except Exception as e:
         logger.error("get_details failed: %s", e, exc_info=True)
-        raise
-
-
-def memory_summarize(namespace: str | None = None, mode: str = "missing",
-                     memory_id: str | None = None) -> dict:
-    """Generate summaries for existing memories (migration entry point).
-
-    mode="missing" (default): only records with an empty summary.
-    mode="all": regenerate every summary (overwrite).
-
-    When ``memory_id`` is given, only that memory is processed (mode still applies:
-    "missing" skips records that already have a summary).
-
-    Summary-only updates never change updated_at (via storage.update_summary).
-    """
-    mode = mode if mode in ("missing", "all") else "missing"
-    logger.info("summarize migration: namespace=%s mode=%s memory_id=%s", namespace, mode, memory_id)
-    try:
-        if memory_id:
-            m = storage.get(memory_id)
-            if m is None:
-                result = {"processed": 0, "failed": 0, "mode": mode, "total": 0,
-                          "error": f"memory not found: {memory_id}", "memory_id": memory_id}
-                logger.info("summarize migration done: %s", result)
-                return result
-            memories = [m]
-        else:
-            memories = memory_list(namespace=namespace, limit=10 ** 9)
-        processed = 0
-        failed = 0
-        for m in memories:
-            if mode == "missing" and m.get("summary"):
-                continue
-            try:
-                summary = summarize(m["text"])
-            except Exception:
-                # keep summary empty so the record remains eligible for retry
-                failed += 1
-                continue
-            storage.update_summary(m["id"], summary)
-            processed += 1
-        result = {"processed": processed, "failed": failed, "mode": mode, "total": len(memories)}
-        if memory_id:
-            result["memory_id"] = memory_id
-        logger.info("summarize migration done: %s", result)
-        return result
-    except Exception as e:
-        logger.error("summarize migration failed: %s", e, exc_info=True)
         raise
 
 

@@ -51,8 +51,8 @@ async def handle_list_tools() -> types.ListToolsResult:
             description="Store a new memory. Text is automatically embedded for semantic search. "
                         "You MUST provide a concise, faithful summary in the summary parameter; "
                         "keep technical terms, ticket numbers, and business event times. The server "
-                        "still accepts a missing or blank summary and generates one asynchronously "
-                        "as a reliability fallback. "
+                        "still accepts a missing or blank summary and stores a deterministic extract "
+                        "from the leading sentence or line as a reliability fallback. "
                         "Deduplicated by content+namespace: if the same text already exists in the "
                         "target namespace, no duplicate is inserted and the existing record's id is "
                         "returned with created=false. "
@@ -69,7 +69,7 @@ async def handle_list_tools() -> types.ListToolsResult:
                     "text": {"type": "string", "description": "The memory text. Keep long project documents in the repository and store only a concise summary and file path here; oversized input is rejected rather than silently truncated."},
                     "summary": {
                         "type": "string",
-                        "description": "A concise summary of text. LLM callers MUST provide this; missing or blank values are tolerated and generated asynchronously as fallback.",
+                        "description": "A concise summary of text. LLM callers MUST provide this; missing or blank values are tolerated and replaced with a deterministic leading-text extract.",
                     },
                     "metadata": {
                         "type": "object",
@@ -98,7 +98,7 @@ async def handle_list_tools() -> types.ListToolsResult:
             description="Semantic search across memories by query text. "
                         "Use this for topic/keyword questions — e.g. \"what do we know about X\", "
                         "\"anything related to Y\" — where you want the most semantically similar memories. "
-                        "Results return the memory summary (falling back to original text when no summary exists); "
+                        "Results return the memory summary (falling back to a deterministic leading-text extract when absent); "
                         "call 'get_details' with the returned IDs to fetch full content. "
                         "For time-based questions (e.g. \"what did we do recently / last session\") "
                         "use 'search_meta' with sort_by='updated_at' instead. "
@@ -138,7 +138,7 @@ async def handle_list_tools() -> types.ListToolsResult:
             description="List memories by exact criteria: keywords, categories, namespace, "
                         "updated_at time range, "
                         "sort order and pagination. "
-                        "Results return the memory summary (falling back to original text when no summary exists); "
+                        "Results return the memory summary (falling back to a deterministic leading-text extract when absent); "
                         "call 'get_details' with the returned IDs to fetch full content. "
                         "Use this for time-based questions such as \"what did we do recently / last session\" "
                         "— combine sort_by='updated_at' with a small limit to get the most recently "
@@ -197,7 +197,7 @@ async def handle_list_tools() -> types.ListToolsResult:
             description="Update a memory's text, summary, metadata and/or namespace. "
                         "When changing text, you MUST also provide a concise, faithful summary for "
                         "the new text. The server still accepts an omitted or blank summary and "
-                        "generates one asynchronously as a reliability fallback. A summary may also "
+                        "stores a deterministic leading-text extract as a reliability fallback. A summary may also "
                         "be corrected without changing text; metadata-only updates leave it untouched. "
                         "Long project documents belong in the repository; store only their concise "
                         "summary and path in memory. Oversized text is rejected, never silently truncated. "
@@ -212,7 +212,7 @@ async def handle_list_tools() -> types.ListToolsResult:
                 "properties": {
                     "memory_id": {"type": "string"},
                     "text": {"type": "string", "description": "New text. Oversized content is rejected; keep long documents in the repository and save a summary/path here."},
-                    "summary": {"type": "string", "description": "New summary. LLM callers changing text MUST provide this; omission is tolerated and triggers asynchronous fallback."},
+                    "summary": {"type": "string", "description": "New summary. LLM callers changing text MUST provide this; omission is tolerated and uses a deterministic leading-text extract."},
                     "metadata": {
                         "type": "object",
                         "description": "Metadata to merge",
@@ -404,11 +404,11 @@ async def handle_read_resource(uri: str) -> types.ReadResourceResult:
 # Guidance appended to each tool's result so the LLM knows what it can do next
 # with the returned data. Kept intentionally concise.
 _TOOL_HINTS: dict[str, str] = {
-    "add": "Memory stored. A supplied summary was saved directly; if it was missing or blank, asynchronous summary generation was queued. If created=false, an identical record already exists and remains untouched — consider 'update' instead. Reuse canonical categories from stats' category_counts (up to 3).",
+    "add": "Memory stored. A supplied summary was saved directly; if it was missing or blank, a deterministic extract from the leading text was stored. If created=false, an identical record already exists and remains untouched — consider 'update' instead. Reuse canonical categories from stats' category_counts (up to 3).",
     "search_semantic": "Results are ranked by relevance (score). Use 'get_details' with an id to read the full original text, then call 'report' with this search_id to rate how helpful each result was (-10..10). filter_resolution shows how exact or semantic keywords/categories constrained candidates before scoring. Values within one dimension use OR, while dimensions combine using AND. If a whole supplied dimension could not be resolved, the result is empty.",
     "search_meta": "Use 'get_details' with an id to read the full original text, or call 'search_semantic' for fuzzy/topic/keyword lookup. Filter further with keywords= and/or categories=. After using these results, call 'report' with this search_id to rate how helpful each id was (-10..10).",
     "get_details": "You now have the full text, including metadata.keywords and metadata.categories. If a memory is relevant, use search_meta(keywords=[...]) or search_meta(categories=[...]) to find related memories.",
-    "update": "Memory updated. A supplied summary was saved directly; a text change without one queued asynchronous summary generation. Use 'get_details' with the id to verify the change. Categories (if any) were taken from metadata.categories — see stats' category_counts for the canonical list (up to 3).",
+    "update": "Memory updated. A supplied summary was saved directly; changed text without one received a deterministic leading-text extract. Metadata-only and whitespace-equivalent text updates preserve the existing summary. Use 'get_details' with the id to verify the change. Categories (if any) were taken from metadata.categories — see stats' category_counts for the canonical list (up to 3).",
     "delete": "Memory soft-deleted. It no longer appears in 'search_semantic'/'search_meta'. Call 'stats' to confirm the count.",
     "stats": "Use 'namespace_counts' to pick a namespace, then 'search_meta' or 'search_semantic' within it. Use 'keyword_counts' as the canonical keyword vocabulary and 'category_counts' as the canonical category vocabulary (up to 3 per memory) for search_meta/add. Embedding provider/model/profile describe the active comparable vector space. Use 'server_time' for time-based queries.",
     "report": "Feedback recorded. Continue with the task, or run another search if the results were unhelpful.",
@@ -442,8 +442,8 @@ def _wrap_search_meta(items: list, namespace: str | None, limit: int, offset: in
     scope = f"namespace={namespace!r}" if namespace else "all namespaces"
     note = (
         f"{len(items)} memories (limit={limit}, offset={offset}) from {scope}, "
-        f"sorted by {sort_by} descending. Items carry summary (full text when no "
-        f"summary yet). To see the complete original content, call 'get_details' "
+        f"sorted by {sort_by} descending. Items carry a stored summary or a "
+        f"deterministic leading-text extract. To see the complete original content, call 'get_details' "
         f"with the returned ids. After using these results, call 'report' with "
         f"this search_id and rate how helpful each id was for the current question "
         f"(-10..10, may rate a subset)."
@@ -460,7 +460,7 @@ def _wrap_search_semantic(search_result: dict) -> dict:
     items = search_result["items"]
     note = (
         f"{len(items)} results, ranked by semantic similarity (score). Items carry "
-        f"summary (full text when no summary yet). To see the complete original "
+        f"a stored summary or deterministic leading-text extract. To see the complete original "
         f"content, call 'get_details' with the returned ids. After using these "
         f"results, call 'report' with this search_id and rate how helpful each id "
         f"was for the current question (-10..10, may rate a subset)."
@@ -535,8 +535,6 @@ async def main():
         try:
             await uv_server.serve()
         finally:
-            from . import summary_worker
-            summary_worker.shutdown()
             if hasattr(storage, "stop"):
                 storage.stop()
     else:
@@ -556,8 +554,6 @@ async def main():
                     ),
                 )
         finally:
-            from . import summary_worker
-            summary_worker.shutdown()
             if hasattr(storage, "stop"):
                 storage.stop()
 

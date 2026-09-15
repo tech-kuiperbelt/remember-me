@@ -328,3 +328,4 @@ def test_memory_stats_merges_seed_vocabulary(monkeypatch):
     assert stats["category_counts"]["config"] == 1
     assert stats["category_counts"]["bugfix"] == 0
     assert set(stats["category_counts"]) >= set(CATEGORY_VOCABULARY)
+    assert "summarize_model" not in stats

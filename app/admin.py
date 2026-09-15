@@ -15,7 +15,7 @@ from starlette.requests import Request
 from .service import (
     memory_add, memory_search, memory_list, memory_get,
     memory_update, memory_delete, memory_clear, memory_stats, memory_sync,
-    memory_namespaces, memory_migrate_namespace, memory_get_details, memory_summarize,
+    memory_namespaces, memory_migrate_namespace, memory_get_details,
     memory_import_start, memory_import_status, memory_export_full,
     memory_export_namespace, memory_storage_paths, storage, memory_extract_keywords,
     IMPORT_MAX_BYTES,
@@ -101,20 +101,6 @@ async def handle_get_details(request: Request):
         )
     except Exception as e:
         logger.error("POST /api/memories/details failed: %s", e, exc_info=True)
-        return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
-
-
-async def handle_summarize(request: Request):
-    try:
-        body = await request.json()
-        ns = body.get("namespace")
-        mode = body.get("mode", "missing")
-        memory_id = body.get("memory_id")
-        logger.info("POST /api/summarize namespace=%s mode=%s memory_id=%s", ns, mode, memory_id)
-        result = memory_summarize(namespace=ns, mode=mode, memory_id=memory_id)
-        return Response(json.dumps(result, ensure_ascii=False), media_type="application/json")
-    except Exception as e:
-        logger.error("POST /api/summarize failed: %s", e, exc_info=True)
         return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
 
 
@@ -470,7 +456,6 @@ admin_routes = [
     Route("/api/export/namespace", endpoint=handle_export_namespace, methods=["POST"]),
     Route("/api/sync", endpoint=handle_sync, methods=["POST"]),
     Route("/api/restart", endpoint=handle_restart, methods=["POST"]),
-    Route("/api/summarize", endpoint=handle_summarize, methods=["POST"]),
     Route("/api/extract-keywords", endpoint=handle_extract_keywords, methods=["POST"]),
     Route("/api/namespaces/migrate", endpoint=handle_migrate_namespace, methods=["POST"]),
     Route("/api/audit", endpoint=handle_audit, methods=["GET"]),

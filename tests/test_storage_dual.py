@@ -75,14 +75,3 @@ def test_dual_update_delete_clear_delegate(dual, mock_primary):
     assert mock_primary.update.call_count == 1
     assert mock_primary.delete.call_count == 1
     assert mock_primary.clear.call_count == 1
-
-
-def test_dual_guarded_summary_update_delegates(dual, mock_primary):
-    mock_primary.update_summary_if_pending.return_value = True
-
-    result = dual.update_summary_if_pending("id1", "text", "summary")
-
-    assert result is True
-    mock_primary.update_summary_if_pending.assert_called_once_with(
-        "id1", "text", "summary"
-    )

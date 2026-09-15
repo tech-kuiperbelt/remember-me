@@ -1,4 +1,4 @@
-"""Keyword extraction — mirrors app/summarize.py and app/embed.py.
+"""Keyword extraction using the configured local Ollama endpoint.
 
 Uses the local Ollama LLM (qwen family) to extract content keywords from a
 memory. Returns a normalized list of lowercase strings. The model output is

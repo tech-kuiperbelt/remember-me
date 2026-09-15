@@ -55,5 +55,5 @@ def test_dual_rejects_same_primary_and_replica_path(tmp_path):
 
 def test_replica_has_no_business_storage_methods(tmp_path):
     replica = NDJSONReplica(str(tmp_path / "replica.jsonl"))
-    for method in ("add", "search", "merge", "update_summary"):
+    for method in ("add", "search", "merge", "update_summary", "get_pending_summaries"):
         assert not hasattr(replica, method)

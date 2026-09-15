@@ -1,10 +1,9 @@
 """Shared fixtures for the remember-me test suite.
 
-Critical: ``app.service`` reads env vars and creates storage + starts the
-summary worker thread at import time. ``pytest_configure`` runs before any
-test module is imported, so we pin the storage to an in-memory SQLite here.
-That way, importing ``app.service`` inside tests never touches real data
-files and never hits Ollama.
+Critical: ``app.service`` reads env vars and creates storage at import time.
+``pytest_configure`` runs before any test module is imported, so we pin the
+storage to an in-memory SQLite here. That way, importing ``app.service``
+inside tests never touches real data files.
 """
 
 import os

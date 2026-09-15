@@ -3,8 +3,7 @@
 ``app.service`` is imported lazily inside the fixture. ``pytest_configure``
 (conftest.py) pins env vars to in-memory SQLite BEFORE import, so importing
 the module creates no real files. Within tests we mock the module-level
-globals (storage, embed, summary_worker.enqueue) so no Ollama call and no
-background summary work ever happens.
+globals (storage and embed) so tests perform no provider calls.
 """
 
 import json
@@ -23,24 +22,24 @@ def service():
 
 @pytest.fixture
 def mocked(service, monkeypatch):
-    """Replace storage / embed / summary_worker with mocks."""
+    """Replace storage and embed with mocks."""
     storage = MagicMock()
-    enqueue = MagicMock()
     monkeypatch.setattr(service, "storage", storage)
     monkeypatch.setattr(service, "embed", lambda text: [0.1, 0.2, 0.3])
-    monkeypatch.setattr(service.summary_worker, "enqueue", enqueue)
-    return {"storage": storage, "enqueue": enqueue}
+    return {"storage": storage}
 
 
-def test_memory_add_new_enqueues_summary(service, mocked):
-    """created=True → returns {id, created} and schedules background summary."""
+def test_memory_add_without_summary_uses_storage_policy(service, mocked):
+    """Missing summaries remain non-blocking and are resolved by storage."""
     mocked["storage"].add.return_value = {"id": "abc123", "created": True}
 
     result = service.memory_add("some text", namespace="ns1")
 
     assert result == {"id": "abc123", "created": True}
-    mocked["enqueue"].assert_called_once_with("abc123", "some text")
-    mocked["storage"].add.assert_called_once()
+    mocked["storage"].add.assert_called_once_with(
+        "some text", [0.1, 0.2, 0.3], metadata=None, namespace="ns1",
+        summary=None,
+    )
 
 
 def test_memory_add_supplied_summary_skips_worker(service, mocked):
@@ -54,27 +53,23 @@ def test_memory_add_supplied_summary_skips_worker(service, mocked):
         "some text", [0.1, 0.2, 0.3], metadata=None, namespace="ns1",
         summary="caller summary",
     )
-    mocked["enqueue"].assert_not_called()
 
 
-def test_memory_add_blank_summary_uses_worker(service, mocked):
+def test_memory_add_blank_summary_uses_storage_policy(service, mocked):
     mocked["storage"].add.return_value = {"id": "abc123", "created": True}
 
     service.memory_add("some text", summary="  \n ")
 
     _, kwargs = mocked["storage"].add.call_args
     assert kwargs["summary"] is None
-    mocked["enqueue"].assert_called_once_with("abc123", "some text")
 
 
-def test_memory_add_duplicate_skips_summary(service, mocked):
-    """created=False (duplicate) → returns existing id, NO summary enqueue."""
+def test_memory_add_duplicate_returns_existing_id(service, mocked):
     mocked["storage"].add.return_value = {"id": "abc123", "created": False}
 
     result = service.memory_add("some text", namespace="ns1")
 
     assert result == {"id": "abc123", "created": False}
-    mocked["enqueue"].assert_not_called()
 
 
 def test_memory_add_default_namespace(service, mocked):
@@ -100,7 +95,7 @@ def test_memory_add_storage_error_propagates(service, mocked):
         service.memory_add("text", namespace="ns1")
 
 
-def test_memory_update_text_with_summary_skips_worker(service, mocked):
+def test_memory_update_text_with_summary(service, mocked):
     mocked["storage"].update.return_value = True
 
     result = service.memory_update("abc", text="new text",
@@ -111,18 +106,16 @@ def test_memory_update_text_with_summary_skips_worker(service, mocked):
         "abc", text="new text", embedding=[0.1, 0.2, 0.3], metadata=None,
         namespace=None, summary="new summary",
     )
-    mocked["enqueue"].assert_not_called()
 
 
 @pytest.mark.parametrize("summary", [None, "", "  \n "])
-def test_memory_update_text_without_summary_uses_worker(service, mocked, summary):
+def test_memory_update_text_without_summary_uses_storage_policy(service, mocked, summary):
     mocked["storage"].update.return_value = True
 
     service.memory_update("abc", text="new text", summary=summary)
 
     _, kwargs = mocked["storage"].update.call_args
-    assert kwargs["summary"] == ""
-    mocked["enqueue"].assert_called_once_with("abc", "new text")
+    assert kwargs["summary"] is None
 
 
 def test_memory_update_summary_only(service, mocked):
@@ -134,7 +127,6 @@ def test_memory_update_summary_only(service, mocked):
         "abc", text=None, embedding=None, metadata=None, namespace=None,
         summary="corrected",
     )
-    mocked["enqueue"].assert_not_called()
 
 
 def test_memory_update_metadata_only_preserves_summary(service, mocked):
@@ -144,7 +136,6 @@ def test_memory_update_metadata_only_preserves_summary(service, mocked):
 
     _, kwargs = mocked["storage"].update.call_args
     assert kwargs["summary"] is None
-    mocked["enqueue"].assert_not_called()
 
 
 def test_storage_paths_dual(service, monkeypatch):
@@ -215,7 +206,6 @@ def test_memory_import_background_job_preserves_missing_summary_without_worker(
     records = mocked["storage"].import_records.call_args.args[0]
     assert records[0]["namespace"] == "archive-old"
     assert records[0]["summary"] is None
-    mocked["enqueue"].assert_not_called()
     assert not path.exists()
 
 

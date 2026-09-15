@@ -4,15 +4,6 @@
 
 ## 当前待办
 
-### [32] 移除服务端 Summary 自动与手工生成流程
-
-- 背景：当前 summary worker、启动时缺失 summary 扫描以及管理台手工 Summarize 都依赖 Ollama；这与项目减少非必要模型依赖、由调用方直接提供高质量结构化内容的大目标不一致。
-- 目标：删除服务端自动和手工 summary 生成能力，包括 worker 生命周期、任务队列、启动补偿扫描、管理 API/UI、摘要模型调用、专用存储接口及对应 audit/tests/config/docs。
-- 保留边界：`summary` 字段和调用方写入能力继续保留；已有 summary 不迁移、不清空。调用方未提供 summary 时正常保存为空，搜索结果继续沿用正文 fallback。
-- 与 [30] 的边界：[30] 的 JSONL Import 对缺失 summary 不阻断、保持为空且不调用 worker；除此之外，[30] 不拆除 add/update 的现有 worker 接入、手工 Summarize 或全局 summary 基础设施。
-- 交付约束：本项后续单独设计、实现、测试和提交，不与 [30] 的 Export/Import 改造混合。
-- 验收：运行时不再启动 summary 线程或调用 Ollama 生成摘要；add/update/import 缺失 summary 均不产生后台任务；caller 提供及历史 summary 正常保存、导出、导入和展示；无 summary 的搜索结果仍可用正文回退；全量测试通过。
-
 ### [31] NDJSON 灾备副本的多进程一致性与真实健康状态
 
 - 已确认的问题：2026-09-11 多个 `dual` 服务实例共享同一 SQLite/JSONL 时，一个实例用自身过期的 NDJSON 内存快照执行 compact，覆盖了其他实例已经追加的记录；SQLite 中这些记录已经被标记 `synced=1`，因此 outbox 不会重试。最终主库 918 条、副本 912 条，而 Stats 仍错误显示 `in_sync=true`。2026-09-14 已通过 Full Sync 恢复为 918/918。

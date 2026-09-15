@@ -323,36 +323,6 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
     </div>
   </div>
 
-  <!-- Summarize -->
-  <div class="card">
-    <div class="card-header">Summarize</div>
-    <div class="card-body">
-      <div class="form-row">
-        <div class="form-group">
-          <label>Namespace (optional)</label>
-          <select id="summarize-ns">
-            <option value="">(all namespaces)</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Memory ID (optional)</label>
-          <input id="summarize-id" placeholder="Leave empty for batch">
-        </div>
-      </div>
-      <div class="form-group">
-        <label>Mode</label>
-        <select id="summarize-mode">
-          <option value="missing">Missing only (default)</option>
-          <option value="all">Regenerate all</option>
-        </select>
-      </div>
-      <div style="margin-top:16px">
-        <button id="btn-summarize" class="btn btn-primary" onclick="doSummarize()">Generate Summaries</button>
-        <span id="summarize-result" style="margin-left:12px;font-size:13px"></span>
-      </div>
-    </div>
-  </div>
-
   <!-- Extract Keywords (migration) -->
   <div class="card">
     <div class="card-header">Extract Keywords</div>
@@ -448,7 +418,6 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
             <option value="update">update</option>
             <option value="delete">delete</option>
             <option value="stats">stats</option>
-            <option value="summary_fallback">summary_fallback</option>
           </select>
         </div>
         <div class="form-group">
@@ -590,7 +559,7 @@ function renderMemories(data) {
     `<th class="sortable" onclick="toggleSort('created_at')">Created${sortArrow('created_at')}</th>` +
     '<th style="width:160px">Actions</th></tr></thead><tbody>';
   sorted.forEach(m => {
-    const displayText = m.summary || m.text;
+    const displayText = m.summary || deriveSummary(m.text);
     html += `<tr>
       <td><div class="memory-text" title="${esc(displayText)}">${esc(displayText)}</div></td>
       <td><span class="badge ns">${esc(m.namespace)}</span></td>
@@ -808,7 +777,7 @@ function renderListResults(data, sortBy) {
     `<th>${sortLabel}</th>` +
     '<th style="width:100px">Actions</th></tr></thead><tbody>';
   data.forEach(m => {
-    const displayText = m.summary || m.text;
+    const displayText = m.summary || deriveSummary(m.text);
     const ts = sortBy === 'updated_at' ? m.updated_at : m.created_at;
     html += `<tr>
       <td><div class="memory-text" title="${esc(displayText)}">${esc(displayText)}</div></td>
@@ -828,7 +797,7 @@ function renderSearchResults(data) {
   }
   let html = '<table><thead><tr><th>Score</th><th>Text</th><th>Namespace</th><th style="width:100px">Actions</th></tr></thead><tbody>';
   data.forEach(m => {
-    const displayText = m.summary || m.text;
+    const displayText = m.summary || deriveSummary(m.text);
     html += `<tr>
       <td><span class="badge">${(m.score * 100).toFixed(1)}%</span></td>
       <td><div class="memory-text" title="${esc(displayText)}">${esc(displayText)}</div></td>
@@ -1049,17 +1018,6 @@ async function loadOpsPage() {
     opt.textContent = ns;
     dl.appendChild(opt);
   });
-  // Summarize namespace dropdown
-  const sumSel = $('summarize-ns');
-  const sumCur = sumSel.value;
-  sumSel.innerHTML = '<option value="">(all namespaces)</option>';
-  nsList.forEach(ns => {
-    const opt = document.createElement('option');
-    opt.value = ns;
-    opt.textContent = ns;
-    if (ns === sumCur) opt.selected = true;
-    sumSel.appendChild(opt);
-  });
   const exportSel = $('export-namespace');
   const exportCur = exportSel.value;
   exportSel.innerHTML = '<option value="">Select namespace...</option>';
@@ -1251,31 +1209,6 @@ async function fetchStoragePaths() {
   }
 }
 
-async function doSummarize() {
-  const ns = $('summarize-ns').value.trim() || undefined;
-  const memoryId = $('summarize-id').value.trim() || undefined;
-  const mode = $('summarize-mode').value;
-  const resultEl = $('summarize-result');
-  const btn = $('btn-summarize');
-  btn.disabled = true;
-  resultEl.textContent = 'Generating... (this may take a while)';
-  try {
-    const result = await api('/summarize', {
-      method: 'POST',
-      body: JSON.stringify({namespace: ns, mode, memory_id: memoryId}),
-    });
-    if (result.error) {
-      resultEl.textContent = result.error;
-    } else {
-      resultEl.textContent = `✅ Processed ${result.processed || 0} / total ${result.total || 0} (failed: ${result.failed || 0}).`;
-    }
-  } catch(e) {
-    resultEl.textContent = 'Error: ' + e.message;
-  } finally {
-    btn.disabled = false;
-  }
-}
-
 async function doExtractKeywords() {
   const ns = $('kw-ns').value.trim() || undefined;
   const memoryId = $('kw-id').value.trim() || undefined;
@@ -1442,6 +1375,23 @@ function esc(s) {
   const d = document.createElement('div');
   d.textContent = String(s);
   return d.innerHTML;
+}
+
+function deriveSummary(text, maxChars = 80) {
+  const lines = String(text || '').split(/\r?\n/)
+    .map(line => line.trim().replace(/\s+/g, ' '))
+    .filter(line => line && line !== '```' && line !== '~~~')
+    .map(line => line.replace(/^(?:#{1,6}\s+|[-*+]\s+|\d+[.)、]\s*)/, '').trim())
+    .filter(Boolean);
+  if (!lines.length) return '';
+  let candidate = lines[0];
+  if (Array.from(candidate.replace(/[：:]$/, '')).length < 10 && lines.length > 1) {
+    candidate += ' ' + lines[1];
+  }
+  const sentence = candidate.match(/^.*?[。！？!?；;]/);
+  if (sentence && Array.from(sentence[0]).length <= maxChars) return sentence[0];
+  const chars = Array.from(candidate);
+  return chars.length <= maxChars ? candidate : chars.slice(0, maxChars).join('').trimEnd() + '…';
 }
 
 // Init
