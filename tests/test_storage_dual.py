@@ -25,8 +25,9 @@ def mock_secondary():
 
 @pytest.fixture
 def dual(mock_primary, mock_secondary):
-    """A DualStorage whose background sync is effectively disabled."""
-    d = DualStorage(primary=mock_primary, secondary=mock_secondary, sync_interval=3600)
+    """A delegation-only DualStorage with no background maintenance thread."""
+    d = DualStorage(primary=mock_primary, secondary=mock_secondary,
+                    sync_interval=3600, start_background=False)
     yield d
     d.stop()
 
