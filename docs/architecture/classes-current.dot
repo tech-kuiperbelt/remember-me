@@ -7,11 +7,12 @@ digraph classes_current {
   edge [fontname="DejaVu Sans", fontsize=9, color="#475569", arrowsize=0.8];
 
   Admin [label="{«module» app.admin||POST export/full\lPOST export/namespace\lPOST import\lGET import/id\l}", fillcolor="#DBEAFE", color="#2563EB"];
-  Service [label="{«module» app.service|embedding_provider : Embedder\lstorage : MemoryStorage\limport_jobs : OrderedDict\l|memory_add/search/update()\lmemory_export_full()\lmemory_export_namespace()\lmemory_import_start/status()\l}", fillcolor="#DBEAFE", color="#2563EB"];
+  Service [label="{«module» app.service|embedding_provider : Embedder\lstorage : MemoryStorage\limport_jobs : OrderedDict\l|memory_add/search/update()\lmemory_list()\lknown_namespaces()/check_namespace()\lmemory_export_full()\lmemory_export_namespace()\lmemory_import_start/status()\l}", fillcolor="#DBEAFE", color="#2563EB"];
+  NamespacePolicy [label="{«module» app.namespace_policy|NamespaceNotFound\lCONFIRM_RULES\l|normalize_namespace()\lvalidate_namespace_name()\lis_confirmed()\l}", fillcolor="#FFEDD5", color="#EA580C"];
   Transfer [label="{«module» jsonl_transfer||load_jsonl()\linspect_jsonl()\lwrite_clean_jsonl()\lsha256_file()\l}", fillcolor="#FFEDD5", color="#EA580C"];
   Resolver [label="{IndexValueResolver|storage\lembed_query\lembed_documents\ltop_k / min_score / max_gap\l|prepare_embeddings()\lresolve()\l_exact_values()\l_semantic_values()\l}", fillcolor="#FEE2E2", color="#DC2626"];
 
-  MemoryStorage [label="{«abstract» MemoryStorage||CRUD/search\lexport_records()\limport_records()\lget_stats()\l}", fillcolor="#E2E8F0"];
+  MemoryStorage [label="{«abstract» MemoryStorage||CRUD/search\lexport_records()\limport_records()\llist_namespaces()\lget_stats()\l}", fillcolor="#E2E8F0"];
   ReplicaStorage [label="{«abstract» ReplicaStorage||upsert()\lappend_tombstone()\lreplace_all()\llist_records()\lget_stats()\l}", fillcolor="#E2E8F0"];
   SQLiteStorage [label="{SQLiteStorage|conn : sqlite3.Connection\lembedding_spec\lembedding_dtype\l_active_profile_id\l|CRUD + cosine search\lsemantic index candidates\lprofile migration/activation\lmetadata index sync\ltwo-table codec migration\l}", fillcolor="#CCFBF1", color="#0F766E"];
   DualStorage [label="{DualStorage|primary : SQLiteStorage\lsecondary : ReplicaStorage\l_sync_mutex\l_job\l|CRUD delegation\lincremental sync\lexport_full_snapshot()\lverified health\lcompact scheduling\l}", fillcolor="#DCFCE7", color="#16A34A"];
@@ -27,6 +28,7 @@ digraph classes_current {
 
   Admin -> Service [label="calls"];
   Service -> MemoryStorage [label="uses"];
+  Service -> NamespacePolicy [style=dashed, label="validate / confirm"];
   Service -> Transfer [style=dashed, label="import/export JSONL"];
   Service -> Embedder [label="uses"];
   Service -> Resolver [label="creates"];
