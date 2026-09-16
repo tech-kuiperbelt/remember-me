@@ -19,14 +19,6 @@
 - 关注点：会话管理（Mcp-Session-Id）、GET 流式订阅与断线重连、与 stdio 双模式共存、调用来源关联（复用 [25]）；同步更新 `.env`/`@remember-me`/MCP 客户端配置与 AGENTS.md。
 - 验收：支持 Streamable HTTP 的客户端可完成 initialize/tools/list/tools/call；旧 `/sse` 客户端无回归；`pytest` 通过。
 
-### [28] namespace 规范化与未知 namespace 治理
-
-- 已实现（见 `docs/project-management/plans/28-namespace-governance.md`）：namespace 已知集合由 live 记录动态派生（不建表），并将 `MEMORY_DEFAULT_NAMESPACE` 作为始终已知的 bootstrap namespace。
-- 查询未知 namespace 返回空 `items` + `response_code=namespace_not_found` + `response_meta`（含 `requested_namespace`、`known_namespaces`）与可理解 hint；已知 namespace 无命中仍为正常空结果。
-- `add`/`update` 未知 namespace 默认拒写；调用方传 `confirm_codes=["namespace_not_found"]` 才可创建/迁入。命名 trim、大小写敏感、≤64 字符、保留字 `all`/`*`/`none`/`null` 不因确认码放行。
-- 状态：已实现并通过验收（全量 `pytest` 283 passed；MCP/HTTP 行为一致；audit 保留原始 namespace 与 `confirm_codes`/`response_code`），待提交；提交后移入 `backlog-done.md` 并注明 commit。alias/改名/历史变体合并见 [35]。
-- 范围边界：JSONL import 的 `namespace_prefix` 属显式导入操作，与 `migrate` 一样内部豁免存在性校验；`clear`/`export_namespace` 的未知 namespace 行为不在本项内。
-
 ### [35] namespace alias、改名与历史变体合并
 
 - 背景：[28] 只做存在性治理，明确不处理 alias/改名/历史数据合并（如 `atos-next-master`、`atos-next`、`ATOS Next` 等变体）。
