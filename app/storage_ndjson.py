@@ -24,7 +24,8 @@ class NDJSONReplica(ReplicaStorage):
     Compact via force_sync (_compact_file): rewrite file from _data dict,
     removing tombstones and old versions.
 
-    Crash-safe writes use temp file + os.replace().
+    Incremental batches are flushed and fsynced before SQLite acknowledges
+    them. Snapshot replacements fsync both the temporary file and directory.
     Read tolerates corrupt lines (skipped with warning).
     """
 
@@ -100,34 +101,46 @@ class NDJSONReplica(ReplicaStorage):
                     records.pop(rid, None)
                     tombstones += 1
                 else:
-                    # Legacy replicas may contain embeddings. They are ignored
-                    # so a future compact/full-sync rewrites the smaller format.
-                    m.pop("embedding", None)
+                    # Older replicas may carry SQLite-only fields. Ignore them
+                    # so the next compact/full sync rewrites the portable form.
+                    m = self._without_embedding(m)
                     existing = records.get(rid)
                     if not existing or m["updated_at"] >= existing["updated_at"]:
                         records[rid] = m
         self._data = records
         self._tombstones = tombstones
 
-    def _append_line(self, record: dict):
-        """Append one JSON line to the file. Caller must hold _lock."""
-        line = json.dumps(self._without_embedding(record), ensure_ascii=False) + "\n"
-        with open(self.path, "a", encoding="utf-8") as f:
-            f.write(line)
+    @staticmethod
+    def _fsync_directory(path: str) -> None:
+        """Persist a preceding rename in the containing local directory."""
+        directory = os.path.dirname(os.path.abspath(path)) or "."
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        fd = os.open(directory, flags)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
 
     @staticmethod
     def _without_embedding(record: dict) -> dict:
-        """Return a serializable replica record without derived vectors."""
-        return {key: value for key, value in record.items() if key != "embedding"}
+        """Return a replica event without SQLite-only bookkeeping fields."""
+        return {
+            key: value for key, value in record.items()
+            if key not in {"embedding", "synced", "version"}
+            and not (key == "deleted" and value is not True)
+        }
 
-    def _compact_file(self):
-        """Rewrite file from _data dict, atomically, removing tombstones/dupes."""
+    def _write_snapshot(self, records) -> None:
+        """Atomically publish a durable snapshot. Caller must hold _lock."""
         tmp = self.path + ".tmp"
         try:
-            with open(tmp, "w", encoding="utf-8") as f:
-                for m in self._data.values():
-                    f.write(json.dumps(self._without_embedding(m), ensure_ascii=False) + "\n")
+            with open(tmp, "w", encoding="utf-8") as handle:
+                for record in records:
+                    handle.write(json.dumps(self._without_embedding(record), ensure_ascii=False) + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
             os.replace(tmp, self.path)
+            self._fsync_directory(self.path)
         except Exception:
             try:
                 if os.path.exists(tmp):
@@ -135,6 +148,10 @@ class NDJSONReplica(ReplicaStorage):
             except OSError:
                 logger.warning("NDJSONReplica: could not remove failed temp file %s", tmp)
             raise
+
+    def _compact_file(self):
+        """Rewrite file from _data dict, atomically, removing tombstones/dupes."""
+        self._write_snapshot(self._data.values())
         self._tombstones = 0
 
     def compaction_metrics(self) -> dict:
@@ -172,20 +189,32 @@ class NDJSONReplica(ReplicaStorage):
 
     # -- replica API --
 
-    def upsert(self, record: dict) -> None:
+    def append_batch(self, records: list[dict]) -> None:
+        """Append and durably publish one outbox batch as an all-or-retry unit."""
+        if not records:
+            return
         with self._lock:
-            entry = self._without_embedding(record)
-            self._data[entry["id"]] = entry
-            self._append_line(entry)
+            entries = [self._without_embedding(record) for record in records]
+            with open(self.path, "a", encoding="utf-8") as handle:
+                for entry in entries:
+                    handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            for entry in entries:
+                if entry.get("deleted") is True:
+                    self._data.pop(entry["id"], None)
+                    self._tombstones += 1
+                else:
+                    self._data[entry["id"]] = entry
+
+    def upsert(self, record: dict) -> None:
+        self.append_batch([record])
 
     def append_tombstone(self, memory_id: str, updated_at: str) -> None:
-        with self._lock:
-            self._data.pop(memory_id, None)
-            self._tombstones += 1
-            self._append_line({
-                "id": memory_id, "deleted": True,
-                "updated_at": updated_at or _now(),
-            })
+        self.append_batch([{
+            "id": memory_id, "deleted": True,
+            "updated_at": updated_at or _now(),
+        }])
 
     def list_records(self, limit=100, offset=0):
         with self._lock:
@@ -201,7 +230,7 @@ class NDJSONReplica(ReplicaStorage):
         then compact once so an interrupted rebuild never leaves a partial file.
         """
         with self._lock:
-            self._data = {
+            replacement = {
                 m["id"]: {
                     "id": m["id"], "text": m["text"],
                     "metadata": m.get("metadata") or {},
@@ -211,7 +240,9 @@ class NDJSONReplica(ReplicaStorage):
                 }
                 for m in memories
             }
-            self._compact_file()
+            self._write_snapshot(replacement.values())
+            self._data = replacement
+            self._tombstones = 0
 
     def get_stats(self):
         from .jsonl_transfer import inspect_jsonl

@@ -15,6 +15,8 @@ from . import audit
 
 _COMPACT_STATE_KEY = "ndjson_compact"
 _COMPACT_RETRY_SECONDS = 60 * 60
+_HEALTH_STATE_KEY = "ndjson_health_check"
+_HEALTH_RETRY_SECONDS = 60 * 60
 
 
 class DualStorage(MemoryStorage):
@@ -37,13 +39,16 @@ class DualStorage(MemoryStorage):
     def __init__(self, primary: MemoryStorage, secondary: ReplicaStorage,
                  sync_interval: int = 300, compact_interval: int = 24 * 60 * 60,
                  compact_min_bytes: int = 1024 * 1024,
-                 compact_min_ratio: float = 0.25, start_background: bool = True):
+                 compact_min_ratio: float = 0.25,
+                 health_check_interval: int = 24 * 60 * 60,
+                 start_background: bool = True):
         self.primary = primary
         self.secondary = secondary
         self.sync_interval = sync_interval
         self.compact_interval = max(1, compact_interval)
         self.compact_min_bytes = max(0, compact_min_bytes)
         self.compact_min_ratio = min(1.0, max(0.0, compact_min_ratio))
+        self.health_check_interval = max(1, health_check_interval)
 
         # Sync state
         self._last_sync_mono = time.monotonic()              # timing for stats
@@ -66,6 +71,13 @@ class DualStorage(MemoryStorage):
     # -- background sync job --
 
     def _sync_loop(self):
+        try:
+            self._sync_count += 1
+            with self._sync_mutex:
+                self._incremental_sync()
+        except Exception:
+            logger.error("startup sync failed", exc_info=True)
+        self._run_due_health_check("startup", force=True)
         self._run_due_compact("startup")
         while not self._stop.wait(self.sync_interval):
             try:
@@ -74,6 +86,7 @@ class DualStorage(MemoryStorage):
                     self._incremental_sync()
             except Exception:
                 logger.error("background sync failed", exc_info=True)
+            self._run_due_health_check("scheduled")
             self._run_due_compact("scheduled")
 
     @staticmethod
@@ -88,6 +101,133 @@ class DualStorage(MemoryStorage):
 
     def _save_compact_state(self, state: dict) -> None:
         self.primary._set_storage_state(_COMPACT_STATE_KEY, state)
+
+    def _health_state(self) -> dict:
+        state = self.primary._get_storage_state(_HEALTH_STATE_KEY, {})
+        return state if isinstance(state, dict) else {}
+
+    def _save_health_state(self, state: dict) -> None:
+        self.primary._set_storage_state(_HEALTH_STATE_KEY, state)
+
+    def _health_retry_after(self, state: dict) -> int:
+        if state.get("last_result") in ("drift", "error"):
+            return _HEALTH_RETRY_SECONDS
+        return self.health_check_interval
+
+    def _formatted_health_state(self) -> dict | None:
+        state = self._health_state()
+        if not state:
+            return None
+        last_check = state.get("last_check_at")
+        retry_after = self._health_retry_after(state)
+        return {
+            **state,
+            "last_check_at": self._iso_timestamp(last_check),
+            "next_due_at": self._iso_timestamp(last_check + retry_after)
+            if last_check else None,
+            "interval_s": self.health_check_interval,
+            "retry_interval_s": _HEALTH_RETRY_SECONDS,
+        }
+
+    def _inspect_replica_locked(self) -> tuple[dict, dict]:
+        """Return one exact primary/replica comparison while both locks are held."""
+        pending = self.primary._count_unsynced()
+        primary_ids = {item["id"] for item in self.primary.export_records()}
+        secondary_stats = self.secondary.get_stats()
+        inspected_ids = secondary_stats.pop("_integrity_ids", None)
+        secondary_ids = (set(inspected_ids) if inspected_ids is not None else
+                         {item["id"] for item in self.secondary.list_records(limit=10 ** 9)})
+        integrity = secondary_stats.get("integrity", {})
+        corrupt_lines = int(integrity.get("corrupt_lines", 0) or 0)
+        missing = primary_ids - secondary_ids
+        extra = secondary_ids - primary_ids
+        healthy = pending == 0 and not missing and not extra and corrupt_lines == 0
+        result = {
+            "outcome": "healthy" if healthy else "drift",
+            "in_sync": healthy,
+            "pending": pending,
+            "missing": len(missing),
+            "extra": len(extra),
+            "corrupt_lines": corrupt_lines,
+            "checked_at": integrity.get("checked_at") or datetime.now(timezone.utc).isoformat(),
+        }
+        return result, secondary_stats
+
+    def _persist_health_result(self, result: dict, trigger: str,
+                               checked_epoch: float | None = None) -> None:
+        self._save_health_state({
+            "last_check_at": checked_epoch if checked_epoch is not None else time.time(),
+            "last_result": result["outcome"],
+            "last_error": None,
+            "last_trigger": trigger,
+            "pending": result["pending"],
+            "missing": result["missing"],
+            "extra": result["extra"],
+            "corrupt_lines": result["corrupt_lines"],
+        })
+
+    def _run_due_health_check(self, trigger: str, force: bool = False) -> bool:
+        """Run a serialized exact check when due; never repair automatically."""
+        state = self._health_state()
+        last_check = state.get("last_check_at")
+        if not force and last_check and time.time() < last_check + self._health_retry_after(state):
+            return False
+        started = time.perf_counter()
+        try:
+            with self._lock, self._sync_mutex:
+                state = self._health_state()
+                last_check = state.get("last_check_at")
+                if (not force and last_check and
+                        time.time() < last_check + self._health_retry_after(state)):
+                    return False
+                result, _secondary = self._inspect_replica_locked()
+                self._persist_health_result(result, trigger)
+            audit.record(
+                "ndjson_health_check", {"trigger": trigger}, result,
+                (time.perf_counter() - started) * 1000,
+            )
+            if result["in_sync"]:
+                logger.info("NDJSON health check: healthy trigger=%s", trigger)
+            else:
+                logger.warning(
+                    "NDJSON health check: drift trigger=%s pending=%d missing=%d extra=%d corrupt=%d",
+                    trigger, result["pending"], result["missing"], result["extra"],
+                    result["corrupt_lines"],
+                )
+            return True
+        except Exception as exc:
+            failed_at = time.time()
+            error_state = {
+                "last_check_at": failed_at,
+                "last_result": "error",
+                "last_error": str(exc),
+                "last_trigger": trigger,
+                "pending": None,
+                "missing": None,
+                "extra": None,
+                "corrupt_lines": None,
+            }
+            try:
+                self._save_health_state(error_state)
+            except Exception:
+                logger.error("NDJSON health check: could not persist failure state", exc_info=True)
+            logger.error("NDJSON health check failed", exc_info=True)
+            audit.record(
+                "ndjson_health_check", {"trigger": trigger}, None,
+                (time.perf_counter() - started) * 1000,
+                error={"type": type(exc).__name__, "message": str(exc)},
+            )
+            return True
+
+    def _record_verified_health(self, trigger: str) -> None:
+        """Record health after a serialized Full Sync produced a clean replica."""
+        result = {
+            "outcome": "healthy", "in_sync": True, "pending": 0,
+            "missing": 0, "extra": 0, "corrupt_lines": 0,
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self._persist_health_result(result, trigger)
+        audit.record("ndjson_health_check", {"trigger": trigger}, result, 0.0)
 
     def _run_due_compact(self, trigger: str) -> None:
         """Run one due NDJSON maintenance check without blocking sync writes."""
@@ -187,25 +327,29 @@ class DualStorage(MemoryStorage):
         })
 
     def _incremental_sync(self):
-        """Batch-sync unsynced records to secondary, mark as synced."""
+        """Durably publish an outbox batch, then conditionally acknowledge it."""
         synced = 0
         while True:
             batch = self.primary._get_unsynced(limit=500)
             if not batch:
                 break
-            ids = []
-            for m in batch:
-                try:
-                    if m.get("deleted"):
-                        self.secondary.append_tombstone(m["id"], m.get("updated_at"))
-                    else:
-                        self.secondary.upsert(m)
-                    ids.append(m["id"])
-                    synced += 1
-                except Exception:
-                    logger.warning("incremental sync: failed to sync id=%s", m["id"], exc_info=True)
-            if ids:
-                self.primary._mark_synced_batch(ids)
+            events = []
+            versions = []
+            for memory in batch:
+                if memory.get("deleted"):
+                    events.append({
+                        "id": memory["id"], "deleted": True,
+                        "updated_at": memory.get("updated_at"),
+                    })
+                else:
+                    events.append(memory)
+                versions.append((memory["id"], memory["version"]))
+            try:
+                self.secondary.append_batch(events)
+            except Exception:
+                logger.warning("incremental sync: failed to durably publish batch", exc_info=True)
+                return
+            synced += self.primary._mark_synced_versions(versions)
         if synced:
             self._last_sync_mono = time.monotonic()
             logger.info("incremental sync: %d synced", synced)
@@ -308,6 +452,7 @@ class DualStorage(MemoryStorage):
             if result.get("ids"):
                 self.primary._mark_synced_batch(result["ids"])
             self._last_sync_mono = time.monotonic()
+            self._record_verified_health("full_sync")
             return result
 
     def export_full_snapshot(self, destination: str) -> dict:
@@ -337,6 +482,7 @@ class DualStorage(MemoryStorage):
             self._record_full_sync_compaction(before_bytes, after_bytes)
             self.primary._mark_synced_batch(result.get("ids", []))
             self._last_sync_mono = time.monotonic()
+            self._record_verified_health("full_export")
             return {"records": len(primary_records), "bytes": os.path.getsize(destination),
                     "sha256": sha256_file(destination), "path": destination,
                     "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -345,46 +491,56 @@ class DualStorage(MemoryStorage):
                                   "corrupt_lines": 0}}
 
     def get_stats(self) -> dict:
-        p = self.primary.get_stats()
-        try:
-            s = self.secondary.get_stats()
-        except Exception:
-            s = {"total": -1, "backend": "json", "path": "?", "error": "unavailable"}
-        pending = self.primary._count_unsynced()
-        compact = self._compact_state()
-        if compact:
-            last_check = compact.get("last_check_at")
-            retry_after = (_COMPACT_RETRY_SECONDS
-                           if compact.get("last_result") == "error"
-                           else self.compact_interval)
-            compact = {
-                **compact,
-                "last_check_at": self._iso_timestamp(last_check),
-                "last_compact_at": self._iso_timestamp(compact.get("last_compact_at")),
-                "next_due_at": self._iso_timestamp(last_check + retry_after) if last_check else None,
-                "interval_s": self.compact_interval,
-                "min_reclaimable_bytes": self.compact_min_bytes,
-                "min_reclaimable_ratio": self.compact_min_ratio,
-            }
-        primary_ids = {item["id"] for item in self.primary.export_records()}
-        inspected_ids = s.pop("_integrity_ids", None)
-        secondary_ids = (set(inspected_ids) if inspected_ids is not None else
-                         {item["id"] for item in self.secondary.list_records(limit=10 ** 9)})
-        secondary_integrity = s.get("integrity", {})
-        corrupt_lines = secondary_integrity.get("corrupt_lines", 0)
-        missing = primary_ids - secondary_ids
-        extra = secondary_ids - primary_ids
+        with self._lock, self._sync_mutex:
+            p = self.primary.get_stats()
+            try:
+                live_health, s = self._inspect_replica_locked()
+                replica_integrity = {
+                    "missing": live_health["missing"],
+                    "extra": live_health["extra"],
+                    "corrupt_lines": live_health["corrupt_lines"],
+                    "checked_at": live_health["checked_at"],
+                    "checked": True,
+                }
+            except Exception as exc:
+                pending = self.primary._count_unsynced()
+                live_health = {
+                    "outcome": "error", "in_sync": False, "pending": pending,
+                    "missing": None, "extra": None, "corrupt_lines": None,
+                    "checked_at": datetime.now(timezone.utc).isoformat(),
+                }
+                replica_integrity = {
+                    "missing": None, "extra": None, "corrupt_lines": None,
+                    "checked_at": live_health["checked_at"], "checked": False,
+                    "error": str(exc),
+                }
+                s = {
+                    "total": -1, "backend": "ndjson",
+                    "path": getattr(self.secondary, "path", "?"), "error": str(exc),
+                }
+            compact = self._compact_state()
+            if compact:
+                last_check = compact.get("last_check_at")
+                retry_after = (_COMPACT_RETRY_SECONDS
+                               if compact.get("last_result") == "error"
+                               else self.compact_interval)
+                compact = {
+                    **compact,
+                    "last_check_at": self._iso_timestamp(last_check),
+                    "last_compact_at": self._iso_timestamp(compact.get("last_compact_at")),
+                    "next_due_at": self._iso_timestamp(last_check + retry_after)
+                    if last_check else None,
+                    "interval_s": self.compact_interval,
+                    "min_reclaimable_bytes": self.compact_min_bytes,
+                    "min_reclaimable_ratio": self.compact_min_ratio,
+                }
+            automatic_health = self._formatted_health_state()
         return {
             "total": p["total"],
             "backend": "dual",
-            "in_sync": pending == 0 and not missing and not extra and corrupt_lines == 0,
-            "pending": pending,
-            "replica_integrity": {
-                "missing": len(missing), "extra": len(extra),
-                "corrupt_lines": corrupt_lines,
-                "checked_at": secondary_integrity.get("checked_at"),
-                "checked": True,
-            },
+            "in_sync": live_health["in_sync"],
+            "pending": live_health["pending"],
+            "replica_integrity": replica_integrity,
             "sync_count": self._sync_count,
             "sync_interval_s": self.sync_interval,
             "namespaces": p.get("namespaces", []),
@@ -396,6 +552,7 @@ class DualStorage(MemoryStorage):
             "primary": p,
             "secondary": s,
             "ndjson_compact": compact,
+            "ndjson_health_check": automatic_health,
         }
 
     def stop(self):

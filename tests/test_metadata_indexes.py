@@ -78,4 +78,5 @@ def test_legacy_dimension_tables_migrate_from_authoritative_metadata(tmp_path):
     )
     assert db.get_stats()["keyword_counts"] == {"project": 1}
     assert db.get_stats()["category_counts"] == {"bugfix": 1}
+    assert db.get("m1")["version"] == 0
     assert [m["id"] for m in db.search(FAKE_EMB, keywords=["project"], categories=["bugfix"])] == ["m1"]

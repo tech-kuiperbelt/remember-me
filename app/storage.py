@@ -131,6 +131,11 @@ class ReplicaStorage(ABC):
     def append_tombstone(self, memory_id: str, updated_at: str) -> None: ...
 
     @abstractmethod
+    def append_batch(self, records: list[dict]) -> None:
+        """Durably append one outbox batch before its primary is acknowledged."""
+        ...
+
+    @abstractmethod
     def replace_all(self, memories: list[dict]) -> None: ...
 
     @abstractmethod
@@ -188,6 +193,7 @@ def create_storage(backend: str = "sqlite", **kwargs) -> MemoryStorage:
                 compact_interval=int(kwargs.get("compact_interval", 24 * 60 * 60)),
                 compact_min_bytes=int(kwargs.get("compact_min_bytes", 1024 * 1024)),
                 compact_min_ratio=float(kwargs.get("compact_min_ratio", 0.25)),
+                health_check_interval=int(kwargs.get("health_check_interval", 24 * 60 * 60)),
                 start_background=bool(kwargs.get("start_background", True)),
             )
         except Exception:

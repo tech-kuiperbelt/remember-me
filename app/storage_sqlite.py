@@ -92,7 +92,8 @@ class SQLiteStorage(MemoryStorage):
                 namespace TEXT NOT NULL DEFAULT 'default',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
-                deleted INTEGER NOT NULL DEFAULT 0
+                deleted INTEGER NOT NULL DEFAULT 0,
+                version INTEGER NOT NULL DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS idx_memories_namespace ON memories(namespace);
             CREATE INDEX IF NOT EXISTS idx_memories_created_at ON memories(created_at);
@@ -114,6 +115,11 @@ class SQLiteStorage(MemoryStorage):
         # Migration: outbox synced column (format-agnostic, not tied to JSON)
         try:
             self.conn.execute("ALTER TABLE memories ADD COLUMN synced INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+        # Monotonic per-memory version used only for conditional outbox ack.
+        try:
+            self.conn.execute("ALTER TABLE memories ADD COLUMN version INTEGER NOT NULL DEFAULT 0")
         except sqlite3.OperationalError:
             pass  # column already exists
         # Migration: optional caller-provided or deterministically derived summary.
@@ -1075,8 +1081,8 @@ class SQLiteStorage(MemoryStorage):
         with self._lock:
             self.conn.execute(
                 "INSERT OR REPLACE INTO memories "
-                "(id, text, embedding, metadata, namespace, created_at, updated_at, deleted, synced, summary) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, ?)",
+                "(id, text, embedding, metadata, namespace, created_at, updated_at, deleted, synced, version, summary) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, 0, ?)",
                 (memory_id, text, None if self._active_profile_id else self._serialize(embedding),
                  json.dumps(metadata or {}), namespace, created_at, updated_at, summary),
             )
@@ -1110,6 +1116,23 @@ class SQLiteStorage(MemoryStorage):
             )
             self.conn.commit()
 
+    def _mark_synced_versions(self, entries):
+        """Acknowledge only outbox versions that have not changed since read.
+
+        A concurrent write increments ``version`` and remains pending rather
+        than being accidentally acknowledged by an older replica payload.
+        """
+        if not entries:
+            return 0
+        with self._lock:
+            cursor = self.conn.executemany(
+                "UPDATE memories SET synced = 1 "
+                "WHERE id = ? AND version = ? AND synced = 0",
+                entries,
+            )
+            self.conn.commit()
+        return cursor.rowcount
+
     def _count_unsynced(self) -> int:
         """Count active records awaiting sync. Internal use only (stats)."""
         with self._lock:
@@ -1134,8 +1157,8 @@ class SQLiteStorage(MemoryStorage):
                 now = _now()
                 summary = summary_for_add(text, summary)
                 self.conn.execute(
-                    "INSERT INTO memories (id, text, embedding, metadata, namespace, created_at, updated_at, synced, summary) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)",
+                    "INSERT INTO memories (id, text, embedding, metadata, namespace, created_at, updated_at, synced, version, summary) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?)",
                     (eid, text, None if self._active_profile_id else self._serialize(embedding),
                      json.dumps(metadata or {}), namespace, now, now, summary),
                 )
@@ -1242,7 +1265,7 @@ class SQLiteStorage(MemoryStorage):
                 )
                 self.conn.execute(
                     "UPDATE memories SET text = ?, embedding = ?, metadata = ?, "
-                    "namespace = ?, updated_at = ?, synced = 0, summary = ? WHERE id = ?",
+                    "namespace = ?, updated_at = ?, synced = 0, version = version + 1, summary = ? WHERE id = ?",
                     (text, None if self._active_profile_id else self._serialize(emb),
                      json.dumps(meta), ns, now, summ, memory_id),
                 )
@@ -1283,7 +1306,8 @@ class SQLiteStorage(MemoryStorage):
                 )
             try:
                 self.conn.execute(
-                    "UPDATE memories SET metadata = ?, synced = 0 WHERE id = ? AND deleted = 0",
+                    "UPDATE memories SET metadata = ?, synced = 0, version = version + 1 "
+                    "WHERE id = ? AND deleted = 0",
                     (json.dumps(merged), memory_id),
                 )
                 self._sync_metadata_indexes(memory_id, merged, changed_dimensions=metadata or {})
@@ -1317,7 +1341,8 @@ class SQLiteStorage(MemoryStorage):
         """Soft-delete: mark as deleted and unsynced."""
         with self._lock:
             c = self.conn.execute(
-                "UPDATE memories SET deleted = 1, synced = 0, updated_at = ? WHERE id = ? AND deleted = 0",
+                "UPDATE memories SET deleted = 1, synced = 0, version = version + 1, "
+                "updated_at = ? WHERE id = ? AND deleted = 0",
                 (_now(), memory_id),
             )
             if c.rowcount > 0:
@@ -1334,7 +1359,8 @@ class SQLiteStorage(MemoryStorage):
                     (namespace,),
                 ).fetchone()[0]
                 self.conn.execute(
-                    "UPDATE memories SET deleted = 1, synced = 0, updated_at = ? WHERE namespace = ? AND deleted = 0",
+                    "UPDATE memories SET deleted = 1, synced = 0, version = version + 1, "
+                    "updated_at = ? WHERE namespace = ? AND deleted = 0",
                     (_now(), namespace),
                 )
                 self.conn.execute(
@@ -1347,7 +1373,8 @@ class SQLiteStorage(MemoryStorage):
                     "SELECT COUNT(*) FROM memories WHERE deleted = 0"
                 ).fetchone()[0]
                 self.conn.execute(
-                    "UPDATE memories SET deleted = 1, synced = 0, updated_at = ? WHERE deleted = 0",
+                    "UPDATE memories SET deleted = 1, synced = 0, version = version + 1, "
+                    "updated_at = ? WHERE deleted = 0",
                     (_now(),),
                 )
                 self.conn.execute("DELETE FROM memory_index_values")
@@ -1410,7 +1437,7 @@ class SQLiteStorage(MemoryStorage):
                     self.conn.execute(
                         "INSERT INTO memories "
                         "(id, text, embedding, metadata, namespace, created_at, updated_at, "
-                        "synced, summary) VALUES (?, ?, NULL, ?, ?, ?, ?, 0, ?)",
+                        "synced, version, summary) VALUES (?, ?, NULL, ?, ?, ?, ?, 0, 0, ?)",
                         (memory_id, memory["text"], json.dumps(memory.get("metadata") or {}),
                          memory["namespace"], memory["created_at"], memory["updated_at"],
                          memory.get("summary")),

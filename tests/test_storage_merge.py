@@ -58,6 +58,7 @@ def test_import_preserves_fields_and_marks_outbox_pending(storage, fake_emb):
     assert imported["updated_at"] == record["updated_at"]
     assert imported["summary"] is None
     assert imported["synced"] == 0
+    assert imported["version"] == 0
     assert storage.index_embedding_completeness()["complete"] is True
 
 

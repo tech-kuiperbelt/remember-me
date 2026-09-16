@@ -4,16 +4,13 @@
 
 ## 当前待办
 
-### [31] NDJSON 灾备副本的多进程一致性与真实健康状态
+### [34] 统一离线运维脚本与 README Runbook
 
-- 已确认的问题：2026-09-11 多个 `dual` 服务实例共享同一 SQLite/JSONL 时，一个实例用自身过期的 NDJSON 内存快照执行 compact，覆盖了其他实例已经追加的记录；SQLite 中这些记录已经被标记 `synced=1`，因此 outbox 不会重试。最终主库 918 条、副本 912 条，而 Stats 仍错误显示 `in_sync=true`。2026-09-14 已通过 Full Sync 恢复为 918/918。
-- 当前缓解：Codex/OpenCode 客户端统一连接单个 `127.0.0.1:1314` 服务，不再为每个会话直接启动 `bin/start.sh`；但底层实现仍没有跨进程安全保证。
-- 目标：明确并实现单写者约束或可靠的跨进程协调；append、incremental sync、compact 和 Full Sync 不得相互覆盖，compact 必须以 SQLite 权威快照或加锁后重新读取的完整副本为输入，不能直接发布可能过期的进程内 `_data`。
-- 健康检查：`in_sync` 不能只依据 `pending == 0`；至少校验主副有效记录数，管理操作应支持精确 ID 差集/完整性校验，并明确报告 missing、extra、损坏行和最后一次完整校验时间。
-- 恢复策略：发现漂移时不得继续报告健康；提供安全的 Full Sync 修复提示，并评估启动时低成本自动核验或定期深度核验。
-- 验收：增加多进程/强制交错测试，覆盖一个实例追加、另一个实例 compact，两个实例竞争 outbox、compact 与 Full Sync 并发、进程在 append/mark-synced 边界退出，以及 Stats 对副本漂移的识别；单实例现有行为与离线恢复不回归。
-- 2026-09-14 前置修复已随 [30] 实现：每个 replica path 使用生命周期 OS writer lock，第二个 dual 进程启动即失败；Full Sync 从 SQLite 快照构建；Stats 精确扫描磁盘 JSONL 并报告 missing/extra/corrupt_lines/checked_at，任一异常时 `in_sync=false`。
-- 2026-09-15 进一步收敛为单 SQLite 主写者：所有 factory 创建的可写 SQLite/dual 服务，以及 embedding、DeepSeek migration 和 recovery 等写入维护流程，都持有同一个主库 `<db>.writer.lock` 的非阻塞 OS `flock`；只读诊断不占锁。replica lock 仍作为 dual 的第二道保护。剩余项是更广泛的强制交错、崩溃边界和定期深度核验测试，不阻断单写者部署下的 [30]。
+- 背景：embedding 维护、keyword/category 迁移和 JSONL recovery 目前分别暴露 Python module 命令；`bin/recover.sh` 只初始化 venv，没有像 `bin/start.sh` 一样加载 `.env`。停服务、选择正确 provider/path、备份、重启和健康检查仍依赖人工拼装命令。
+- 目标：在 `bin/` 下提供统一且可发现的运维入口或职责清晰的脚本，复用同一套项目目录、`.venv`、`.env`、SQLite/JSONL 默认路径和错误处理；覆盖 embedding `status`/codec migration/reindex/index-value reindex/activate、keyword/category dry-run 与正式迁移、JSONL→SQLite recovery。
+- 安全约束：明确区分在线只读与离线写操作；写操作必须依赖主库 writer lock fail-fast，不自动 kill 服务、不删除 lock file。恢复和高风险维护前提示或检查备份，失败不得覆盖原主库；脚本参数必须能覆盖默认数据库、replica、profile、namespace 和 batch size。
+- Runbook：新增根目录 `README.md`，说明推荐启动方式、在线可执行操作、标准“Full Sync/Export → 正常停服 → 运维/迁移/恢复 → 重启 → Stats 验证”流程、embedding profile 配置一致性，以及 `.writer.lock` 文件存在不等于锁被占用。
+- 验收：所有脚本支持 `--help`，从任意工作目录调用均可正确定位项目并加载环境；只读命令可在服务运行时成功，写命令在服务运行时明确失败，停服后成功；README 示例与实际 CLI 一致，并覆盖 `pending=0`、`in_sync=true`、missing/extra/corrupt_lines 为零的验收检查。
 
 ### [29] MCP Streamable HTTP（新 SSE）传输支持
 

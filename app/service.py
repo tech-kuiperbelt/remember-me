@@ -32,6 +32,9 @@ SYNC_INTERVAL = int(os.environ.get("MEMORY_SYNC_INTERVAL", "300"))
 COMPACT_INTERVAL = int(os.environ.get("MEMORY_COMPACT_INTERVAL", str(24 * 60 * 60)))
 COMPACT_MIN_BYTES = int(os.environ.get("MEMORY_COMPACT_MIN_BYTES", str(1024 * 1024)))
 COMPACT_MIN_RATIO = float(os.environ.get("MEMORY_COMPACT_MIN_RATIO", "0.25"))
+HEALTH_CHECK_INTERVAL = int(os.environ.get(
+    "MEMORY_HEALTH_CHECK_INTERVAL", str(24 * 60 * 60)
+))
 
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 EMBED_DTYPE = os.environ.get("EMBED_DTYPE", "float16")
@@ -62,7 +65,8 @@ if STORAGE_BACKEND == "dual":
                              sync_interval=SYNC_INTERVAL,
                              compact_interval=COMPACT_INTERVAL,
                              compact_min_bytes=COMPACT_MIN_BYTES,
-                             compact_min_ratio=COMPACT_MIN_RATIO)
+                             compact_min_ratio=COMPACT_MIN_RATIO,
+                             health_check_interval=HEALTH_CHECK_INTERVAL)
 elif STORAGE_BACKEND in ("json", "ndjson", "jsonl"):
     raise RuntimeError(
         f"MEMORY_STORAGE={STORAGE_BACKEND} is no longer allowed as a standalone backend. "
@@ -140,13 +144,14 @@ def warmup_embedding_provider() -> None:
 def _strip_internal_fields(d: dict) -> dict:
     """Remove storage-internal fields from a record before exposing it.
 
-    ``embedding`` is a large vector with no LLM value; ``deleted``/``synced``
+    ``embedding`` is a large vector with no LLM value; ``deleted``/``synced``/``version``
     are sync-protocol bookkeeping fields. All are dropped from every
     LLM-facing API (search/list/get/get_details).
     """
     d.pop("embedding", None)
     d.pop("deleted", None)
     d.pop("synced", None)
+    d.pop("version", None)
     return d
 
 
