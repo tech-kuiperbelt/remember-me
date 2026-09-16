@@ -92,7 +92,7 @@ async def handle_list_tools() -> types.ListToolsResult:
                             },
                         },
                     },
-                    "namespace": {"type": "string", "description": "Namespace (default: $MEMORY_DEFAULT_NAMESPACE or 'default'). Must already exist unless confirm_codes includes 'namespace_not_found'."},
+                    "namespace": {"type": "string", "description": "Namespace (default: $MEMORY_DEFAULT_NAMESPACE or 'default'). The configured default namespace is always valid; other namespaces must already exist unless confirm_codes includes 'namespace_not_found'."},
                     "confirm_codes": {
                         "type": "array",
                         "items": {"type": "string"},
@@ -118,7 +118,9 @@ async def handle_list_tools() -> types.ListToolsResult:
                         "Values within each dimension use OR; keywords and "
                         "categories combine with each other and namespace using AND. "
                         "If no results are found, call 'stats' first to verify the correct namespace, "
-                        "then try searching again.",
+                        "then try searching again. If the response has response_code='namespace_not_found', "
+                        "the requested namespace does not exist; use response_meta.known_namespaces or omit "
+                        "the namespace to search all namespaces.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -158,7 +160,9 @@ async def handle_list_tools() -> types.ListToolsResult:
                         "namespace and time filters using AND. "
                         "For relative time windows (\"last week\", \"this month\"), call 'stats' first to get "
                         "server_time, then pass concrete updated_after/updated_before timestamps. "
-                        "Ordered by the given field descending (default: created_at).",
+                        "Ordered by the given field descending (default: created_at). If the response has "
+                        "response_code='namespace_not_found', the requested namespace does not exist; use "
+                        "response_meta.known_namespaces or omit the namespace to list all memories.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -242,7 +246,7 @@ async def handle_list_tools() -> types.ListToolsResult:
                             },
                         },
                     },
-                    "namespace": {"type": "string", "description": "New namespace. Must already exist unless confirm_codes includes 'namespace_not_found'. Blank/omitted leaves it unchanged."},
+                    "namespace": {"type": "string", "description": "New namespace. The configured default namespace is always valid; other namespaces must already exist unless confirm_codes includes 'namespace_not_found'. Blank/omitted leaves it unchanged."},
                     "confirm_codes": {
                         "type": "array",
                         "items": {"type": "string"},
