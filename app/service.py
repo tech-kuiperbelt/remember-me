@@ -17,6 +17,13 @@ from .categories import (
     categories_dropped,
     category_counts_with_seeds,
 )
+from .namespace_policy import (
+    NamespaceNotFound,
+    NAMESPACE_NOT_FOUND,
+    normalize_namespace,
+    validate_namespace_name,
+    is_confirmed,
+)
 
 logger = logging.getLogger("service")
 
@@ -174,9 +181,39 @@ def _normalize_summary(summary) -> str | None:
     return normalize_summary(summary)
 
 
+def known_namespaces() -> list[str]:
+    """Namespaces currently in use, plus the configured default namespace."""
+    known = list(storage.list_namespaces())
+    if DEFAULT_NAMESPACE not in known:
+        known.append(DEFAULT_NAMESPACE)
+    return sorted(known)
+
+
+def check_namespace(namespace, confirm_codes=None) -> str:
+    """Normalize/validate a namespace and enforce that it exists.
+
+    Returns the trimmed namespace. ``None``/blank resolves to the default
+    namespace. Raises ``NamespaceNotFound`` for an unknown namespace unless
+    the caller explicitly confirms the matching validation rule; name format
+    (length/reserved characters) is never bypassable by confirmation codes.
+    """
+    if namespace is not None and not isinstance(namespace, str):
+        raise ValueError("namespace must be a string")
+    ns = normalize_namespace(namespace) or DEFAULT_NAMESPACE
+    validate_namespace_name(ns)
+    if ns == DEFAULT_NAMESPACE:
+        return ns
+    if ns in storage.list_namespaces():
+        return ns
+    if is_confirmed(confirm_codes, NAMESPACE_NOT_FOUND):
+        return ns
+    raise NamespaceNotFound(ns, known_namespaces())
+
+
 def memory_add(text: str, metadata: dict | None = None,
-               namespace: str | None = None, summary: str | None = None) -> dict:
-    ns = namespace or DEFAULT_NAMESPACE
+               namespace: str | None = None, summary: str | None = None,
+               confirm_codes: list | None = None) -> dict:
+    ns = check_namespace(namespace, confirm_codes)
     summary = _normalize_summary(summary)
     logger.info("add: namespace=%s text_len=%d has_summary=%s",
                 ns, len(text), summary is not None)
@@ -273,6 +310,13 @@ def memory_search(query: str, k: int = 5, threshold: float = 0.0,
                   keywords: list | None = None,
                   return_resolution: bool = False):
     k = _sanitize_k(k)
+    # Reject an unknown namespace before embedding: an empty result must not
+    # be confused with "namespace does not exist".
+    if namespace is not None and not isinstance(namespace, str):
+        raise ValueError("namespace must be a string")
+    namespace = normalize_namespace(namespace)
+    if namespace is not None:
+        namespace = check_namespace(namespace)
     kw = _normalize_keywords(keywords)
     cats = normalize_categories_filter(categories)
     for dimension, values in (("keywords", kw), ("categories", cats)):
@@ -315,6 +359,11 @@ def memory_list(namespace: str | None = None, limit: int = 100,
                 categories: list | None = None) -> list[dict]:
     if sort_by not in ("created_at", "updated_at"):
         sort_by = "created_at"
+    if namespace is not None and not isinstance(namespace, str):
+        raise ValueError("namespace must be a string")
+    namespace = normalize_namespace(namespace)
+    if namespace is not None:
+        namespace = check_namespace(namespace)
     kw = _normalize_keywords(keywords)
     cats = normalize_categories_filter(categories)
     logger.info("list: namespace=%s limit=%d offset=%d sort_by=%s updated_after=%s updated_before=%s keywords=%s categories=%s",
@@ -345,11 +394,19 @@ def memory_get(memory_id: str) -> dict | None:
 def memory_update(memory_id: str, text: str | None = None,
                   metadata: dict | None = None,
                   namespace: str | None = None,
-                  summary: str | None = None) -> dict:
+                  summary: str | None = None,
+                  confirm_codes: list | None = None) -> dict:
+    # Blank/omitted namespace means "leave unchanged"; an explicit namespace
+    # must be an existing one unless the caller confirms its creation.
+    if namespace is not None and not isinstance(namespace, str):
+        raise ValueError("namespace must be a string")
+    target_ns = normalize_namespace(namespace)
+    if target_ns is not None:
+        target_ns = check_namespace(target_ns, confirm_codes)
     summary = _normalize_summary(summary)
     logger.info("update: id=%s has_text=%s has_metadata=%s has_ns=%s has_summary=%s",
                 memory_id, text is not None, metadata is not None,
-                namespace is not None, summary is not None)
+                target_ns is not None, summary is not None)
     try:
         if text is not None:
             embedding = embed(text)
@@ -361,7 +418,7 @@ def memory_update(memory_id: str, text: str | None = None,
         index_embeddings = _index_resolver().prepare_embeddings(metadata)
         write_kwargs = {"index_embeddings": index_embeddings} if index_embeddings else {}
         ok = storage.update(memory_id, text=text, embedding=embedding,
-                            metadata=metadata, namespace=namespace,
+                            metadata=metadata, namespace=target_ns,
                             summary=summary,
                             **write_kwargs)
         logger.info("update: %s", "ok" if ok else "not found")
@@ -655,17 +712,32 @@ def memory_storage_paths() -> dict:
 
 
 def memory_migrate_namespace(source: str, target: str) -> dict:
-    """Move all memories from source namespace to target namespace."""
-    if source == target:
+    """Move all memories from source namespace to target namespace.
+
+    This is an explicit admin operation, so the confirmation needed to create
+    a brand-new target namespace is supplied internally and the operator sees
+    no behavior change. An unknown *source* is reported as "no memories"
+    rather than as a namespace error.
+    """
+    source_ns = normalize_namespace(source)
+    target_ns = normalize_namespace(target)
+    if source_ns is None or target_ns is None:
+        return {"error": "source and target namespaces are required", "migrated": 0}
+    validate_namespace_name(target_ns)
+    if source_ns == target_ns:
         return {"error": "source and target are the same", "migrated": 0}
-    memories = memory_list(namespace=source, limit=10 ** 9)
+    try:
+        memories = memory_list(namespace=source_ns, limit=10 ** 9)
+    except NamespaceNotFound:
+        return {"error": f"no memories found in namespace '{source_ns}'", "migrated": 0}
     if not memories:
-        return {"error": f"no memories found in namespace '{source}'", "migrated": 0}
+        return {"error": f"no memories found in namespace '{source_ns}'", "migrated": 0}
     migrated = 0
     for m in memories:
-        memory_update(m["id"], namespace=target)
+        memory_update(m["id"], namespace=target_ns,
+                      confirm_codes=[NAMESPACE_NOT_FOUND])
         migrated += 1
-    return {"migrated": migrated, "source": source, "target": target}
+    return {"migrated": migrated, "source": source_ns, "target": target_ns}
 
 
 def _normalize_rating(rating) -> int | None:

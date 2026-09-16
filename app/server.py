@@ -23,6 +23,7 @@ from .service import memory_add, memory_search, memory_list, \
     memory_report, _prepare_for_llm, warmup_embedding_provider, storage
 from .audit import record as audit_record
 from .categories import CATEGORY_VOCABULARY, MAX_CATEGORIES
+from .namespace_policy import NamespaceNotFound, NAMESPACE_NOT_FOUND
 
 logger = logging.getLogger("server")
 
@@ -62,7 +63,10 @@ async def handle_list_tools() -> types.ListToolsResult:
                         "array in metadata.keywords — they are content concepts (e.g. entities, "
                         "topics). Pass categories as an array in metadata.categories — memory "
                         "nature/classification, up to " + str(MAX_CATEGORIES) + " values, prefer "
-                        "these canonical categories: " + _CATEGORIES_JOINED + ".",
+                        "these canonical categories: " + _CATEGORIES_JOINED + ". "
+                        "An unknown namespace is rejected without writing; call 'stats' to see "
+                        "the available namespaces, then retry with "
+                        'confirm_codes=["namespace_not_found"] to deliberately create a new one.',
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -88,7 +92,12 @@ async def handle_list_tools() -> types.ListToolsResult:
                             },
                         },
                     },
-                    "namespace": {"type": "string", "description": "Namespace (default: $MEMORY_DEFAULT_NAMESPACE or 'default')"},
+                    "namespace": {"type": "string", "description": "Namespace (default: $MEMORY_DEFAULT_NAMESPACE or 'default'). Must already exist unless confirm_codes includes 'namespace_not_found'."},
+                    "confirm_codes": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": 'Confirmation codes for validation rules you deliberately override. Pass ["namespace_not_found"] to create a namespace that does not exist yet. Unknown codes are ignored; format/length/reserved-word checks cannot be bypassed.',
+                    },
                 },
                 "required": ["text"],
             },
@@ -116,7 +125,7 @@ async def handle_list_tools() -> types.ListToolsResult:
                     "query": {"type": "string", "description": "Search text — automatically embedded for semantic similarity matching"},
                     "k": {"type": "integer", "description": "Max number of results to return (default: 5). Increase this (e.g. 20) when searching broadly or if results seem sparse."},
                     "threshold": {"type": "number", "description": "Minimum similarity score 0-1 (default: 0 = no filter). Higher values return fewer but more relevant results. Keep at 0 unless you want to narrow down."},
-                    "namespace": {"type": "string", "description": "Only search within this namespace (optional). Leave empty to search all namespaces. If you get no results, call 'stats' first to check available namespaces."},
+                    "namespace": {"type": "string", "description": "Only search within this namespace (optional). Leave empty to search all namespaces. An unknown namespace returns response_code='namespace_not_found' with the available list instead of an empty success; call 'stats' to see available namespaces."},
                     "keywords": {
                         "type": "array",
                         "maxItems": 20,
@@ -153,7 +162,7 @@ async def handle_list_tools() -> types.ListToolsResult:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "namespace": {"type": "string", "description": "Only list memories in this namespace (optional). Leave empty to list all namespaces."},
+                    "namespace": {"type": "string", "description": "Only list memories in this namespace (optional). Leave empty to list all namespaces. An unknown namespace returns response_code='namespace_not_found' with the available list instead of an empty success."},
                     "limit": {"type": "number", "description": "Max results (default: 100). Use a small value (e.g. 5-10) for recent-memory lookups."},
                     "offset": {"type": "number", "description": "Pagination offset (default: 0)"},
                     "sort_by": {"type": "string", "enum": ["created_at", "updated_at"],
@@ -206,7 +215,10 @@ async def handle_list_tools() -> types.ListToolsResult:
                         "array clears. You may also pass metadata.categories — memory "
                         "nature/classification, up to " + str(MAX_CATEGORIES) + " values, prefer the "
                         "canonical categories from stats' category_counts: " + _CATEGORIES_JOINED + ". "
-                        "An empty array clears the memory's categories.",
+                        "An empty array clears the memory's categories. "
+                        "Moving a memory to an unknown namespace is rejected; call 'stats' to see "
+                        "the available namespaces, then retry with "
+                        'confirm_codes=["namespace_not_found"] to deliberately create a new one.',
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -230,7 +242,12 @@ async def handle_list_tools() -> types.ListToolsResult:
                             },
                         },
                     },
-                    "namespace": {"type": "string", "description": "New namespace"},
+                    "namespace": {"type": "string", "description": "New namespace. Must already exist unless confirm_codes includes 'namespace_not_found'. Blank/omitted leaves it unchanged."},
+                    "confirm_codes": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": 'Confirmation codes for validation rules you deliberately override. Pass ["namespace_not_found"] to move the memory into a namespace that does not exist yet. Unknown codes are ignored; format/length/reserved-word checks cannot be bypassed.',
+                    },
                 },
                 "required": ["memory_id"],
             },
@@ -300,7 +317,8 @@ async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
     try:
         if name == "add":
             data = memory_add(arguments["text"], arguments.get("metadata"),
-                              arguments.get("namespace"), arguments.get("summary"))
+                              arguments.get("namespace"), arguments.get("summary"),
+                              arguments.get("confirm_codes"))
             hint = _TOOL_HINTS["add"]
             if data.get("categories_dropped"):
                 hint += (" You provided more than %d categories; only the first %d were kept — "
@@ -332,7 +350,7 @@ async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
         elif name == "update":
             data = memory_update(arguments["memory_id"], arguments.get("text"),
                                  arguments.get("metadata"), arguments.get("namespace"),
-                                 arguments.get("summary"))
+                                 arguments.get("summary"), arguments.get("confirm_codes"))
             hint = _TOOL_HINTS["update"]
             if data.get("categories_dropped"):
                 hint += (" You provided more than %d categories; only the first %d were kept — "
@@ -349,6 +367,13 @@ async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
             hint = _TOOL_HINTS["report"]
         else:
             raise ValueError(f"Unknown tool: {name}")
+        audit_record(name, arguments, data, (time.perf_counter() - start) * 1000)
+        return _ok(data, hint)
+    except NamespaceNotFound as e:
+        # Not an MCP error: return a structured result so the LLM can read the
+        # available namespaces and retry with confirm_codes when intended.
+        data, hint = _namespace_error_result(
+            e, search=name in ("search_semantic", "search_meta"))
         audit_record(name, arguments, data, (time.perf_counter() - start) * 1000)
         return _ok(data, hint)
     except Exception as e:
@@ -404,11 +429,11 @@ async def handle_read_resource(uri: str) -> types.ReadResourceResult:
 # Guidance appended to each tool's result so the LLM knows what it can do next
 # with the returned data. Kept intentionally concise.
 _TOOL_HINTS: dict[str, str] = {
-    "add": "Memory stored. A supplied summary was saved directly; if it was missing or blank, a deterministic extract from the leading text was stored. If created=false, an identical record already exists and remains untouched — consider 'update' instead. Reuse canonical categories from stats' category_counts (up to 3).",
-    "search_semantic": "Results are ranked by relevance (score). Use 'get_details' with an id to read the full original text, then call 'report' with this search_id to rate how helpful each result was (-10..10). filter_resolution shows how exact or semantic keywords/categories constrained candidates before scoring. Values within one dimension use OR, while dimensions combine using AND. If a whole supplied dimension could not be resolved, the result is empty.",
-    "search_meta": "Use 'get_details' with an id to read the full original text, or call 'search_semantic' for fuzzy/topic/keyword lookup. Filter further with keywords= and/or categories=. After using these results, call 'report' with this search_id to rate how helpful each id was (-10..10).",
+    "add": "Memory stored. A supplied summary was saved directly; if it was missing or blank, a deterministic extract from the leading text was stored. If created=false, an identical record already exists and remains untouched — consider 'update' instead. Reuse canonical categories from stats' category_counts (up to 3). An unknown namespace is rejected unless you pass confirm_codes=[\"namespace_not_found\"].",
+    "search_semantic": "Results are ranked by relevance (score). Use 'get_details' with an id to read the full original text, then call 'report' with this search_id to rate how helpful each result was (-10..10). filter_resolution shows how exact or semantic keywords/categories constrained candidates before scoring. Values within one dimension use OR, while dimensions combine using AND. If a whole supplied dimension could not be resolved, the result is empty. response_code='namespace_not_found' means the namespace does not exist (empty items is then not a real 'no match').",
+    "search_meta": "Use 'get_details' with an id to read the full original text, or call 'search_semantic' for fuzzy/topic/keyword lookup. Filter further with keywords= and/or categories=. After using these results, call 'report' with this search_id to rate how helpful each id was (-10..10). response_code='namespace_not_found' means the namespace does not exist; the real available namespaces are in response_meta.known_namespaces.",
     "get_details": "You now have the full text, including metadata.keywords and metadata.categories. If a memory is relevant, use search_meta(keywords=[...]) or search_meta(categories=[...]) to find related memories.",
-    "update": "Memory updated. A supplied summary was saved directly; changed text without one received a deterministic leading-text extract. Metadata-only and whitespace-equivalent text updates preserve the existing summary. Use 'get_details' with the id to verify the change. Categories (if any) were taken from metadata.categories — see stats' category_counts for the canonical list (up to 3).",
+    "update": "Memory updated. A supplied summary was saved directly; changed text without one received a deterministic leading-text extract. Metadata-only and whitespace-equivalent text updates preserve the existing summary. Use 'get_details' with the id to verify the change. Categories (if any) were taken from metadata.categories — see stats' category_counts for the canonical list (up to 3). Moving to an unknown namespace is rejected unless you pass confirm_codes=[\"namespace_not_found\"].",
     "delete": "Memory soft-deleted. It no longer appears in 'search_semantic'/'search_meta'. Call 'stats' to confirm the count.",
     "stats": "Use 'namespace_counts' to pick a namespace, then 'search_meta' or 'search_semantic' within it. Use 'keyword_counts' as the canonical keyword vocabulary and 'category_counts' as the canonical category vocabulary (up to 3 per memory) for search_meta/add. Embedding provider/model/profile describe the active comparable vector space. Use 'server_time' for time-based queries.",
     "report": "Feedback recorded. Continue with the task, or run another search if the results were unhelpful.",
@@ -470,6 +495,32 @@ def _wrap_search_semantic(search_result: dict) -> dict:
     if search_result.get("filter_resolution") is not None:
         result["filter_resolution"] = search_result["filter_resolution"]
     return result
+
+
+def _namespace_error_result(exc: NamespaceNotFound, search: bool = False) -> tuple[dict, str]:
+    """Build the unified unknown-namespace payload and hint.
+
+    Used by search_semantic/search_meta (empty-result envelope) and by
+    add/update (write rejected; nothing stored). Kept in one place so both
+    search tools report the same shape.
+    """
+    available = ", ".join(repr(ns) for ns in exc.known) or "(none)"
+    meta = {"requested_namespace": exc.requested, "known_namespaces": exc.known}
+    if search:
+        note = (f"Namespace {exc.requested!r} does not exist; 0 results returned. "
+                f"Available namespaces: {available}. Retry with one of these, or omit "
+                f"the namespace to search all namespaces.")
+        data = {"search_id": _new_search_id(), "note": note, "total": 0, "items": [],
+                "response_code": NAMESPACE_NOT_FOUND, "response_meta": meta}
+        hint = (f"Namespace {exc.requested!r} does not exist, so no search ran. "
+                f"Available namespaces: {available}. Retry with one of them, or omit "
+                f"namespace to search all namespaces. Call 'stats' to list namespaces.")
+    else:
+        data = {"response_code": NAMESPACE_NOT_FOUND, "response_meta": meta}
+        hint = (f"Namespace {exc.requested!r} does not exist; nothing was written. "
+                f"Available namespaces: {available}. To create it deliberately, retry "
+                f"with confirm_codes=[\"{NAMESPACE_NOT_FOUND}\"].")
+    return data, hint
 
 
 def _trim_keyword_counts(keyword_counts: dict) -> dict:

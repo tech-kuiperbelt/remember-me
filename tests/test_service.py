@@ -22,8 +22,13 @@ def service():
 
 @pytest.fixture
 def mocked(service, monkeypatch):
-    """Replace storage and embed with mocks."""
+    """Replace storage and embed with mocks.
+
+    ``list_namespaces`` is seeded so explicit test namespaces count as known;
+    unknown-namespace enforcement is covered by test_namespace_governance.py.
+    """
     storage = MagicMock()
+    storage.list_namespaces.return_value = ["ns1", "custom-ns"]
     monkeypatch.setattr(service, "storage", storage)
     monkeypatch.setattr(service, "embed", lambda text: [0.1, 0.2, 0.3])
     return {"storage": storage}
@@ -58,7 +63,8 @@ def test_memory_add_supplied_summary_skips_worker(service, mocked):
 def test_memory_add_blank_summary_uses_storage_policy(service, mocked):
     mocked["storage"].add.return_value = {"id": "abc123", "created": True}
 
-    service.memory_add("some text", summary="  \n ")
+    service.memory_add("some text", summary="  \n ",
+                       confirm_codes=["namespace_not_found"])
 
     _, kwargs = mocked["storage"].add.call_args
     assert kwargs["summary"] is None
@@ -73,9 +79,9 @@ def test_memory_add_duplicate_returns_existing_id(service, mocked):
 
 
 def test_memory_add_default_namespace(service, mocked):
-    """Namespace falls back to the module default when not provided."""
+    """The fallback namespace requires confirmation on its first write."""
     mocked["storage"].add.return_value = {"id": "x", "created": True}
-    service.memory_add("text")
+    service.memory_add("text", confirm_codes=["namespace_not_found"])
     _, kwargs = mocked["storage"].add.call_args
     assert kwargs.get("namespace") == service.DEFAULT_NAMESPACE
 

@@ -280,7 +280,8 @@ def test_memory_add_normalizes_and_reports_truncation(monkeypatch):
     monkeypatch.setattr(service, "storage", storage)
     monkeypatch.setattr(service, "embed", lambda t: FAKE_EMB)
 
-    out = service.memory_add("text", metadata={"categories": ["  Bug ", "bug", "design", "ops"]})
+    out = service.memory_add("text", metadata={"categories": ["  Bug ", "bug", "design", "ops"]},
+                             confirm_codes=["namespace_not_found"])
     _, kwargs = storage.add.call_args
     assert kwargs["metadata"]["categories"] == ["bug", "design", "ops"]
     assert out["categories_dropped"] == 1
@@ -293,7 +294,8 @@ def test_memory_add_duplicate_reports_no_truncation(monkeypatch):
     monkeypatch.setattr(service, "storage", storage)
     monkeypatch.setattr(service, "embed", lambda t: FAKE_EMB)
 
-    out = service.memory_add("text", metadata={"categories": ["a", "b", "c", "d"]})
+    out = service.memory_add("text", metadata={"categories": ["a", "b", "c", "d"]},
+                             confirm_codes=["namespace_not_found"])
     assert "categories_dropped" not in out
     assert out["created"] is False
 

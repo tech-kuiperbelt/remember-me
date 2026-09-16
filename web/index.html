@@ -453,9 +453,35 @@ function api(path, opts={}) {
     headers: {'Content-Type': 'application/json', ...opts.headers},
     ...opts,
   }).then(r => {
-    if (!r.ok) return r.json().then(e => { throw new Error(e.detail || r.statusText) });
+    if (!r.ok) return r.json().then(e => {
+      // Keep the full payload so callers can react to machine-readable codes
+      // (e.g. namespace_not_found) instead of parsing the message.
+      const err = new Error(e.detail || r.statusText);
+      err.status = r.status;
+      err.payload = e;
+      throw err;
+    });
     return r.json();
   });
+}
+
+// Namespace governance: an unknown namespace is rejected with
+// response_code="namespace_not_found"; the operator confirms, then we retry with the
+// matching confirmation code. Confirmation only bypasses existence — format
+// and length checks still apply.
+function isNamespaceNotFound(e) {
+  return !!(e && e.payload && e.payload.response_code === 'namespace_not_found');
+}
+
+function confirmNamespaceCreation(e) {
+  const meta = (e.payload && e.payload.response_meta) || {};
+  const requested = meta.requested_namespace || 'this namespace';
+  const known = (meta.known_namespaces || []).join(', ') || '(none)';
+  return confirm(
+    'Namespace "' + requested + '" does not exist.\n\n' +
+    'Existing namespaces: ' + known + '\n\n' +
+    'Create it and continue?'
+  );
 }
 
 // Navigation
@@ -621,10 +647,19 @@ async function saveEdit(id) {
   const text = textEl.value;
   const namespace = nsEl.value;
   try {
-    const res = await api('/memories/' + id, {
-      method: 'PUT',
-      body: JSON.stringify({text, namespace}),
-    });
+    let res;
+    try {
+      res = await api('/memories/' + id, {
+        method: 'PUT',
+        body: JSON.stringify({text, namespace}),
+      });
+    } catch(err) {
+      if (!isNamespaceNotFound(err) || !confirmNamespaceCreation(err)) throw err;
+      res = await api('/memories/' + id, {
+        method: 'PUT',
+        body: JSON.stringify({text, namespace, confirm_codes: ['namespace_not_found']}),
+      });
+    }
     toast('Memory updated');
     closeDetail();
     loadMemories();
@@ -789,10 +824,20 @@ async function doAdd(e) {
   } catch(e) { toast('Invalid metadata JSON', 'error'); return }
   const ns = $('add-ns').value || 'default';
   try {
-    const r = await api('/memories', {
-      method: 'POST',
-      body: JSON.stringify({text, metadata: meta, namespace: ns}),
-    });
+    let r;
+    try {
+      r = await api('/memories', {
+        method: 'POST',
+        body: JSON.stringify({text, metadata: meta, namespace: ns}),
+      });
+    } catch(err) {
+      if (!isNamespaceNotFound(err) || !confirmNamespaceCreation(err)) throw err;
+      r = await api('/memories', {
+        method: 'POST',
+        body: JSON.stringify({text, metadata: meta, namespace: ns,
+                              confirm_codes: ['namespace_not_found']}),
+      });
+    }
     toast('Memory added: ' + r.id);
     $('add-text').value = '';
     $('add-metadata').value = '';

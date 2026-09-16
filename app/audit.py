@@ -35,6 +35,7 @@ AUDIT_MAX_EVENTS = max(0, int(os.environ.get("MEMORY_AUDIT_MAX_EVENTS", "0")))
 _TEXT_KEYS = ("text", "summary")
 _MAX_FILTER_VALUES = 20
 _MAX_FILTER_MATCHES = 3
+_MAX_CONFIRM_CODES = 10
 
 _lock = threading.Lock()
 _file = None
@@ -141,6 +142,15 @@ def _trim_params(tool: str, arguments: dict | None, result=None) -> dict:
     return args
 
 
+def _confirm_codes(arguments) -> list | None:
+    """Record confirmation codes as-is, capped and type-filtered."""
+    codes = (arguments or {}).get("confirm_codes")
+    if not isinstance(codes, list) or not codes:
+        return None
+    kept = [c for c in codes if isinstance(c, str)][:_MAX_CONFIRM_CODES]
+    return kept or None
+
+
 def _trim_filter_resolution(resolution):
     if not isinstance(resolution, dict):
         return resolution
@@ -185,7 +195,7 @@ def _trim_result(tool: str, result) -> dict | None:
     if tool == "search_semantic" or tool == "search_meta":
         items = result.get("items") or []
         keep_score = tool == "search_semantic"
-        return {
+        trimmed = {
             "search_id": result.get("search_id"),
             "total": result.get("total", len(items)),
             **({"filter_resolution": _trim_filter_resolution(result.get("filter_resolution"))}
@@ -198,6 +208,11 @@ def _trim_result(tool: str, result) -> dict | None:
                 for it in items
             ],
         }
+        if result.get("response_code") is not None:
+            trimmed["response_code"] = result["response_code"]
+        if result.get("response_meta") is not None:
+            trimmed["response_meta"] = result["response_meta"]
+        return trimmed
 
     if tool == "get_details":
         found = []
@@ -236,6 +251,9 @@ def record(tool: str, arguments: dict | None, result, duration_ms: float,
                 "status": "error" if error else "ok",
                 "duration_ms": round(duration_ms, 1),
                 "namespace": (arguments or {}).get("namespace"),
+                "confirm_codes": _confirm_codes(arguments),
+                "response_code": (result.get("response_code")
+                                  if isinstance(result, dict) else None),
                 "error": error,
                 "params": _trim_params(tool, arguments, result),
                 "result": _trim_result(tool, result),

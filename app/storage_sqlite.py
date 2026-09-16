@@ -1240,6 +1240,15 @@ class SQLiteStorage(MemoryStorage):
             ).fetchall()
         return [self._row_to_dict(r) for r in rows]
 
+    def list_namespaces(self):
+        """Distinct namespaces of live records; index-backed and cheap."""
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT DISTINCT namespace FROM memories WHERE deleted = 0 "
+                "ORDER BY namespace"
+            ).fetchall()
+        return [r["namespace"] for r in rows]
+
     def get(self, memory_id):
         row = self.conn.execute(
             "SELECT * FROM memories WHERE id = ? AND deleted = 0", (memory_id,)

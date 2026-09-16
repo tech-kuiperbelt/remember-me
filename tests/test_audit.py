@@ -310,3 +310,37 @@ def test_read_events_skips_corrupt_lines(journal):
 
 def test_read_events_missing_file(journal):
     assert audit.read_events(limit=10) == []
+
+
+# -- namespace governance fields --
+
+def test_confirm_codes_are_recorded(journal):
+    audit.record("add", {"text": "body", "namespace": "ghost",
+                         "confirm_codes": ["namespace_not_found"]},
+                 {"id": "1", "created": True}, 1.0)
+    ev = _read_lines(journal)[0]
+    assert ev["confirm_codes"] == ["namespace_not_found"]
+    assert ev["params"]["confirm_codes"] == ["namespace_not_found"]
+    assert ev["response_code"] is None
+
+
+def test_unknown_namespace_response_code_recorded(journal):
+    result = {
+        "search_id": "se_x", "total": 0, "items": [],
+        "response_code": "namespace_not_found",
+        "response_meta": {"requested_namespace": "ghost",
+                          "known_namespaces": ["default"]},
+    }
+    audit.record("search_meta", {"namespace": "ghost"}, result, 1.0)
+    ev = _read_lines(journal)[0]
+    assert ev["response_code"] == "namespace_not_found"
+    assert ev["result"]["response_code"] == "namespace_not_found"
+    assert ev["result"]["response_meta"]["requested_namespace"] == "ghost"
+
+
+def test_confirm_codes_are_capped_and_type_filtered(journal):
+    codes = [f"code-{i}" for i in range(15)] + [123, None]
+    audit.record("add", {"namespace": "x", "confirm_codes": codes},
+                 {"id": "1", "created": True}, 1.0)
+    recorded = _read_lines(journal)[0]["confirm_codes"]
+    assert recorded == [f"code-{i}" for i in range(10)]

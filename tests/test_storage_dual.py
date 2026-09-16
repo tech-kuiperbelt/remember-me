@@ -76,3 +76,11 @@ def test_dual_update_delete_clear_delegate(dual, mock_primary):
     assert mock_primary.update.call_count == 1
     assert mock_primary.delete.call_count == 1
     assert mock_primary.clear.call_count == 1
+
+
+def test_dual_list_namespaces_delegates_to_primary(dual, mock_primary):
+    """The namespace existence list always comes from the SQLite primary."""
+    mock_primary.list_namespaces.return_value = ["a", "b"]
+
+    assert dual.list_namespaces() == ["a", "b"]
+    mock_primary.list_namespaces.assert_called_once_with()

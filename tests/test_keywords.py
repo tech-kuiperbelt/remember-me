@@ -204,7 +204,8 @@ def test_memory_add_normalizes_keywords(monkeypatch):
     monkeypatch.setattr(service, "storage", storage)
     monkeypatch.setattr(service, "embed", lambda t: FAKE_EMB)
 
-    service.memory_add("text", metadata={"keywords": ["  Proj ", "proj"]})
+    service.memory_add("text", metadata={"keywords": ["  Proj ", "proj"]},
+                       confirm_codes=["namespace_not_found"])
     _, kwargs = storage.add.call_args
     assert kwargs["metadata"]["keywords"] == ["proj"]
 

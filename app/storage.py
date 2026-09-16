@@ -118,6 +118,15 @@ class MemoryStorage(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def list_namespaces(self) -> list[str]:
+        """Return distinct namespaces of live records, sorted.
+
+        Cheap existence list for namespace validation — unlike ``get_stats``
+        it computes no counts or embedding metadata.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
     def get_stats(self) -> dict[str, Any]: ...
 
 

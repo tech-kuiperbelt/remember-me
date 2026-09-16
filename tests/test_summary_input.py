@@ -106,7 +106,7 @@ def test_http_add_passes_summary(monkeypatch):
     })))
     assert response.status_code == 201
     assert json.loads(response.body) == {"id": "abc", "created": True}
-    add.assert_called_once_with("body", {"keywords": ["k"]}, "ns", "short")
+    add.assert_called_once_with("body", {"keywords": ["k"]}, "ns", "short", None)
 
 
 def test_http_update_passes_summary(monkeypatch):
@@ -118,7 +118,7 @@ def test_http_update_passes_summary(monkeypatch):
     )))
     assert response.status_code == 200
     assert json.loads(response.body) == {"success": True}
-    update.assert_called_once_with("abc", "new body", None, None, "new summary")
+    update.assert_called_once_with("abc", "new body", None, None, "new summary", None)
 
 
 @pytest.mark.parametrize("handler,body", [

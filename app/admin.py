@@ -23,12 +23,41 @@ from .service import (
 from .audit import read_events as audit_read_events
 from . import audit
 from .embed import EmbeddingInputTooLong
+from .namespace_policy import NamespaceNotFound
 from .jsonl_transfer import safe_filename_part, unlink_quietly
 
 logger = logging.getLogger("admin")
 
 THIS_DIR = Path(__file__).resolve().parent
 ADMIN_HTML_PATH = THIS_DIR.parent / "web" / "index.html"
+
+
+def _namespace_not_found_response(exc: NamespaceNotFound) -> Response:
+    """HTTP 400 with the same machine-readable envelope used by MCP."""
+    available = ", ".join(exc.known) or "(none)"
+    return Response(
+        json.dumps({
+            "detail": f"namespace not found: {exc.requested}. Available: {available}",
+            "response_code": NamespaceNotFound.code,
+            "response_meta": {
+                "requested_namespace": exc.requested,
+                "known_namespaces": exc.known,
+            },
+        }, ensure_ascii=False),
+        status_code=400, media_type="application/json",
+    )
+
+
+def _invalid_namespace_response(exc: ValueError) -> Response:
+    """HTTP 400 for namespace format/type validation failures."""
+    return Response(
+        json.dumps({
+            "detail": str(exc),
+            "response_code": "invalid_namespace",
+            "response_meta": {"reason": str(exc)},
+        }, ensure_ascii=False),
+        status_code=400, media_type="application/json",
+    )
 
 
 async def handle_admin(request: Request):
@@ -68,6 +97,12 @@ async def handle_list_memories(request: Request):
                        ensure_ascii=False, default=str),
             media_type="application/json",
         )
+    except NamespaceNotFound as e:
+        logger.warning("GET /api/memories rejected: %s", e)
+        return _namespace_not_found_response(e)
+    except ValueError as e:
+        logger.warning("GET /api/memories invalid request: %s", e)
+        return _invalid_namespace_response(e)
     except Exception as e:
         logger.error("GET /api/memories failed: %s", e, exc_info=True)
         return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
@@ -109,7 +144,7 @@ async def handle_add_memory(request: Request):
         body = await request.json()
         logger.info("POST /api/memories text_len=%d", len(body.get("text", "")))
         result = memory_add(body["text"], body.get("metadata"), body.get("namespace"),
-                            body.get("summary"))
+                            body.get("summary"), body.get("confirm_codes"))
         return Response(json.dumps(result), status_code=201, media_type="application/json")
     except EmbeddingInputTooLong as e:
         logger.warning("POST /api/memories rejected: %s", e)
@@ -117,6 +152,12 @@ async def handle_add_memory(request: Request):
             json.dumps({"detail": str(e), "code": "embedding_input_too_long"}),
             status_code=413, media_type="application/json",
         )
+    except NamespaceNotFound as e:
+        logger.warning("POST /api/memories rejected: %s", e)
+        return _namespace_not_found_response(e)
+    except ValueError as e:
+        logger.warning("POST /api/memories invalid namespace: %s", e)
+        return _invalid_namespace_response(e)
     except Exception as e:
         logger.error("POST /api/memories failed: %s", e, exc_info=True)
         return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
@@ -128,7 +169,8 @@ async def handle_update_memory(request: Request):
         body = await request.json()
         logger.info("PUT /api/memories/%s", mid)
         result = memory_update(mid, body.get("text"), body.get("metadata"),
-                               body.get("namespace"), body.get("summary"))
+                               body.get("namespace"), body.get("summary"),
+                               body.get("confirm_codes"))
         if not result["success"]:
             return Response(json.dumps({"detail": "Not found"}), status_code=404, media_type="application/json")
         return Response(json.dumps(result), media_type="application/json")
@@ -139,6 +181,14 @@ async def handle_update_memory(request: Request):
             json.dumps({"detail": str(e), "code": "embedding_input_too_long"}),
             status_code=413, media_type="application/json",
         )
+    except NamespaceNotFound as e:
+        logger.warning("PUT /api/memories/%s rejected: %s",
+                       request.path_params.get("memory_id", ""), e)
+        return _namespace_not_found_response(e)
+    except ValueError as e:
+        logger.warning("PUT /api/memories/%s invalid namespace: %s",
+                       request.path_params.get("memory_id", ""), e)
+        return _invalid_namespace_response(e)
     except Exception as e:
         logger.error("PUT /api/memories/%s failed: %s", request.path_params.get("memory_id", ""), e, exc_info=True)
         return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
@@ -341,6 +391,12 @@ async def handle_search_memories(request: Request):
             json.dumps({"detail": str(e), "code": "embedding_input_too_long"}),
             status_code=413, media_type="application/json",
         )
+    except NamespaceNotFound as e:
+        logger.warning("POST /api/memories/search rejected: %s", e)
+        return _namespace_not_found_response(e)
+    except ValueError as e:
+        logger.warning("POST /api/memories/search invalid namespace: %s", e)
+        return _invalid_namespace_response(e)
     except Exception as e:
         logger.error("POST /api/memories/search failed: %s", e, exc_info=True)
         return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
@@ -401,6 +457,10 @@ async def handle_migrate_namespace(request: Request):
         logger.info("POST /api/namespaces/migrate source=%s target=%s", source, target)
         result = memory_migrate_namespace(source, target)
         return Response(json.dumps(result, ensure_ascii=False), media_type="application/json")
+    except ValueError as e:
+        logger.warning("POST /api/namespaces/migrate rejected: %s", e)
+        return Response(json.dumps({"detail": str(e)}, ensure_ascii=False),
+                        status_code=400, media_type="application/json")
     except Exception as e:
         logger.error("POST /api/namespaces/migrate failed: %s", e, exc_info=True)
         return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
