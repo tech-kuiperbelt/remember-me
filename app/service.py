@@ -454,9 +454,68 @@ def memory_clear(namespace: str | None = None) -> dict:
         raise
 
 
+def memory_list_keywords(namespace=None, mode="browse", queries=None, limit=None,
+                         offset=0, sort_by=None, min_score=None):
+    """Read the complete live vocabulary, optionally by name or meaning."""
+    import math
+    if namespace is not None:
+        namespace = check_namespace(namespace)
+    if mode not in ("browse", "literal", "semantic"):
+        raise ValueError("mode must be browse, literal or semantic")
+    semantic = mode == "semantic"
+    if mode == "browse":
+        if queries is not None:
+            raise ValueError("browse does not accept queries")
+        queries = [None]
+    elif (not isinstance(queries, list) or not 1 <= len(queries) <= (20 if semantic else 1)
+          or any(not isinstance(q, str) or not q.strip() for q in queries)):
+        raise ValueError("queries must contain 1–20 nonblank strings (exactly one for literal)")
+    limit = (5 if semantic else 50) if limit is None else limit
+    if type(limit) is not int or not 1 <= limit <= (20 if semantic else 100):
+        raise ValueError("invalid limit")
+    if type(offset) is not int or offset < 0 or (semantic and offset != 0):
+        raise ValueError("invalid offset")
+    sort_by = ("score" if semantic else "count") if sort_by is None else sort_by
+    if sort_by not in (("score",) if semantic else ("count", "keyword")):
+        raise ValueError("invalid sort_by for mode")
+    if not semantic and min_score is not None:
+        raise ValueError("min_score is only valid for semantic mode")
+    if semantic:
+        min_score = 0.65 if min_score is None else min_score
+        if (type(min_score) not in (int, float) or not math.isfinite(min_score)
+                or not 0 <= min_score <= 1):
+            raise ValueError("min_score must be between 0 and 1")
+    counts = storage.keyword_counts(namespace)
+    groups = []
+    # Duplicate concepts share inference but retain their original response positions.
+    scored_queries = {}
+    for query in queries:
+        normalized = query.strip().lower() if query is not None else None
+        if semantic:
+            if normalized not in scored_queries:
+                scored_queries[normalized] = storage.semantic_index_values(
+                    "keywords", embed_query(normalized), namespace)
+            items = [{"keyword": r["value"], "count": counts[r["value"]], "score": r["score"]}
+                     for r in scored_queries[normalized]
+                     if r["value"] in counts and r["score"] >= min_score]
+            items.sort(key=lambda r: (-r["score"], -r["count"], r["keyword"]))
+        else:
+            items = [{"keyword": k, "count": n} for k, n in counts.items()
+                     if normalized is None or normalized in k]
+            items.sort(key=(lambda r: r["keyword"]) if sort_by == "keyword"
+                       else (lambda r: (-r["count"], r["keyword"])))
+        groups.append({"query": query, "total": len(items), "items": items[offset:offset + limit]})
+    result = {"namespace": namespace, "mode": mode, "results": groups,
+              "limit": limit, "offset": offset, "sort_by": sort_by}
+    if semantic:
+        result["min_score"] = min_score
+    return result
+
+
 def memory_stats() -> dict:
     try:
-        stats = storage.get_stats()
+        stats = dict(storage.get_stats())
+        stats["keyword_total"] = len(stats.pop("keyword_counts", {}))
         # Seeds always present (count 0 when unused) so the LLM can reuse them.
         stats["category_counts"] = category_counts_with_seeds(
             stats.get("category_counts") or {})

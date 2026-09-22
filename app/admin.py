@@ -14,7 +14,7 @@ from starlette.requests import Request
 
 from .service import (
     memory_add, memory_search, memory_list, memory_get,
-    memory_update, memory_delete, memory_clear, memory_stats, memory_sync,
+    memory_update, memory_delete, memory_clear, memory_stats, memory_list_keywords, memory_sync,
     memory_namespaces, memory_migrate_namespace, memory_get_details,
     memory_import_start, memory_import_status, memory_export_full,
     memory_export_namespace, memory_storage_paths, storage,
@@ -402,6 +402,33 @@ async def handle_search_memories(request: Request):
         return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
 
 
+async def handle_keywords(request: Request):
+    from starlette.concurrency import run_in_threadpool
+    started = time.perf_counter()
+    body, result, error = {}, None, None
+    try:
+        body = await request.json()
+        allowed = {"namespace", "mode", "queries", "limit", "offset", "sort_by", "min_score"}
+        if not isinstance(body, dict) or set(body) - allowed:
+            raise ValueError("expected keyword query object with supported parameters")
+        result = await run_in_threadpool(memory_list_keywords, **body)
+        return Response(json.dumps(result, ensure_ascii=False), media_type="application/json")
+    except NamespaceNotFound as exc:
+        error = {"type": type(exc).__name__, "message": str(exc)}
+        response = _namespace_not_found_response(exc)
+        result = json.loads(response.body)
+        return response
+    except ValueError as exc:
+        error = {"type": type(exc).__name__, "message": str(exc)}
+        return Response(json.dumps({"detail": str(exc)}), status_code=400, media_type="application/json")
+    except Exception as exc:
+        error = {"type": type(exc).__name__, "message": str(exc)}
+        return Response(json.dumps({"detail": str(exc)}), status_code=500, media_type="application/json")
+    finally:
+        audit.record("list_keywords", body if isinstance(body, dict) else {}, result,
+                     (time.perf_counter() - started) * 1000, error=error)
+
+
 async def handle_stats(request: Request):
     try:
         logger.info("GET /api/stats")
@@ -494,6 +521,7 @@ admin_routes = [
     Route("/api/memories/{memory_id}", endpoint=handle_get_memory, methods=["GET"]),
     Route("/api/memories/{memory_id}", endpoint=handle_update_memory, methods=["PUT"]),
     Route("/api/memories/{memory_id}", endpoint=handle_delete_memory, methods=["DELETE"]),
+    Route("/api/keywords/query", endpoint=handle_keywords, methods=["POST"]),
     Route("/api/stats", endpoint=handle_stats, methods=["GET"]),
     Route("/api/storage-paths", endpoint=handle_storage_paths, methods=["GET"]),
     Route("/api/import", endpoint=handle_import_memories, methods=["POST"]),

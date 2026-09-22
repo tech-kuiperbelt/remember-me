@@ -371,6 +371,9 @@ class DualStorage(MemoryStorage):
     def missing_index_value_embeddings(self, *args, **kwargs):
         return self.primary.missing_index_value_embeddings(*args, **kwargs)
 
+    def keyword_counts(self, namespace=None):
+        return self.primary.keyword_counts(namespace)
+
     def exact_index_values(self, *args, **kwargs):
         return self.primary.exact_index_values(*args, **kwargs)
 

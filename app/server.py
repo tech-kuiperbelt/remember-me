@@ -19,7 +19,7 @@ import uvicorn
 
 from . import log_config  # noqa: F401
 from .service import memory_add, memory_search, memory_list, \
-    memory_update, memory_delete, memory_stats, memory_get_details, \
+    memory_update, memory_delete, memory_stats, memory_list_keywords, memory_get_details, \
     memory_report, _prepare_for_llm, warmup_embedding_provider, storage
 from .audit import record as audit_record
 from .categories import CATEGORY_VOCABULARY, MAX_CATEGORIES
@@ -48,6 +48,31 @@ server = Server("memory-server")
 async def handle_list_tools() -> types.ListToolsResult:
     return types.ListToolsResult(tools=[
         types.Tool(
+            name="list_keywords",
+            description="Browse the complete in-use keyword vocabulary or find existing words by meaning. "
+                        "Before setting keywords in add/update, use semantic mode with 1–20 concepts in queries "
+                        "and the target namespace; reuse candidates only when their meaning fits, otherwise new "
+                        "words are allowed. Similarity is not synonym equivalence. Metadata updates without "
+                        "keywords need no lookup. Literal mode matches one substring; browse takes no queries. "
+                        "Counts are scoped to live memories in namespace (omit for all). Semantic results include "
+                        "score and count, sorted by score; exact hits do not suppress related candidates. "
+                        "No search_id/report feedback is required. Unknown namespace returns namespace_not_found.",
+            inputSchema={"type": "object", "additionalProperties": False, "properties": {
+                "namespace": {"type": "string", "description": "Optional live namespace; omitted means all."},
+                "mode": {"type": "string", "enum": ["browse", "literal", "semantic"], "default": "browse"},
+                "queries": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 20,
+                            "description": "One nonblank string for literal, 1–20 for semantic; omit for browse."},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 100,
+                          "description": "Browse/literal default 50, max 100; semantic per-query default 5, max 20."},
+                "offset": {"type": "integer", "minimum": 0, "default": 0,
+                           "description": "Pagination offset; must be 0 in semantic mode."},
+                "sort_by": {"type": "string", "enum": ["count", "keyword", "score"],
+                            "description": "Browse/literal: count (default) or keyword. Semantic: score only."},
+                "min_score": {"type": "number", "minimum": 0, "maximum": 1,
+                              "description": "Semantic only, default 0.65. Lower to broaden candidates."},
+            }},
+        ),
+        types.Tool(
             name="add",
             description="Store a new memory. Text is automatically embedded for semantic search. "
                         "You MUST provide a concise, faithful summary in the summary parameter; "
@@ -57,7 +82,7 @@ async def handle_list_tools() -> types.ListToolsResult:
                         "Deduplicated by content+namespace: if the same text already exists in the "
                         "target namespace, no duplicate is inserted and the existing record's id is "
                         "returned with created=false. "
-                        "Before adding, call 'stats' to inspect keyword_counts and category_counts "
+                        "Before adding, call 'list_keywords' in semantic mode with your keyword concepts and target namespace; call 'stats' for category_counts "
                         "and reuse an existing keyword/category when semantically appropriate; "
                         "create a new one only when no existing value matches. Pass keywords as an "
                         "array in metadata.keywords — they are content concepts (e.g. entities, "
@@ -82,7 +107,7 @@ async def handle_list_tools() -> types.ListToolsResult:
                             "keywords": {
                                 "type": "array",
                                 "items": {"type": "string"},
-                                "description": "Content keywords (concrete concepts in the memory, not category/type). Prefer reusing existing keywords from stats' keyword_counts; create a new keyword only when none fits. Normalized to lowercase.",
+                                "description": "Content keywords (concrete concepts in the memory, not category/type). Prefer reusing existing keywords from list_keywords semantic candidates; create a new keyword only when none fits. Normalized to lowercase.",
                             },
                             "categories": {
                                 "type": "array",
@@ -154,8 +179,7 @@ async def handle_list_tools() -> types.ListToolsResult:
                         "Use this for time-based questions such as \"what did we do recently / last session\" "
                         "— combine sort_by='updated_at' with a small limit to get the most recently "
                         "written or changed memories. For fuzzy/topic/keyword questions use 'search_semantic' instead. "
-                        "For keyword/category filtering, call 'stats' first to see available keywords in "
-                        "keyword_counts and categories in category_counts. Multiple keywords match ANY (OR), "
+                        "For keyword filtering, call 'list_keywords'; use 'stats' for categories in category_counts. Multiple keywords match ANY (OR), "
                         "and multiple categories match ANY (OR). Keywords/categories combine with "
                         "namespace and time filters using AND. "
                         "For relative time windows (\"last week\", \"this month\"), call 'stats' first to get "
@@ -176,7 +200,7 @@ async def handle_list_tools() -> types.ListToolsResult:
                     "keywords": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Filter by global keywords — any match is sufficient (OR). Call 'stats' first to see available keywords in keyword_counts.",
+                        "description": "Filter by global keywords — any match is sufficient (OR). Call 'list_keywords' to find available keywords.",
                     },
                     "categories": {
                         "type": "array",
@@ -215,7 +239,7 @@ async def handle_list_tools() -> types.ListToolsResult:
                         "Long project documents belong in the repository; store only their concise "
                         "summary and path in memory. Oversized text is rejected, never silently truncated. "
                         "When updating metadata you may pass metadata.keywords — content concepts; "
-                        "reuse existing keywords from stats' keyword_counts when one fits; an empty "
+                        "reuse existing keywords from list_keywords semantic candidates when one fits; an empty "
                         "array clears. You may also pass metadata.categories — memory "
                         "nature/classification, up to " + str(MAX_CATEGORIES) + " values, prefer the "
                         "canonical categories from stats' category_counts: " + _CATEGORIES_JOINED + ". "
@@ -236,7 +260,7 @@ async def handle_list_tools() -> types.ListToolsResult:
                             "keywords": {
                                 "type": "array",
                                 "items": {"type": "string"},
-                                "description": "Content keywords (concrete concepts in the memory, not category/type). Prefer reusing existing keywords from stats' keyword_counts; create a new keyword only when none fits. Normalized to lowercase. Empty array clears.",
+                                "description": "Content keywords (concrete concepts in the memory, not category/type). Prefer reusing existing keywords from list_keywords semantic candidates; create a new keyword only when none fits. Normalized to lowercase. Empty array clears.",
                             },
                             "categories": {
                                 "type": "array",
@@ -271,8 +295,8 @@ async def handle_list_tools() -> types.ListToolsResult:
             name="stats",
             description="Storage statistics. Returns 'total' (record count), 'namespace_counts' "
                         "(map of namespace -> record count, e.g. check namespaces before search/add to "
-                        "avoid missing results or creating duplicates), 'keyword_counts' (the global "
-                        "canonical keyword vocabulary — reuse these when adding or filtering memories), "
+                        "avoid missing results or creating duplicates), 'keyword_total' (the global "
+                        "number of distinct in-use keywords; use list_keywords to browse or find words), "
                         "'category_counts' (the canonical category vocabulary — with the seed values "
                         "always listed, count 0 when unused; reuse these up to 3 values per memory), "
                         "and 'server_time' (current UTC time). Check 'server_time' first when a user asks "
@@ -363,6 +387,9 @@ async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
         elif name == "delete":
             data = memory_delete(arguments["memory_id"])
             hint = _TOOL_HINTS["delete"]
+        elif name == "list_keywords":
+            data = memory_list_keywords(**arguments)
+            hint = _TOOL_HINTS["list_keywords"]
         elif name == "stats":
             data = _wrap_stats(memory_stats())
             hint = _TOOL_HINTS["stats"]
@@ -378,6 +405,9 @@ async def handle_call_tool(name: str, arguments: dict) -> types.CallToolResult:
         # available namespaces and retry with confirm_codes when intended.
         data, hint = _namespace_error_result(
             e, search=name in ("search_semantic", "search_meta"))
+        if name == "list_keywords":
+            data.update({"namespace": e.requested, "mode": arguments.get("mode", "browse"), "results": []})
+            hint = "Unknown namespace; choose a known namespace from response_meta or omit namespace."
         audit_record(name, arguments, data, (time.perf_counter() - start) * 1000)
         return _ok(data, hint)
     except Exception as e:
@@ -433,13 +463,14 @@ async def handle_read_resource(uri: str) -> types.ReadResourceResult:
 # Guidance appended to each tool's result so the LLM knows what it can do next
 # with the returned data. Kept intentionally concise.
 _TOOL_HINTS: dict[str, str] = {
-    "add": "Memory stored. A supplied summary was saved directly; if it was missing or blank, a deterministic extract from the leading text was stored. If created=false, an identical record already exists and remains untouched — consider 'update' instead. Reuse canonical categories from stats' category_counts (up to 3). An unknown namespace is rejected unless you pass confirm_codes=[\"namespace_not_found\"].",
+    "list_keywords": "Reuse a candidate only if it accurately expresses your concept; score measures similarity, not equivalence. New keywords are allowed when none fits. Counts reflect live memories in the requested namespace. Use browse/literal offset for more results; lower semantic min_score to broaden candidates. No report is needed.",
+    "add": "When setting keywords, first use list_keywords semantic mode in the target namespace to find reusable terms. Memory stored. A supplied summary was saved directly; if it was missing or blank, a deterministic extract from the leading text was stored. If created=false, an identical record already exists and remains untouched — consider 'update' instead. Reuse canonical categories from stats' category_counts (up to 3). An unknown namespace is rejected unless you pass confirm_codes=[\"namespace_not_found\"].",
     "search_semantic": "Results are ranked by relevance (score). Use 'get_details' with an id to read the full original text, then call 'report' with this search_id to rate how helpful each result was (-10..10). filter_resolution shows how exact or semantic keywords/categories constrained candidates before scoring. Values within one dimension use OR, while dimensions combine using AND. If a whole supplied dimension could not be resolved, the result is empty. response_code='namespace_not_found' means the namespace does not exist (empty items is then not a real 'no match').",
     "search_meta": "Use 'get_details' with an id to read the full original text, or call 'search_semantic' for fuzzy/topic/keyword lookup. Filter further with keywords= and/or categories=. After using these results, call 'report' with this search_id to rate how helpful each id was (-10..10). response_code='namespace_not_found' means the namespace does not exist; the real available namespaces are in response_meta.known_namespaces.",
     "get_details": "You now have the full text, including metadata.keywords and metadata.categories. If a memory is relevant, use search_meta(keywords=[...]) or search_meta(categories=[...]) to find related memories.",
-    "update": "Memory updated. A supplied summary was saved directly; changed text without one received a deterministic leading-text extract. Metadata-only and whitespace-equivalent text updates preserve the existing summary. Use 'get_details' with the id to verify the change. Categories (if any) were taken from metadata.categories — see stats' category_counts for the canonical list (up to 3). Moving to an unknown namespace is rejected unless you pass confirm_codes=[\"namespace_not_found\"].",
+    "update": "When replacing keywords, first use list_keywords semantic mode in the target namespace; other updates need no keyword lookup. Memory updated. A supplied summary was saved directly; changed text without one received a deterministic leading-text extract. Metadata-only and whitespace-equivalent text updates preserve the existing summary. Use 'get_details' with the id to verify the change. Categories (if any) were taken from metadata.categories — see stats' category_counts for the canonical list (up to 3). Moving to an unknown namespace is rejected unless you pass confirm_codes=[\"namespace_not_found\"].",
     "delete": "Memory soft-deleted. It no longer appears in 'search_semantic'/'search_meta'. Call 'stats' to confirm the count.",
-    "stats": "Use 'namespace_counts' to pick a namespace, then 'search_meta' or 'search_semantic' within it. Use 'keyword_counts' as the canonical keyword vocabulary and 'category_counts' as the canonical category vocabulary (up to 3 per memory) for search_meta/add. Embedding provider/model/profile describe the active comparable vector space. Use 'server_time' for time-based queries.",
+    "stats": "Use 'namespace_counts' to pick a namespace, then 'search_meta' or 'search_semantic' within it. Use 'list_keywords' to find existing keywords and 'category_counts' as the canonical category vocabulary (up to 3 per memory) for search_meta/add. Embedding provider/model/profile describe the active comparable vector space. Use 'server_time' for time-based queries.",
     "report": "Feedback recorded. Continue with the task, or run another search if the results were unhelpful.",
 }
 
@@ -527,20 +558,13 @@ def _namespace_error_result(exc: NamespaceNotFound, search: bool = False) -> tup
     return data, hint
 
 
-def _trim_keyword_counts(keyword_counts: dict) -> dict:
-    """Thin wrapper — real logic lives in app.keyword_trim."""
-    from .keyword_trim import trim_keyword_counts
-    return trim_keyword_counts(keyword_counts)
-
-
 def _wrap_stats(data: dict) -> dict:
     """Strip internal details from stats — LLM only needs counts + time.
 
     The admin HTTP API keeps the full payload (primary/secondary/backend/…);
     this wrapper is only applied at the MCP tool boundary.
     """
-    out = {k: data[k] for k in ("total", "namespace_counts", "keyword_counts", "server_time")}
-    out["keyword_counts"] = _trim_keyword_counts(out["keyword_counts"])
+    out = {k: data[k] for k in ("total", "namespace_counts", "keyword_total", "server_time")}
     out["category_counts"] = data.get("category_counts", {})
     for key in ("embed_provider", "embed_model", "embed_dimension",
                 "embed_profile", "embed_dtype"):

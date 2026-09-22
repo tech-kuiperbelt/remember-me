@@ -40,11 +40,11 @@
 - 在 audit 中记录 caller/client、session/request ID，并让 `get_details`、`update`、`report` 等无 namespace 参数的事件可关联至原始 namespace/搜索链路。
 - 对 embedding、迁移、锁库等不可用状态提供可被 LLM 明确识别的状态与恢复提示，避免失败后盲目重试。
 
-### [23] keywords 词表治理与黑名单
+### [23] keywords 人工合并（后续）
 
-- 建立独立的 canonical keyword vocabulary，支持展示、查询、新增、改名/合并、停用/删除。
-- 增加 blacklist，明确新记忆、迁移和历史数据命中黑名单时的处理。
-- 设计 alias/merge、归一化、管理 API/UI、权限审计及现有关键词迁移策略。
+- 优先讨论人工选择标准词、预览影响范围、合并历史关键词及别名处理。
+- 黑名单暂缓，待确认低价值词持续写入的问题；暂不做独立准入词表、审批、停用等治理。
+- UI/MCP 词表拆分和批量语义找词已单独实现为 [36]，不代表合并已完成。
 
 ### 其他开放项
 

@@ -880,6 +880,20 @@ class SQLiteStorage(MemoryStorage):
                 raise
         return len(missing)
 
+    def keyword_counts(self, namespace=None):
+        """All in-use keywords and distinct live memory counts in scope."""
+        sql = ("SELECT iv.value, COUNT(DISTINCT m.id) AS n FROM index_values iv "
+               "JOIN memory_index_values link ON link.index_value_id = iv.id "
+               "JOIN memories m ON m.id = link.memory_id "
+               "WHERE iv.dimension = 'keywords' AND m.deleted = 0")
+        params = []
+        if namespace is not None:
+            sql += " AND m.namespace = ?"
+            params.append(namespace)
+        sql += " GROUP BY iv.value"
+        with self._lock:
+            return {row["value"]: row["n"] for row in self.conn.execute(sql, params)}
+
     def exact_index_values(self, dimension: str, values: list[str],
                            namespace: str | None = None) -> set[str]:
         """Return supplied values associated with at least one live memory in scope."""

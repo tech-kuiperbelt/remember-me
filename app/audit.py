@@ -112,6 +112,13 @@ def _should_rotate(next_size: int) -> bool:
 def _trim_params(tool: str, arguments: dict | None, result=None) -> dict:
     """Per-tool params record — drop user-content fields, keep metadata."""
     args = dict(arguments or {})
+    if tool == "list_keywords":
+        args = {k: v for k, v in args.items() if k in
+                ("namespace", "mode", "queries", "limit", "offset", "sort_by", "min_score")}
+        queries = args.get("queries")
+        if isinstance(queries, list):
+            args["queries"] = [str(q)[:1000] for q in queries[:20]]
+            args["queries_truncated"] = len(queries) > 20 or any(len(str(q)) > 1000 for q in queries[:20])
     if tool == "add":
         summary = args.get("summary")
         if isinstance(result, dict) and result.get("created") is False:
@@ -212,6 +219,17 @@ def _trim_result(tool: str, result) -> dict | None:
             trimmed["response_code"] = result["response_code"]
         if result.get("response_meta") is not None:
             trimmed["response_meta"] = result["response_meta"]
+        return trimmed
+
+    if tool == "list_keywords":
+        trimmed = {k: v for k, v in result.items() if k != "results"}
+        groups = result.get("results", [])
+        trimmed["results"] = [
+            {"query": str(g["query"])[:1000] if g.get("query") is not None else None,
+             "total": g.get("total"), "items": g.get("items", [])[:5],
+             "items_truncated": len(g.get("items", [])) > 5}
+            for g in groups[:20]]
+        trimmed["results_truncated"] = len(groups) > 20
         return trimmed
 
     if tool == "get_details":
