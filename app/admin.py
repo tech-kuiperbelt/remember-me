@@ -18,12 +18,12 @@ from .service import (
     memory_namespaces, memory_migrate_namespace, memory_get_details,
     memory_import_start, memory_import_status, memory_export_full,
     memory_export_namespace, memory_storage_paths, storage,
-    IMPORT_MAX_BYTES,
+    IMPORT_MAX_BYTES, InvalidSearchFilter,
 )
 from .audit import read_events as audit_read_events
 from . import audit
 from .embed import EmbeddingInputTooLong
-from .namespace_policy import NamespaceNotFound
+from .namespace_policy import NamespaceNotFound, InvalidNamespace
 from .jsonl_transfer import safe_filename_part, unlink_quietly
 
 logger = logging.getLogger("admin")
@@ -48,7 +48,7 @@ def _namespace_not_found_response(exc: NamespaceNotFound) -> Response:
     )
 
 
-def _invalid_namespace_response(exc: ValueError) -> Response:
+def _invalid_namespace_response(exc: InvalidNamespace) -> Response:
     """HTTP 400 for namespace format/type validation failures."""
     return Response(
         json.dumps({
@@ -58,6 +58,43 @@ def _invalid_namespace_response(exc: ValueError) -> Response:
         }, ensure_ascii=False),
         status_code=400, media_type="application/json",
     )
+
+
+class InvalidRequest(ValueError):
+    """A failure parsing the public request, not an internal business error."""
+
+
+def _invalid_request_response(exc):
+    return Response(json.dumps({"detail": str(exc), "response_code": "invalid_request",
+                               "response_meta": {"reason": str(exc)}}),
+                    status_code=400, media_type="application/json")
+
+
+async def _request_object(request, required=(), string_fields=()):
+    try:
+        body = await request.json()
+    except (ValueError, UnicodeError) as exc:
+        raise InvalidRequest("request body must be valid JSON") from exc
+    if not isinstance(body, dict):
+        raise InvalidRequest("request body must be an object")
+    for key in required:
+        if key not in body:
+            raise InvalidRequest(f"{key} is required")
+    for key in string_fields:
+        if key in body and body[key] is not None and not isinstance(body[key], str):
+            raise InvalidRequest(f"{key} must be a string")
+        if key in required and body.get(key) is None:
+            raise InvalidRequest(f"{key} must be a string")
+    if "metadata" in body and body["metadata"] is not None and not isinstance(body["metadata"], dict):
+        raise InvalidRequest("metadata must be an object")
+    return body
+
+
+def _number(value, converter, field):
+    try:
+        return converter(value)
+    except (ValueError, TypeError, OverflowError) as exc:
+        raise InvalidRequest(f"{field} must be a valid number") from exc
 
 
 async def handle_admin(request: Request):
@@ -74,8 +111,8 @@ async def handle_admin(request: Request):
 async def handle_list_memories(request: Request):
     try:
         ns = request.query_params.get("namespace")
-        limit = int(request.query_params.get("limit", 100))
-        offset = int(request.query_params.get("offset", 0))
+        limit = _number(request.query_params.get("limit", 100), int, "limit")
+        offset = _number(request.query_params.get("offset", 0), int, "offset")
         sort_by = request.query_params.get("sort_by", "created_at")
         updated_after = request.query_params.get("updated_after")
         updated_before = request.query_params.get("updated_before")
@@ -100,9 +137,11 @@ async def handle_list_memories(request: Request):
     except NamespaceNotFound as e:
         logger.warning("GET /api/memories rejected: %s", e)
         return _namespace_not_found_response(e)
-    except ValueError as e:
+    except InvalidNamespace as e:
         logger.warning("GET /api/memories invalid request: %s", e)
         return _invalid_namespace_response(e)
+    except InvalidRequest as e:
+        return _invalid_request_response(e)
     except Exception as e:
         logger.error("GET /api/memories failed: %s", e, exc_info=True)
         return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
@@ -141,7 +180,7 @@ async def handle_get_details(request: Request):
 
 async def handle_add_memory(request: Request):
     try:
-        body = await request.json()
+        body = await _request_object(request, required=("text",), string_fields=("text",))
         logger.info("POST /api/memories text_len=%d", len(body.get("text", "")))
         result = memory_add(body["text"], body.get("metadata"), body.get("namespace"),
                             body.get("summary"), body.get("confirm_codes"))
@@ -155,9 +194,11 @@ async def handle_add_memory(request: Request):
     except NamespaceNotFound as e:
         logger.warning("POST /api/memories rejected: %s", e)
         return _namespace_not_found_response(e)
-    except ValueError as e:
+    except InvalidNamespace as e:
         logger.warning("POST /api/memories invalid namespace: %s", e)
         return _invalid_namespace_response(e)
+    except InvalidRequest as e:
+        return _invalid_request_response(e)
     except Exception as e:
         logger.error("POST /api/memories failed: %s", e, exc_info=True)
         return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
@@ -166,7 +207,7 @@ async def handle_add_memory(request: Request):
 async def handle_update_memory(request: Request):
     try:
         mid = request.path_params.get("memory_id")
-        body = await request.json()
+        body = await _request_object(request, required=(), string_fields=("text",))
         logger.info("PUT /api/memories/%s", mid)
         result = memory_update(mid, body.get("text"), body.get("metadata"),
                                body.get("namespace"), body.get("summary"),
@@ -185,10 +226,12 @@ async def handle_update_memory(request: Request):
         logger.warning("PUT /api/memories/%s rejected: %s",
                        request.path_params.get("memory_id", ""), e)
         return _namespace_not_found_response(e)
-    except ValueError as e:
+    except InvalidNamespace as e:
         logger.warning("PUT /api/memories/%s invalid namespace: %s",
                        request.path_params.get("memory_id", ""), e)
         return _invalid_namespace_response(e)
+    except InvalidRequest as e:
+        return _invalid_request_response(e)
     except Exception as e:
         logger.error("PUT /api/memories/%s failed: %s", request.path_params.get("memory_id", ""), e, exc_info=True)
         return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
@@ -375,10 +418,10 @@ async def handle_export_namespace(request: Request):
 
 async def handle_search_memories(request: Request):
     try:
-        body = await request.json()
+        body = await _request_object(request, required=("query",), string_fields=("query",))
         logger.info("POST /api/memories/search query_len=%d", len(body.get("query", "")))
-        results = memory_search(body["query"], int(body.get("k", 5)),
-                                float(body.get("threshold", 0.0)), body.get("namespace"),
+        results = memory_search(body["query"], _number(body.get("k", 5), int, "k"),
+                                _number(body.get("threshold", 0.0), float, "threshold"), body.get("namespace"),
                                 keywords=body.get("keywords"),
                                 categories=body.get("categories"))
         return Response(
@@ -394,9 +437,11 @@ async def handle_search_memories(request: Request):
     except NamespaceNotFound as e:
         logger.warning("POST /api/memories/search rejected: %s", e)
         return _namespace_not_found_response(e)
-    except ValueError as e:
+    except InvalidNamespace as e:
         logger.warning("POST /api/memories/search invalid namespace: %s", e)
         return _invalid_namespace_response(e)
+    except (InvalidRequest, InvalidSearchFilter) as e:
+        return _invalid_request_response(e)
     except Exception as e:
         logger.error("POST /api/memories/search failed: %s", e, exc_info=True)
         return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")

@@ -35,6 +35,10 @@ CONFIRM_RULES = frozenset({NAMESPACE_NOT_FOUND})
 _FORBIDDEN_CHARS = ("\x00", "\n", "\r", "\t")
 
 
+class InvalidNamespace(ValueError):
+    """A namespace has an invalid type or format (not an existence failure)."""
+
+
 class NamespaceNotFound(Exception):
     """Raised when a write/query targets a namespace with no live memories.
 
@@ -68,14 +72,16 @@ def validate_namespace_name(namespace: str) -> str:
 
     Raises ``ValueError``; existence is enforced separately (needs storage).
     """
+    if not isinstance(namespace, str):
+        raise InvalidNamespace("namespace must be a string")
     if len(namespace) > MAX_NAMESPACE_LENGTH:
-        raise ValueError(
+        raise InvalidNamespace(
             f"namespace must be at most {MAX_NAMESPACE_LENGTH} characters"
         )
     if namespace in RESERVED_NAMESPACES:
-        raise ValueError(f"namespace '{namespace}' is reserved")
+        raise InvalidNamespace(f"namespace '{namespace}' is reserved")
     if any(ch in namespace for ch in _FORBIDDEN_CHARS):
-        raise ValueError("namespace must not contain control characters")
+        raise InvalidNamespace("namespace must not contain control characters")
     return namespace
 
 

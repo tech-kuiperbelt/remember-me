@@ -534,7 +534,7 @@ async function loadMemories() {
     renderMemories(data);
     updateNsTabs();
   } catch(e) {
-    $('memories-list').innerHTML = '<div class="empty-state">Error: ' + e.message + '</div>';
+    showError('memories-list', e);
   }
 }
 
@@ -568,6 +568,28 @@ function sortArrow(field) {
   return sortDir === 'asc' ? ' ↑' : ' ↓';
 }
 
+function showError(id, error) {
+  const message = document.createElement('div');
+  message.className = 'empty-state';
+  message.textContent = 'Error: ' + error.message;
+  $(id).replaceChildren(message);
+}
+
+function bindMemoryRows(root, memories) {
+  root.querySelectorAll('tbody tr').forEach((row, i) => {
+    const memory = memories[i];
+    row.querySelector('.memory-text').title = memory.summary || deriveSummary(memory.text);
+    row.querySelectorAll('[data-memory-action]').forEach(button => {
+      button.onclick = () => {
+        const action = button.dataset.memoryAction;
+        if (action === 'viewDetail') viewDetail(memory.id);
+        else if (action === 'editMemory') editMemory(memory.id);
+        else if (action === 'deleteMemory') deleteMemory(memory.id);
+      };
+    });
+  });
+}
+
 function renderMemories(data) {
   if (!data.length) {
     $('memories-list').innerHTML = '<div class="empty-state">No memories found</div>';
@@ -583,18 +605,19 @@ function renderMemories(data) {
   sorted.forEach(m => {
     const displayText = m.summary || deriveSummary(m.text);
     html += `<tr>
-      <td><div class="memory-text" title="${esc(displayText)}">${esc(displayText)}</div></td>
+      <td><div class="memory-text">${esc(displayText)}</div></td>
       <td><span class="badge ns">${esc(m.namespace)}</span></td>
       <td style="font-size:12px;color:#888">${formatTime(m.created_at)}</td>
       <td><div class="actions">
-        <button class="btn btn-sm btn-outline" onclick="viewDetail('${m.id}')">View</button>
-        <button class="btn btn-sm btn-outline" onclick="editMemory('${m.id}')">Edit</button>
-        <button class="btn btn-sm btn-danger" onclick="deleteMemory('${m.id}')">Del</button>
+        <button class="btn btn-sm btn-outline" data-memory-action="viewDetail">View</button>
+        <button class="btn btn-sm btn-outline" data-memory-action="editMemory">Edit</button>
+        <button class="btn btn-sm btn-danger" data-memory-action="deleteMemory">Del</button>
       </div></td>
     </tr>`;
   });
   html += '</tbody></table>';
   $('memories-list').innerHTML = html;
+  bindMemoryRows($('memories-list'), sorted);
 
   // Pagination
   const hasMore = data.length >= MEMORIES_LIMIT;
@@ -609,7 +632,7 @@ function renderMemories(data) {
 // View detail
 async function viewDetail(id) {
   try {
-    const m = await api('/memories/' + id);
+    const m = await api('/memories/' + encodeURIComponent(id));
     showDetail(m, false);
   } catch(e) {
     toast(e.message, 'error');
@@ -618,7 +641,7 @@ async function viewDetail(id) {
 
 async function editMemory(id) {
   try {
-    const m = await api('/memories/' + id);
+    const m = await api('/memories/' + encodeURIComponent(id));
     showDetail(m, true);
   } catch(e) {
     toast(e.message, 'error');
@@ -638,23 +661,19 @@ function showDetail(m, editable) {
     : `<div class="value" style="white-space:pre-wrap">${esc(m.text)}</div>`;
 
   const nsHtml = editable
-    ? `<div class="ns-wrapper"><input id="edit-namespace" value="${esc(m.namespace)}" autocomplete="off" style="padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;width:100%" onfocus="showNsDropdown()" onblur="setTimeout(function(){hideNsDropdown()},150)"><div id="ns-dropdown" class="ns-dropdown">${allNamespaces.map(ns => `<div onmousedown="pickNs('${esc(ns)}')">${esc(ns)}</div>`).join('')}</div></div>`
+    ? '<div class="ns-wrapper"><input id="edit-namespace" autocomplete="off" style="padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;width:100%"><div id="ns-dropdown" class="ns-dropdown"></div></div>'
     : `<span class="badge ns">${esc(m.namespace)}</span>`;
 
   const textFieldStyle = editable ? ' style="flex:1;display:flex;flex-direction:column;min-height:0"' : '';
 
-  const safeId = esc(m.id);
-  const copyBtn = `<button class="btn btn-outline btn-sm" onclick="copyDetailText(this)">Copy</button>`;
-  const actionsHtml = editable
-    ? `${copyBtn}<button class="btn btn-primary btn-sm" onclick="saveEdit('${safeId}')">Save</button><button class="btn btn-outline btn-sm" onclick="closeDetail()">Cancel</button>`
-    : `${copyBtn}<button class="btn btn-primary btn-sm" onclick="closeDetail();editMemory('${safeId}')">Edit</button><button class="btn btn-danger btn-sm" onclick="closeDetail();deleteMemory('${safeId}')">Delete</button><button class="btn btn-outline btn-sm" onclick="closeDetail()">Close</button>`;
+  const actionsHtml = '<div id="detail-actions" style="display:flex;gap:8px"></div>';
 
   $('detail-body').setAttribute('style', 'padding:20px;overflow-y:auto;flex:1' + (editable ? ';display:flex;flex-direction:column' : ''));
   const summaryHtml = m.summary
     ? `<div class="value" style="white-space:pre-wrap">${esc(m.summary)}</div>`
     : `<div class="value" style="color:#999">(none)</div>`;
   $('detail-body').innerHTML = `
-    <div class="detail-field"><div class="label">ID</div><div class="value">${m.id}</div></div>
+    <div class="detail-field"><div class="label">ID</div><div class="value">${esc(m.id)}</div></div>
     <div class="detail-field"><div class="label">Summary</div>${summaryHtml}</div>
     <div class="detail-field"${textFieldStyle}><div class="label">Text</div>${textHtml}</div>
     <div class="detail-field"><div class="label">Namespace</div><div class="value">${nsHtml}</div></div>
@@ -664,6 +683,34 @@ function showDetail(m, editable) {
     <div class="detail-field"><div class="label">Metadata</div><div class="metadata-view">${metaStr === '{}' ? '<span style="color:#999">(empty)</span>' : esc(metaStr)}</div></div>
     <div style="margin-top:16px;display:flex;gap:8px;flex-shrink:0">${actionsHtml}</div>
   `;
+  if (editable) {
+    $('edit-namespace').value = m.namespace;
+    $('edit-namespace').onfocus = showNsDropdown;
+    $('edit-namespace').onblur = () => setTimeout(hideNsDropdown, 150);
+    allNamespaces.forEach(ns => {
+      const option = document.createElement('div');
+      option.textContent = ns;
+      option.onmousedown = () => pickNs(ns);
+      $('ns-dropdown').append(option);
+    });
+  }
+  const actions = $('detail-actions');
+  const button = (label, fn, style='btn-outline') => {
+    const el = document.createElement('button');
+    el.className = 'btn btn-sm ' + style;
+    el.textContent = label;
+    el.onclick = () => fn(el);
+    actions.append(el);
+  };
+  button('Copy', el => copyDetailText(el));
+  if (editable) {
+    button('Save', () => saveEdit(m.id), 'btn-primary');
+    button('Cancel', closeDetail);
+  } else {
+    button('Edit', () => { closeDetail(); editMemory(m.id); });
+    button('Delete', () => { closeDetail(); deleteMemory(m.id); }, 'btn-danger');
+    button('Close', closeDetail);
+  }
   $('detail-modal').style.display = 'flex';
 }
 
@@ -676,13 +723,13 @@ async function saveEdit(id) {
   try {
     let res;
     try {
-      res = await api('/memories/' + id, {
+      res = await api('/memories/' + encodeURIComponent(id), {
         method: 'PUT',
         body: JSON.stringify({text, namespace}),
       });
     } catch(err) {
       if (!isNamespaceNotFound(err) || !confirmNamespaceCreation(err)) throw err;
-      res = await api('/memories/' + id, {
+      res = await api('/memories/' + encodeURIComponent(id), {
         method: 'PUT',
         body: JSON.stringify({text, namespace, confirm_codes: ['namespace_not_found']}),
       });
@@ -722,7 +769,7 @@ function closeDetail(e) {
 async function deleteMemory(id) {
   if (!confirm('Delete this memory?')) return;
   try {
-    await api('/memories/' + id, {method: 'DELETE'});
+    await api('/memories/' + encodeURIComponent(id), {method: 'DELETE'});
     toast('Memory deleted');
     loadMemories();
   } catch(e) {
@@ -772,7 +819,7 @@ async function doSearch(e) {
     });
     renderSearchResults(data);
   } catch(e) {
-    $('search-results').innerHTML = '<div class="empty-state">Error: ' + e.message + '</div>';
+    showError('search-results', e);
   }
 }
 
@@ -794,7 +841,7 @@ async function doListQuery() {
     const data = await api('/memories?' + params.toString());
     renderListResults(data, params.get('sort_by'));
   } catch(e) {
-    $('search-results').innerHTML = '<div class="empty-state">Error: ' + e.message + '</div>';
+    showError('search-results', e);
   }
 }
 
@@ -811,14 +858,15 @@ function renderListResults(data, sortBy) {
     const displayText = m.summary || deriveSummary(m.text);
     const ts = sortBy === 'updated_at' ? m.updated_at : m.created_at;
     html += `<tr>
-      <td><div class="memory-text" title="${esc(displayText)}">${esc(displayText)}</div></td>
+      <td><div class="memory-text">${esc(displayText)}</div></td>
       <td><span class="badge ns">${esc(m.namespace)}</span></td>
       <td style="font-size:12px;color:#888">${formatTime(ts)}</td>
-      <td><button class="btn btn-sm btn-outline" onclick="viewDetail('${m.id}')">View</button></td>
+      <td><button class="btn btn-sm btn-outline" data-memory-action="viewDetail">View</button></td>
     </tr>`;
   });
   html += '</tbody></table>';
   $('search-results').innerHTML = html;
+  bindMemoryRows($('search-results'), data);
 }
 
 function renderSearchResults(data) {
@@ -831,13 +879,14 @@ function renderSearchResults(data) {
     const displayText = m.summary || deriveSummary(m.text);
     html += `<tr>
       <td><span class="badge">${(m.score * 100).toFixed(1)}%</span></td>
-      <td><div class="memory-text" title="${esc(displayText)}">${esc(displayText)}</div></td>
+      <td><div class="memory-text">${esc(displayText)}</div></td>
       <td><span class="badge ns">${esc(m.namespace)}</span></td>
-      <td><button class="btn btn-sm btn-outline" onclick="viewDetail('${m.id}')">View</button></td>
+      <td><button class="btn btn-sm btn-outline" data-memory-action="viewDetail">View</button></td>
     </tr>`;
   });
   html += '</tbody></table>';
   $('search-results').innerHTML = html;
+  bindMemoryRows($('search-results'), data);
 }
 
 // Add
@@ -956,7 +1005,7 @@ async function loadStats() {
     updateKeywordDropdown();
     updateKeywordNamespaces();
   } catch(e) {
-    $('stats-content').innerHTML = '<div class="empty-state">Error: ' + e.message + '</div>';
+    showError('stats-content', e);
   }
 }
 
@@ -969,22 +1018,11 @@ function renderNamespaceCounts(counts) {
 }
 
 function updateSearchNsDropdown() {
-  const sel = $('search-ns');
-  const currentVal = sel.value;
-  let html = '<option value="">(all)</option>';
-  allNamespaces.forEach(ns => {
-    html += `<option value="${esc(ns)}"${ns === currentVal ? ' selected' : ''}>${esc(ns)}</option>`;
-  });
-  sel.innerHTML = html;
-
-  // list mode namespace dropdown
-  const lsel = $('list-ns');
-  const lcur = lsel.value;
-  let lhtml = '<option value="">(all)</option>';
-  allNamespaces.forEach(ns => {
-    lhtml += `<option value="${esc(ns)}"${ns === lcur ? ' selected' : ''}>${esc(ns)}</option>`;
-  });
-  lsel.innerHTML = lhtml;
+  for (const id of ['search-ns', 'list-ns']) {
+    const sel = $(id), current = sel.value;
+    sel.replaceChildren(new Option('(all)', ''), ...allNamespaces.map(ns => new Option(ns, ns)));
+    sel.value = current;
+  }
 }
 
 let keywordRequest = 0, keywordOffset = 0;
@@ -1090,14 +1128,17 @@ function switchNamespace(el, ns) {
 
 function updateNsTabs() {
   const container = $('ns-tabs');
-  const current = currentNamespace;
   const counts = (statsData && statsData.namespace_counts) || {};
-  let html = `<span class="ns-tab${current === '' ? ' active' : ''}" data-ns="" onclick="switchNamespace(this, '')">All Memories</span>`;
-  allNamespaces.forEach(ns => {
-    const count = counts[ns] != null ? counts[ns] : currentMemories.filter(m => m.namespace === ns).length;
-    html += `<span class="ns-tab${ns === current ? ' active' : ''}" data-ns="${esc(ns)}" onclick="switchNamespace(this, '${esc(ns)}')">${esc(ns)} (${count})</span>`;
-  });
-  container.innerHTML = html;
+  container.replaceChildren();
+  for (const ns of ['', ...allNamespaces]) {
+    const tab = document.createElement('span');
+    tab.className = 'ns-tab' + (ns === currentNamespace ? ' active' : '');
+    tab.dataset.ns = ns;
+    const count = counts[ns] ?? currentMemories.filter(m => m.namespace === ns).length;
+    tab.textContent = ns === '' ? 'All Memories' : `${ns} (${count})`;
+    tab.onclick = () => switchNamespace(tab, ns);
+    container.append(tab);
+  }
 }
 
 function toggleDebug() {

@@ -19,6 +19,7 @@ from .categories import (
 )
 from .namespace_policy import (
     NamespaceNotFound,
+    InvalidNamespace,
     NAMESPACE_NOT_FOUND,
     normalize_namespace,
     validate_namespace_name,
@@ -198,7 +199,7 @@ def check_namespace(namespace, confirm_codes=None) -> str:
     (length/reserved characters) is never bypassable by confirmation codes.
     """
     if namespace is not None and not isinstance(namespace, str):
-        raise ValueError("namespace must be a string")
+        raise InvalidNamespace("namespace must be a string")
     ns = normalize_namespace(namespace) or DEFAULT_NAMESPACE
     validate_namespace_name(ns)
     if ns == DEFAULT_NAMESPACE:
@@ -304,6 +305,10 @@ def _apply_categories_to_metadata(metadata: dict | None) -> dict | None:
     return metadata
 
 
+class InvalidSearchFilter(ValueError):
+    """Caller supplied more filter values than the supported search limit."""
+
+
 def memory_search(query: str, k: int = 5, threshold: float = 0.0,
                   namespace: str | None = None,
                   categories: list | None = None,
@@ -313,7 +318,7 @@ def memory_search(query: str, k: int = 5, threshold: float = 0.0,
     # Reject an unknown namespace before embedding: an empty result must not
     # be confused with "namespace does not exist".
     if namespace is not None and not isinstance(namespace, str):
-        raise ValueError("namespace must be a string")
+        raise InvalidNamespace("namespace must be a string")
     namespace = normalize_namespace(namespace)
     if namespace is not None:
         namespace = check_namespace(namespace)
@@ -321,7 +326,7 @@ def memory_search(query: str, k: int = 5, threshold: float = 0.0,
     cats = normalize_categories_filter(categories)
     for dimension, values in (("keywords", kw), ("categories", cats)):
         if values and len(values) > MAX_FILTER_VALUES:
-            raise ValueError(
+            raise InvalidSearchFilter(
                 f"{dimension} accepts at most {MAX_FILTER_VALUES} filter values"
             )
     logger.info("search: query_len=%d k=%d threshold=%.3f namespace=%s keywords=%s categories=%s",
@@ -360,7 +365,7 @@ def memory_list(namespace: str | None = None, limit: int = 100,
     if sort_by not in ("created_at", "updated_at"):
         sort_by = "created_at"
     if namespace is not None and not isinstance(namespace, str):
-        raise ValueError("namespace must be a string")
+        raise InvalidNamespace("namespace must be a string")
     namespace = normalize_namespace(namespace)
     if namespace is not None:
         namespace = check_namespace(namespace)
@@ -399,7 +404,7 @@ def memory_update(memory_id: str, text: str | None = None,
     # Blank/omitted namespace means "leave unchanged"; an explicit namespace
     # must be an existing one unless the caller confirms its creation.
     if namespace is not None and not isinstance(namespace, str):
-        raise ValueError("namespace must be a string")
+        raise InvalidNamespace("namespace must be a string")
     target_ns = normalize_namespace(namespace)
     if target_ns is not None:
         target_ns = check_namespace(target_ns, confirm_codes)
