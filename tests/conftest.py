@@ -31,9 +31,8 @@ def pytest_configure(config):
 
 def pytest_unconfigure(config):
     audit = sys.modules.get("app.audit")
-    if audit is not None and audit._file is not None:
-        audit._file.close()
-        audit._file = None
+    if audit is not None:
+        audit.close()
     directory = getattr(config, "_test_directory", None)
     if directory is not None:
         directory.cleanup()

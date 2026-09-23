@@ -1,11 +1,11 @@
 """Tests for the LLM tool-call audit journal (app/audit.py).
 
 The audit journal is a standalone append-only JSONL file, independent of the
-memory stores. Tests point ``app.audit.AUDIT_PATH`` at tmp_path and reset the
-module-level writer state between tests so nothing touches real ``data/``.
+memory stores. Tests configure the compatibility API with a temporary path.
 """
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -14,17 +14,12 @@ import app.audit as audit
 
 
 @pytest.fixture
-def journal(tmp_path, monkeypatch):
-    """Point the audit journal at a temp file and reset its writer state."""
+def journal(tmp_path):
+    """Point the compatibility API at a fresh journal for each test."""
     path = tmp_path / "audit.jsonl"
-    monkeypatch.setattr(audit, "AUDIT_PATH", str(path))
-    monkeypatch.setattr(audit, "AUDIT_MAX_BYTES", 10 * 1024 * 1024)
-    monkeypatch.setattr(audit, "AUDIT_MAX_FILES", 10)
-    monkeypatch.setattr(audit, "AUDIT_MAX_EVENTS", 0)
-    # Reset module-level writer state so each test starts clean.
-    monkeypatch.setattr(audit, "_file", None)
-    monkeypatch.setattr(audit, "_count", 0)
-    return path
+    audit.configure({"MEMORY_AUDIT_PATH": str(path)})
+    yield path
+    audit.configure(os.environ)
 
 
 def _read_lines(path):
@@ -53,7 +48,7 @@ def test_record_never_raises_on_bad_args(journal, monkeypatch):
     def boom(*a, **k):
         raise RuntimeError("disk on fire")
 
-    monkeypatch.setattr(audit, "_open_file", boom)
+    monkeypatch.setattr(audit._default_journal, "_open", boom)
     # record() itself swallows everything
     audit.record("add", None, None, 1.0)
     assert not journal.exists() or journal.read_text(encoding="utf-8") == ""
@@ -224,7 +219,7 @@ def test_record_error_event(journal):
 # -- rotation --
 
 def test_count_rotation_continues_after_max(journal, monkeypatch):
-    monkeypatch.setattr(audit, "AUDIT_MAX_EVENTS", 3)
+    monkeypatch.setattr(audit._default_journal, "max_events", 3)
     for i in range(5):
         audit.record("stats", {}, {"total": i}, 1.0)
     assert len(_read_lines(journal)) == 2
@@ -233,7 +228,7 @@ def test_count_rotation_continues_after_max(journal, monkeypatch):
 
 
 def test_size_rotation_uses_utf8_bytes_and_keeps_large_event(journal, monkeypatch):
-    monkeypatch.setattr(audit, "AUDIT_MAX_BYTES", 1)
+    monkeypatch.setattr(audit._default_journal, "max_bytes", 1)
     audit.record("stats", {}, {"value": "中文"}, 1.0)
     audit.record("stats", {}, {"value": "next"}, 1.0)
 
@@ -243,8 +238,8 @@ def test_size_rotation_uses_utf8_bytes_and_keeps_large_event(journal, monkeypatc
 
 
 def test_rotation_discards_oldest_file(journal, monkeypatch):
-    monkeypatch.setattr(audit, "AUDIT_MAX_EVENTS", 1)
-    monkeypatch.setattr(audit, "AUDIT_MAX_FILES", 3)
+    monkeypatch.setattr(audit._default_journal, "max_events", 1)
+    monkeypatch.setattr(audit._default_journal, "max_files", 3)
     for i in range(5):
         audit.record("stats", {}, {"total": i}, 1.0)
 
@@ -254,7 +249,7 @@ def test_rotation_discards_oldest_file(journal, monkeypatch):
 
 
 def test_rotation_failure_does_not_stop_future_writes(journal, monkeypatch):
-    monkeypatch.setattr(audit, "AUDIT_MAX_EVENTS", 1)
+    monkeypatch.setattr(audit._default_journal, "max_events", 1)
     audit.record("stats", {}, {"total": 1}, 1.0)
 
     def fail_replace(*args):
@@ -290,7 +285,7 @@ def test_read_events_newest_first_with_filters(journal):
 
 
 def test_read_events_filters_across_rotated_files(journal, monkeypatch):
-    monkeypatch.setattr(audit, "AUDIT_MAX_EVENTS", 1)
+    monkeypatch.setattr(audit._default_journal, "max_events", 1)
     audit.record("add", {"namespace": "old", "text": "x"},
                  {"id": "1", "created": True}, 1.0)
     audit.record("delete", {"namespace": "new", "memory_id": "1"},

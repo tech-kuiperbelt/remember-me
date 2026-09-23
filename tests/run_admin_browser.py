@@ -60,8 +60,5 @@ try:
 finally:
     server.should_exit=True;t.join(timeout=5);sock.close();service.storage.close()
 
-    from app import audit
-    if audit._file is not None:
-        audit._file.close()
-        audit._file = None
+    audit.close()
     work.cleanup()

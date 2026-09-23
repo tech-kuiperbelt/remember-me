@@ -32,29 +32,6 @@ AUDIT_MAX_FILES = 10
 AUDIT_MAX_EVENTS = 0
 
 
-def configure(environment=None):
-    """Configure explicitly at an entrypoint; never read environment at import."""
-    global AUDIT_PATH, AUDIT_MAX_BYTES, AUDIT_MAX_FILES, AUDIT_MAX_EVENTS
-    env = os.environ if environment is None else environment
-    path = env.get("MEMORY_AUDIT_PATH", "data/audit.jsonl")
-    max_bytes = int(env.get("MEMORY_AUDIT_MAX_BYTES", "10485760"))
-    max_files = max(1, int(env.get("MEMORY_AUDIT_MAX_FILES", "10")))
-    max_events = int(env.get("MEMORY_AUDIT_MAX_EVENTS", "0"))
-    close()
-    with _lock:
-        AUDIT_PATH, AUDIT_MAX_BYTES = path, max_bytes
-        AUDIT_MAX_FILES, AUDIT_MAX_EVENTS = max_files, max_events
-
-
-def close():
-    global _file, _count
-    with _lock:
-        if _file is not None:
-            _file.close()
-            _file = None
-        _count = 0
-
-
 # User-content keys stripped from the recorded params: the journal must not
 # duplicate memory bodies (they already live in the primary store).
 _TEXT_KEYS = ("text", "summary")
@@ -62,76 +39,12 @@ _MAX_FILTER_VALUES = 20
 _MAX_FILTER_MATCHES = 3
 _MAX_CONFIRM_CODES = 10
 
-_lock = threading.Lock()
-_file = None
-_count = 0
+_default_lock = threading.RLock()
+_default_journal = None
 
 
 def _now_utc_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-def _open_file() -> None:
-    """Open the journal in append mode, creating parent dirs as needed."""
-    global _file, _count
-    if _file is not None:
-        return
-    path = Path(AUDIT_PATH)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    _file = open(path, "a", encoding="utf-8")
-    if path.exists() and path.stat().st_size > 0:
-        with path.open("r", encoding="utf-8") as fh:
-            _count = sum(1 for _ in fh)
-
-
-def _rotate() -> bool:
-    """Rotate the current journal and reopen it. Never raises.
-
-    ``AUDIT_MAX_FILES`` includes the active file, so a value of 10 keeps the
-    active journal plus ``.1`` through ``.9``. A failed rename may leave a
-    partial backup shift, but the active path is always reopened so auditing
-    can continue instead of becoming permanently disabled.
-    """
-    global _file, _count
-    path = Path(AUDIT_PATH)
-    try:
-        if _file is not None:
-            _file.close()
-            _file = None
-        if AUDIT_MAX_FILES == 1:
-            if path.exists():
-                path.unlink()
-        else:
-            for suffix in range(AUDIT_MAX_FILES - 1, 0, -1):
-                source = path if suffix == 1 else Path(f"{path}.{suffix - 1}")
-                target = Path(f"{path}.{suffix}")
-                if source.exists():
-                    os.replace(source, target)
-        _count = 0
-        return True
-    except Exception as exc:
-        logger.error("audit rotation failed: %s", exc, exc_info=True)
-        return False
-    finally:
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            _file = open(path, "a", encoding="utf-8")
-            if path.exists() and path.stat().st_size > 0:
-                with path.open("r", encoding="utf-8") as fh:
-                    _count = sum(1 for _ in fh)
-        except Exception as exc:
-            _file = None
-            logger.error("audit journal reopen failed: %s", exc, exc_info=True)
-
-
-def _should_rotate(next_size: int) -> bool:
-    """Return whether the next encoded event should start a new file."""
-    path = Path(AUDIT_PATH)
-    current_size = path.stat().st_size if path.exists() else 0
-    by_size = (AUDIT_MAX_BYTES > 0 and current_size > 0 and
-               current_size + next_size > AUDIT_MAX_BYTES)
-    by_count = AUDIT_MAX_EVENTS > 0 and _count >= AUDIT_MAX_EVENTS
-    return by_size or by_count
 
 
 def _trim_params(tool: str, arguments: dict | None, result=None) -> dict:
@@ -281,79 +194,6 @@ def _trim_result(tool: str, result) -> dict | None:
     return dict(result)
 
 
-def record(tool: str, arguments: dict | None, result, duration_ms: float,
-           error: dict | None = None) -> None:
-    """Append one audit event. Never raises.
-
-    ``error`` is ``{"type": ..., "message": ...}`` for failed calls, else None.
-    """
-    global _count
-    try:
-        with _lock:
-            _open_file()
-            event = {
-                "ts": _now_utc_iso(),
-                "tool": tool,
-                "status": "error" if error else "ok",
-                "duration_ms": round(duration_ms, 1),
-                "namespace": (arguments or {}).get("namespace"),
-                "confirm_codes": _confirm_codes(arguments),
-                "response_code": (result.get("response_code")
-                                  if isinstance(result, dict) else None),
-                "error": error,
-                "params": _trim_params(tool, arguments, result),
-                "result": _trim_result(tool, result),
-            }
-            line = json.dumps(event, ensure_ascii=False, default=str) + "\n"
-            if _should_rotate(len(line.encode("utf-8"))):
-                _rotate()
-            if _file is None:
-                _open_file()
-            _file.write(line)
-            _file.flush()
-            _count += 1
-    except Exception as e:
-        # Audit is best-effort — never let it break a tool call.
-        logger.error("audit record failed: %s", e, exc_info=True)
-
-
-def read_events(limit: int = 500, tool: str | None = None,
-                namespace: str | None = None) -> list[dict]:
-    """Return recent events, newest first, with optional filters.
-
-    Lines that fail to parse are skipped so one corrupt line never breaks
-    the admin UI.
-    """
-    events: list[dict] = []
-    path = Path(AUDIT_PATH)
-    paths = [path] + [Path(f"{path}.{suffix}")
-                      for suffix in range(1, AUDIT_MAX_FILES)]
-    for candidate in paths:
-        if not candidate.exists():
-            continue
-        try:
-            with candidate.open("r", encoding="utf-8") as fh:
-                lines = fh.readlines()
-            for line in reversed(lines):
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    ev = json.loads(line)
-                except (ValueError, TypeError):
-                    continue
-                if tool and ev.get("tool") != tool:
-                    continue
-                if namespace and ev.get("namespace") != namespace:
-                    continue
-                events.append(ev)
-                if len(events) >= limit:
-                    return events
-        except (OSError, UnicodeError) as exc:
-            logger.error("audit read failed for %s: %s", candidate, exc)
-    return events
-
-
 class AuditJournal:
     """One runtime's audit file and rotation state, independent of other runtimes."""
 
@@ -471,3 +311,45 @@ class AuditJournal:
             except (OSError, UnicodeError):
                 logger.exception("audit read failed for %s", candidate)
         return events
+
+
+def configure(environment=None):
+    """Point the legacy module API at one journal; runtime instances stay independent."""
+    global _default_journal, AUDIT_PATH, AUDIT_MAX_BYTES, AUDIT_MAX_FILES, AUDIT_MAX_EVENTS
+    journal = AuditJournal(environment)
+    with _default_lock:
+        if _default_journal is not None:
+            _default_journal.close()
+        _default_journal = journal
+        AUDIT_PATH = str(journal.path)
+        AUDIT_MAX_BYTES = journal.max_bytes
+        AUDIT_MAX_FILES = journal.max_files
+        AUDIT_MAX_EVENTS = journal.max_events
+
+
+def _legacy_journal():
+    if _default_journal is None:
+        configure()
+    return _default_journal
+
+
+def close():
+    with _default_lock:
+        if _default_journal is not None:
+            _default_journal.close()
+
+
+def record(tool: str, arguments: dict | None, result, duration_ms: float,
+           error: dict | None = None) -> None:
+    """Compatibility entrypoint; all writing and rotation use AuditJournal."""
+    try:
+        with _default_lock:
+            _legacy_journal().record(tool, arguments, result, duration_ms, error=error)
+    except Exception:
+        logger.exception("audit record failed")
+
+
+def read_events(limit: int = 500, tool: str | None = None,
+                namespace: str | None = None) -> list[dict]:
+    with _default_lock:
+        return _legacy_journal().read_events(limit=limit, tool=tool, namespace=namespace)
