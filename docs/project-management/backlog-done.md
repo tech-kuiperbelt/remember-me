@@ -2,6 +2,8 @@
 
 本文件归档已完成的项目待办。详细实现记录保留在 git 提交和项目变更日志中。
 
+- [34] 统一离线运维入口与 Runbook（2026-09-23 实现，待提交）：新增 `bin/manage` 统一环境、默认路径及 embedding/迁移/recovery 子命令；新增根目录 Runbook，明确停服、writer lock、Full Sync、恢复和 Stats 验收流程。详见 [`plans/34-operations-runbook.md`](plans/34-operations-runbook.md)。
+
 - [38] 配置与 runtime 生命周期重构（2026-09-23 实现，待提交；最终收尾未部署）：显式 Settings/MemoryService/Runtime，移除导入时资源初始化；统一启动失败清理、导入与同步等待、最终 outbox 同步及锁释放；UI 新增关闭服务按钮，重启完成清理后再 exec。374 项 pytest 和隔离 Chrome 回归通过。详见 [`plans/38-runtime-lifecycle.md`](plans/38-runtime-lifecycle.md)。
 - [37] 第一阶段技术债修复（2026-09-22 实现并验证，随本次提交归档、未部署）：pytest 强制隔离宿主生产配置及审计文件；HTTP 区分 namespace 格式、请求解析和内部故障，保留 413 与 namespace 确认；前端动态 namespace/记忆 ID 改为 DOM 事件绑定，URL 编码与错误文本安全展示。354 项 pytest 通过；仓库内可重复 Chrome 回归覆盖特殊字符、操作按钮、查询和分页。详见 [`plans/37-first-debt-fixes.md`](plans/37-first-debt-fixes.md)。
 - [36] 关键词 UI/MCP 独立查询（2026-09-22 实现并验证）：新增 `list_keywords` / `POST /api/keywords/query`，支持 namespace 范围浏览、字面匹配、批量语义找词（1–20 个概念），展示作用域内词频及相似度；公开 Stats 移除 `keyword_counts`，改为 `keyword_total`，取消低频非中文词裁剪。新增 Keywords 页面及按需关键词选择、精确记忆跳转；同步 MCP 写入复用引导和有界审计。319 项 pytest 通过（1 条 Starlette 测试依赖弃用提示），临时内存库的无头 Chrome 验证查询/分页/跳转/选择保留/过期响应通过；用户重启后真实 MCP 功能、description/hint 与 audit 验证通过，未执行历史词表清理。[23] 人工合并继续保留。详见 [`plans/36-keyword-discovery.md`](plans/36-keyword-discovery.md)。

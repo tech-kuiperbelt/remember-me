@@ -4,7 +4,7 @@
 
 ## 当前待办
 
-### [34] 统一离线运维脚本与 README Runbook
+### [34] 已完成，详见 `docs/project-management/plans/34-operations-runbook.md`
 
 - 背景：embedding 维护、keyword/category 迁移和 JSONL recovery 目前分别暴露 Python module 命令；`bin/recover.sh` 只初始化 venv，没有像 `bin/start.sh` 一样加载 `.env`。停服务、选择正确 provider/path、备份、重启和健康检查仍依赖人工拼装命令。
 - 目标：在 `bin/` 下提供统一且可发现的运维入口或职责清晰的脚本，复用同一套项目目录、`.venv`、`.env`、SQLite/JSONL 默认路径和错误处理；覆盖 embedding `status`/codec migration/reindex/index-value reindex/activate、keyword/category dry-run 与正式迁移、JSONL→SQLite recovery。

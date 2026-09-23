@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# One operator-facing entry point for offline maintenance.  It deliberately
+# delegates the actual work to the existing Python CLIs so their writer-lock,
+# provider-profile, and atomic-replacement safeguards remain authoritative.
+PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$PROJECT_ROOT"
+
+usage() {
+    cat <<'EOF'
+Usage: bin/manage <command> [options]
+
+Read-only:
+  status                         Show configured paths and embedding status
+  embedding status [DB]          Show embedding profiles and codec status
+
+Offline writes (stop the service first):
+  embedding <status|download-model|migrate-codec|reindex|reindex-index-values|activate> [args]
+  migrate keywords [args]        DeepSeek keyword backfill (--dry-run supported)
+  migrate categories [args]      DeepSeek category backfill (--dry-run supported)
+  recover [SOURCE] [TARGET]      Rebuild SQLite from vector-free JSONL
+
+Defaults come from .env and the repository layout. Use the underlying command's
+--help for all provider, profile, namespace, and batch-size options.
+EOF
+}
+
+if [[ "${1:-}" == "" || "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+    usage
+    exit 0
+fi
+
+if [[ -f .env ]]; then
+    set -a
+    # shellcheck disable=SC1091
+    . ./.env
+    set +a
+fi
+
+[[ -d .venv ]] || { echo "Error: .venv not found; run bin/install.sh first." >&2; exit 1; }
+source .venv/bin/activate
+
+db="${MEMORY_STORAGE_PATH:-data/memories.db}"
+replica="${MEMORY_REPLICA_PATH:-${MEMORY_STORAGE_PATH_DUAL:-}}"
+if [[ -z "$replica" ]]; then
+    replica="${db%.*}.jsonl"
+fi
+
+case "$1" in
+    status)
+        shift
+        printf 'primary: %s\nreplica: %s\n' "$db" "$replica"
+        exec python -m app.embedding_cli status "${1:-$db}"
+        ;;
+    embedding)
+        shift
+        [[ "${1:-}" != "" ]] || { usage >&2; exit 2; }
+        command="$1"
+        shift
+        case "$command" in
+            status|migrate-codec|reindex|reindex-index-values)
+                # These CLIs take the database as a positional argument.  An
+                # explicit path remains available by passing it yourself.
+                if [[ "$command" == "status" || "$command" == "migrate-codec" ||
+                      "$command" == "reindex" || "$command" == "reindex-index-values" ]]; then
+                    if [[ $# -eq 0 || "${1:0:1}" == "-" ]]; then
+                        set -- "$db" "$@"
+                    fi
+                fi
+                exec python -m app.embedding_cli "$command" "$@"
+                ;;
+            download-model)
+                exec python -m app.embedding_cli download-model "$@"
+                ;;
+            activate)
+                [[ $# -ge 1 ]] || { echo "Usage: bin/manage embedding activate PROFILE_ID [DB]" >&2; exit 2; }
+                profile="$1"; shift
+                exec python -m app.embedding_cli activate "${1:-$db}" "$profile"
+                ;;
+            --help|-h)
+                python -m app.embedding_cli --help
+                ;;
+            *)
+                echo "Unknown embedding command: $command" >&2; usage >&2; exit 2
+                ;;
+        esac
+        ;;
+    migrate)
+        if [[ "${2:-}" == "--help" || "${2:-}" == "-h" ]]; then
+            echo "Usage: bin/manage migrate {keywords|categories} [migration options]"
+            echo "Pass --help after the migration name for the underlying CLI options."
+            exit 0
+        fi
+        [[ "${2:-}" != "" ]] || { usage >&2; exit 2; }
+        kind="$2"; shift 2
+        case "$kind" in
+            keywords) module=app.keyword_migrate_deepseek ;;
+            categories) module=app.category_migrate_deepseek ;;
+            *) echo "Unknown migration: $kind" >&2; usage >&2; exit 2 ;;
+        esac
+        has_db=0
+        for arg in "$@"; do [[ "$arg" == "--db" || "$arg" == --db=* ]] && has_db=1; done
+        (( has_db )) || set -- "$@" --db "$db"
+        exec python -m "$module" "$@"
+        ;;
+    recover)
+        shift
+        if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+            echo "Usage: bin/manage recover [SOURCE.jsonl] [TARGET.db]"
+            echo "Defaults: SOURCE=$replica TARGET=$db"
+            exit 0
+        fi
+        exec python -m app.recover_cli "${1:-$replica}" "${2:-$db}"
+        ;;
+    *)
+        echo "Unknown command: $1" >&2
+        usage >&2
+        exit 2
+        ;;
+esac
