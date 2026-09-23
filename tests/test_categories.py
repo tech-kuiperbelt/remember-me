@@ -21,7 +21,7 @@ from app.categories import (
     categories_dropped,
     category_counts_with_seeds,
 )
-import app.service as service
+from app import service as service_policy
 
 
 FAKE_EMB = [0.1, 0.2, 0.3, 0.4]
@@ -190,7 +190,7 @@ def test_search_combines_namespace_and_categories(db):
     assert [r["text"] for r in results] == ["alpha"]
 
 
-def test_memory_search_normalizes_categories(monkeypatch):
+def test_memory_search_normalizes_categories(monkeypatch, service):
     storage = MagicMock()
     storage.search.return_value = []
     monkeypatch.setattr(service, "storage", storage)
@@ -274,7 +274,7 @@ def test_rebuild_category_index(db):
 
 # -- service layer integration (mock storage) --
 
-def test_memory_add_normalizes_and_reports_truncation(monkeypatch):
+def test_memory_add_normalizes_and_reports_truncation(monkeypatch, service):
     storage = MagicMock()
     storage.add.return_value = {"id": "x", "created": True}
     monkeypatch.setattr(service, "storage", storage)
@@ -288,7 +288,7 @@ def test_memory_add_normalizes_and_reports_truncation(monkeypatch):
     assert out["categories"] == ["bug", "design", "ops"]
 
 
-def test_memory_add_duplicate_reports_no_truncation(monkeypatch):
+def test_memory_add_duplicate_reports_no_truncation(monkeypatch, service):
     storage = MagicMock()
     storage.add.return_value = {"id": "x", "created": False}
     monkeypatch.setattr(service, "storage", storage)
@@ -300,7 +300,7 @@ def test_memory_add_duplicate_reports_no_truncation(monkeypatch):
     assert out["created"] is False
 
 
-def test_memory_update_normalizes_and_reports_truncation(monkeypatch):
+def test_memory_update_normalizes_and_reports_truncation(monkeypatch, service):
     storage = MagicMock()
     storage.update.return_value = True
     monkeypatch.setattr(service, "storage", storage)
@@ -311,7 +311,7 @@ def test_memory_update_normalizes_and_reports_truncation(monkeypatch):
     assert out["categories_dropped"] == 1
 
 
-def test_memory_list_normalizes_categories(monkeypatch):
+def test_memory_list_normalizes_categories(monkeypatch, service):
     storage = MagicMock()
     storage.list_memories.return_value = []
     monkeypatch.setattr(service, "storage", storage)
@@ -321,7 +321,7 @@ def test_memory_list_normalizes_categories(monkeypatch):
     assert kwargs["categories"] == ["bug", "design"]
 
 
-def test_memory_stats_merges_seed_vocabulary(monkeypatch):
+def test_memory_stats_merges_seed_vocabulary(monkeypatch, service):
     storage = MagicMock()
     storage.get_stats.return_value = {"total": 3, "keyword_counts": {}, "category_counts": {"config": 1}}
     monkeypatch.setattr(service, "storage", storage)

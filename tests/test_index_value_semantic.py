@@ -170,8 +170,8 @@ def test_update_metadata_cannot_leave_a_new_index_value_without_embedding():
     }
 
 
-def test_service_semantic_search_returns_resolution_and_filters(monkeypatch):
-    import app.service as service
+def test_service_semantic_search_returns_resolution_and_filters(monkeypatch, service):
+    from app import service as service_policy
 
     storage = SQLiteStorage(":memory:", embedding_spec=SPEC)
     resolver = _resolver(storage)
@@ -188,8 +188,8 @@ def test_service_semantic_search_returns_resolution_and_filters(monkeypatch):
     assert result["filter_resolution"]["keywords"][0]["match_type"] == "semantic"
 
 
-def test_service_returns_empty_without_embedding_main_query_when_dimension_unresolved(monkeypatch):
-    import app.service as service
+def test_service_returns_empty_without_embedding_main_query_when_dimension_unresolved(monkeypatch, service):
+    from app import service as service_policy
 
     storage = SQLiteStorage(":memory:", embedding_spec=SPEC)
     resolver = _resolver(storage, query=lambda _value: [-1.0, 0.0])
@@ -212,8 +212,8 @@ def test_service_returns_empty_without_embedding_main_query_when_dimension_unres
     assert calls == ["unrelated"]
 
 
-def test_service_rejects_too_many_semantic_filter_values():
-    import app.service as service
+def test_service_rejects_too_many_semantic_filter_values(service):
+    from app import service as service_policy
 
     with pytest.raises(ValueError, match="at most 20"):
         service.memory_search("query", keywords=[f"keyword-{i}" for i in range(21)])

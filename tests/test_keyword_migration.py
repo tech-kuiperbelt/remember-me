@@ -40,9 +40,9 @@ def test_deepseek_cli_remains_explicit_offline_keyword_backfill(monkeypatch):
     assert "candidate keywords" in format_candidates_block(["rtg"])
 
 
-def test_local_keyword_extractor_api_and_ui_are_removed():
-    import app.service as service
-    from app.admin import admin_routes
+def test_local_keyword_extractor_api_and_ui_are_removed(service, admin):
+    from app import service as service_policy
+    admin_routes = admin.routes
 
     assert not hasattr(service, "memory_extract_keywords")
     assert all(route.path != "/api/extract-keywords" for route in admin_routes)

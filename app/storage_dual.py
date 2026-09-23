@@ -62,23 +62,38 @@ class DualStorage(MemoryStorage):
         # Background sync thread
         self._stop = threading.Event()
         self._job = None
+        self._lifecycle_lock = threading.RLock()
+        self._started = False
+        self._closed = False
         if start_background:
-            self._job = threading.Thread(target=self._sync_loop, daemon=True)
-            self._job.start()
+            try:
+                self.start()
+            except BaseException:
+                self.stop()
+                raise
         logger.info("DualStorage started: sync_interval=%ds replica=%s",
                     sync_interval, getattr(secondary, 'path', '?'))
 
     # -- background sync job --
 
-    def _sync_loop(self):
-        try:
+    def start(self):
+        """Synchronize/check once, then start periodic work explicitly."""
+        with self._lifecycle_lock:
+            if self._closed:
+                raise RuntimeError("dual storage is closed")
+            if self._started:
+                return
             self._sync_count += 1
             with self._sync_mutex:
                 self._incremental_sync()
-        except Exception:
-            logger.error("startup sync failed", exc_info=True)
-        self._run_due_health_check("startup", force=True)
-        self._run_due_compact("startup")
+            self._run_due_health_check("startup", force=True)
+            self._run_due_compact("startup")
+            job = threading.Thread(target=self._sync_loop, daemon=True, name="memory-replica")
+            job.start()
+            self._job = job
+            self._started = True
+
+    def _sync_loop(self):
         while not self._stop.wait(self.sync_interval):
             try:
                 self._sync_count += 1
@@ -562,15 +577,26 @@ class DualStorage(MemoryStorage):
         }
 
     def stop(self):
-        """Gracefully stop the background sync thread."""
-        self._stop.set()
-        if self._job is not None and self._job.is_alive():
-            self._job.join(timeout=max(1, min(self.sync_interval + 1, 10)))
-        try:
-            release = getattr(type(self.secondary), "release_writer_lock", None)
-            if callable(release) and (self._job is None or not self._job.is_alive()):
-                self.secondary.release_writer_lock()
-        finally:
-            stop_primary = getattr(self.primary, "stop", None)
-            if callable(stop_primary):
-                stop_primary()
+        """Drain periodic work before final sync, releasing either lock only afterwards."""
+        with self._lifecycle_lock:
+            if self._closed:
+                return
+            self._stop.set()
+            if self._job is not None and self._job.is_alive():
+                logger.info("waiting for replica worker")
+                self._job.join()
+            try:
+                if self._started:
+                    try:
+                        with self._sync_mutex:
+                            self._incremental_sync()
+                    except Exception:
+                        logger.exception("shutdown sync failed; pending outbox retained")
+            finally:
+                try:
+                    release = getattr(type(self.secondary), "release_writer_lock", None)
+                    if callable(release):
+                        self.secondary.release_writer_lock()
+                finally:
+                    self.primary.stop()
+                    self._closed = True

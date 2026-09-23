@@ -8,7 +8,6 @@ boundary (400 + machine-readable code).
 
 import asyncio
 import json
-import runpy
 import sys
 from unittest.mock import MagicMock
 
@@ -27,9 +26,9 @@ from app.namespace_policy import (
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-def service(monkeypatch):
+def service(monkeypatch, service_factory):
     """app.service backed by a real in-memory SQLite store, no provider calls."""
-    import app.service as service
+    service = service_factory()
     from app.storage_sqlite import SQLiteStorage
 
     storage = SQLiteStorage(":memory:")
@@ -46,14 +45,9 @@ def _total(service) -> int:
     return service.storage.get_stats()["total"]
 
 
-def _load_server():
-    """Import app.server without tripping its module-level argparse."""
-    real_argv = sys.argv
-    try:
-        sys.argv = ["server"]
-        return runpy.run_module("app.server", run_name="not_main")
-    finally:
-        sys.argv = real_argv
+def _load_server(service):
+    from tests.conftest import server_namespace
+    return server_namespace(service)
 
 
 def _mcp(ns, tool, arguments):
@@ -107,17 +101,17 @@ def test_validate_namespace_name_accepts_unicode_and_default():
 # ---------------------------------------------------------------------------
 
 def test_known_namespaces_includes_default_on_empty_store(service):
-    assert service.known_namespaces() == [service.DEFAULT_NAMESPACE]
+    assert service.known_namespaces() == [service.settings.DEFAULT_NAMESPACE]
 
 
 def test_first_default_add_does_not_require_confirmation(service):
     result = service.memory_add("first")
-    assert service.storage.get(result["id"])["namespace"] == service.DEFAULT_NAMESPACE
+    assert service.storage.get(result["id"])["namespace"] == service.settings.DEFAULT_NAMESPACE
 
 
 def test_misconfigured_default_namespace_is_validated(service, monkeypatch):
     """A reserved/oversized default must fail loudly, never be written silently."""
-    monkeypatch.setattr(service, "DEFAULT_NAMESPACE", "all")
+    monkeypatch.setattr(service, "settings", __import__("dataclasses").replace(service.settings, DEFAULT_NAMESPACE="all"))
     with pytest.raises(ValueError, match="reserved"):
         service.memory_add("body")
     assert _total(service) == 0
@@ -148,7 +142,7 @@ def test_search_unknown_namespace_raises(service):
     with pytest.raises(NamespaceNotFound) as exc:
         service.memory_search("anything", namespace="ghost")
     assert exc.value.requested == "ghost"
-    assert service.DEFAULT_NAMESPACE in exc.value.known
+    assert service.settings.DEFAULT_NAMESPACE in exc.value.known
 
 
 def test_non_string_namespace_is_rejected_instead_of_using_default(service):
@@ -200,7 +194,7 @@ def test_add_irrelevant_confirm_code_still_rejected(service):
 def test_add_blank_namespace_uses_default(service):
     result = service.memory_add("body", namespace="   ",
                                 confirm_codes=[NAMESPACE_NOT_FOUND])
-    assert service.storage.get(result["id"])["namespace"] == service.DEFAULT_NAMESPACE
+    assert service.storage.get(result["id"])["namespace"] == service.settings.DEFAULT_NAMESPACE
 
 
 def test_confirm_code_cannot_bypass_name_validation(service):
@@ -260,14 +254,14 @@ def test_mcp_search_unknown_namespace_envelope(service, monkeypatch):
     import app.audit as audit
     recorder = MagicMock()
     monkeypatch.setattr(audit, "record", recorder)
-    ns = _load_server()
+    ns = _load_server(service)
 
     data = _mcp(ns, "search_semantic", {"query": "x", "namespace": "ghost"})
 
     assert data["response_code"] == NAMESPACE_NOT_FOUND
     assert data["items"] == [] and data["total"] == 0
     assert data["response_meta"]["requested_namespace"] == "ghost"
-    assert service.DEFAULT_NAMESPACE in data["response_meta"]["known_namespaces"]
+    assert service.settings.DEFAULT_NAMESPACE in data["response_meta"]["known_namespaces"]
     assert "ghost" in data["hint"]
 
     # audit event carries the original namespace and the response code
@@ -278,21 +272,21 @@ def test_mcp_search_unknown_namespace_envelope(service, monkeypatch):
 def test_mcp_search_meta_unknown_namespace_envelope(service, monkeypatch):
     import app.audit as audit
     monkeypatch.setattr(audit, "record", MagicMock())
-    ns = _load_server()
+    ns = _load_server(service)
 
     data = _mcp(ns, "search_meta", {"namespace": "ghost"})
 
     assert data["response_code"] == NAMESPACE_NOT_FOUND
     assert data["items"] == []
-    assert service.DEFAULT_NAMESPACE in data["response_meta"]["known_namespaces"]
+    assert service.settings.DEFAULT_NAMESPACE in data["response_meta"]["known_namespaces"]
 
 
 def test_mcp_known_namespace_without_hits_has_no_response_code(service, monkeypatch):
     import app.audit as audit
     monkeypatch.setattr(audit, "record", MagicMock())
-    ns = _load_server()
+    ns = _load_server(service)
 
-    data = _mcp(ns, "search_meta", {"namespace": service.DEFAULT_NAMESPACE,
+    data = _mcp(ns, "search_meta", {"namespace": service.settings.DEFAULT_NAMESPACE,
                                      "updated_after": "2099-01-01T00:00:00+00:00"})
 
     assert "response_code" not in data
@@ -303,7 +297,7 @@ def test_mcp_add_unknown_namespace_rejected_without_writing(service, monkeypatch
     import app.audit as audit
     recorder = MagicMock()
     monkeypatch.setattr(audit, "record", recorder)
-    ns = _load_server()
+    ns = _load_server(service)
 
     data = _mcp(ns, "add", {"text": "body", "namespace": "ghost"})
 
@@ -317,7 +311,7 @@ def test_mcp_add_unknown_namespace_rejected_without_writing(service, monkeypatch
 def test_mcp_add_confirmed_creates_namespace(service, monkeypatch):
     import app.audit as audit
     monkeypatch.setattr(audit, "record", MagicMock())
-    ns = _load_server()
+    ns = _load_server(service)
 
     data = _mcp(ns, "add", {"text": "body", "namespace": "ghost",
                             "confirm_codes": [NAMESPACE_NOT_FOUND]})
@@ -330,8 +324,7 @@ def test_mcp_add_confirmed_creates_namespace(service, monkeypatch):
 # Admin HTTP boundary
 # ---------------------------------------------------------------------------
 
-def test_http_add_unknown_namespace_returns_400(service):
-    from app import admin
+def test_http_add_unknown_namespace_returns_400(service, admin):
 
     response = asyncio.run(admin.handle_add_memory(
         _Request({"text": "body", "namespace": "ghost"})))
@@ -340,12 +333,11 @@ def test_http_add_unknown_namespace_returns_400(service):
     body = json.loads(response.body)
     assert body["response_code"] == NAMESPACE_NOT_FOUND
     assert body["response_meta"]["requested_namespace"] == "ghost"
-    assert service.DEFAULT_NAMESPACE in body["response_meta"]["known_namespaces"]
+    assert service.settings.DEFAULT_NAMESPACE in body["response_meta"]["known_namespaces"]
     assert _total(service) == 0
 
 
-def test_http_add_confirmed_creates_namespace(service):
-    from app import admin
+def test_http_add_confirmed_creates_namespace(service, admin):
 
     response = asyncio.run(admin.handle_add_memory(_Request({
         "text": "body", "namespace": "ghost",
@@ -356,8 +348,7 @@ def test_http_add_confirmed_creates_namespace(service):
     assert "ghost" in service.storage.list_namespaces()
 
 
-def test_http_update_unknown_namespace_returns_400(service):
-    from app import admin
+def test_http_update_unknown_namespace_returns_400(service, admin):
 
     response = asyncio.run(admin.handle_update_memory(_Request(
         {"namespace": "ghost"}, memory_id="abc")))
@@ -366,8 +357,7 @@ def test_http_update_unknown_namespace_returns_400(service):
     assert json.loads(response.body)["response_code"] == NAMESPACE_NOT_FOUND
 
 
-def test_http_search_unknown_namespace_returns_400(service):
-    from app import admin
+def test_http_search_unknown_namespace_returns_400(service, admin):
 
     response = asyncio.run(admin.handle_search_memories(
         _Request({"query": "x", "namespace": "ghost"})))
@@ -379,8 +369,7 @@ def test_http_search_unknown_namespace_returns_400(service):
     assert "ghost" in body["detail"]
 
 
-def test_http_list_unknown_namespace_returns_400(service):
-    from app import admin
+def test_http_list_unknown_namespace_returns_400(service, admin):
     from starlette.datastructures import QueryParams
 
     class _ListRequest:
@@ -393,8 +382,7 @@ def test_http_list_unknown_namespace_returns_400(service):
     assert body["response_meta"]["requested_namespace"] == "ghost"
 
 
-def test_http_namespace_type_errors_return_400_not_500(service):
-    from app import admin
+def test_http_namespace_type_errors_return_400_not_500(service, admin):
 
     add = asyncio.run(admin.handle_add_memory(
         _Request({"text": "body", "namespace": 123})))

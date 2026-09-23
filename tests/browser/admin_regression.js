@@ -88,6 +88,21 @@ try {
  api=originalApi;
  await new Promise(resolve=>setTimeout(resolve,100));
  assert(!window.injected && !document.querySelector('img[src="x"]'), 'no injected elements or script');
- result.textContent='PASS: special characters, safe actions and errors;  browse, pagination, literal, semantic, exact jump, selection retention, low-frequency, stale response';
+ const originalConfirm=window.confirm;
+ let calls=0;
+ api=async path => {requested=path;calls++;return {status:'stopping'};};
+ window.confirm=()=>false;
+ await doShutdownServer();
+ assert(calls===0, 'shutdown cancellation');
+ window.confirm=()=>true;
+ api=async()=>{throw new Error('network failed');};
+ await doShutdownServer();
+ assert(!$('btn-shutdown').disabled && $('restart-result').textContent.includes('could not be confirmed'), 'shutdown failure');
+ api=async path=>{requested=path;return {status:'stopping'};};
+ await doShutdownServer();
+ assert(requested==='/shutdown' && $('btn-restart').disabled && $('btn-shutdown').disabled, 'shutdown accepted');
+ assert($('restart-result').textContent.includes('terminal'), 'shutdown recovery instructions');
+ api=originalApi;window.confirm=originalConfirm;
+ result.textContent='PASS: shutdown controls; special characters, safe actions and errors;  browse, pagination, literal, semantic, exact jump, selection retention, low-frequency, stale response';
 } catch(e) {result.textContent='FAIL: '+e.stack;}
 })();

@@ -29,7 +29,7 @@ SSE endpoint: `GET /sse`, client POSTs to `/messages/?session_id=...`.
 | Variable | Default | Notes |
 |---|---|---|
 | `MEMORY_STORAGE` | `sqlite` | `sqlite` or `dual`; all other values fail startup |
-| `MEMORY_STORAGE_PATH` | `memories.db` | SQLite primary path |
+| `MEMORY_STORAGE_PATH` | `data/memories.db` | SQLite primary path |
 | `MEMORY_REPLICA_PATH` | derived from primary | NDJSON replica path in dual mode (`.jsonl` or `.ndjson`) |
 | `MEMORY_STORAGE_PATH_DUAL` | unset | Deprecated compatibility alias for `MEMORY_REPLICA_PATH` |
 | `EMBED_PROVIDER` | `ollama` | `ollama`, optional local `fastembed`, or `sentence_transformers` |
@@ -69,11 +69,14 @@ Ollama **must be running locally** in `EMBED_PROVIDER=ollama` mode. FastEmbed an
 
 ## Key architecture facts
 
+- **`app/settings.py` / `app/runtime.py`** — Immutable `Settings.from_env()` snapshot and explicit runtime ownership. `create_runtime(settings)` acquires nothing; `start()` configures logging/audit, creates provider/storage, validates and warms up, then starts dual sync/health/background work. `close()` waits for imports and periodic sync, attempts final outbox sync, then releases stores/locks, provider, audit and owned logging handlers. Startup failure cleans up acquired resources. Imports and `python -m app.server --help` have no runtime side effects. One active runtime/audit configuration per process.
+- **Shutdown/restart** — Ops offers Restart Server and Shut Down Server. `/api/restart` and `/api/shutdown` respond before rejecting new work and asking Uvicorn to exit; active SSE sessions end, HTTP work drains, and imports finish without a timeout. Restart execs only after cleanup; shutdown requires a terminal start. stdio EOF/SIGTERM also clean up; piped stdin uses cancellable asynchronous reads. See `docs/project-management/plans/38-runtime-lifecycle.md`.
+
 - **`app/server.py`** — MCP tool/resource registration. 9 tools: `add`, `search_semantic`, `search_meta`, `get_details`, `update`, `delete`, `stats`, `report`, `list_keywords`. 2 resources: `memories://stats`, `memories://list`. All tool calls flow through `handle_call_tool` (if/elif dispatch) which records each invocation to the audit journal. `search_semantic`/`search_meta` responses carry a per-call `search_id` that the `report` tool uses to attach feedback on search result helpfulness. `search_semantic` accepts `keywords` and `categories` candidate filters: exact values are preferred, unmatched values are semantically resolved within the same dimension/namespace, then the resolved values filter candidates before memory-text cosine scoring. Values use OR within each dimension and AND across dimensions/namespace; `filter_resolution` exposes and audits the mapping. `search_meta` remains exact-only. Unknown namespaces are rejected: `search_semantic`/`search_meta` return an empty-result envelope with `response_code="namespace_not_found"` and `response_meta.known_namespaces`, while `add`/`update` refuse to write unless the caller passes the matching `confirm_codes` entry (the admin HTTP API does the same and maps it to HTTP 400).
 - **Keyword discovery** — `list_keywords` and `POST /api/keywords/query` share browse/literal/semantic modes with optional namespace. Semantic mode accepts 1–20 concepts and reuses active keyword vectors, returns score/count candidates without exact-first suppression, and does not create a search_id. Public Stats returns `keyword_total`, never `keyword_counts`; complete vocabulary is available through the new query API without low-frequency trimming. The Keywords UI has scoped search, pagination, and links to exact memory filters. Before setting keywords, query semantic candidates in the target namespace and reuse only when meaning fits; new words remain allowed. See `docs/project-management/plans/36-keyword-discovery.md`.
 - **`app/audit.py`** — Tool-call/background-task audit journal: rolling JSONL (`data/audit.jsonl` plus `.1`…`.9` by default), thread-safe, 10MB per file / 10 files by default, never raises, never blocks tool calls. Per-tool params/result trimming lives here (`_trim_params` / `_trim_result`). Every event also records the original `namespace`, the caller's `confirm_codes` (capped) and any `response_code` (e.g. `namespace_not_found`).
 - Every writable service or maintenance process obtains a lifetime OS `flock` on the canonical SQLite-primary sidecar `<db>.writer.lock`; a second writer for that primary fails immediately. Read-only diagnostics remain possible. In dual mode, the NDJSON replica additionally has its own one-writer lock per replica path. SQLite outbox rows carry an internal per-memory `version`: each batch is appended and `fsync`ed before only matching `(id, version)` rows are acknowledged, so a concurrent new write remains pending. Compact/Full Sync use durable atomic replacement. Startup first syncs pending outbox rows and then performs an exact SQLite/JSONL health check; scheduled checks run every 24 hours by default, with drift/error retried after one hour and recorded in stats/audit without automatic repair. A background compact check runs at most once per 24 hours, while live Stats always verifies on-disk IDs and corrupt lines instead of treating `pending=0` as sufficient health.
-- **`app/service.py`** — Business layer: memory CRUD/search, storage bootstrap, JSONL exports, and one-at-a-time background JSONL imports. Runtime storage is strictly `sqlite` or `dual`; JSON array storage was removed, and NDJSON cannot run as a business backend. Import preserves/prefixes namespaces, regenerates memory and index-value embeddings with the target active profile, commits atomically, and preserves missing summaries as null. Namespace governance is centralized here (`known_namespaces()` / `check_namespace()`, shared by MCP and the admin API).
+- **`app/service.py`** — Explicit `MemoryService(settings, storage, embedding_provider)` instance; no global storage/provider or import workers. Business layer: memory CRUD/search, storage bootstrap, JSONL exports, and one-at-a-time background JSONL imports. Runtime storage is strictly `sqlite` or `dual`; JSON array storage was removed, and NDJSON cannot run as a business backend. Import preserves/prefixes namespaces, regenerates memory and index-value embeddings with the target active profile, commits atomically, and preserves missing summaries as null. Namespace governance is centralized here (`known_namespaces()` / `check_namespace()`, shared by MCP and the admin API).
 - **`app/summary_policy.py`** — Model-free summary fallback. Caller summaries win; ordinary add/text-update writes derive a deterministic leading sentence/line when absent, while whitespace-equivalent or metadata-only updates preserve the old summary. Import/recovery retain null summaries, and LLM-facing search/list responses derive the same display fallback dynamically.
 - **`app/categories.py`** — Category dimension (`metadata.categories`, max 3 per memory): 20-seed canonical vocabulary (`CATEGORY_VOCABULARY`), normalization/cap helpers, and `category_counts_with_seeds` (stats always lists the seed vocabulary, count 0 when unused). Categories are a separate dimension from keywords — keywords = content concepts, categories = memory nature/classification. SQLite stores both dimensions in generic `index_values(dimension, value)` / `memory_index_values(memory_id, index_value_id)` tables and manages them through shared sync/rebuild/count/filter paths; startup migrates and drops the legacy per-dimension tables by rebuilding from authoritative `memories.metadata`. NDJSON carries metadata for recovery.
 - **`app/namespace_policy.py`** — Namespace governance. Format/type failures use `InvalidNamespace(ValueError)`; admin memory list/add/update/search distinguish these (`invalid_namespace`, HTTP 400) from request parsing errors (`invalid_request`, HTTP 400) and internal failures (HTTP 500). A namespace is just a record attribute; the known set is derived dynamically from live records (`SQLiteStorage.list_namespaces()`), plus `MEMORY_DEFAULT_NAMESPACE`, which is always valid so a fresh database can bootstrap. Names are trim-normalized, case-sensitive, Unicode-friendly, ≤64 chars and cannot be reserved words (`all`/`*`/`none`/`null`). Unknown namespaces raise `NamespaceNotFound` unless the caller passes `confirm_codes` containing the matching rule name (`namespace_not_found`); a code only bypasses its own rule and never format/length/reserved checks. No alias/registry/history-merge (tracked separately in the backlog).
@@ -93,16 +96,10 @@ Ollama **must be running locally** in `EMBED_PROVIDER=ollama` mode. FastEmbed an
 
 ```bash
 source .venv/bin/activate
-python -c "
-import asyncio, sys
-sys.path.insert(0, '.')
-from app.service import storage
-from app.embed import embed as embed_fn
-e = embed_fn('hello')
-result = storage.add('hello', e)
-r = storage.get(result['id'])
-print('OK, memory id:', r['id'])
-"
+python -m app.server --help
+python -m pytest -q
+python tests/run_admin_browser.py
+# Production service: bin/start.sh --port 1314
 ```
 
 ## Conventions

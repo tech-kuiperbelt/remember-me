@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import runpy
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -67,13 +66,8 @@ def test_recovery_insert_preserves_null_summary(storage, fake_emb):
 
 
 def _load_server_tools():
-    real_argv = sys.argv
-    try:
-        sys.argv = ["server"]
-        namespace = runpy.run_module("app.server", run_name="not_main")
-    finally:
-        sys.argv = real_argv
-    result = asyncio.run(namespace["handle_list_tools"]())
+    from tests.conftest import server_namespace
+    result = asyncio.run(server_namespace()["handle_list_tools"]())
     return {tool.name: tool for tool in result.tools}
 
 
@@ -96,10 +90,9 @@ class _Request:
         return self._body
 
 
-def test_http_add_passes_summary(monkeypatch):
-    from app import admin
+def test_http_add_passes_summary(monkeypatch, admin):
     add = MagicMock(return_value={"id": "abc", "created": True})
-    monkeypatch.setattr(admin, "memory_add", add)
+    monkeypatch.setattr(admin.service, "memory_add", add)
     response = asyncio.run(admin.handle_add_memory(_Request({
         "text": "body", "metadata": {"keywords": ["k"]},
         "namespace": "ns", "summary": "short",
@@ -109,10 +102,9 @@ def test_http_add_passes_summary(monkeypatch):
     add.assert_called_once_with("body", {"keywords": ["k"]}, "ns", "short", None)
 
 
-def test_http_update_passes_summary(monkeypatch):
-    from app import admin
+def test_http_update_passes_summary(monkeypatch, admin):
     update = MagicMock(return_value={"success": True})
-    monkeypatch.setattr(admin, "memory_update", update)
+    monkeypatch.setattr(admin.service, "memory_update", update)
     response = asyncio.run(admin.handle_update_memory(_Request(
         {"text": "new body", "summary": "new summary"}, memory_id="abc"
     )))
@@ -126,14 +118,13 @@ def test_http_update_passes_summary(monkeypatch):
     ("handle_update_memory", {"text": "long"}),
     ("handle_search_memories", {"query": "long"}),
 ])
-def test_http_embedding_input_too_long_returns_413(monkeypatch, handler, body):
-    from app import admin
+def test_http_embedding_input_too_long_returns_413(monkeypatch, handler, body, admin):
     target = {
         "handle_add_memory": "memory_add",
         "handle_update_memory": "memory_update",
         "handle_search_memories": "memory_search",
     }[handler]
-    monkeypatch.setattr(admin, target,
+    monkeypatch.setattr(admin.service, target,
                         MagicMock(side_effect=EmbeddingInputTooLong(9000, 8000)))
     request = _Request(body, memory_id="abc" if handler == "handle_update_memory" else None)
     response = asyncio.run(getattr(admin, handler)(request))
@@ -141,8 +132,8 @@ def test_http_embedding_input_too_long_returns_413(monkeypatch, handler, body):
     assert json.loads(response.body)["code"] == "embedding_input_too_long"
 
 
-def test_online_summary_generation_route_and_ui_are_removed():
-    from app.admin import admin_routes
+def test_online_summary_generation_route_and_ui_are_removed(admin):
+    admin_routes = admin.routes
     assert all(route.path != "/api/summarize" for route in admin_routes)
     ui = Path("web/index.html").read_text(encoding="utf-8")
     assert "doSummarize" not in ui
@@ -150,8 +141,8 @@ def test_online_summary_generation_route_and_ui_are_removed():
     assert "summary_fallback" not in ui
 
 
-def test_online_recover_route_and_ui_are_removed():
-    from app.admin import admin_routes
+def test_online_recover_route_and_ui_are_removed(admin):
+    admin_routes = admin.routes
     assert all(route.path != "/api/recover" for route in admin_routes)
     ui = Path("web/index.html").read_text(encoding="utf-8")
     assert "doRecover" not in ui

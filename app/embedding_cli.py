@@ -39,6 +39,14 @@ def _database_maintenance_lock(path: str):
 
 
 def main() -> None:
+    audit.configure()
+    try:
+        _main()
+    finally:
+        audit.close()
+
+
+def _main() -> None:
     parser = argparse.ArgumentParser(description="Offline embedding maintenance")
     sub = parser.add_subparsers(dest="command", required=True)
 

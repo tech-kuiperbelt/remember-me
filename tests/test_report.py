@@ -7,7 +7,7 @@ boundary (covered by tests/test_audit.py). No storage/DB is involved here.
 
 import pytest
 
-from app.service import memory_report, _normalize_rating
+from app.service import _normalize_rating
 
 
 # -- rating normalization --
@@ -34,17 +34,17 @@ def test_normalize_rating_skips_non_numeric(raw):
 
 # -- memory_report --
 
-def test_report_requires_search_id():
+def test_report_requires_search_id(service):
     with pytest.raises(ValueError):
-        memory_report(None, [])
+        service.memory_report(None, [])
     with pytest.raises(ValueError):
-        memory_report("", [])
+        service.memory_report("", [])
     with pytest.raises(ValueError):
-        memory_report("se_x", "not-a-list")
+        service.memory_report("se_x", "not-a-list")
 
 
-def test_report_normalizes_and_counts():
-    result = memory_report("se_abcd", [
+def test_report_normalizes_and_counts(service):
+    result = service.memory_report("se_abcd", [
         {"m_id": "a", "rating": 8},       # kept
         {"m_id": "b", "rating": 99},      # clamped to 10
         {"m_id": "c", "rating": -99},     # clamped to -10
@@ -58,34 +58,21 @@ def test_report_normalizes_and_counts():
     assert result["count"] == 5           # a, b, c, d, f
 
 
-def test_report_returns_count_only():
-    result = memory_report("se_abcd", [{"m_id": "a", "rating": 1}])
+def test_report_returns_count_only(service):
+    result = service.memory_report("se_abcd", [{"m_id": "a", "rating": 1}])
     assert set(result.keys()) == {"recorded", "count"}
 
 
-def test_report_empty_ratings_ok():
-    assert memory_report("se_abcd", []) == {"recorded": True, "count": 0}
-    assert memory_report("se_abcd", None) == {"recorded": True, "count": 0}
+def test_report_empty_ratings_ok(service):
+    assert service.memory_report("se_abcd", []) == {"recorded": True, "count": 0}
+    assert service.memory_report("se_abcd", None) == {"recorded": True, "count": 0}
 
 
 # -- search guidance (A/B: note + hint must steer the LLM to call report) --
 
-def _load_server_ns() -> dict:
-    """Load app.server once via runpy.
-
-    server.py runs argparse at import time (module-level parse_args()), so a
-    plain `import` would swallow pytest's argv. runpy with a patched sys.argv
-    avoids that.
-    """
-    import runpy
-    import sys
-
-    real_argv = sys.argv
-    try:
-        sys.argv = ["server"]
-        return runpy.run_module("app.server", run_name="not_main")
-    finally:
-        sys.argv = real_argv
+def _load_server_ns():
+    from tests.conftest import server_namespace
+    return server_namespace()
 
 
 def _wrap_for(tool: str, items: list) -> dict:

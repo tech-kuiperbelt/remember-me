@@ -1,7 +1,6 @@
 """Independent keyword discovery: complete vocabulary, scope and API contracts."""
 import asyncio
 import json
-import runpy
 import sys
 
 import pytest
@@ -13,8 +12,8 @@ from app.storage_sqlite import SQLiteStorage
 
 
 @pytest.fixture(params=['sqlite', 'dual'])
-def service(request, monkeypatch, tmp_path):
-    import app.service as svc
+def service(request, monkeypatch, tmp_path, service_factory):
+    svc = service_factory()
     db = SQLiteStorage(':memory:', embedding_spec=EmbeddingSpec('test', 'keywords', 2).as_dict())
     vectors = {'cache': [1., 0.], 'cache clear': [0.99, 0.1],
                'transaction': [0., 1.], 'rare_id': [0., 1.], '中文': [0., 1.],
@@ -90,12 +89,12 @@ def test_semantic_failure_not_hidden(service, monkeypatch):
     assert service.memory_list_keywords()['results']
 
 
-def test_public_interfaces_and_audit(service, monkeypatch):
-    from app import admin, audit
+def test_public_interfaces_and_audit(service, monkeypatch, admin):
+    from app import audit
     events = []
     monkeypatch.setattr(audit, 'record', lambda *a, **kw: events.append((a, kw)))
-    monkeypatch.setattr(sys, 'argv', ['server'])
-    server = runpy.run_module('app.server', run_name='keyword_test')
+    from tests.conftest import server_namespace
+    server = server_namespace(service)
     tools = asyncio.run(server['handle_list_tools']()).tools
     assert 'list_keywords' in [t.name for t in tools]
     assert all('keyword_counts' not in t.description for t in tools)
@@ -108,7 +107,7 @@ def test_public_interfaces_and_audit(service, monkeypatch):
     assert 'keyword_counts' not in stats and stats['keyword_total'] == 6
     resource = asyncio.run(server['handle_read_resource']('memories://stats'))
     assert 'keyword_counts' not in json.loads(resource.contents[0].text)
-    with TestClient(Starlette(routes=admin.admin_routes)) as client:
+    with TestClient(Starlette(routes=admin.routes)) as client:
         response = client.post('/api/keywords/query', json={'namespace':'a'})
         assert response.status_code == 200 and response.json()['results'][0]['total'] == 5
         response = client.post('/api/keywords/query', json={'namespace':'missing'})

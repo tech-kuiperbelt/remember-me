@@ -24,11 +24,34 @@ from pathlib import Path
 
 logger = logging.getLogger("audit")
 
-AUDIT_PATH = os.environ.get("MEMORY_AUDIT_PATH", "data/audit.jsonl")
-AUDIT_MAX_BYTES = int(os.environ.get("MEMORY_AUDIT_MAX_BYTES", str(10 * 1024 * 1024)))
-AUDIT_MAX_FILES = max(1, int(os.environ.get("MEMORY_AUDIT_MAX_FILES", "10")))
-# Backward-compatible optional per-file limit. Zero disables count rotation.
-AUDIT_MAX_EVENTS = max(0, int(os.environ.get("MEMORY_AUDIT_MAX_EVENTS", "0")))
+AUDIT_PATH = "data/audit.jsonl"
+AUDIT_MAX_BYTES = 10 * 1024 * 1024
+AUDIT_MAX_FILES = 10
+AUDIT_MAX_EVENTS = 0
+
+
+def configure(environment=None):
+    """Configure explicitly at an entrypoint; never read environment at import."""
+    global AUDIT_PATH, AUDIT_MAX_BYTES, AUDIT_MAX_FILES, AUDIT_MAX_EVENTS
+    env = os.environ if environment is None else environment
+    path = env.get("MEMORY_AUDIT_PATH", "data/audit.jsonl")
+    max_bytes = int(env.get("MEMORY_AUDIT_MAX_BYTES", "10485760"))
+    max_files = max(1, int(env.get("MEMORY_AUDIT_MAX_FILES", "10")))
+    max_events = int(env.get("MEMORY_AUDIT_MAX_EVENTS", "0"))
+    close()
+    with _lock:
+        AUDIT_PATH, AUDIT_MAX_BYTES = path, max_bytes
+        AUDIT_MAX_FILES, AUDIT_MAX_EVENTS = max_files, max_events
+
+
+def close():
+    global _file, _count
+    with _lock:
+        if _file is not None:
+            _file.close()
+            _file = None
+        _count = 0
+
 
 # User-content keys stripped from the recorded params: the journal must not
 # duplicate memory bodies (they already live in the primary store).

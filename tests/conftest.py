@@ -1,9 +1,7 @@
 """Shared fixtures for the remember-me test suite.
 
-Critical: ``app.service`` reads env vars and creates storage at import time.
-``pytest_configure`` runs before any test module is imported, so we pin the
-storage to an in-memory SQLite here. That way, importing ``app.service``
-inside tests never touches real data files.
+All services are explicitly constructed with temporary stores and fake providers.
+The environment override remains a guard for CLI and subprocess tests.
 """
 
 import os
@@ -26,6 +24,9 @@ def pytest_configure(config):
         "EMBED_PROVIDER": "ollama", "EMBED_MODEL": "bge-m3", "EMBED_DIM": "1024",
         "EMBED_PRELOAD": "false", "OLLAMA_BASE_URL": "http://127.0.0.1:1",
     })
+
+    from app import audit
+    audit.configure(os.environ)
 
 
 def pytest_unconfigure(config):
@@ -70,3 +71,65 @@ def storage(make_storage):
 def fake_emb():
     """A fake embedding vector — dedup logic never inspects its contents."""
     return list(FAKE_EMB)
+
+
+class FakeProvider:
+    def __init__(self):
+        from app.embed import EmbeddingSpec
+        self.spec = EmbeddingSpec("ollama", "test", 3)
+
+    def embed_document(self, text):
+        return [0.1, 0.2, 0.3]
+
+    def embed_query(self, text):
+        return self.embed_document(text)
+
+    def embed_documents(self, texts):
+        return [self.embed_document(text) for text in texts]
+
+    def warmup(self):
+        pass
+
+
+@pytest.fixture
+def service_factory():
+    from app.service import MemoryService
+    from app.settings import Settings
+    from app.storage_sqlite import SQLiteStorage
+    services = []
+    stores = []
+    def make(storage=None, provider=None, settings=None):
+        if storage is None:
+            storage = SQLiteStorage(":memory:")
+            stores.append(storage)
+        result = MemoryService(settings or Settings.from_env(), storage, provider or FakeProvider())
+        services.append(result)
+        return result
+    yield make
+    for service in services:
+        service.close()
+    for store in stores:
+        store.close()
+
+
+@pytest.fixture
+def service(service_factory):
+    return service_factory()
+
+
+@pytest.fixture
+def admin(service):
+    from app.admin import AdminAPI
+    return AdminAPI(service)
+
+
+def server_namespace(service=None):
+    from app import server
+    result = vars(server).copy()
+    # Tool schemas/helpers do not access resources; constructing a fake service
+    # is unnecessary for those tests.
+    from unittest.mock import MagicMock
+    api = server.create_mcp_server(service if service is not None else MagicMock())
+    result.update({name: getattr(api, name) for name in
+                   ('handle_call_tool','handle_list_tools','handle_read_resource','handle_list_resources')})
+    return result

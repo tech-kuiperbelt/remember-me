@@ -288,12 +288,13 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
 
 <!-- Ops (运维) -->
 <div class="page" id="page-ops">
-  <!-- Restart Server -->
+  <!-- Server controls -->
   <div class="card">
-    <div class="card-header">Restart Server</div>
+    <div class="card-header">Server</div>
     <div class="card-body">
-      <p style="font-size:13px;color:#888;margin-bottom:12px">Restart the MCP server process in place. Active MCP connections will drop briefly and need to reconnect.</p>
+      <p style="font-size:13px;color:#888;margin-bottom:12px">Restart or shut down after active work finishes. Shutdown requires starting the server again from the terminal.</p>
       <button id="btn-restart" class="btn btn-primary" onclick="doRestartServer()">Restart Server</button>
+      <button id="btn-shutdown" class="btn btn-danger" onclick="doShutdownServer()">Shut Down Server</button>
       <span id="restart-result" style="margin-left:12px;font-size:13px"></span>
     </div>
   </div>
@@ -1247,19 +1248,25 @@ async function doMigrate() {
 }
 
 // Ops actions
-async function doRestartServer() {
-  if (!confirm('Restart the MCP server now? MCP connections will drop and reconnect.')) return;
+async function doRestartServer() { return controlServer(true); }
+async function doShutdownServer() { return controlServer(false); }
+async function controlServer(restart) {
+  const message = restart
+    ? 'Restart the MCP server after active work finishes? Connections will need to reconnect.'
+    : 'Shut down the MCP server after active work finishes? You will need to start it again from the terminal.';
+  if (!confirm(message)) return;
   const resultEl = $('restart-result');
-  const btn = $('btn-restart');
-  btn.disabled = true;
-  resultEl.textContent = 'Restarting...';
+  const buttons = [$('btn-restart'), $('btn-shutdown')];
+  buttons.forEach(btn => { btn.disabled = true; });
+  resultEl.textContent = 'Sending request...';
   try {
-    const result = await api('/restart', {method: 'POST'});
-    resultEl.textContent = `✅ Server restarting: ${result.argv.join(' ')}`;
-    setTimeout(() => { resultEl.textContent = 'Waiting for server to come back...'; }, 3000);
+    await api(restart ? '/restart' : '/shutdown', {method: 'POST'});
+    resultEl.textContent = restart
+      ? 'Restart accepted. Waiting for active work to finish; refresh once the server returns.'
+      : 'Shutdown accepted. Waiting for active work to finish. Start the server from the terminal to use it again.';
   } catch(e) {
-    // Server restarts mid-request; a fetch error is expected — treat as success.
-    resultEl.textContent = '✅ Restart triggered (connection dropped as expected).';
+    resultEl.textContent = 'Request could not be confirmed: ' + e.message;
+    buttons.forEach(btn => { btn.disabled = false; });
   }
 }
 

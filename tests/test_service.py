@@ -1,24 +1,11 @@
-"""Main-case tests for the service layer (memory_add dedup behavior).
-
-``app.service`` is imported lazily inside the fixture. ``pytest_configure``
-(conftest.py) pins env vars to in-memory SQLite BEFORE import, so importing
-the module creates no real files. Within tests we mock the module-level
-globals (storage and embed) so tests perform no provider calls.
-"""
+"""Service behavior with explicit in-memory storage and fake provider fixtures."""
+from app.storage import resolve_replica_path
 
 import json
 import time
 from unittest.mock import MagicMock
 
 import pytest
-
-
-@pytest.fixture
-def service():
-    """Import app.service once (env already pinned to :memory:)."""
-    import app.service
-    return app.service
-
 
 @pytest.fixture
 def mocked(service, monkeypatch):
@@ -83,7 +70,7 @@ def test_memory_add_default_namespace(service, mocked):
     mocked["storage"].add.return_value = {"id": "x", "created": True}
     service.memory_add("text", confirm_codes=["namespace_not_found"])
     _, kwargs = mocked["storage"].add.call_args
-    assert kwargs.get("namespace") == service.DEFAULT_NAMESPACE
+    assert kwargs.get("namespace") == service.settings.DEFAULT_NAMESPACE
 
 
 def test_memory_add_passes_namespace_through(service, mocked):
@@ -239,7 +226,7 @@ def test_removed_backends_are_rejected(backend):
     code = (
         f"import os; os.environ['MEMORY_STORAGE']='{backend}'; "
         "os.environ['MEMORY_STORAGE_PATH']='/tmp/never-created'; "
-        "import app.service"
+        "from app.settings import Settings; Settings.from_env()"
     )
     proc = subprocess.run(
         [sys.executable, "-c", code],
@@ -250,11 +237,11 @@ def test_removed_backends_are_rejected(backend):
 
 
 def test_replica_path_prefers_new_name_and_derives_default(service, caplog):
-    assert service.resolve_replica_path("data/main.sqlite", None, None) == "data/main.jsonl"
-    assert service.resolve_replica_path("data/main.db", "new.ndjson", "old.jsonl") == "new.ndjson"
+    assert resolve_replica_path("data/main.sqlite", None, None) == "data/main.jsonl"
+    assert resolve_replica_path("data/main.db", "new.ndjson", "old.jsonl") == "new.ndjson"
     assert "deprecated and ignored" in caplog.text
 
 
 def test_replica_path_accepts_legacy_alias_with_warning(service, caplog):
-    assert service.resolve_replica_path("data/main.db", None, "old.jsonl") == "old.jsonl"
+    assert resolve_replica_path("data/main.db", None, "old.jsonl") == "old.jsonl"
     assert "deprecated" in caplog.text

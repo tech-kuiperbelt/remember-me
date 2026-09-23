@@ -15,13 +15,17 @@ import os
 from pathlib import Path
 
 def test_probe():
-    from app import service, audit
-    assert service.STORAGE_BACKEND == 'sqlite'
-    assert service.storage.path == ':memory:'
-    assert service.DEFAULT_NAMESPACE == 'default'
-    assert service.EMBED_PROVIDER == 'ollama'
-    assert not service.EMBED_PRELOAD
-    assert service.embedding_provider.spec.dimension == 1024
+    from app import audit
+    from app.settings import Settings
+    from app.embed import create_embedder
+    settings = Settings.from_env()
+    provider = create_embedder(environment=settings.environment)
+    assert settings.STORAGE_BACKEND == 'sqlite'
+    assert settings.STORAGE_PATH == ':memory:'
+    assert settings.DEFAULT_NAMESPACE == 'default'
+    assert settings.environment['EMBED_PROVIDER'] == 'ollama'
+    assert not settings.EMBED_PRELOAD
+    assert provider.spec.dimension == 1024
     assert 'MEMORY_REPLICA_PATH' not in os.environ
     assert 'MEMORY_STORAGE_PATH_DUAL' not in os.environ
     assert 'SENTENCE_TRANSFORMERS_MODEL' not in os.environ

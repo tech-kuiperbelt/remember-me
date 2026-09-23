@@ -20,15 +20,21 @@ os.environ.update({"MEMORY_STORAGE":"sqlite", "MEMORY_STORAGE_PATH":":memory:",
                    "MEMORY_AUDIT_PATH":str(Path(work.name) / "audit.jsonl"),
                    "EMBED_PROVIDER":"ollama", "EMBED_PRELOAD":"false",
                    "OLLAMA_BASE_URL":"http://127.0.0.1:1"})
-from app import service, admin
+from app.service import MemoryService
+from app.admin import AdminAPI
+from app.settings import Settings
+from app import audit
+from tests.conftest import FakeProvider
 from app.embed import EmbeddingSpec
 from app.storage_sqlite import SQLiteStorage
 from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.responses import HTMLResponse
 import uvicorn
-service.storage.close()
-service.storage = SQLiteStorage(':memory:', embedding_spec=EmbeddingSpec('test','smoke',2).as_dict())
+audit.configure()
+service = MemoryService(Settings.from_env(),
+    SQLiteStorage(':memory:', embedding_spec=EmbeddingSpec('test','smoke',2).as_dict()), FakeProvider())
+admin = AdminAPI(service)
 service.embed_query = lambda _: [1.,0.]
 words = ['cache', 'cache clear', 'rare_id'] + ['word%03d' % i for i in range(60)]
 for i, word in enumerate(words):
@@ -37,7 +43,7 @@ for i, word in enumerate(words):
 checks = '<script>' + (ROOT / 'tests/browser/admin_regression.js').read_text() + '</script>'
 async def page(request):
     return HTMLResponse((ROOT / 'web/index.html').read_text().replace('</body>', checks+'</body>'))
-app=Starlette(routes=[Route('/__smoke',page)]+admin.admin_routes)
+app=Starlette(routes=[Route('/__smoke',page)]+admin.routes)
 sock=socket.socket();sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
 server=uvicorn.Server(uvicorn.Config(app, log_level='error'))
 t=threading.Thread(target=server.run,kwargs={'sockets':[sock]},daemon=True);t.start()

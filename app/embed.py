@@ -346,46 +346,47 @@ class SentenceTransformersEmbedder(_BaseEmbedder):
         return self._embed(prepared) if prepared else []
 
 
-def create_embedder(provider: str | None = None) -> Embedder:
-    provider = (provider or os.environ.get("EMBED_PROVIDER", "ollama")).strip().lower()
-    max_chars = int(os.environ.get("EMBED_MAX_INPUT_CHARS", str(DEFAULT_MAX_INPUT_CHARS)))
+def create_embedder(provider: str | None = None, *, environment=None) -> Embedder:
+    env = os.environ if environment is None else environment
+    provider = (provider or env.get("EMBED_PROVIDER", "ollama")).strip().lower()
+    max_chars = int(env.get("EMBED_MAX_INPUT_CHARS", str(DEFAULT_MAX_INPUT_CHARS)))
     if provider == "ollama":
         return OllamaEmbedder(
-            base_url=os.environ.get("OLLAMA_BASE_URL", OLLAMA_BASE_URL),
-            model=os.environ.get("EMBED_MODEL", EMBED_MODEL),
-            dimension=int(os.environ.get("EMBED_DIM", "1024")),
+            base_url=env.get("OLLAMA_BASE_URL", OLLAMA_BASE_URL),
+            model=env.get("EMBED_MODEL", EMBED_MODEL),
+            dimension=int(env.get("EMBED_DIM", "1024")),
             max_input_chars=max_chars,
-            timeout=float(os.environ.get("EMBED_TIMEOUT", "120")),
+            timeout=float(env.get("EMBED_TIMEOUT", "120")),
         )
     if provider == "fastembed":
-        model = os.environ.get("FASTEMBED_MODEL", "intfloat/multilingual-e5-large")
+        model = env.get("FASTEMBED_MODEL", "intfloat/multilingual-e5-large")
         default_query_prefix = "query: " if "e5" in model.lower() else ""
         default_document_prefix = "passage: " if "e5" in model.lower() else ""
         return FastEmbedEmbedder(
             model=model,
-            cache_dir=os.environ.get("FASTEMBED_CACHE_DIR") or None,
-            offline=os.environ.get("FASTEMBED_OFFLINE", "false").lower() in ("1", "true", "yes"),
+            cache_dir=env.get("FASTEMBED_CACHE_DIR") or None,
+            offline=env.get("FASTEMBED_OFFLINE", "false").lower() in ("1", "true", "yes"),
             max_input_chars=max_chars,
-            max_input_tokens=int(os.environ.get("FASTEMBED_MAX_INPUT_TOKENS", "512")),
-            query_prefix=os.environ.get("FASTEMBED_QUERY_PREFIX", default_query_prefix),
-            document_prefix=os.environ.get("FASTEMBED_DOCUMENT_PREFIX", default_document_prefix),
+            max_input_tokens=int(env.get("FASTEMBED_MAX_INPUT_TOKENS", "512")),
+            query_prefix=env.get("FASTEMBED_QUERY_PREFIX", default_query_prefix),
+            document_prefix=env.get("FASTEMBED_DOCUMENT_PREFIX", default_document_prefix),
         )
     if provider in ("sentence_transformers", "sentence-transformers"):
         return SentenceTransformersEmbedder(
-            model=os.environ.get("SENTENCE_TRANSFORMERS_MODEL", "BAAI/bge-m3"),
-            cache_dir=os.environ.get("SENTENCE_TRANSFORMERS_CACHE_DIR") or None,
-            offline=os.environ.get(
+            model=env.get("SENTENCE_TRANSFORMERS_MODEL", "BAAI/bge-m3"),
+            cache_dir=env.get("SENTENCE_TRANSFORMERS_CACHE_DIR") or None,
+            offline=env.get(
                 "SENTENCE_TRANSFORMERS_OFFLINE", "false"
             ).lower() in ("1", "true", "yes"),
-            device=os.environ.get("SENTENCE_TRANSFORMERS_DEVICE") or None,
-            revision=os.environ.get("SENTENCE_TRANSFORMERS_REVISION") or None,
+            device=env.get("SENTENCE_TRANSFORMERS_DEVICE") or None,
+            revision=env.get("SENTENCE_TRANSFORMERS_REVISION") or None,
             max_input_chars=max_chars,
-            max_input_tokens=int(os.environ.get(
+            max_input_tokens=int(env.get(
                 "SENTENCE_TRANSFORMERS_MAX_INPUT_TOKENS", "8192"
             )),
-            batch_size=int(os.environ.get("SENTENCE_TRANSFORMERS_BATCH_SIZE", "8")),
-            query_prefix=os.environ.get("SENTENCE_TRANSFORMERS_QUERY_PREFIX", ""),
-            document_prefix=os.environ.get("SENTENCE_TRANSFORMERS_DOCUMENT_PREFIX", ""),
+            batch_size=int(env.get("SENTENCE_TRANSFORMERS_BATCH_SIZE", "8")),
+            query_prefix=env.get("SENTENCE_TRANSFORMERS_QUERY_PREFIX", ""),
+            document_prefix=env.get("SENTENCE_TRANSFORMERS_DOCUMENT_PREFIX", ""),
         )
     raise EmbeddingError(f"unknown EMBED_PROVIDER: {provider}")
 

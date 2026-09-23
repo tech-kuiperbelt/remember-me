@@ -6,13 +6,12 @@ so these tests exercise SQLiteStorage directly plus service normalization.
 
 from unittest.mock import MagicMock
 import asyncio
-import runpy
 import sys
 
 import pytest
 
 from app.storage_sqlite import SQLiteStorage
-import app.service as service
+from app import service as service_policy
 
 
 FAKE_EMB = [0.1, 0.2, 0.3, 0.4]
@@ -34,17 +33,17 @@ def add_memory(db, text, keywords=None, namespace="ns1", **extra_meta):
 # -- normalization helpers (service layer) --
 
 def test_normalize_keywords_valid():
-    assert service._normalize_keywords(["  Project ", "project", "Testing"]) == ["project", "testing"]
+    assert service_policy._normalize_keywords(["  Project ", "project", "Testing"]) == ["project", "testing"]
 
 
 def test_normalize_keywords_filters_invalid():
-    assert service._normalize_keywords(["ok", 123, None, "", "  ", "OK"]) == ["ok"]
+    assert service_policy._normalize_keywords(["ok", 123, None, "", "  ", "OK"]) == ["ok"]
 
 
 def test_normalize_keywords_non_list_returns_none():
-    assert service._normalize_keywords("project") is None
-    assert service._normalize_keywords(None) is None
-    assert service._normalize_keywords([]) is None
+    assert service_policy._normalize_keywords("project") is None
+    assert service_policy._normalize_keywords(None) is None
+    assert service_policy._normalize_keywords([]) is None
 
 
 # -- add: index sync --
@@ -198,7 +197,7 @@ def test_rebuild_keyword_index(db):
 
 # -- service layer integration (mock storage) --
 
-def test_memory_add_normalizes_keywords(monkeypatch):
+def test_memory_add_normalizes_keywords(monkeypatch, service):
     storage = MagicMock()
     storage.add.return_value = {"id": "x", "created": True}
     monkeypatch.setattr(service, "storage", storage)
@@ -210,7 +209,7 @@ def test_memory_add_normalizes_keywords(monkeypatch):
     assert kwargs["metadata"]["keywords"] == ["proj"]
 
 
-def test_memory_list_normalizes_keywords(monkeypatch):
+def test_memory_list_normalizes_keywords(monkeypatch, service):
     storage = MagicMock()
     storage.list_memories.return_value = []
     monkeypatch.setattr(service, "storage", storage)
@@ -220,7 +219,7 @@ def test_memory_list_normalizes_keywords(monkeypatch):
     assert kwargs["keywords"] == ["proj"]
 
 
-def test_memory_search_normalizes_keywords(monkeypatch):
+def test_memory_search_normalizes_keywords(monkeypatch, service):
     storage = MagicMock()
     storage.search.return_value = []
     monkeypatch.setattr(service, "storage", storage)
@@ -232,12 +231,8 @@ def test_memory_search_normalizes_keywords(monkeypatch):
 
 
 def test_search_semantic_schema_exposes_both_index_filters():
-    real_argv = sys.argv
-    try:
-        sys.argv = ["server"]
-        namespace = runpy.run_module("app.server", run_name="not_main")
-    finally:
-        sys.argv = real_argv
+    from tests.conftest import server_namespace
+    namespace = server_namespace()
     result = asyncio.run(namespace["handle_list_tools"]())
     tool = next(t for t in result.tools if t.name == "search_semantic")
     properties = tool.inputSchema["properties"]

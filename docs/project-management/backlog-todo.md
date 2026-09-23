@@ -19,12 +19,6 @@
 - 关注点：会话管理（Mcp-Session-Id）、GET 流式订阅与断线重连、与 stdio 双模式共存、调用来源关联（复用 [25]）；同步更新 `.env`/`@remember-me`/MCP 客户端配置与 AGENTS.md。
 - 验收：支持 Streamable HTTP 的客户端可完成 initialize/tools/list/tools/call；旧 `/sse` 客户端无回归；`pytest` 通过。
 
-### [35] namespace alias、改名与历史变体合并
-
-- 背景：[28] 只做存在性治理，明确不处理 alias/改名/历史数据合并（如 `atos-next-master`、`atos-next`、`ATOS Next` 等变体）。
-- 目标：定义别名/规范化映射与迁移策略，支持查看、合并、停用，并在写入/查询时给出明确提示而非静默空检索或数据孤岛。
-- 约束：合并需可审计、可回滚；不破坏 [28] 的存在性校验与确认码语义。
-
 ### [27] LLM 结构化检索与分类写入引导
 
 - 调整 MCP 工具描述与 hint：写入时要求/引导提供 1–3 个 categories，检索时说明 keywords/categories 精确优先、语义解析预过滤的适用场景。
@@ -52,6 +46,10 @@
 - [15] 通过共享索引/实体建立记忆间关联网络。
 - [16] 关键词收敛与低频词表裁剪的目标冲突。
 - [9] keywords 浓度/词频排序及自动提取研究（暂不实现）。
+
+## 已明确不做
+
+- [35] namespace alias、改名与历史变体合并：2026-09-16 决定不做。[28] 只保留存在性治理（未知 namespace 拒绝 + 确认码），不引入 alias、改名或历史变体（如 `atos-next-master`/`atos-next`）合并。
 
 ## 维护约定
 
