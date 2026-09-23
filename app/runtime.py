@@ -21,8 +21,8 @@ class Runtime:
         self.log_dir = log_dir
         self.state = "created"
         self.provider = self.storage = self.service = None
+        self.audit = None
         self._handlers = []
-        self._audit_owned = False
         self._lock = threading.RLock()
         self.restart_requested = False
         self.shutdown_callback = None
@@ -37,8 +37,7 @@ class Runtime:
             try:
                 if self.configure_logging:
                     self._handlers = log_config.configure(self.log_dir)
-                audit.configure(self.settings.environment)
-                self._audit_owned = True
+                self.audit = audit.AuditJournal(self.settings.environment)
                 self.provider = self.provider_factory(environment=self.settings.environment)
                 s = self.settings
                 self.storage = self.storage_factory(
@@ -47,13 +46,13 @@ class Runtime:
                     embedding_spec=self.provider.spec.as_dict(), sync_interval=s.SYNC_INTERVAL,
                     compact_interval=s.COMPACT_INTERVAL, compact_min_bytes=s.COMPACT_MIN_BYTES,
                     compact_min_ratio=s.COMPACT_MIN_RATIO, health_check_interval=s.HEALTH_CHECK_INTERVAL,
-                    start_background=False,
+                    start_background=False, audit_journal=self.audit,
                 )
                 completeness = self.storage.index_embedding_completeness()
                 if not completeness["complete"]:
                     raise RuntimeError("active embedding profile is missing keyword/category vectors; "
                                        "stop the service and run embedding_cli reindex-index-values")
-                self.service = MemoryService(s, self.storage, self.provider)
+                self.service = MemoryService(s, self.storage, self.provider, audit_journal=self.audit)
                 self.service.warmup_embedding_provider()
                 if isinstance(self.storage, DualStorage):
                     self.storage.start()
@@ -97,9 +96,9 @@ class Runtime:
                             self.service.embedding_provider = None
                     finally:
                         try:
-                            if self._audit_owned:
-                                audit.close()
-                                self._audit_owned = False
+                            if self.audit is not None:
+                                self.audit.close()
+                                self.audit = None
                         finally:
                             log_config.close(self._handlers)
                             self._handlers = []

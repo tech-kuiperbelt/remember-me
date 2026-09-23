@@ -5,6 +5,7 @@ import logging
 import threading
 import time
 import tempfile
+import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 from starlette.responses import Response, FileResponse
@@ -13,8 +14,6 @@ from starlette.routing import Route
 from starlette.requests import Request
 
 from .service import InvalidSearchFilter
-from .audit import read_events as audit_read_events
-from . import audit
 from .embed import EmbeddingInputTooLong
 from .namespace_policy import NamespaceNotFound, InvalidNamespace
 from .jsonl_transfer import safe_filename_part, unlink_quietly
@@ -109,6 +108,15 @@ class AdminAPI:
     @property
     def service(self):
         return self._service if self._service is not None else self.runtime.service
+
+    @property
+    def audit(self):
+        return self.runtime.audit if self.runtime is not None else self.service.audit
+
+    @staticmethod
+    def _audit_context(request):
+        state = request.scope.get("state", {}) if hasattr(request, "scope") else {}
+        return {"source": "admin_http", "request_id": state.get("audit_request_id") or "rq_" + os.urandom(8).hex()}
 
     async def handle_admin(self, request: Request):
         logger.info("GET /admin/console")
@@ -301,7 +309,7 @@ class AdminAPI:
             return Response(json.dumps(result), status_code=202, media_type="application/json")
         except RuntimeError as e:
             unlink_quietly(temp_path)
-            audit.record(
+            self.audit.record(
                 "memory_import",
                 {"filename": os.path.basename(original_name), "bytes": total,
                  "namespace_prefix": prefix}, None,
@@ -313,7 +321,7 @@ class AdminAPI:
         except (ValueError, TypeError) as e:
             unlink_quietly(temp_path)
             logger.warning("POST /api/import rejected: %s", e)
-            audit.record(
+            self.audit.record(
                 "memory_import",
                 {"filename": os.path.basename(original_name), "bytes": total,
                  "namespace_prefix": prefix}, None,
@@ -326,7 +334,7 @@ class AdminAPI:
         except Exception as e:
             unlink_quietly(temp_path)
             logger.error("POST /api/import failed: %s", e, exc_info=True)
-            audit.record(
+            self.audit.record(
                 "memory_import",
                 {"filename": os.path.basename(original_name), "bytes": total,
                  "namespace_prefix": prefix}, None,
@@ -348,13 +356,13 @@ class AdminAPI:
         os.close(fd)
         try:
             result = self.service.memory_export_full(path)
-            audit.record("memory_export", {"type": "full"}, result,
+            self.audit.record("memory_export", {"type": "full"}, result,
                          (time.perf_counter() - started) * 1000)
             stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
             return _export_response(result, f"remember-me-full-{stamp}.jsonl")
         except RuntimeError as exc:
             unlink_quietly(path)
-            audit.record("memory_export", {"type": "full"}, None,
+            self.audit.record("memory_export", {"type": "full"}, None,
                          (time.perf_counter() - started) * 1000,
                          error={"type": type(exc).__name__, "message": str(exc)})
             return Response(json.dumps({"detail": str(exc)}), status_code=409,
@@ -362,7 +370,7 @@ class AdminAPI:
         except Exception as exc:
             unlink_quietly(path)
             logger.error("Full Export failed", exc_info=True)
-            audit.record("memory_export", {"type": "full"}, None,
+            self.audit.record("memory_export", {"type": "full"}, None,
                          (time.perf_counter() - started) * 1000,
                          error={"type": type(exc).__name__, "message": str(exc)})
             return Response(json.dumps({"detail": "Internal error"}), status_code=500,
@@ -378,7 +386,7 @@ class AdminAPI:
             fd, path = tempfile.mkstemp(prefix="remember-me-export-ns-", suffix=".jsonl")
             os.close(fd)
             result = self.service.memory_export_namespace(namespace, path)
-            audit.record("memory_export", {"type": "namespace", "namespace": namespace}, result,
+            self.audit.record("memory_export", {"type": "namespace", "namespace": namespace}, result,
                          (time.perf_counter() - started) * 1000)
             stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
             safe_ns = safe_filename_part(namespace)
@@ -387,14 +395,14 @@ class AdminAPI:
             )
         except LookupError as exc:
             unlink_quietly(path)
-            audit.record("memory_export", {"type": "namespace", "namespace": namespace}, None,
+            self.audit.record("memory_export", {"type": "namespace", "namespace": namespace}, None,
                          (time.perf_counter() - started) * 1000,
                          error={"type": type(exc).__name__, "message": str(exc)})
             return Response(json.dumps({"detail": str(exc)}), status_code=404,
                             media_type="application/json")
         except (ValueError, TypeError) as exc:
             unlink_quietly(path)
-            audit.record("memory_export", {"type": "namespace", "namespace": namespace}, None,
+            self.audit.record("memory_export", {"type": "namespace", "namespace": namespace}, None,
                          (time.perf_counter() - started) * 1000,
                          error={"type": type(exc).__name__, "message": str(exc)})
             return Response(json.dumps({"detail": str(exc)}), status_code=400,
@@ -402,7 +410,7 @@ class AdminAPI:
         except Exception as exc:
             unlink_quietly(path)
             logger.error("Namespace Export failed", exc_info=True)
-            audit.record("memory_export", {"type": "namespace", "namespace": namespace}, None,
+            self.audit.record("memory_export", {"type": "namespace", "namespace": namespace}, None,
                          (time.perf_counter() - started) * 1000,
                          error={"type": type(exc).__name__, "message": str(exc)})
             return Response(json.dumps({"detail": "Internal error"}), status_code=500,
@@ -448,6 +456,7 @@ class AdminAPI:
             if not isinstance(body, dict) or set(body) - allowed:
                 raise ValueError("expected keyword query object with supported parameters")
             result = await run_in_threadpool(self.service.memory_list_keywords, **body)
+            result["keyword_query_id"] = "kq_" + secrets.token_hex(8)
             return Response(json.dumps(result, ensure_ascii=False), media_type="application/json")
         except NamespaceNotFound as exc:
             error = {"type": type(exc).__name__, "message": str(exc)}
@@ -461,8 +470,9 @@ class AdminAPI:
             error = {"type": type(exc).__name__, "message": str(exc)}
             return Response(json.dumps({"detail": str(exc)}), status_code=500, media_type="application/json")
         finally:
-            audit.record("list_keywords", body if isinstance(body, dict) else {}, result,
-                         (time.perf_counter() - started) * 1000, error=error)
+            self.audit.record("list_keywords", body if isinstance(body, dict) else {}, result,
+                         (time.perf_counter() - started) * 1000, error=error,
+                         context=self._audit_context(request))
 
     async def handle_stats(self, request: Request):
         try:
@@ -536,7 +546,7 @@ class AdminAPI:
             tool = request.query_params.get("tool") or None
             namespace = request.query_params.get("namespace") or None
             logger.info("GET /api/audit limit=%d tool=%s namespace=%s", limit, tool, namespace)
-            events = audit_read_events(limit=limit, tool=tool, namespace=namespace)
+            events = self.audit.read_events(limit=limit, tool=tool, namespace=namespace)
             return Response(json.dumps(events, ensure_ascii=False), media_type="application/json")
         except Exception as e:
             logger.error("GET /api/audit failed: %s", e, exc_info=True)

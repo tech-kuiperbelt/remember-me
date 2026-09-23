@@ -204,6 +204,7 @@ def create_storage(backend: str = "sqlite", **kwargs) -> MemoryStorage:
                 compact_min_ratio=float(kwargs.get("compact_min_ratio", 0.25)),
                 health_check_interval=int(kwargs.get("health_check_interval", 24 * 60 * 60)),
                 start_background=bool(kwargs.get("start_background", True)),
+                audit_journal=kwargs.get("audit_journal"),
             )
         except Exception:
             primary.close()

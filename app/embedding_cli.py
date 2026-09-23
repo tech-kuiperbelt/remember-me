@@ -39,14 +39,14 @@ def _database_maintenance_lock(path: str):
 
 
 def main() -> None:
-    audit.configure()
+    journal = audit.AuditJournal()
     try:
-        _main()
+        _main(journal)
     finally:
-        audit.close()
+        journal.close()
 
 
-def _main() -> None:
+def _main(journal) -> None:
     parser = argparse.ArgumentParser(description="Offline embedding maintenance")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -124,14 +124,14 @@ def _main() -> None:
                         target_profile, provider.embed_documents, args.batch_size,
                         progress_callback=show_index_progress,
                     )
-                    audit.record(
+                    journal.record(
                         "index_value_reindex",
                         {"database": args.database, "profile": provider.spec.as_dict(),
                          "batch_size": args.batch_size},
                         result, (time.perf_counter() - started) * 1000,
                     )
                 except Exception as exc:
-                    audit.record(
+                    journal.record(
                         "index_value_reindex",
                         {"database": args.database, "profile": provider.spec.as_dict(),
                          "batch_size": args.batch_size},
@@ -157,14 +157,14 @@ def _main() -> None:
                         provider.spec.as_dict(), provider.embed_documents, args.batch_size,
                         progress_callback=show_progress,
                     )
-                    audit.record(
+                    journal.record(
                         "embedding_reindex",
                         {"database": args.database, "profile": provider.spec.as_dict(),
                          "batch_size": args.batch_size},
                         result, (time.perf_counter() - started) * 1000,
                     )
                 except Exception as exc:
-                    audit.record(
+                    journal.record(
                         "embedding_reindex",
                         {"database": args.database, "profile": provider.spec.as_dict(),
                          "batch_size": args.batch_size},

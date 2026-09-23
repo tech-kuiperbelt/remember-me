@@ -6,6 +6,7 @@ from collections import OrderedDict
 from datetime import datetime, timezone
 
 from .index_value_resolver import IndexValueResolver, MAX_FILTER_VALUES
+from .embed import EmbeddingError
 from . import audit
 from .summary_policy import derive_summary, normalize_summary
 from .jsonl_transfer import load_jsonl, write_clean_jsonl, sha256_file, unlink_quietly
@@ -154,11 +155,11 @@ def _normalize_rating(rating) -> int | None:
 class MemoryService:
     """Business operations over explicitly supplied resources; owns import workers only."""
 
-    def __init__(self, settings, storage, embedding_provider):
+    def __init__(self, settings, storage, embedding_provider, audit_journal=None):
         self.settings = settings
         self.storage = storage
         self.embedding_provider = embedding_provider
-        self.audit = audit
+        self.audit = audit_journal or audit
         self._import_jobs_lock = threading.RLock()
         self._import_jobs = OrderedDict()
         self._active_import_id = None
@@ -186,7 +187,9 @@ class MemoryService:
             return self.embedding_provider.embed_document(text)
         except Exception as e:
             logger.error("embed failed: %s", e, exc_info=True)
-            raise
+            if isinstance(e, EmbeddingError):
+                raise
+            raise EmbeddingError(f"embedding provider failed: {e}") from e
 
     def embed_query(self, text: str) -> list[float]:
         try:
@@ -199,14 +202,21 @@ class MemoryService:
             return self.embedding_provider.embed_query(text)
         except Exception as e:
             logger.error("query embed failed: %s", e, exc_info=True)
-            raise
+            if isinstance(e, EmbeddingError):
+                raise
+            raise EmbeddingError(f"embedding provider failed: {e}") from e
 
     def embed_documents(self, texts) -> list[list[float]]:
         # Preserve the patchable legacy embed() seam used by Ollama deployments
         # and tests; native batch providers use their efficient batch path.
-        if self.embedding_provider.spec.provider == "ollama":
-            return [self.embed(text) for text in texts]
-        return self.embedding_provider.embed_documents(texts)
+        try:
+            if self.embedding_provider.spec.provider == "ollama":
+                return [self.embed(text) for text in texts]
+            return self.embedding_provider.embed_documents(texts)
+        except Exception as e:
+            if isinstance(e, EmbeddingError):
+                raise
+            raise EmbeddingError(f"embedding provider failed: {e}") from e
 
     def _index_resolver(self) -> IndexValueResolver:
         return IndexValueResolver(

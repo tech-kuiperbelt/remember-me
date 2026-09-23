@@ -41,9 +41,10 @@ class DualStorage(MemoryStorage):
                  compact_min_bytes: int = 1024 * 1024,
                  compact_min_ratio: float = 0.25,
                  health_check_interval: int = 24 * 60 * 60,
-                 start_background: bool = True):
+                 start_background: bool = True, audit_journal=None):
         self.primary = primary
         self.secondary = secondary
+        self.audit = audit_journal or audit
         self.sync_interval = sync_interval
         self.compact_interval = max(1, compact_interval)
         self.compact_min_bytes = max(0, compact_min_bytes)
@@ -197,7 +198,7 @@ class DualStorage(MemoryStorage):
                     return False
                 result, _secondary = self._inspect_replica_locked()
                 self._persist_health_result(result, trigger)
-            audit.record(
+            self.audit.record(
                 "ndjson_health_check", {"trigger": trigger}, result,
                 (time.perf_counter() - started) * 1000,
             )
@@ -227,7 +228,7 @@ class DualStorage(MemoryStorage):
             except Exception:
                 logger.error("NDJSON health check: could not persist failure state", exc_info=True)
             logger.error("NDJSON health check failed", exc_info=True)
-            audit.record(
+            self.audit.record(
                 "ndjson_health_check", {"trigger": trigger}, None,
                 (time.perf_counter() - started) * 1000,
                 error={"type": type(exc).__name__, "message": str(exc)},
@@ -242,7 +243,7 @@ class DualStorage(MemoryStorage):
             "checked_at": datetime.now(timezone.utc).isoformat(),
         }
         self._persist_health_result(result, trigger)
-        audit.record("ndjson_health_check", {"trigger": trigger}, result, 0.0)
+        self.audit.record("ndjson_health_check", {"trigger": trigger}, result, 0.0)
 
     def _run_due_compact(self, trigger: str) -> None:
         """Run one due NDJSON maintenance check without blocking sync writes."""
@@ -303,7 +304,7 @@ class DualStorage(MemoryStorage):
                 state["last_check_at"] = checked_at
                 state["last_trigger"] = trigger
                 self._save_compact_state(state)
-            audit.record(
+            self.audit.record(
                 "ndjson_compact", {"trigger": trigger}, result,
                 (time.perf_counter() - started) * 1000,
             )
@@ -319,7 +320,7 @@ class DualStorage(MemoryStorage):
             except Exception:
                 logger.error("NDJSON compact: could not persist failure state", exc_info=True)
             logger.error("NDJSON compact failed", exc_info=True)
-            audit.record(
+            self.audit.record(
                 "ndjson_compact", {"trigger": trigger}, None,
                 (time.perf_counter() - started) * 1000,
                 error={"type": type(exc).__name__, "message": str(exc)},

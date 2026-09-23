@@ -19,10 +19,12 @@ import os
 import json
 import logging
 import threading
+import contextvars
 from datetime import datetime, timezone
 from pathlib import Path
 
 logger = logging.getLogger("audit")
+request_audit_context = contextvars.ContextVar("request_audit_context", default=None)
 
 AUDIT_PATH = "data/audit.jsonl"
 AUDIT_MAX_BYTES = 10 * 1024 * 1024
@@ -135,6 +137,9 @@ def _should_rotate(next_size: int) -> bool:
 def _trim_params(tool: str, arguments: dict | None, result=None) -> dict:
     """Per-tool params record — drop user-content fields, keep metadata."""
     args = dict(arguments or {})
+    for key in ("keyword_query_id", "source_search_id"):
+        if key in args:
+            args[key] = str(args[key])[:64]
     if tool == "list_keywords":
         args = {k: v for k, v in args.items() if k in
                 ("namespace", "mode", "queries", "limit", "offset", "sort_by", "min_score")}
@@ -347,3 +352,122 @@ def read_events(limit: int = 500, tool: str | None = None,
         except (OSError, UnicodeError) as exc:
             logger.error("audit read failed for %s: %s", candidate, exc)
     return events
+
+
+class AuditJournal:
+    """One runtime's audit file and rotation state, independent of other runtimes."""
+
+    def __init__(self, environment=None):
+        env = os.environ if environment is None else environment
+        self.path = Path(env.get("MEMORY_AUDIT_PATH", "data/audit.jsonl"))
+        self.max_bytes = int(env.get("MEMORY_AUDIT_MAX_BYTES", "10485760"))
+        self.max_files = max(1, int(env.get("MEMORY_AUDIT_MAX_FILES", "10")))
+        self.max_events = int(env.get("MEMORY_AUDIT_MAX_EVENTS", "0"))
+        self._lock = threading.Lock()
+        self._file = None
+        self._count = 0
+
+    def close(self):
+        with self._lock:
+            if self._file is not None:
+                self._file.close()
+                self._file = None
+            self._count = 0
+
+    def _open(self):
+        if self._file is not None:
+            return
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._file = self.path.open("a", encoding="utf-8")
+        if self.path.stat().st_size:
+            with self.path.open("r", encoding="utf-8") as handle:
+                self._count = sum(1 for _ in handle)
+
+    def _rotate(self):
+        if self._file is not None:
+            self._file.close()
+            self._file = None
+        try:
+            if self.max_files == 1:
+                if self.path.exists():
+                    self.path.unlink()
+            else:
+                for suffix in range(self.max_files - 1, 0, -1):
+                    source = self.path if suffix == 1 else Path(f"{self.path}.{suffix - 1}")
+                    target = Path(f"{self.path}.{suffix}")
+                    if source.exists():
+                        os.replace(source, target)
+            self._count = 0
+        except OSError:
+            logger.exception("audit rotation failed")
+        finally:
+            self._open()
+
+    def record(self, tool, arguments, result, duration_ms, error=None, *, context=None,
+               response_code=None, memory_refs=None):
+        """Append one bounded event; failures never affect the caller."""
+        try:
+            with self._lock:
+                self._open()
+                event = {
+                    "ts": _now_utc_iso(), "tool": tool,
+                    "status": "error" if error else "ok",
+                    "duration_ms": round(duration_ms, 1),
+                    "namespace": (arguments or {}).get("namespace"),
+                    "search_id": ((result or {}).get("search_id") if isinstance(result, dict)
+                                  else None) or (arguments or {}).get("search_id"),
+                    "source_search_id": str((arguments or {}).get("source_search_id"))[:64]
+                                        if (arguments or {}).get("source_search_id") else None,
+                    "keyword_query_id": ((result or {}).get("keyword_query_id")
+                                         if isinstance(result, dict) else None)
+                                        or (str((arguments or {}).get("keyword_query_id"))[:64]
+                                            if (arguments or {}).get("keyword_query_id") else None),
+                    "confirm_codes": _confirm_codes(arguments),
+                    "response_code": response_code or (result.get("response_code")
+                                          if isinstance(result, dict) else None),
+                    "error": error, "params": _trim_params(tool, arguments, result),
+                    "result": _trim_result(tool, result),
+                    "context": context or request_audit_context.get() or {"source": "background"},
+                    "memory_refs": (memory_refs or [])[:100],
+                }
+                if not event["namespace"] and event["memory_refs"]:
+                    namespaces = {ref.get("namespace") for ref in event["memory_refs"]}
+                    if len(namespaces) == 1:
+                        event["namespace"] = next(iter(namespaces))
+                encoded = (json.dumps(event, ensure_ascii=False, default=str) + "\n").encode("utf-8")
+                size = self.path.stat().st_size
+                if ((self.max_bytes > 0 and size > 0 and size + len(encoded) > self.max_bytes)
+                        or (self.max_events > 0 and self._count >= self.max_events)):
+                    self._rotate()
+                self._open()
+                self._file.write(encoded.decode("utf-8"))
+                self._file.flush()
+                self._count += 1
+        except Exception:
+            logger.exception("audit record failed")
+
+    def read_events(self, limit=500, tool=None, namespace=None):
+        events = []
+        paths = [self.path] + [Path(f"{self.path}.{suffix}")
+                               for suffix in range(1, self.max_files)]
+        for candidate in paths:
+            try:
+                if not candidate.exists():
+                    continue
+                with candidate.open("r", encoding="utf-8") as handle:
+                    lines = handle.readlines()
+                for line in reversed(lines):
+                    try:
+                        event = json.loads(line)
+                    except (TypeError, ValueError):
+                        continue
+                    if tool and event.get("tool") != tool:
+                        continue
+                    if namespace and event.get("namespace") != namespace:
+                        continue
+                    events.append(event)
+                    if len(events) >= limit:
+                        return events
+            except (OSError, UnicodeError):
+                logger.exception("audit read failed for %s", candidate)
+        return events

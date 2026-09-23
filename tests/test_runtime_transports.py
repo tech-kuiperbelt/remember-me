@@ -64,7 +64,12 @@ def test_stdio_protocol_and_eof(process_config):
             await check_protocol(streams)
     asyncio.run(exercise())
     assert not Path(env['EXEC_PROBE']).exists()
-    assert 'stats' in Path(env['MEMORY_AUDIT_PATH']).read_text()
+    recorded = [json.loads(line) for line in Path(env['MEMORY_AUDIT_PATH']).read_text().splitlines()]
+    stats = next(event for event in recorded if event['tool'] == 'stats')
+    assert stats['context']['source'] == 'mcp'
+    assert stats['context']['session_id'].startswith('ss_')
+    assert stats['context']['request_id'] is not None
+    assert stats['context']['client_name']
     # EOF released the writer lock.
     from app.storage import create_storage
     store = create_storage('sqlite', path=env['MEMORY_STORAGE_PATH'])
@@ -95,6 +100,15 @@ def test_sse_protocol_and_process_exit_with_open_connection(process_config, acti
                     assert time.monotonic() < deadline, log_path.read_text()
                     time.sleep(.05)
             async def exercise():
+                if action == 'shutdown':
+                    factory = lambda **kw: httpx.AsyncClient(trust_env=False, **kw)
+                    async with sse_client(base + '/sse', httpx_client_factory=factory) as first:
+                        async with sse_client(base + '/sse', httpx_client_factory=factory) as second:
+                            async with ClientSession(*first) as one, ClientSession(*second) as two:
+                                await one.initialize()
+                                await two.initialize()
+                                await one.call_tool('stats', {})
+                                await two.call_tool('stats', {})
                 async with sse_client(base + '/sse', httpx_client_factory=lambda **kw: httpx.AsyncClient(trust_env=False, **kw)) as streams:
                     await check_protocol(streams)
                 async with httpx.AsyncClient(timeout=5, trust_env=False) as client:
@@ -114,6 +128,11 @@ def test_sse_protocol_and_process_exit_with_open_connection(process_config, acti
             assert proc.returncode == ( -15 if action == 'signal' else 0), log_path.read_text()
             output = log_path.read_text()
             assert 'Exception in ASGI application' not in output, output
+            if action == 'shutdown':
+                logged = [json.loads(line) for line in Path(env['MEMORY_AUDIT_PATH']).read_text().splitlines()]
+                sessions = {event['context']['session_id'] for event in logged
+                            if event['tool'] == 'stats' and event['context']['source'] == 'mcp'}
+                assert len(sessions) >= 2
             if action == 'restart':
                 assert json.loads(Path(env['EXEC_PROBE']).read_text()) == [sys.executable, '-m', 'app.server', '--port', str(port)]
             else:

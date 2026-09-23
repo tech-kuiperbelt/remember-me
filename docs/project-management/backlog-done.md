@@ -2,6 +2,7 @@
 
 本文件归档已完成的项目待办。详细实现记录保留在 git 提交和项目变更日志中。
 
+- [25] Audit 调用关联与运行期错误状态（2026-09-23 实现并验证）：runtime 持有 AuditJournal，审计记录 MCP request/session/client 及 admin 来源；可选关联 ID 把找词、搜索、详情、更新和 report 串联，记录可确认的 namespace；运行期 embedding/停服错误返回结构化代码和恢复提示。详见 [`plans/25-audit-correlation.md`](plans/25-audit-correlation.md)。
 - [34] 统一离线运维入口与 Runbook（2026-09-23 实现，待提交）：新增 `bin/manage` 统一环境、默认路径及 embedding/迁移/recovery 子命令；新增根目录 Runbook，明确停服、writer lock、Full Sync、恢复和 Stats 验收流程。详见 [`plans/34-operations-runbook.md`](plans/34-operations-runbook.md)。
 
 - [38] 配置与 runtime 生命周期重构（2026-09-23 实现，待提交；最终收尾未部署）：显式 Settings/MemoryService/Runtime，移除导入时资源初始化；统一启动失败清理、导入与同步等待、最终 outbox 同步及锁释放；UI 新增关闭服务按钮，重启完成清理后再 exec。374 项 pytest 和隔离 Chrome 回归通过。详见 [`plans/38-runtime-lifecycle.md`](plans/38-runtime-lifecycle.md)。

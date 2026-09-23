@@ -88,7 +88,7 @@ def test_start_failure_releases_resources(tmp_path, monkeypatch, stage):
     with pytest.raises(RuntimeError):
         rt.start()
     rt.close()
-    assert rt.state == "closed" and audit._file is None
+    assert rt.state == "closed" and rt.audit is None
     assert tuple(logging.getLogger().handlers) == handlers
     if stage != "provider":
         provider.close.assert_called_once()

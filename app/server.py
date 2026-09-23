@@ -5,6 +5,7 @@ import secrets
 import asyncio
 import argparse
 import logging
+import weakref
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -19,6 +20,7 @@ from .service import _prepare_for_llm
 from . import audit
 from .categories import CATEGORY_VOCABULARY, MAX_CATEGORIES
 from .namespace_policy import NamespaceNotFound, NAMESPACE_NOT_FOUND
+from .embed import EmbeddingError, EmbeddingInputTooLong
 
 logger = logging.getLogger("server")
 
@@ -30,6 +32,7 @@ class MCPApplication:
             raise ValueError("service or runtime is required")
         self._service = service
         self.runtime = runtime
+        self._session_ids = weakref.WeakKeyDictionary()
         self.server = Server("memory-server")
         self.server.list_tools()(self.handle_list_tools)
         self.server.call_tool()(self.handle_call_tool)
@@ -39,6 +42,24 @@ class MCPApplication:
     @property
     def service(self):
         return self._service if self._service is not None else self.runtime.service
+
+    @property
+    def audit(self):
+        return self.runtime.audit if self.runtime is not None else self.service.audit
+
+    def _audit_context(self):
+        try:
+            request = self.server.request_context
+        except LookupError:
+            return {"source": "mcp", "request_id": "rq_" + secrets.token_hex(8)}
+        session = request.session
+        if session not in self._session_ids:
+            self._session_ids[session] = "ss_" + secrets.token_hex(8)
+        client = session.client_params.clientInfo if session.client_params else None
+        return {"source": "mcp", "request_id": str(request.request_id)[:128],
+                "session_id": self._session_ids[session],
+                "client_name": str(client.name)[:128] if client else None,
+                "client_version": str(client.version)[:128] if client else None}
 
     async def handle_list_tools(self) -> types.ListToolsResult:
         return types.ListToolsResult(tools=[
@@ -51,7 +72,8 @@ class MCPApplication:
                             "keywords need no lookup. Literal mode matches one substring; browse takes no queries. "
                             "Counts are scoped to live memories in namespace (omit for all). Semantic results include "
                             "score and count, sorted by score; exact hits do not suppress related candidates. "
-                            "No search_id/report feedback is required. Unknown namespace returns namespace_not_found.",
+                            "No search_id/report feedback is required. Pass the returned keyword_query_id to a later "
+                            "add/update/search when it informed your keyword choice. Unknown namespace returns namespace_not_found.",
                 inputSchema={"type": "object", "additionalProperties": False, "properties": {
                     "namespace": {"type": "string", "description": "Optional live namespace; omitted means all."},
                     "mode": {"type": "string", "enum": ["browse", "literal", "semantic"], "default": "browse"},
@@ -118,6 +140,7 @@ class MCPApplication:
                             "items": {"type": "string"},
                             "description": 'Confirmation codes for validation rules you deliberately override. Pass ["namespace_not_found"] to create a namespace that does not exist yet. Unknown codes are ignored; format/length/reserved-word checks cannot be bypassed.',
                         },
+                        "keyword_query_id": {"type": "string", "description": "Optional ID from list_keywords when its candidates informed this write; audit linkage only."},
                     },
                     "required": ["text"],
                 },
@@ -160,6 +183,7 @@ class MCPApplication:
                             "items": {"type": "string"},
                             "description": "Restrict the search to memories carrying any of these categories (OR). Exact values are preferred; natural-language or alternate forms are semantically resolved within the same namespace. Combined with keywords and namespace using AND.",
                         },
+                        "keyword_query_id": {"type": "string", "description": "Optional ID from list_keywords; audit linkage only."},
                     },
                     "required": ["query"],
                 },
@@ -202,6 +226,7 @@ class MCPApplication:
                             "items": {"type": "string"},
                             "description": "Filter by memory categories — any match is sufficient (OR). Call 'stats' first to see canonical categories in category_counts.",
                         },
+                        "keyword_query_id": {"type": "string", "description": "Optional ID from list_keywords; audit linkage only."},
                     },
                 },
             ),
@@ -220,6 +245,7 @@ class MCPApplication:
                             "items": {"type": "string"},
                             "description": "Array of memory IDs to fetch full content for (a single ID also works)",
                         },
+                        "source_search_id": {"type": "string", "description": "Optional search_id from the search whose results prompted this lookup; audit linkage only."},
                     },
                     "required": ["memory_ids"],
                 },
@@ -246,6 +272,8 @@ class MCPApplication:
                     "type": "object",
                     "properties": {
                         "memory_id": {"type": "string"},
+                        "source_search_id": {"type": "string", "description": "Optional search_id that prompted this update; audit linkage only."},
+                        "keyword_query_id": {"type": "string", "description": "Optional ID from list_keywords when its candidates informed this update; audit linkage only."},
                         "text": {"type": "string", "description": "New text. Oversized content is rejected; keep long documents in the repository and save a summary/path here."},
                         "summary": {"type": "string", "description": "New summary. LLM callers changing text MUST provide this; omission is tolerated and uses a deterministic leading-text extract."},
                         "metadata": {
@@ -335,6 +363,8 @@ class MCPApplication:
     async def handle_call_tool(self, name: str, arguments: dict) -> types.CallToolResult:
         logger.info("Tool call: %s %s", name, arguments)
         start = time.perf_counter()
+        context = self._audit_context()
+        memory_refs = []
         try:
             if self.runtime is not None and self.runtime.state != "running":
                 raise RuntimeError("service is closing; no new work accepted")
@@ -347,6 +377,8 @@ class MCPApplication:
                     hint += (" You provided more than %d categories; only the first %d were kept — "
                              "next time pass at most %d in metadata.categories."
                              % (MAX_CATEGORIES, MAX_CATEGORIES, MAX_CATEGORIES))
+                if data.get("id"):
+                    memory_refs = [{"id": data["id"], "namespace": arguments.get("namespace") or self.service.settings.DEFAULT_NAMESPACE}]
             elif name == "search_semantic":
                 search_result = self.service.memory_search(
                     arguments["query"], int(arguments.get("k", 5)),
@@ -369,11 +401,18 @@ class MCPApplication:
                 hint = _TOOL_HINTS["search_meta"]
             elif name == "get_details":
                 data = self.service.memory_get_details(arguments["memory_ids"])
+                memory_refs = [{"id": item.get("id"), "namespace": item.get("namespace")}
+                               for item in data.get("found", [])[:100]]
                 hint = _TOOL_HINTS["get_details"]
             elif name == "update":
+                old = self.service.storage.get(arguments["memory_id"])
                 data = self.service.memory_update(arguments["memory_id"], arguments.get("text"),
                                      arguments.get("metadata"), arguments.get("namespace"),
                                      arguments.get("summary"), arguments.get("confirm_codes"))
+                new = self.service.storage.get(arguments["memory_id"])
+                memory_refs = [{"id": arguments["memory_id"],
+                                "namespace_before": old.get("namespace") if old else None,
+                                "namespace": new.get("namespace") if new else None}]
                 hint = _TOOL_HINTS["update"]
                 if data.get("categories_dropped"):
                     hint += (" You provided more than %d categories; only the first %d were kept — "
@@ -384,6 +423,7 @@ class MCPApplication:
                 hint = _TOOL_HINTS["delete"]
             elif name == "list_keywords":
                 data = self.service.memory_list_keywords(**arguments)
+                data["keyword_query_id"] = "kq_" + secrets.token_hex(8)
                 hint = _TOOL_HINTS["list_keywords"]
             elif name == "stats":
                 data = _wrap_stats(self.service.memory_stats())
@@ -393,7 +433,8 @@ class MCPApplication:
                 hint = _TOOL_HINTS["report"]
             else:
                 raise ValueError(f"Unknown tool: {name}")
-            audit.record(name, arguments, data, (time.perf_counter() - start) * 1000)
+            self.audit.record(name, arguments, data, (time.perf_counter() - start) * 1000,
+                              context=context, memory_refs=memory_refs)
             return _ok(data, hint)
         except NamespaceNotFound as e:
             # Not an MCP error: return a structured result so the LLM can read the
@@ -403,11 +444,30 @@ class MCPApplication:
             if name == "list_keywords":
                 data.update({"namespace": e.requested, "mode": arguments.get("mode", "browse"), "results": []})
                 hint = "Unknown namespace; choose a known namespace from response_meta or omit namespace."
-            audit.record(name, arguments, data, (time.perf_counter() - start) * 1000)
+            self.audit.record(name, arguments, data, (time.perf_counter() - start) * 1000,
+                              context=context)
+            return _ok(data, hint)
+        except (EmbeddingError, RuntimeError) as exc:
+            if isinstance(exc, EmbeddingInputTooLong):
+                code, hint = "embedding_input_too_long", "Shorten the input and retry."
+            elif isinstance(exc, EmbeddingError):
+                code, hint = "embedding_unavailable", "Check the configured embedding provider, then retry."
+            elif self.runtime is not None and self.runtime.state != "running":
+                code, hint = "service_closing", "Reconnect after the service restarts."
+            else:
+                self.audit.record(name, arguments, None, (time.perf_counter() - start) * 1000,
+                                  error={"type": type(exc).__name__, "message": str(exc)},
+                                  context=context)
+                raise
+            data = {"response_code": code, "detail": str(exc)}
+            self.audit.record(name, arguments, data, (time.perf_counter() - start) * 1000,
+                              error={"type": type(exc).__name__, "message": str(exc)},
+                              response_code=code, context=context)
             return _ok(data, hint)
         except Exception as e:
-            audit.record(name, arguments, None, (time.perf_counter() - start) * 1000,
-                         error={"type": type(e).__name__, "message": str(e)})
+            self.audit.record(name, arguments, None, (time.perf_counter() - start) * 1000,
+                              error={"type": type(e).__name__, "message": str(e)},
+                              context=context)
             logger.error("Tool call '%s' failed: %s", name, e, exc_info=True)
             raise
 
@@ -449,11 +509,11 @@ def create_mcp_server(service=None, *, runtime=None):
 # Guidance appended to each tool's result so the LLM knows what it can do next
 # with the returned data. Kept intentionally concise.
 _TOOL_HINTS: dict[str, str] = {
-    "list_keywords": "Reuse a candidate only if it accurately expresses your concept; score measures similarity, not equivalence. New keywords are allowed when none fits. Counts reflect live memories in the requested namespace. Use browse/literal offset for more results; lower semantic min_score to broaden candidates. No report is needed.",
+    "list_keywords": "Reuse a candidate only if it accurately expresses your concept; score measures similarity, not equivalence. New keywords are allowed when none fits. Counts reflect live memories in the requested namespace. Pass this keyword_query_id to a later add/update/search when it informed your choice. Use browse/literal offset for more results; lower semantic min_score to broaden candidates. No report is needed.",
     "add": "When setting keywords, first use list_keywords semantic mode in the target namespace to find reusable terms. Memory stored. A supplied summary was saved directly; if it was missing or blank, a deterministic extract from the leading text was stored. If created=false, an identical record already exists and remains untouched — consider 'update' instead. Reuse canonical categories from stats' category_counts (up to 3). An unknown namespace is rejected unless you pass confirm_codes=[\"namespace_not_found\"].",
     "search_semantic": "Results are ranked by relevance (score). Use 'get_details' with an id to read the full original text, then call 'report' with this search_id to rate how helpful each result was (-10..10). filter_resolution shows how exact or semantic keywords/categories constrained candidates before scoring. Values within one dimension use OR, while dimensions combine using AND. If a whole supplied dimension could not be resolved, the result is empty. response_code='namespace_not_found' means the namespace does not exist (empty items is then not a real 'no match').",
     "search_meta": "Use 'get_details' with an id to read the full original text, or call 'search_semantic' for fuzzy/topic/keyword lookup. Filter further with keywords= and/or categories=. After using these results, call 'report' with this search_id to rate how helpful each id was (-10..10). response_code='namespace_not_found' means the namespace does not exist; the real available namespaces are in response_meta.known_namespaces.",
-    "get_details": "You now have the full text, including metadata.keywords and metadata.categories. If a memory is relevant, use search_meta(keywords=[...]) or search_meta(categories=[...]) to find related memories.",
+    "get_details": "You now have the full text, including metadata.keywords and metadata.categories. Pass source_search_id from the originating search to link this lookup in audit. If a memory is relevant, use search_meta(keywords=[...]) or search_meta(categories=[...]) to find related memories.",
     "update": "When replacing keywords, first use list_keywords semantic mode in the target namespace; other updates need no keyword lookup. Memory updated. A supplied summary was saved directly; changed text without one received a deterministic leading-text extract. Metadata-only and whitespace-equivalent text updates preserve the existing summary. Use 'get_details' with the id to verify the change. Categories (if any) were taken from metadata.categories — see stats' category_counts for the canonical list (up to 3). Moving to an unknown namespace is rejected unless you pass confirm_codes=[\"namespace_not_found\"].",
     "delete": "Memory soft-deleted. It no longer appears in 'search_semantic'/'search_meta'. Call 'stats' to confirm the count.",
     "stats": "Use 'namespace_counts' to pick a namespace, then 'search_meta' or 'search_semantic' within it. Use 'list_keywords' to find existing keywords and 'category_counts' as the canonical category vocabulary (up to 3 per memory) for search_meta/add. Embedding provider/model/profile describe the active comparable vector space. Use 'server_time' for time-based queries.",
@@ -626,7 +686,17 @@ def create_http_app(runtime):
                                     media_type="application/json")
                 await response(scope, receive, send)
             else:
-                await self.app(scope, receive, send)
+                if scope["type"] == "http":
+                    request_id = "rq_" + secrets.token_hex(8)
+                    scope.setdefault("state", {})["audit_request_id"] = request_id
+                    token = audit.request_audit_context.set(
+                        {"source": "admin_http", "request_id": request_id})
+                    try:
+                        await self.app(scope, receive, send)
+                    finally:
+                        audit.request_audit_context.reset(token)
+                else:
+                    await self.app(scope, receive, send)
     app.add_middleware(AdmissionMiddleware)
     return app
 

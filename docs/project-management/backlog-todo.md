@@ -29,11 +29,6 @@
 - 校验 `search_id` 存在，且每个 `m_id` 属于该次搜索结果；拒绝或明确记录无效反馈。
 - 为反馈记录来源/用途（LLM、人工、测试等）和必要的关联上下文，区分可用于质量分析的真实标注与测试数据。
 
-### [25] audit 调用关联与可用性状态
-
-- 在 audit 中记录 caller/client、session/request ID，并让 `get_details`、`update`、`report` 等无 namespace 参数的事件可关联至原始 namespace/搜索链路。
-- 对 embedding、迁移、锁库等不可用状态提供可被 LLM 明确识别的状态与恢复提示，避免失败后盲目重试。
-
 ### [23] keywords 人工合并（后续）
 
 - 优先讨论人工选择标准词、预览影响范围、合并历史关键词及别名处理。
