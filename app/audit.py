@@ -136,6 +136,7 @@ def _trim_result(tool: str, result) -> dict | None:
     """Per-tool result record — keep light summaries only.
 
     - search_semantic: ``[{id, summary, score}]``
+    - search_lexical:  ``[{id, summary, score}]`` (BM25 score, not cosine)
     - search_meta:     ``[{id, summary}]`` (no score — list is exact, not cosine)
     - get_details:     ``{found: [{id, summary, keywords}], missing: [...]}``
     - stats:           everything except the keyword vocabulary and model URLs
@@ -146,9 +147,9 @@ def _trim_result(tool: str, result) -> dict | None:
     if not isinstance(result, dict):
         return {"value": str(result)}
 
-    if tool == "search_semantic" or tool == "search_meta":
+    if tool in ("search_semantic", "search_meta", "search_lexical"):
         items = result.get("items") or []
-        keep_score = tool == "search_semantic"
+        keep_score = tool in ("search_semantic", "search_lexical")
         trimmed = {
             "search_id": result.get("search_id"),
             "total": result.get("total", len(items)),
@@ -346,12 +347,14 @@ def close():
 
 
 def record(tool: str, arguments: dict | None, result, duration_ms: float,
-           error: dict | None = None, *, context=None) -> None:
+           error: dict | None = None, *, context=None, response_code=None,
+           memory_refs=None) -> None:
     """Compatibility entrypoint; all writing and rotation use AuditJournal."""
     try:
         with _default_lock:
             _legacy_journal().record(tool, arguments, result, duration_ms, error=error,
-                                     context=context)
+                                     context=context, response_code=response_code,
+                                     memory_refs=memory_refs)
     except Exception:
         logger.exception("audit record failed")
 
