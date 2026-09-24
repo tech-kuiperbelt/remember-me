@@ -109,6 +109,24 @@ match_info = {"type": "lexical", "score_type": "fts5_bm25", "raw_bm25": <float>}
 - 记录 `unicode61` 的中文/标识符召回实况，判断是否需要预分词（Phase A/B）。
 - 说明限制：现有审计正例来自已展示结果，有展示选择偏差，不是无偏基线；指标仅描述所评样本。
 
+### 评测集可行性与工作量（2026-09-24 只读统计）— benchmark 暂缓
+
+对 `data/audit.jsonl` 与 `data/memories.db` 只读聚合确认评测集**可用且规模足够**，但本轮**暂不执行**
+benchmark（用户决定暂缓）。
+
+- 关联方式：`search_semantic` 的 `result.search_id` ↔ `report` 的 `params.search_id`。
+  注意：仅 2026-09-23 之后少数事件有顶层 `search_id`，多数只存在于 `result`/`params` 内；
+  按顶层字段关联会漏掉绝大多数样本。
+- 规模：362 条带 `search_id` 的 semantic 事件、336 条 report；关联并过滤存活正例后得
+  **284 条 query（≥1 存活正例）、920 条正例关联**（与 pre-coding validation 的 279/912 吻合）。
+- 分组（粗判）：**165 条含中文**、**273 条含标识符特征**（有重叠），覆盖技术标识符/异常码/中文/混排。
+- 工作量估算（第一遍）：评测集构建 20–30 min + 跑检索 1–3 min（284×2 次，走运行中服务端点）
+  + 指标分组 15–20 min + 结论文档 30–45 min ≈ **1.5–2.5 小时**；快速探索版 ≈ 45–60 min；
+  若中文指标很差再加预分词实验（Phase A/B）≈ +1–2 小时。
+- 执行前需先定 3 件事：① 是否允许只读生产 audit/memories 构建本地评测集（清单不入 docs/git）；
+  ② 用运行中服务端点跑还是离线只读实例；③ 报告落点（新建 `docs/design/` 文件或追加本节）。
+- 只读统计样本仍带**展示选择偏差**，只能衡量已评样本，不是无偏基线。
+
 ## 实现后观测与已知限制（2026-09-24 实测）
 
 实现并重启生产服务后（1056 live memories；`memory_content_fts` 1056 行；`lexical_index_version=1`），

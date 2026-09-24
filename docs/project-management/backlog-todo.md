@@ -10,7 +10,7 @@
 - 目标：为正文增加独立 Lexical Search primitive（SQLite FTS5 + BM25），与 Semantic 并列，不做 Hybrid/fusion。新增 `memory_content_fts`、单一 `lexical_index_version`、共用最小 QueryBuilder、`SQLiteStorage.search_lexical`、MCP `search_lexical` 与 `POST /api/memories/search/lexical`。
 - 约束：仅 `query`/`k`（默认 10，范围 1–100）/`namespace`；query ≤4096 字符且 ≤256 token，超限拒绝不截断；纯标点空结果；`score=-raw_bm25`；复用现有 `search_id`/`report`；缺表/缺版本/版本不符时进入 running 前全量重建，失败即启动失败；写路径同事务同步 FTS。
 - 验收：事务回滚、启动重建与失败路径、import/recovery、命名空间信封、query/k 边界、审计与 `/read-me` 工具列表同步、全量 pytest 与浏览器回归；Phase 1 tokenizer/BM25 benchmark（脱敏 query→positive、同一 DB 快照、分组 Hit@1/Hit@5/MRR/无结果率）。
-- 状态：已实现（未提交，408 pytest + 浏览器回归通过），含 2 处 P2 review 修复（缺表恢复、lexical 未知 namespace 信封）；Phase 1 benchmark 待做。已知限制见计划文档「实现后观测与已知限制（2026-09-24 实测）」——中文不切字导致 `search_lexical` 对中文基本无效、短前缀（`ora`）会误召回、CamelCase 子词搜不到；工具描述与 `/read-me` 已补"中文请用 `search_semantic`"。
+- 状态：已实现并提交（`4b47dbe` + `dcc9dd1`），408 pytest + 浏览器回归通过，已部署并逐项验证；含 2 处 P2 review 修复（缺表恢复、lexical 未知 namespace 信封）。**Phase 1 benchmark 暂缓**（评测集已确认可用：284 query / 920 正例关联，165 含中文、273 含标识符；预估 1.5–2.5h，详见计划文档「评测集可行性与工作量」）。已知限制见计划文档「实现后观测与已知限制（2026-09-24 实测）」——中文不切字导致 `search_lexical` 对中文基本无效、短前缀（`ora`）会误召回、CamelCase 子词搜不到；工具描述与 `/read-me` 已补"中文请用 `search_semantic`"。
 
 ### [40] Retrieval Extension Phase 2 — Manual Anchors + Anchor Search
 
