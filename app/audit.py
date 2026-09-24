@@ -25,6 +25,12 @@ from pathlib import Path
 
 logger = logging.getLogger("audit")
 request_audit_context = contextvars.ContextVar("request_audit_context", default=None)
+# Per-request context for the Streamable HTTP transport. The /mcp ASGI adapter
+# sets a fresh dict for each request (never a shared, mutated one) and resets it
+# in `finally`, so tool-call events can carry a stable HTTP correlation id.
+# MCPApplication._audit_context() merges this explicitly; it is not merged into
+# `request_audit_context`, which the admin/SSE admission middleware owns.
+http_transport_context = contextvars.ContextVar("http_transport_context", default=None)
 
 AUDIT_PATH = "data/audit.jsonl"
 AUDIT_MAX_BYTES = 10 * 1024 * 1024
@@ -340,11 +346,12 @@ def close():
 
 
 def record(tool: str, arguments: dict | None, result, duration_ms: float,
-           error: dict | None = None) -> None:
+           error: dict | None = None, *, context=None) -> None:
     """Compatibility entrypoint; all writing and rotation use AuditJournal."""
     try:
         with _default_lock:
-            _legacy_journal().record(tool, arguments, result, duration_ms, error=error)
+            _legacy_journal().record(tool, arguments, result, duration_ms, error=error,
+                                     context=context)
     except Exception:
         logger.exception("audit record failed")
 
