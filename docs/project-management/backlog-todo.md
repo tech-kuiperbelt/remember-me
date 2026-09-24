@@ -14,11 +14,11 @@
 
 ### [29] MCP Streamable HTTP（新 SSE）传输支持
 
-- 计划：详见 `docs/project-management/plans/29-streamable-http-and-read-me.md`（含新增 `/read-me` 配置发现页；2026-09-23 定稿，未实现）。
+- 计划：详见 `docs/project-management/plans/29-streamable-http-and-read-me.md`（2026-09-24 review 修订，未实现；明确 GET 405、Origin 校验、stateless 审计边界、SDK 下限和真实 Codex 无桥接直连验收；含 `/read-me` 配置发现页）。
 - 背景：当前 `--port` 暴露的是 MCP 旧版 HTTP+SSE 传输（`mcp.server.sse.SseServerTransport`，`GET /sse` + `POST /messages/`）；新规范以 Streamable HTTP 取代（单端点、POST/GET、可选 SSE 流）。
-- 目标：保留旧 `/sse` 兼容的同时新增 Streamable HTTP 端点，供新客户端接入；mcp 1.28.0 已内置 `mcp.server.streamable_http` / `streamable_http_manager`，可评估直接使用或改用 FastMCP。
-- 关注点：会话管理（Mcp-Session-Id）、GET 流式订阅与断线重连、与 stdio 双模式共存、调用来源关联（复用 [25]）；同步更新 `.env`/`@remember-me`/MCP 客户端配置与 AGENTS.md。
-- 验收：支持 Streamable HTTP 的客户端可完成 initialize/tools/list/tools/call；旧 `/sse` 客户端无回归；`pytest` 通过。
+- 目标：保留 stdio、旧 `/sse` 与 `/messages/`，新增 `/mcp`，让 Codex 原生 URL 直连同一实例，无需 `mcp-remote` 桥接；使用 SDK `StreamableHTTPSessionManager`，stateless + JSON，非 POST 方法校验后 405（`Allow: POST`），不提供独立 GET SSE 流。
+- 关注点：复用 SDK Host/Origin 校验（本次 loopback Host 范围），验证 task group 的审计 contextvar 传播和每请求关联 ID，明确无跨请求 clientInfo 的限制；依赖统一为 `mcp>=1.28.0,<2`，覆盖关闭/重启排空。新增 `/read-me` 与 README/AGENTS.md 配置说明，不改用户持久 MCP 客户端配置。
+- 验收：最低 SDK 版本、Python SDK 与双客户端调用、旧 `/sse`/stdio、审计及生命周期回归、全量 pytest 和浏览器回归。真实 Codex 直连由用户自行实测（不阻塞归档）；未通过不得宣称 Codex 原生直连目标完成。
 
 ### [27] LLM 结构化检索与分类写入引导
 

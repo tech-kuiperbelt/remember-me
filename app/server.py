@@ -6,13 +6,20 @@ import asyncio
 import argparse
 import logging
 import weakref
+from pathlib import Path
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.server.sse import SseServerTransport
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+from mcp.server.transport_security import (
+    TransportSecuritySettings,
+    TransportSecurityMiddleware,
+)
 import mcp.types as types
 from starlette.applications import Starlette
 from starlette.routing import Route, Mount
+from starlette.requests import Request
 from starlette.responses import Response
 import uvicorn
 
@@ -51,15 +58,25 @@ class MCPApplication:
         try:
             request = self.server.request_context
         except LookupError:
-            return {"source": "mcp", "request_id": "rq_" + secrets.token_hex(8)}
-        session = request.session
-        if session not in self._session_ids:
-            self._session_ids[session] = "ss_" + secrets.token_hex(8)
-        client = session.client_params.clientInfo if session.client_params else None
-        return {"source": "mcp", "request_id": str(request.request_id)[:128],
-                "session_id": self._session_ids[session],
-                "client_name": str(client.name)[:128] if client else None,
-                "client_version": str(client.version)[:128] if client else None}
+            context = {"source": "mcp", "request_id": "rq_" + secrets.token_hex(8)}
+        else:
+            session = request.session
+            if session not in self._session_ids:
+                self._session_ids[session] = "ss_" + secrets.token_hex(8)
+            client = session.client_params.clientInfo if session.client_params else None
+            context = {"source": "mcp", "request_id": str(request.request_id)[:128],
+                       "session_id": self._session_ids[session],
+                       "client_name": str(client.name)[:128] if client else None,
+                       "client_version": str(client.version)[:128] if client else None}
+        # Streamable HTTP requests carry a server-generated HTTP correlation id.
+        # It is merged here explicitly because an explicit context wins over the
+        # journal's request_audit_context fallback; it never replaces source=mcp
+        # or the JSON-RPC request_id.
+        transport_context = audit.http_transport_context.get()
+        if transport_context:
+            context["transport"] = transport_context.get("transport")
+            context["http_request_id"] = transport_context.get("http_request_id")
+        return context
 
     async def handle_list_tools(self) -> types.ListToolsResult:
         return types.ListToolsResult(tools=[
@@ -623,20 +640,57 @@ def _wrap_stats(data: dict) -> dict:
 # Entry point
 # ---------------------------------------------------------------------------
 
-def create_http_app(runtime):
-    """Own runtime lifespan; both transports bind the same explicit service."""
+# Streamable HTTP transport security: loopback-only Host/Origin whitelist.
+# The SDK disables DNS-rebinding protection when settings are omitted, so it is
+# passed explicitly to both the adapter pre-check and the session manager.
+STREAMABLE_HTTP_SECURITY = TransportSecuritySettings(
+    enable_dns_rebinding_protection=True,
+    allowed_hosts=["127.0.0.1:*", "localhost:*"],
+    allowed_origins=["http://127.0.0.1:*", "http://localhost:*"],
+)
+
+_READ_ME_TEMPLATE_PATH = Path(__file__).with_name("read_me.md")
+
+
+def _read_me_base(port, scope):
+    """Resolve the self-referenced base URL for /read-me.
+
+    Host is fixed to loopback by design; only the port is resolved at runtime so
+    a changed --port is reflected. Falls back to the ASGI server port when the
+    configured port is missing or 0 (e.g. an ephemeral test port).
+    """
+    resolved = port
+    if not resolved:
+        server = scope.get("server") or ()
+        if len(server) == 2 and server[1]:
+            resolved = server[1]
+    if not resolved:
+        return None
+    return f"http://127.0.0.1:{resolved}"
+
+
+def create_http_app(runtime, *, port=None):
+    """Own runtime lifespan; all transports bind the same explicit service."""
     from contextlib import asynccontextmanager
     from .admin import create_admin_routes
     import anyio
     connections = set()
     mcp = create_mcp_server(runtime=runtime)
     sse = SseServerTransport("/messages/")
+    security = TransportSecurityMiddleware(STREAMABLE_HTTP_SECURITY)
+    session_manager = StreamableHTTPSessionManager(
+        app=mcp.server, stateless=True, json_response=True,
+        security_settings=STREAMABLE_HTTP_SECURITY,
+    )
 
     @asynccontextmanager
     async def lifespan(app):
         try:
             runtime.start()
-            yield
+            # Entered after start() and exited before close() so in-flight work
+            # drains before storage/provider are released.
+            async with session_manager.run():
+                yield
         finally:
             await asyncio.to_thread(runtime.close)
 
@@ -666,7 +720,63 @@ def create_http_app(runtime):
             if started and not finished:
                 await send({"type": "http.response.body", "body": b"", "more_body": False})
 
+    class StreamableHTTPEndpoint:
+        """ASGI adapter for the stateless Streamable HTTP transport."""
+
+        async def __call__(self, request_scope, receive, send):
+            request = Request(request_scope, receive)
+            # Security is validated for every method, including the ones that
+            # end in 405, so GET/DELETE cannot bypass the Host/Origin whitelist.
+            error = await security.validate_request(request, is_post=False)
+            if error is not None:
+                await error(request_scope, receive, send)
+                return
+            if request.method != "POST":
+                if request.method == "HEAD":
+                    await send({"type": "http.response.start", "status": 405,
+                                "headers": [(b"allow", b"POST")]})
+                    await send({"type": "http.response.body", "body": b""})
+                else:
+                    response = Response("Method Not Allowed", status_code=405,
+                                        headers={"Allow": "POST"})
+                    await response(request_scope, receive, send)
+                return
+            # Per-request correlation id for audit; a fresh dict per request so
+            # concurrent requests never share or mutate one another's context.
+            request_id = (request_scope.get("state") or {}).get("audit_request_id")
+            if not request_id:
+                request_id = "rq_" + secrets.token_hex(8)
+            token = audit.http_transport_context.set(
+                {"transport": "streamable_http", "http_request_id": request_id})
+            try:
+                await session_manager.handle_request(request_scope, receive, send)
+            finally:
+                audit.http_transport_context.reset(token)
+
+    class ReadMeEndpoint:
+        """Static, LLM-facing configuration page with a self-referenced base URL."""
+
+        async def __call__(self, request_scope, receive, send):
+            base = _read_me_base(port, request_scope)
+            if base is None:
+                response = Response("cannot determine service port for /read-me",
+                                    status_code=500)
+                await response(request_scope, receive, send)
+                return
+            try:
+                template = _READ_ME_TEMPLATE_PATH.read_text(encoding="utf-8")
+            except OSError:
+                logger.exception("failed to read /read-me template")
+                response = Response("read-me template unavailable", status_code=500)
+                await response(request_scope, receive, send)
+                return
+            response = Response(template.replace("{base}", base),
+                                media_type="text/markdown; charset=utf-8")
+            await response(request_scope, receive, send)
+
     app = Starlette(routes=[Route("/sse", SSEEndpoint()),
+                            Route("/mcp", StreamableHTTPEndpoint()),
+                            Route("/read-me", ReadMeEndpoint(), methods=["GET"]),
                             Mount("/messages/", app=sse.handle_post_message)] +
                     create_admin_routes(runtime=runtime), lifespan=lifespan)
     app.state.runtime = runtime
@@ -769,13 +879,14 @@ async def main(argv=None):
     from .settings import Settings
     from .runtime import create_runtime
     parser = argparse.ArgumentParser(description="Memory MCP Server")
-    parser.add_argument("--port", type=int, default=None, help="Port for SSE mode")
+    parser.add_argument("--port", type=int, default=None,
+                        help="Port for HTTP mode (legacy SSE + Streamable HTTP)")
     args = parser.parse_args(argv)
     runtime = create_runtime(Settings.from_env())
     if args.port is None:
         await serve_stdio(runtime)
     else:
-        app = create_http_app(runtime)
+        app = create_http_app(runtime, port=args.port)
         config = uvicorn.Config(app, host="0.0.0.0", port=args.port, log_level="info")
         class GracefulServer(uvicorn.Server):
             async def shutdown(self, sockets=None):

@@ -14,6 +14,7 @@ import pytest
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.client.sse import sse_client
+from mcp.client.streamable_http import streamablehttp_client
 
 
 @pytest.fixture
@@ -137,6 +138,67 @@ def test_sse_protocol_and_process_exit_with_open_connection(process_config, acti
                 assert json.loads(Path(env['EXEC_PROBE']).read_text()) == [sys.executable, '-m', 'app.server', '--port', str(port)]
             else:
                 assert not Path(env['EXEC_PROBE']).exists()
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(5)
+
+
+def test_streamable_http_protocol_and_process_exit(process_config):
+    """The new /mcp transport must coexist with SSE and still let the process exit."""
+    runner, env = process_config
+    with socket.socket() as sock:
+        sock.bind(('127.0.0.1', 0))
+        port = sock.getsockname()[1]
+    args = [sys.executable, str(runner), '--port', str(port)]
+    log_path = runner.parent / 'server-mcp.log'
+    with log_path.open('w+') as log:
+        proc = subprocess.Popen(args, env=env, stdout=log, stderr=log)
+        try:
+            base = f'http://127.0.0.1:{port}'
+            deadline = time.monotonic() + 15
+            with httpx.Client(timeout=2, trust_env=False) as client:
+                while True:
+                    try:
+                        if client.get(base + '/api/stats').status_code == 200:
+                            break
+                    except httpx.TransportError:
+                        pass
+                    assert proc.poll() is None, log_path.read_text()
+                    assert time.monotonic() < deadline, log_path.read_text()
+                    time.sleep(.05)
+
+            async def exercise():
+                factory = lambda **kw: httpx.AsyncClient(trust_env=False, **kw)
+                async with streamablehttp_client(base + '/mcp',
+                                                 httpx_client_factory=factory) as streams:
+                    read_stream, write_stream, _ = streams
+                    async with ClientSession(read_stream, write_stream,
+                                             read_timeout_seconds=timedelta(seconds=5)) as session:
+                        await session.initialize()
+                        assert len((await session.list_tools()).tools) == 9
+                        assert not (await session.call_tool('stats', {})).isError
+                # The old SSE transport still works against the same instance.
+                async with sse_client(base + '/sse', httpx_client_factory=factory) as streams:
+                    await check_protocol(streams)
+                async with httpx.AsyncClient(timeout=5, trust_env=False) as client:
+                    result = await client.post(base + '/api/shutdown')
+                    assert result.status_code == 200
+                await asyncio.to_thread(proc.wait, 10)
+
+            asyncio.run(exercise())
+            assert proc.returncode == 0, log_path.read_text()
+            assert 'Exception in ASGI application' not in log_path.read_text()
+            logged = [json.loads(line) for line in Path(env['MEMORY_AUDIT_PATH']).read_text().splitlines()]
+            mcp_events = [event for event in logged if event['tool'] == 'stats'
+                          and event['context'].get('transport') == 'streamable_http']
+            assert mcp_events, logged
+            assert mcp_events[-1]['context']['http_request_id'].startswith('rq_')
+            assert mcp_events[-1]['context']['source'] == 'mcp'
+            # Shutdown released the writer lock.
+            from app.storage import create_storage
+            store = create_storage('sqlite', path=env['MEMORY_STORAGE_PATH'])
+            store.stop()
         finally:
             if proc.poll() is None:
                 proc.kill()

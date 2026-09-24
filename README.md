@@ -12,6 +12,24 @@ Server**，等待页面确认服务停止，再执行离线维护。Restart Serv
 bin/start.sh --port 1314
 ```
 
+## MCP 客户端接入
+
+`--port` 模式下同时提供旧版 HTTP+SSE 与新版 Streamable HTTP，两者共用同一实例。
+让 LLM agent 自行读取接入说明：`GET http://127.0.0.1:<port>/read-me`（只读、无鉴权，
+端口跟随启动参数）。
+
+推荐（多客户端并发共享、Codex 原生直连）——`~/.codex/config.toml`：
+
+```toml
+[mcp_servers.memory-server]
+url = "http://127.0.0.1:1314/mcp"
+```
+
+若原条目使用 `command`/`args` 的 `mcp-remote` 桥接，请替换该条目，避免同一服务重复注册。
+现有 opencode 的 `type: remote` + `/sse` 连接保持不变。`/mcp` 仅接受 loopback
+（`127.0.0.1`/`localhost`）Host/Origin：非法 Host 返回 421，非法 Origin 返回 403，
+非 POST 方法返回 405（`Allow: POST`）。
+
 ## 维护入口
 
 `bin/manage` 会定位仓库、加载 `.env`、激活 `.venv`，然后调用已有的维护 CLI。默认

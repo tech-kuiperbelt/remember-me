@@ -1,0 +1,86 @@
+# remember-me MCP — 配置说明
+
+本页由 remember-me 服务在 `GET /read-me` 提供，供 LLM agent 与运维人员读取。
+读完即可自行配置 remember-me MCP，并了解它能做什么。
+
+## 0. 服务地址
+
+- 本服务地址（自引用，端口跟随服务启动参数）：`{base}`
+- 主机固定为 `127.0.0.1`；`localhost` 与之等价。
+
+## 1. 概述
+
+remember-me 是一个基于 MCP 协议的记忆服务器，提供记忆写入、语义检索、元数据检索、
+更新/删除、统计与关键词发现等能力。三种传输共享同一个服务实例与同一份存储。
+
+## 2. 接入方式
+
+三种方式并存，按场景选择。
+
+### 2.1 Streamable HTTP（推荐：多客户端并发共享）
+
+- 适用场景：多个客户端（例如 opencode + Codex）同时连接同一服务。
+- 传输：MCP Streamable HTTP（单端点；POST 返回 JSON；本服务不提供独立 GET SSE 流）。
+- 地址：`{base}/mcp`
+- Codex 配置要点（`~/.codex/config.toml`）：
+
+```toml
+[mcp_servers.memory-server]
+url = "{base}/mcp"
+```
+
+  若原条目使用 `command`/`args` 桥接（如 `mcp-remote`），请替换该条目，避免同一服务重复注册。
+- opencode 配置要点（`opencode.jsonc`）：保持现有 `/sse` 连接不变。
+
+```jsonc
+"memory-server": { "type": "remote", "url": "{base}/sse", "enabled": true }
+```
+
+  只有确认支持 Streamable HTTP 的客户端（例如 Codex）才指向 `{base}/mcp`；不支持时继续用 `{base}/sse`。
+- 限制：仅本机 loopback 可直连（Host 白名单为 `127.0.0.1` / `localhost`）。
+
+### 2.2 旧版 HTTP+SSE（保留兼容）
+
+- 适用场景：现有使用 `type: remote` + `/sse` 的客户端（例如当前 opencode）。
+- 地址：`{base}/sse`（消息回传端点为 `/messages/`）。
+- 限制：被 Codex 视为 legacy 传输，新接入不推荐。
+
+### 2.3 stdio（单客户端本地）
+
+- 适用场景：只使用一个客户端，且与仓库同机。
+- 命令：
+
+```toml
+[mcp_servers.memory-server]
+command = "<REPO>/bin/start.sh"
+```
+
+  将 `<REPO>` 替换为本仓库的绝对路径；`bin/start.sh` 会加载 `.env` 与 `.venv`。
+- 限制：**无法支持多个客户端同时连接**；且当同一主库已有 HTTP 服务在运行时，
+  不能再启动 stdio 写入进程（单主库写锁）。
+
+## 3. 推荐
+
+- 多客户端并发共享 → **Streamable HTTP**（`{base}/mcp`）
+- 单客户端本地 → stdio
+- 旧版 HTTP+SSE → 仅保留兼容
+
+## 4. 功能概览
+
+- 工具（9 个）：`add`、`search_semantic`、`search_meta`、`get_details`、`update`、`delete`、`stats`、`report`、`list_keywords`
+- 资源（2 个）：`memories://stats`、`memories://list`
+
+权威清单以客户端连上后的 MCP `tools/list` 为准；本页只给概要。
+
+## 5. 快速验证
+
+1. 客户端完成 MCP `initialize`。
+2. 调用 `tools/list`，应返回上述 9 个工具。
+3. 调用 `stats`，应返回记忆总数与命名空间统计。
+
+## 6. 注意事项
+
+- 本页只读；访问它不会修改任何客户端配置。
+- 服务关闭中本页返回 503。
+- 地址与端口以本页顶部为准，端口跟随服务启动参数。
+- 远程 / 跨容器接入不在当前支持范围（Host 白名单仅 loopback）。
