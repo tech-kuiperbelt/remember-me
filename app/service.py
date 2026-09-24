@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from .index_value_resolver import IndexValueResolver, MAX_FILTER_VALUES
 from .embed import EmbeddingError
 from .lexical import LexicalQueryError
+from .anchors import normalize_anchors, InvalidAnchors
 from . import audit
 from .summary_policy import derive_summary, normalize_summary
 from .jsonl_transfer import load_jsonl, write_clean_jsonl, sha256_file, unlink_quietly
@@ -123,6 +124,20 @@ def _apply_categories_to_metadata(metadata: dict | None) -> dict | None:
     if metadata is None or "categories" not in metadata:
         return metadata
     metadata["categories"] = normalize_categories(metadata.get("categories"))
+    return metadata
+
+
+def _apply_anchors_to_metadata(metadata: dict | None) -> dict | None:
+    """Strictly validate and normalize metadata.anchors in place.
+
+    Caller input is strict (design §7): any invalid item rejects the whole write
+    rather than being silently dropped or coerced to []. An explicit ``[]`` is
+    valid and means "no anchors" (on update: clear). The server never generates
+    anchors. Raises :class:`InvalidAnchors` before embedding or storage work.
+    """
+    if metadata is None or "anchors" not in metadata:
+        return metadata
+    metadata["anchors"] = normalize_anchors(metadata.get("anchors"))
     return metadata
 
 
@@ -267,6 +282,8 @@ class MemoryService:
                    confirm_codes: list | None = None) -> dict:
         ns = self.check_namespace(namespace, confirm_codes)
         summary = _normalize_summary(summary)
+        # Validate caller anchors before embedding or any storage work.
+        metadata = _apply_anchors_to_metadata(metadata)
         logger.info("add: namespace=%s text_len=%d has_summary=%s",
                     ns, len(text), summary is not None)
         try:
@@ -362,6 +379,27 @@ class MemoryService:
         logger.info("lexical search: %d results", len(results))
         return [_strip_internal_fields(r) for r in results]
 
+    def memory_search_anchor(self, query: str, k: int = 10,
+                             namespace: str | None = None) -> list[dict]:
+        """Anchor-only lexical (FTS5/BM25) search; scores are not cosine-comparable."""
+        if namespace is not None and not isinstance(namespace, str):
+            raise InvalidNamespace("namespace must be a string")
+        namespace = normalize_namespace(namespace)
+        if namespace is not None:
+            namespace = self.check_namespace(namespace)
+        logger.info("anchor search: query_len=%d k=%s namespace=%s",
+                    len(query) if isinstance(query, str) else -1, k, namespace)
+        try:
+            results = self.storage.search_anchor(query, k=k, namespace=namespace)
+        except LexicalQueryError:
+            # Expected input validation; transports map it to a structured 4xx.
+            raise
+        except Exception as e:
+            logger.error("anchor search failed: %s", e, exc_info=True)
+            raise
+        logger.info("anchor search: %d results", len(results))
+        return [_strip_internal_fields(r) for r in results]
+
     def memory_list(self, namespace: str | None = None, limit: int = 100,
                     offset: int = 0, sort_by: str = "created_at",
                     updated_after: str | None = None,
@@ -413,6 +451,8 @@ class MemoryService:
         if target_ns is not None:
             target_ns = self.check_namespace(target_ns, confirm_codes)
         summary = _normalize_summary(summary)
+        # Validate caller anchors before embedding or any storage work.
+        metadata = _apply_anchors_to_metadata(metadata)
         logger.info("update: id=%s has_text=%s has_metadata=%s has_ns=%s has_summary=%s",
                     memory_id, text is not None, metadata is not None,
                     target_ns is not None, summary is not None)

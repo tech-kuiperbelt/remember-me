@@ -17,7 +17,8 @@
 - 计划：详见 `docs/project-management/plans/40-memory-retrieval-anchors.md`；依赖 [39] 完成。
 - 目标：调用方通过 `metadata.anchors` 提供 Anchor（≤5，严格校验），复用 `index_values`/`memory_index_values` 通用关系结构；新增独立 `memory_anchor_fts`、`search_anchor` 与 `POST /api/memories/search/anchor`；服务端不自动生成 Anchor。
 - 隔离约束：`_INDEX_DIMENSIONS` 增加 `requires_embedding`；anchors 不写 `index_value_embeddings`，不参与完整性检查/回填/reindex/activate，`IndexValueResolver` 对其 semantic resolution 显式报错；Python 与 SQL 两层过滤；不新增 anchor 版本或状态机。
-- 验收：Anchor 校验与隔离（无向量）、写路径事务语义（正文实质变化清空/空白等价保留/显式提交优先）、导入恢复重建且不产生 anchor 向量、NDJSON 不含 FTS、回归；Phase 2 增量价值与 Agent 工具选择 benchmark，据此决定是否启动 Phase 3。
+- 状态：已实现（未提交，432 pytest + 浏览器回归通过）。`app/anchors.py`（严格 `normalize_anchors` / 宽松 `clean_anchors`）、`memory_anchor_fts`（`LEXICAL_INDEX_VERSION` 升到 3，content+anchor 同步重建，并**同时回填 anchors 关系维度**）、写语义（显式锚点替换/`[]` 清空/正文实质变化清空/空白等价保留）、MCP `search_anchor`（工具 11 个）、`POST /api/memories/search/anchor`、`invalid_anchors` 结构化拒绝、stats 加 `anchor_total`/`memories_with_anchors`/`lexical_index_version`。含 2 处 P2 review 修复（升级回填 anchors 关系维度、`search_anchor` 纳入审计裁剪）。生效需重启（会触发 v3 全量重建两张 FTS + anchors 关系回填）。
+- 验收：Anchor 校验与隔离（无向量）、写路径事务语义、导入恢复重建且不产生 anchor 向量、NDJSON 不含 FTS、回归；Phase 2 增量价值与 Agent 工具选择 benchmark，据此决定是否启动 Phase 3。
 
 ### [27] LLM 结构化检索与分类写入引导
 

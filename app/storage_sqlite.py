@@ -12,9 +12,10 @@ logger = logging.getLogger("storage_sqlite")
 from .storage import MemoryStorage, _now, _new_id, _cosine_similarity, DEFAULT_NAMESPACE
 from .categories import MAX_CATEGORIES
 from .embedding_codec import decode_embedding, encode_embedding, inspect_embedding_blob
-from .summary_policy import summary_for_add, summary_for_update
+from .summary_policy import summary_for_add, summary_for_update, normalize_whitespace
 from .database_lock import DatabaseWriterLock
 from .lexical import LEXICAL_INDEX_VERSION, build_match, normalize_k, DEFAULT_K
+from .anchors import MAX_ANCHORS, clean_anchors, anchor_fts_text
 
 
 # storage_state key holding the single derived lexical-index version.
@@ -24,14 +25,31 @@ _LEXICAL_INDEX_STATE_KEY = "lexical_index_version"
 # Both dimensions are persisted in memories.metadata and indexed through one
 # generic value + many-to-many physical model.  Adding another exact metadata
 # index requires only a registry entry and its domain normalization rules.
+# ``requires_embedding=False`` dimensions (anchors) reuse only the generic
+# relation tables and are excluded from the embedding lifecycle entirely.
 _INDEX_DIMENSIONS = {
     "keywords": {
         "max_values": None,
+        "requires_embedding": True,
     },
     "categories": {
         "max_values": MAX_CATEGORIES,
+        "requires_embedding": True,
+    },
+    "anchors": {
+        "max_values": MAX_ANCHORS,
+        "requires_embedding": False,
     },
 }
+_EMBEDDING_DIMENSIONS = tuple(
+    name for name, spec in _INDEX_DIMENSIONS.items() if spec["requires_embedding"]
+)
+
+
+def _materially_changes_text(existing_text: str, new_text) -> bool:
+    """True when a body update changes more than whitespace-only differences."""
+    return (new_text is not None
+            and normalize_whitespace(new_text) != normalize_whitespace(existing_text))
 
 
 class SQLiteStorage(MemoryStorage):
@@ -401,11 +419,14 @@ class SQLiteStorage(MemoryStorage):
                 "reencoded": len(rows), "index_values_reencoded": len(index_rows)}
 
     def _queryable_index_values(self) -> list[sqlite3.Row]:
+        placeholders = ",".join("?" * len(_EMBEDDING_DIMENSIONS))
         return self.conn.execute(
             "SELECT iv.id, iv.dimension, iv.value FROM index_values iv "
             "JOIN memory_index_values link ON link.index_value_id = iv.id "
             "JOIN memories m ON m.id = link.memory_id WHERE m.deleted = 0 "
-            "GROUP BY iv.id, iv.dimension, iv.value ORDER BY iv.dimension, iv.value"
+            f"AND iv.dimension IN ({placeholders}) "
+            "GROUP BY iv.id, iv.dimension, iv.value ORDER BY iv.dimension, iv.value",
+            _EMBEDDING_DIMENSIONS,
         ).fetchall()
 
     def index_embedding_completeness(self, profile_id: str | None = None) -> dict:
@@ -700,21 +721,46 @@ class SQLiteStorage(MemoryStorage):
             )
             self.conn.commit()
 
-    # -- derived lexical (FTS5) index ---------------------------------------
+    # -- derived lexical (FTS5) indexes -------------------------------------
+    #
+    # One derived index per retrieval primitive. A single LEXICAL_INDEX_VERSION
+    # covers all of them, so adding a table bumps the version and forces a full
+    # rebuild of every FTS index.
+
+    _FTS_SCHEMAS = {
+        "memory_content_fts": (
+            "CREATE VIRTUAL TABLE memory_content_fts "
+            "USING fts5(memory_id UNINDEXED, text, tokenize = 'unicode61')"
+        ),
+        "memory_anchor_fts": (
+            "CREATE VIRTUAL TABLE memory_anchor_fts "
+            "USING fts5(memory_id UNINDEXED, anchors, tokenize = 'unicode61')"
+        ),
+    }
 
     def _fts_tables_present(self) -> bool:
-        row = self.conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'memory_content_fts'"
-        ).fetchone()
-        return row is not None
+        names = tuple(self._FTS_SCHEMAS)
+        placeholders = ",".join("?" * len(names))
+        rows = self.conn.execute(
+            f"SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ({placeholders})",
+            names,
+        ).fetchall()
+        return {row["name"] for row in rows} == set(names)
+
+    def _create_fts_tables(self) -> None:
+        existing = {row["name"] for row in self.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'")}
+        for name, schema in self._FTS_SCHEMAS.items():
+            if name not in existing:
+                self.conn.execute(schema)
 
     def _ensure_lexical_index(self) -> None:
-        """Create/rebuild the content FTS index when the table or version is missing.
+        """Create/rebuild the derived FTS indexes when a table or the version is stale.
 
-        FTS is derived data. The table's **pre-existing** presence is checked before
-        any CREATE: recreating the table first would leave it present-but-empty and
-        make the version check skip the rebuild, silently emptying lexical results
-        for existing memories across restarts. A missing table, a missing
+        FTS is derived data. The tables' **pre-existing** presence is checked before
+        any CREATE: recreating a table first would leave it present-but-empty and
+        make the version check skip the rebuild, silently emptying lexical/anchor
+        results for existing memories across restarts. A missing table, a missing
         ``lexical_index_version`` record or a version mismatch all trigger a full
         rebuild from authoritative ``memories``; the rebuild and the version marker
         commit in one transaction and a failure propagates so startup fails before
@@ -725,22 +771,36 @@ class SQLiteStorage(MemoryStorage):
         current = self._get_storage_state(_LEXICAL_INDEX_STATE_KEY)
         if present and current == LEXICAL_INDEX_VERSION:
             return
-        if not present:
-            self.conn.execute(
-                "CREATE VIRTUAL TABLE memory_content_fts "
-                "USING fts5(memory_id UNINDEXED, text, tokenize = 'unicode61')"
-            )
+        self._create_fts_tables()
         self._rebuild_lexical_index()
 
     def _rebuild_lexical_index(self) -> None:
-        """Rebuild ``memory_content_fts`` from live memories and stamp the version."""
+        """Rebuild every derived FTS index from live memories and stamp the version."""
         try:
             self.conn.execute("DELETE FROM memory_content_fts")
+            self.conn.execute("DELETE FROM memory_anchor_fts")
+            content_rows: list[tuple] = []
+            anchor_rows: list[tuple] = []
+            for row in self.conn.execute(
+                    "SELECT id, text, metadata FROM memories WHERE deleted = 0"):
+                content_rows.append((row["id"], row["text"]))
+                try:
+                    metadata = json.loads(row["metadata"] or "{}")
+                except json.JSONDecodeError:
+                    metadata = {}
+                anchors = clean_anchors(metadata.get("anchors"))
+                if anchors:
+                    anchor_rows.append((row["id"], anchor_fts_text(anchors)))
             self.conn.executemany(
-                "INSERT INTO memory_content_fts(memory_id, text) VALUES (?, ?)",
-                [(row["id"], row["text"]) for row in self.conn.execute(
-                    "SELECT id, text FROM memories WHERE deleted = 0")],
-            )
+                "INSERT INTO memory_content_fts(memory_id, text) VALUES (?, ?)", content_rows)
+            self.conn.executemany(
+                "INSERT INTO memory_anchor_fts(memory_id, anchors) VALUES (?, ?)", anchor_rows)
+            # The generic anchor relation index is derived from the same
+            # authoritative metadata. Rebuilding it here keeps anchor search/FTS
+            # and the anchor_* statistics consistent, including when an existing
+            # database already carried metadata.anchors before the dimension
+            # existed. Runs in the same transaction as the version stamp.
+            self._rebuild_metadata_index("anchors")
             self.conn.execute(
                 "INSERT INTO storage_state(key, value) VALUES (?, ?) "
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
@@ -762,6 +822,22 @@ class SQLiteStorage(MemoryStorage):
     def _remove_content_fts(self, memory_id: str) -> None:
         """Remove one memory's content FTS row. Must run inside the caller's transaction."""
         self.conn.execute("DELETE FROM memory_content_fts WHERE memory_id = ?", (memory_id,))
+
+    def _sync_anchor_fts(self, memory_id: str, anchors: list[str]) -> None:
+        """Replace one memory's anchor FTS row; no row when there are no anchors.
+
+        Must run inside the caller's transaction.
+        """
+        self.conn.execute("DELETE FROM memory_anchor_fts WHERE memory_id = ?", (memory_id,))
+        if anchors:
+            self.conn.execute(
+                "INSERT INTO memory_anchor_fts(memory_id, anchors) VALUES (?, ?)",
+                (memory_id, anchor_fts_text(anchors)),
+            )
+
+    def _remove_anchor_fts(self, memory_id: str) -> None:
+        """Remove one memory's anchor FTS row. Must run inside the caller's transaction."""
+        self.conn.execute("DELETE FROM memory_anchor_fts WHERE memory_id = ?", (memory_id,))
 
     def _serialize(self, emb: list[float]) -> bytes:
         if self.embedding_spec is not None:
@@ -830,8 +906,15 @@ class SQLiteStorage(MemoryStorage):
 
     @classmethod
     def _extract_index_values(cls, dimension: str, metadata: dict) -> list[str]:
-        values = cls._clean_index_values((metadata or {}).get(dimension))
-        max_values = cls._index_spec(dimension)["max_values"]
+        spec = cls._index_spec(dimension)
+        raw = (metadata or {}).get(dimension)
+        if dimension == "anchors":
+            # Case-preserving and bounded; caller input is strictly validated
+            # before it reaches storage, so this path stays lenient for
+            # rebuild/import of historical metadata.
+            return clean_anchors(raw)
+        values = cls._clean_index_values(raw)
+        max_values = spec["max_values"]
         return values[:max_values] if max_values is not None else values
 
     @classmethod
@@ -881,7 +964,10 @@ class SQLiteStorage(MemoryStorage):
             return
         for key, vector in index_embeddings.items():
             dimension, value = key
-            self._index_spec(dimension)
+            if not self._index_spec(dimension)["requires_embedding"]:
+                raise RuntimeError(
+                    f"dimension '{dimension}' does not store index-value embeddings"
+                )
             row = self.conn.execute(
                 "SELECT id FROM index_values WHERE dimension = ? AND value = ?",
                 (dimension, value),
@@ -903,7 +989,7 @@ class SQLiteStorage(MemoryStorage):
             return []
         missing = []
         with self._lock:
-            for dimension in _INDEX_DIMENSIONS:
+            for dimension in _EMBEDDING_DIMENSIONS:
                 for value in self._extract_index_values(dimension, metadata or {}):
                     row = self.conn.execute(
                         "SELECT ive.index_value_id FROM index_values iv "
@@ -920,14 +1006,16 @@ class SQLiteStorage(MemoryStorage):
         if not self._active_profile_id:
             return []
         with self._lock:
+            placeholders = ",".join("?" * len(_EMBEDDING_DIMENSIONS))
             rows = self.conn.execute(
                 "SELECT iv.dimension, iv.value FROM index_values iv "
                 "JOIN memory_index_values link ON link.index_value_id = iv.id "
                 "JOIN memories m ON m.id = link.memory_id "
                 "LEFT JOIN index_value_embeddings ive ON ive.index_value_id = iv.id "
                 "AND ive.profile_id = ? WHERE m.deleted = 0 AND ive.index_value_id IS NULL "
+                f"AND iv.dimension IN ({placeholders}) "
                 "GROUP BY iv.id, iv.dimension, iv.value ORDER BY iv.dimension, iv.value",
-                (self._active_profile_id,),
+                (self._active_profile_id, *_EMBEDDING_DIMENSIONS),
             ).fetchall()
         return [(row["dimension"], row["value"]) for row in rows]
 
@@ -986,7 +1074,9 @@ class SQLiteStorage(MemoryStorage):
     def semantic_index_values(self, dimension: str, query_embedding: list[float],
                               namespace: str | None = None) -> list[dict]:
         """Score all live, in-scope index values in one dimension."""
-        self._index_spec(dimension)
+        if not self._index_spec(dimension)["requires_embedding"]:
+            raise RuntimeError(
+                f"semantic index resolution is not supported for dimension '{dimension}'")
         if not self._active_profile_id:
             raise RuntimeError("semantic index filtering requires an active embedding profile")
         sql = (
@@ -1173,6 +1263,7 @@ class SQLiteStorage(MemoryStorage):
                 self._store_active_embedding(memory_id, embedding)
             self._sync_metadata_indexes(memory_id, metadata or {})
             self._sync_content_fts(memory_id, text)
+            self._sync_anchor_fts(memory_id, self._extract_index_values("anchors", metadata or {}))
             self.conn.commit()
 
     # -- internal sync protocol (outbox pattern) --
@@ -1251,6 +1342,7 @@ class SQLiteStorage(MemoryStorage):
                 self._sync_metadata_indexes(eid, metadata or {})
                 self._store_index_value_embeddings(index_embeddings)
                 self._sync_content_fts(eid, text)
+                self._sync_anchor_fts(eid, self._extract_index_values("anchors", metadata or {}))
                 self.conn.commit()
             except Exception:
                 self.conn.rollback()
@@ -1299,14 +1391,16 @@ class SQLiteStorage(MemoryStorage):
         scored.sort(key=lambda x: x[0], reverse=True)
         return [{**d, "score": round(s, 6)} for s, d in scored[:k]]
 
-    def search_lexical(self, query, k=DEFAULT_K, namespace=None):
-        """Content-only FTS5/BM25 search.
+    def _search_fts(self, table: str, query, k, namespace, match_type: str):
+        """Shared FTS5/BM25 search over one derived index.
 
         The public score is ``-raw_bm25`` so a higher score is better while the
         SQL ordering follows FTS5's ascending bm25. ``match_info`` echoes the raw
         value and marks the retrieval type; scores are not comparable with
         semantic (cosine) scores.
         """
+        if table not in self._FTS_SCHEMAS:
+            raise ValueError(f"unknown FTS table: {table}")
         match = build_match(query)
         if match is None:
             return []
@@ -1319,11 +1413,10 @@ class SQLiteStorage(MemoryStorage):
         params.append(k)
         with self._lock:
             rows = self.conn.execute(
-                "SELECT m.*, bm25(memory_content_fts) AS _bm25_raw "
-                "FROM memory_content_fts "
-                "JOIN memories m ON m.id = memory_content_fts.memory_id "
-                f"WHERE memory_content_fts MATCH ? AND {' AND '.join(clauses)} "
-                "ORDER BY bm25(memory_content_fts) LIMIT ?",
+                f"SELECT m.*, bm25({table}) AS _bm25_raw FROM {table} "
+                f"JOIN memories m ON m.id = {table}.memory_id "
+                f"WHERE {table} MATCH ? AND {' AND '.join(clauses)} "
+                f"ORDER BY bm25({table}) LIMIT ?",
                 params,
             ).fetchall()
         results = []
@@ -1332,10 +1425,18 @@ class SQLiteStorage(MemoryStorage):
             record = self._row_to_dict(row)
             record.pop("_bm25_raw", None)
             record["score"] = round(-raw, 6)
-            record["match_info"] = {"type": "lexical", "score_type": "fts5_bm25",
+            record["match_info"] = {"type": match_type, "score_type": "fts5_bm25",
                                     "raw_bm25": round(raw, 6)}
             results.append(record)
         return results
+
+    def search_lexical(self, query, k=DEFAULT_K, namespace=None):
+        """Content-only FTS5/BM25 search."""
+        return self._search_fts("memory_content_fts", query, k, namespace, "lexical")
+
+    def search_anchor(self, query, k=DEFAULT_K, namespace=None):
+        """Anchor-only FTS5/BM25 search (identity signals, not memory content)."""
+        return self._search_fts("memory_anchor_fts", query, k, namespace, "anchor")
 
     def list_memories(self, namespace=None, limit=100, offset=0, sort_by="created_at",
                       updated_after=None, updated_before=None, keywords=None,
@@ -1390,6 +1491,15 @@ class SQLiteStorage(MemoryStorage):
                 text = text if text is not None else existing["text"]
                 emb = embedding if embedding is not None else existing["embedding"]
                 meta = {**existing["metadata"], **(metadata or {})}
+                # Anchors follow design §9: an explicit list replaces ([] clears);
+                # a materially changed body without anchors clears stale ones; an
+                # unchanged or whitespace-equivalent body preserves them.
+                explicit_anchors = bool(metadata) and "anchors" in metadata
+                anchors_changed = explicit_anchors
+                if not explicit_anchors and "anchors" in meta and _materially_changes_text(
+                        existing["text"], new_text):
+                    meta.pop("anchors", None)
+                    anchors_changed = True
                 ns = namespace if namespace is not None else existing["namespace"]
                 summ = summary_for_update(
                     existing["text"], existing.get("summary"),
@@ -1403,11 +1513,16 @@ class SQLiteStorage(MemoryStorage):
                 )
                 if embedding is not None and self._active_profile_id:
                     self._store_active_embedding(memory_id, embedding)
-                # Only dimensions explicitly present in metadata are replaced.
-                self._sync_metadata_indexes(memory_id, meta, changed_dimensions=metadata or {})
+                # Only dimensions explicitly present in metadata are replaced, plus
+                # anchors when this update cleared them.
+                changed_dimensions = set(metadata or {})
+                if anchors_changed:
+                    changed_dimensions.add("anchors")
+                self._sync_metadata_indexes(memory_id, meta, changed_dimensions=changed_dimensions)
                 self._store_index_value_embeddings(index_embeddings)
                 if new_text is not None:
                     self._sync_content_fts(memory_id, text)
+                self._sync_anchor_fts(memory_id, self._extract_index_values("anchors", meta))
                 self.conn.commit()
             except Exception:
                 self.conn.rollback()
@@ -1446,6 +1561,7 @@ class SQLiteStorage(MemoryStorage):
                 )
                 self._sync_metadata_indexes(memory_id, merged, changed_dimensions=metadata or {})
                 self._store_index_value_embeddings(index_embeddings)
+                self._sync_anchor_fts(memory_id, self._extract_index_values("anchors", merged))
                 self.conn.commit()
             except Exception:
                 self.conn.rollback()
@@ -1482,6 +1598,7 @@ class SQLiteStorage(MemoryStorage):
             if c.rowcount > 0:
                 self._remove_metadata_indexes(memory_id)
                 self._remove_content_fts(memory_id)
+                self._remove_anchor_fts(memory_id)
             self.conn.commit()
         return c.rowcount > 0
 
@@ -1508,6 +1625,11 @@ class SQLiteStorage(MemoryStorage):
                     "(SELECT id FROM memories WHERE namespace = ?)",
                     (namespace,),
                 )
+                self.conn.execute(
+                    "DELETE FROM memory_anchor_fts WHERE memory_id IN "
+                    "(SELECT id FROM memories WHERE namespace = ?)",
+                    (namespace,),
+                )
             else:
                 n = self.conn.execute(
                     "SELECT COUNT(*) FROM memories WHERE deleted = 0"
@@ -1519,6 +1641,7 @@ class SQLiteStorage(MemoryStorage):
                 )
                 self.conn.execute("DELETE FROM memory_index_values")
                 self.conn.execute("DELETE FROM memory_content_fts")
+                self.conn.execute("DELETE FROM memory_anchor_fts")
             self.conn.commit()
         return n
 
@@ -1586,6 +1709,9 @@ class SQLiteStorage(MemoryStorage):
                     self._store_active_embedding(memory_id, memory_embeddings[source_id])
                     self._sync_metadata_indexes(memory_id, memory.get("metadata") or {})
                     self._sync_content_fts(memory_id, memory["text"])
+                    self._sync_anchor_fts(
+                        memory_id,
+                        self._extract_index_values("anchors", memory.get("metadata") or {}))
                     for dimension in _INDEX_DIMENSIONS:
                         used_index_keys.update(
                             (dimension, value) for value in self._extract_index_values(
@@ -1613,6 +1739,13 @@ class SQLiteStorage(MemoryStorage):
             ).fetchall()
             keyword_counts = self._keyword_counts()
             category_counts = self._category_counts()
+            anchor_counts = self._metadata_index_counts("anchors")
+            memories_with_anchors = self.conn.execute(
+                "SELECT COUNT(DISTINCT link.memory_id) FROM memory_index_values link "
+                "JOIN index_values iv ON iv.id = link.index_value_id "
+                "JOIN memories m ON m.id = link.memory_id "
+                "WHERE iv.dimension = 'anchors' AND m.deleted = 0"
+            ).fetchone()[0]
             if self._active_profile_id:
                 embedding_rows = self.conn.execute(
                     "SELECT me.embedding FROM memory_embeddings me "
@@ -1654,6 +1787,10 @@ class SQLiteStorage(MemoryStorage):
             "namespace_counts": {r["namespace"]: r["cnt"] for r in ns_rows},
             "keyword_counts": keyword_counts,
             "category_counts": category_counts,
+            "anchor_counts": anchor_counts,
+            "anchor_total": len(anchor_counts),
+            "memories_with_anchors": memories_with_anchors,
+            "lexical_index_version": LEXICAL_INDEX_VERSION,
             "embedding_storage": {
                 "count": len(embedding_rows),
                 "bytes": embedding_bytes,

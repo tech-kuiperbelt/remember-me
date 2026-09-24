@@ -29,6 +29,7 @@ from .categories import CATEGORY_VOCABULARY, MAX_CATEGORIES
 from .namespace_policy import NamespaceNotFound, NAMESPACE_NOT_FOUND
 from .embed import EmbeddingError, EmbeddingInputTooLong
 from .lexical import LexicalQueryError
+from .anchors import InvalidAnchors, MAX_ANCHORS
 
 logger = logging.getLogger("server")
 
@@ -124,6 +125,10 @@ class MCPApplication:
                             "topics). Pass categories as an array in metadata.categories — memory "
                             "nature/classification, up to " + str(MAX_CATEGORIES) + " values, prefer "
                             "these canonical categories: " + _CATEGORIES_JOINED + ". "
+                            "You may also pass metadata.anchors — 0-" + str(MAX_ANCHORS) + " distinctive identifiers "
+                            "(names, classes, APIs, error codes, config keys, versions); an empty array "
+                            "clears them. Changing the text without resubmitting anchors clears the old "
+                            "anchors; metadata-only updates preserve them. "
                             "An unknown namespace is rejected without writing; call 'stats' to see "
                             "the available namespaces, then retry with "
                             'confirm_codes=["namespace_not_found"] to deliberately create a new one.',
@@ -237,6 +242,31 @@ class MCPApplication:
                 },
             ),
             types.Tool(
+                name="search_anchor",
+                description="Search the retrieval anchors a memory declared — distinctive "
+                            "identifiers, names, class/API names, error codes, config keys, "
+                            "versions. Use this when the query is likely to match an anchor "
+                            "exactly (e.g. a class name or ticket id stored as an anchor). "
+                            "It matches the ANCHORS field only (not memory text, keywords or "
+                            "categories), so it can be narrower than 'search_lexical' and "
+                            "'search_semantic'; retry with those when it returns nothing. "
+                            "Results return the memory summary; call 'get_details' with the "
+                            "returned IDs for full content. Scores are BM25-based and are NOT "
+                            "comparable with the other search scores. "
+                            "If the response has response_code='namespace_not_found', the "
+                            "requested namespace does not exist; use response_meta.known_namespaces "
+                            "or omit the namespace to search all namespaces.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Anchor text to match. The query's terms are OR-combined."},
+                        "k": {"type": "integer", "description": "Max number of results to return (default: 10, range 1-100)."},
+                        "namespace": {"type": "string", "description": "Only search within this namespace (optional). Leave empty to search all namespaces. An unknown namespace returns response_code='namespace_not_found'."},
+                    },
+                    "required": ["query"],
+                },
+            ),
+            types.Tool(
                 name="search_meta",
                 description="List memories by exact criteria: keywords, categories, namespace, "
                             "updated_at time range, "
@@ -313,6 +343,11 @@ class MCPApplication:
                             "nature/classification, up to " + str(MAX_CATEGORIES) + " values, prefer the "
                             "canonical categories from stats' category_counts: " + _CATEGORIES_JOINED + ". "
                             "An empty array clears the memory's categories. "
+                            "You may also pass metadata.anchors — 0-" + str(MAX_ANCHORS) + " distinctive terms a future "
+                            "query may use to identify this memory (names, classes, APIs, error codes, "
+                            "config keys, versions, identifiers, distinctive phrases). Prefer distinctive "
+                            "identifiers over generic topics; do not invent anchors and pass [] if there "
+                            "are none. "
                             "Moving a memory to an unknown namespace is rejected; call 'stats' to see "
                             "the available namespaces, then retry with "
                             'confirm_codes=["namespace_not_found"] to deliberately create a new one.',
@@ -442,6 +477,12 @@ class MCPApplication:
                     arguments.get("namespace")))
                 data = _wrap_search_lexical(items)
                 hint = _TOOL_HINTS["search_lexical"]
+            elif name == "search_anchor":
+                items = _prepare_for_llm(self.service.memory_search_anchor(
+                    arguments["query"], int(arguments.get("k", 10)),
+                    arguments.get("namespace")))
+                data = _wrap_search_anchor(items)
+                hint = _TOOL_HINTS["search_anchor"]
             elif name == "search_meta":
                 ns = arguments.get("namespace")
                 limit = int(arguments.get("limit", 100))
@@ -494,7 +535,8 @@ class MCPApplication:
             # Not an MCP error: return a structured result so the LLM can read the
             # available namespaces and retry with confirm_codes when intended.
             data, hint = _namespace_error_result(
-                e, search=name in ("search_semantic", "search_meta", "search_lexical"))
+                e, search=name in ("search_semantic", "search_meta",
+                                   "search_lexical", "search_anchor"))
             if name == "list_keywords":
                 data.update({"namespace": e.requested, "mode": arguments.get("mode", "browse"), "results": []})
                 hint = "Unknown namespace; choose a known namespace from response_meta or omit namespace."
@@ -514,6 +556,16 @@ class MCPApplication:
                                   context=context)
                 raise
             data = {"response_code": code, "detail": str(exc)}
+            self.audit.record(name, arguments, data, (time.perf_counter() - start) * 1000,
+                              error={"type": type(exc).__name__, "message": str(exc)},
+                              response_code=code, context=context)
+            return _ok(data, hint)
+        except InvalidAnchors as exc:
+            # Caller anchors failed strict validation: rejected, never coerced to [].
+            code = "invalid_anchors"
+            data = {"response_code": code, "detail": str(exc)}
+            hint = ("Fix metadata.anchors (0-5 distinct strings, each non-empty and at most "
+                    "128 characters) and retry, or omit the field to keep existing anchors.")
             self.audit.record(name, arguments, data, (time.perf_counter() - start) * 1000,
                               error={"type": type(exc).__name__, "message": str(exc)},
                               response_code=code, context=context)
@@ -576,6 +628,7 @@ _TOOL_HINTS: dict[str, str] = {
     "add": "When setting keywords, first use list_keywords semantic mode in the target namespace to find reusable terms. Memory stored. A supplied summary was saved directly; if it was missing or blank, a deterministic extract from the leading text was stored. If created=false, an identical record already exists and remains untouched — consider 'update' instead. Reuse canonical categories from stats' category_counts (up to 3). An unknown namespace is rejected unless you pass confirm_codes=[\"namespace_not_found\"].",
     "search_semantic": "Results are ranked by relevance (score). Use 'get_details' with an id to read the full original text, then call 'report' with this search_id to rate how helpful each result was (-10..10). filter_resolution shows how exact or semantic keywords/categories constrained candidates before scoring. Values within one dimension use OR, while dimensions combine using AND. If a whole supplied dimension could not be resolved, the result is empty. response_code='namespace_not_found' means the namespace does not exist (empty items is then not a real 'no match').",
     "search_lexical": "Results are exact-term matches ranked by BM25; the score is NOT comparable with semantic scores. Items carry a stored summary or deterministic leading-text extract. Use 'get_details' with an id to read the full original text, then call 'report' with this search_id to rate how helpful each result was (-10..10). response_code='namespace_not_found' means the namespace does not exist; use response_meta.known_namespaces or omit it. If nothing matched, retry with 'search_semantic'.",
+    "search_anchor": "Results are anchor matches ranked by BM25; the score is NOT comparable with the other search scores. Items carry a stored summary or deterministic leading-text extract. Use 'get_details' with an id to read the full original text, then call 'report' with this search_id to rate how helpful each result was (-10..10). If nothing matched, retry with 'search_lexical' or 'search_semantic'. response_code='namespace_not_found' means the namespace does not exist; use response_meta.known_namespaces or omit it.",
     "search_meta": "Use 'get_details' with an id to read the full original text, or call 'search_semantic' for fuzzy/topic/keyword lookup. Filter further with keywords= and/or categories=. After using these results, call 'report' with this search_id to rate how helpful each id was (-10..10). response_code='namespace_not_found' means the namespace does not exist; the real available namespaces are in response_meta.known_namespaces.",
     "get_details": "You now have the full text, including metadata.keywords and metadata.categories. Pass source_search_id from the originating search to link this lookup in audit. If a memory is relevant, use search_meta(keywords=[...]) or search_meta(categories=[...]) to find related memories.",
     "update": "When replacing keywords, first use list_keywords semantic mode in the target namespace; other updates need no keyword lookup. Memory updated. A supplied summary was saved directly; changed text without one received a deterministic leading-text extract. Metadata-only and whitespace-equivalent text updates preserve the existing summary. Use 'get_details' with the id to verify the change. Categories (if any) were taken from metadata.categories — see stats' category_counts for the canonical list (up to 3). Moving to an unknown namespace is rejected unless you pass confirm_codes=[\"namespace_not_found\"].",
@@ -650,6 +703,19 @@ def _wrap_search_lexical(items: list) -> dict:
         f"with semantic scores. To see the complete original content, call 'get_details' with "
         f"the returned ids. After using these results, call 'report' with this search_id and "
         f"rate how helpful each id was for the current question (-10..10, may rate a subset)."
+    )
+    return {"search_id": _new_search_id(), "note": note, "total": len(items), "items": items}
+
+
+def _wrap_search_anchor(items: list) -> dict:
+    """Attach usage guidance to search_anchor results (same rationale as search_meta)."""
+    note = (
+        f"{len(items)} results, ranked by anchor match (BM25). Items carry a stored "
+        f"summary or deterministic leading-text extract. Scores are not comparable with "
+        f"the other search scores. To see the complete original content, call 'get_details' "
+        f"with the returned ids. After using these results, call 'report' with this "
+        f"search_id and rate how helpful each id was for the current question "
+        f"(-10..10, may rate a subset)."
     )
     return {"search_id": _new_search_id(), "note": note, "total": len(items), "items": items}
 

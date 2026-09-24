@@ -237,7 +237,7 @@ def test_mcp_tool_registration_dispatch_and_envelopes(service):
     from app.server import create_mcp_server
     api = create_mcp_server(service=service)
     names = {tool.name for tool in asyncio.run(api.handle_list_tools()).tools}
-    assert "search_lexical" in names and len(names) == 10
+    assert "search_lexical" in names and len(names) == 11
 
     service.memory_add("McpLexicalToken body")
     payload = json.loads(asyncio.run(

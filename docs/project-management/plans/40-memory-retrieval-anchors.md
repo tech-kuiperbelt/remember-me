@@ -1,6 +1,6 @@
 # [40] Retrieval Extension Phase 2 — Manual Anchors + Anchor Search
 
-2026-09-24 coding plan；**未实现**，依赖 [39] 完成。设计依据：`docs/design/memory-retrieval-hld.md`、
+2026-09-24 coding plan；**已实现（未提交）**，依赖 [39] 完成。设计依据：`docs/design/memory-retrieval-hld.md`、
 `docs/design/memory-retrieval-detailed-design.md`、`docs/design/memory-retrieval-pre-coding-validation.md`。
 
 ## 目标与范围
@@ -90,12 +90,26 @@ USING fts5(memory_id UNINDEXED, anchors, tokenize = 'unicode61');
   **不产生 anchor 向量**；导入的向量准备跳过 `requires_embedding=False`。
 - NDJSON 副本保存 Anchor 业务数据（在 `metadata` 内），**不保存 FTS**；恢复后由权威数据重建。
 - `LEXICAL_INDEX_VERSION` 覆盖 content 与 anchor 两套 FTS 的 schema/tokenizer/表示规则；版本递增即
-  触发两者重建。
+  触发两者重建。重建同时也**回填 anchors 关系维度**（见下「实现后 review 修复」）。
 
 ### 6. Stats
 
 - 可新增 `anchor_total`、`memories_with_anchors`，并暴露 `lexical_index_version`。
 - 不新增 anchor 专属版本或 `ready/stale/rebuilding/error` 状态机。
+
+### 实现后 review 修复（2026-09-24）
+
+1. **升级未回填 anchors 关系维度**（`storage_sqlite.py`）：`_rebuild_lexical_index()` 原先只重建
+   `memory_content_fts` / `memory_anchor_fts` 与版本戳，不触碰通用关系索引。对**已含
+   `metadata.anchors` 的历史库**，升级后 anchor 搜索/FTS 有数据，而 `anchor_total` /
+   `anchor_counts` / `memories_with_anchors` 永远为空。现于重建事务内追加
+   `_rebuild_metadata_index("anchors")`，与版本戳同事务提交；并把 `LEXICAL_INDEX_VERSION` 升到
+   **3**，使已被旧版 v2 迁移过的库在下一次启动时也重建并回填。回归：
+   `test_upgrade_backfills_anchor_relations`。
+2. **`search_anchor` 未走审计裁剪**（`audit.py`）：`_trim_result` 的 search 分支与保留分数分支
+   未包含 `search_anchor`，导致每次成功调用都按 `dict(result)` 记录完整结果与引导文案，放大滚动
+   日志。现将其纳入两处分支（与 semantic/lexical 一致：只留 `{id, summary, score}`）。回归：
+   `test_audit_trims_search_anchor_results`。
 
 ## 测试
 

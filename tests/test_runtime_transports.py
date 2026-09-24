@@ -51,7 +51,7 @@ async def check_protocol(streams):
     async with ClientSession(*streams, read_timeout_seconds=timedelta(seconds=5)) as session:
         await session.initialize()
         tools = await session.list_tools()
-        assert len(tools.tools) == 10
+        assert len(tools.tools) == 11
         result = await session.call_tool('stats', {})
         assert not result.isError
         assert json.loads(result.content[0].text)['total'] == 0
@@ -176,7 +176,7 @@ def test_streamable_http_protocol_and_process_exit(process_config):
                     async with ClientSession(read_stream, write_stream,
                                              read_timeout_seconds=timedelta(seconds=5)) as session:
                         await session.initialize()
-                        assert len((await session.list_tools()).tools) == 10
+                        assert len((await session.list_tools()).tools) == 11
                         assert not (await session.call_tool('stats', {})).isError
                 # The old SSE transport still works against the same instance.
                 async with sse_client(base + '/sse', httpx_client_factory=factory) as streams:

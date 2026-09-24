@@ -13,8 +13,11 @@ query and index rules diverge.
 import re
 
 # Bump when the FTS schema, tokenizer or index representation changes. A single
-# version covers both the content and anchor FTS indexes.
-LEXICAL_INDEX_VERSION = 1
+# version covers both the content and anchor FTS indexes, and the same rebuild
+# also backfills the derived anchor relation index from metadata.
+# v2 adds memory_anchor_fts; v3 rebuilds the anchors relation dimension so
+# databases that already carried metadata.anchors get correct anchor stats.
+LEXICAL_INDEX_VERSION = 3
 
 # Conservative engineering limits (not SQLite hard limits); see the pre-coding
 # validation record. Over-limit input is rejected, never truncated.

@@ -86,6 +86,16 @@ class MemoryStorage(ABC):
         ...
 
     @abstractmethod
+    def search_anchor(self, query: str, k: int = 10,
+                      namespace: Optional[str] = None) -> list[dict[str, Any]]:
+        """Anchor-only FTS5/BM25 search, ordered best-first.
+
+        Matches ``metadata.anchors`` (identity signals), not memory content.
+        Score is ``-raw_bm25``; callers must not compare it with cosine scores.
+        """
+        ...
+
+    @abstractmethod
     def list_memories(self, namespace: Optional[str] = None, limit: int = 100,
                       offset: int = 0, sort_by: str = "created_at",
                       updated_after: Optional[str] = None,

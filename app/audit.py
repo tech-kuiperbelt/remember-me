@@ -137,6 +137,7 @@ def _trim_result(tool: str, result) -> dict | None:
 
     - search_semantic: ``[{id, summary, score}]``
     - search_lexical:  ``[{id, summary, score}]`` (BM25 score, not cosine)
+    - search_anchor:   ``[{id, summary, score}]`` (BM25 score, not cosine)
     - search_meta:     ``[{id, summary}]`` (no score — list is exact, not cosine)
     - get_details:     ``{found: [{id, summary, keywords}], missing: [...]}``
     - stats:           everything except the keyword vocabulary and model URLs
@@ -147,9 +148,9 @@ def _trim_result(tool: str, result) -> dict | None:
     if not isinstance(result, dict):
         return {"value": str(result)}
 
-    if tool in ("search_semantic", "search_meta", "search_lexical"):
+    if tool in ("search_semantic", "search_meta", "search_lexical", "search_anchor"):
         items = result.get("items") or []
-        keep_score = tool in ("search_semantic", "search_lexical")
+        keep_score = tool in ("search_semantic", "search_lexical", "search_anchor")
         trimmed = {
             "search_id": result.get("search_id"),
             "total": result.get("total", len(items)),
