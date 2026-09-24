@@ -28,6 +28,7 @@ from . import audit
 from .categories import CATEGORY_VOCABULARY, MAX_CATEGORIES
 from .namespace_policy import NamespaceNotFound, NAMESPACE_NOT_FOUND
 from .embed import EmbeddingError, EmbeddingInputTooLong
+from .lexical import LexicalQueryError
 
 logger = logging.getLogger("server")
 
@@ -201,6 +202,36 @@ class MCPApplication:
                             "description": "Restrict the search to memories carrying any of these categories (OR). Exact values are preferred; natural-language or alternate forms are semantically resolved within the same namespace. Combined with keywords and namespace using AND.",
                         },
                         "keyword_query_id": {"type": "string", "description": "Optional ID from list_keywords; audit linkage only."},
+                    },
+                    "required": ["query"],
+                },
+            ),
+            types.Tool(
+                name="search_lexical",
+                description="Exact-term (lexical) search over memory text using full-text "
+                            "matching (SQLite FTS5 / BM25). Use this for literal identifiers, "
+                            "error codes, class or symbol names, version numbers and distinctive "
+                            "phrases that semantic search may miss — e.g. "
+                            "\"PoolAcquirePendingLimitException\", \"ORA-00060\", "
+                            "\"subscriptionsPerConnection\". "
+                            "It matches memory CONTENT only (not keywords/categories) and requires "
+                            "an actual term match, so it does not generalise to paraphrases; use "
+                            "'search_semantic' for topic or conceptual questions. Continuous Chinese "
+                            "text is not segmented in this index, so use 'search_semantic' for Chinese "
+                            "queries rather than 'search_lexical'. "
+                            "Results return the memory summary; call 'get_details' with the returned "
+                            "IDs for full content. Scores are BM25-based and are NOT comparable with "
+                            "search_semantic scores. "
+                            "If no results are found, call 'stats' to verify the namespace, or retry "
+                            "with 'search_semantic'. If the response has response_code='namespace_not_found', "
+                            "the requested namespace does not exist; use response_meta.known_namespaces "
+                            "or omit the namespace to search all namespaces.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Literal text or terms to match. The query's terms are OR-combined; long identifiers may be split on punctuation, so include the distinctive parts."},
+                        "k": {"type": "integer", "description": "Max number of results to return (default: 10, range 1-100)."},
+                        "namespace": {"type": "string", "description": "Only search within this namespace (optional). Leave empty to search all namespaces. An unknown namespace returns response_code='namespace_not_found'."},
                     },
                     "required": ["query"],
                 },
@@ -405,6 +436,12 @@ class MCPApplication:
                 search_result["items"] = _prepare_for_llm(search_result["items"])
                 data = _wrap_search_semantic(search_result)
                 hint = _TOOL_HINTS["search_semantic"]
+            elif name == "search_lexical":
+                items = _prepare_for_llm(self.service.memory_search_lexical(
+                    arguments["query"], int(arguments.get("k", 10)),
+                    arguments.get("namespace")))
+                data = _wrap_search_lexical(items)
+                hint = _TOOL_HINTS["search_lexical"]
             elif name == "search_meta":
                 ns = arguments.get("namespace")
                 limit = int(arguments.get("limit", 100))
@@ -457,7 +494,7 @@ class MCPApplication:
             # Not an MCP error: return a structured result so the LLM can read the
             # available namespaces and retry with confirm_codes when intended.
             data, hint = _namespace_error_result(
-                e, search=name in ("search_semantic", "search_meta"))
+                e, search=name in ("search_semantic", "search_meta", "search_lexical"))
             if name == "list_keywords":
                 data.update({"namespace": e.requested, "mode": arguments.get("mode", "browse"), "results": []})
                 hint = "Unknown namespace; choose a known namespace from response_meta or omit namespace."
@@ -477,6 +514,15 @@ class MCPApplication:
                                   context=context)
                 raise
             data = {"response_code": code, "detail": str(exc)}
+            self.audit.record(name, arguments, data, (time.perf_counter() - start) * 1000,
+                              error={"type": type(exc).__name__, "message": str(exc)},
+                              response_code=code, context=context)
+            return _ok(data, hint)
+        except LexicalQueryError as exc:
+            # Invalid lexical input (type/blank/over-limit/k): structured, correctable.
+            code = "invalid_query"
+            data = {"response_code": code, "detail": str(exc)}
+            hint = "Fix the query or k and retry."
             self.audit.record(name, arguments, data, (time.perf_counter() - start) * 1000,
                               error={"type": type(exc).__name__, "message": str(exc)},
                               response_code=code, context=context)
@@ -529,6 +575,7 @@ _TOOL_HINTS: dict[str, str] = {
     "list_keywords": "Reuse a candidate only if it accurately expresses your concept; score measures similarity, not equivalence. New keywords are allowed when none fits. Counts reflect live memories in the requested namespace. Pass this keyword_query_id to a later add/update/search when it informed your choice. Use browse/literal offset for more results; lower semantic min_score to broaden candidates. No report is needed.",
     "add": "When setting keywords, first use list_keywords semantic mode in the target namespace to find reusable terms. Memory stored. A supplied summary was saved directly; if it was missing or blank, a deterministic extract from the leading text was stored. If created=false, an identical record already exists and remains untouched — consider 'update' instead. Reuse canonical categories from stats' category_counts (up to 3). An unknown namespace is rejected unless you pass confirm_codes=[\"namespace_not_found\"].",
     "search_semantic": "Results are ranked by relevance (score). Use 'get_details' with an id to read the full original text, then call 'report' with this search_id to rate how helpful each result was (-10..10). filter_resolution shows how exact or semantic keywords/categories constrained candidates before scoring. Values within one dimension use OR, while dimensions combine using AND. If a whole supplied dimension could not be resolved, the result is empty. response_code='namespace_not_found' means the namespace does not exist (empty items is then not a real 'no match').",
+    "search_lexical": "Results are exact-term matches ranked by BM25; the score is NOT comparable with semantic scores. Items carry a stored summary or deterministic leading-text extract. Use 'get_details' with an id to read the full original text, then call 'report' with this search_id to rate how helpful each result was (-10..10). response_code='namespace_not_found' means the namespace does not exist; use response_meta.known_namespaces or omit it. If nothing matched, retry with 'search_semantic'.",
     "search_meta": "Use 'get_details' with an id to read the full original text, or call 'search_semantic' for fuzzy/topic/keyword lookup. Filter further with keywords= and/or categories=. After using these results, call 'report' with this search_id to rate how helpful each id was (-10..10). response_code='namespace_not_found' means the namespace does not exist; the real available namespaces are in response_meta.known_namespaces.",
     "get_details": "You now have the full text, including metadata.keywords and metadata.categories. Pass source_search_id from the originating search to link this lookup in audit. If a memory is relevant, use search_meta(keywords=[...]) or search_meta(categories=[...]) to find related memories.",
     "update": "When replacing keywords, first use list_keywords semantic mode in the target namespace; other updates need no keyword lookup. Memory updated. A supplied summary was saved directly; changed text without one received a deterministic leading-text extract. Metadata-only and whitespace-equivalent text updates preserve the existing summary. Use 'get_details' with the id to verify the change. Categories (if any) were taken from metadata.categories — see stats' category_counts for the canonical list (up to 3). Moving to an unknown namespace is rejected unless you pass confirm_codes=[\"namespace_not_found\"].",
@@ -593,6 +640,18 @@ def _wrap_search_semantic(search_result: dict) -> dict:
     if search_result.get("filter_resolution") is not None:
         result["filter_resolution"] = search_result["filter_resolution"]
     return result
+
+
+def _wrap_search_lexical(items: list) -> dict:
+    """Attach usage guidance to search_lexical results (same rationale as search_meta)."""
+    note = (
+        f"{len(items)} results, ranked by lexical term match (BM25). Items carry a "
+        f"stored summary or deterministic leading-text extract. Scores are not comparable "
+        f"with semantic scores. To see the complete original content, call 'get_details' with "
+        f"the returned ids. After using these results, call 'report' with this search_id and "
+        f"rate how helpful each id was for the current question (-10..10, may rate a subset)."
+    )
+    return {"search_id": _new_search_id(), "note": note, "total": len(items), "items": items}
 
 
 def _namespace_error_result(exc: NamespaceNotFound, search: bool = False) -> tuple[dict, str]:

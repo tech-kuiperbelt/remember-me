@@ -15,6 +15,7 @@ from starlette.requests import Request
 
 from .service import InvalidSearchFilter
 from .embed import EmbeddingInputTooLong
+from .lexical import LexicalQueryError
 from .namespace_policy import NamespaceNotFound, InvalidNamespace
 from .jsonl_transfer import safe_filename_part, unlink_quietly
 
@@ -446,6 +447,36 @@ class AdminAPI:
             logger.error("POST /api/memories/search failed: %s", e, exc_info=True)
             return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
 
+    async def handle_search_lexical(self, request: Request):
+        try:
+            body = await _request_object(request, required=("query",), string_fields=("query",))
+            logger.info("POST /api/memories/search/lexical query_len=%d", len(body.get("query", "")))
+            results = self.service.memory_search_lexical(
+                body["query"], _number(body.get("k", 10), int, "k"), body.get("namespace"))
+            return Response(
+                json.dumps(results, ensure_ascii=False, default=str),
+                media_type="application/json",
+            )
+        except NamespaceNotFound as e:
+            logger.warning("POST /api/memories/search/lexical rejected: %s", e)
+            return _namespace_not_found_response(e)
+        except InvalidNamespace as e:
+            logger.warning("POST /api/memories/search/lexical invalid namespace: %s", e)
+            return _invalid_namespace_response(e)
+        except LexicalQueryError as e:
+            logger.warning("POST /api/memories/search/lexical invalid query: %s", e)
+            return Response(
+                json.dumps({"detail": str(e), "response_code": "invalid_query"},
+                           ensure_ascii=False),
+                status_code=400, media_type="application/json",
+            )
+        except (InvalidRequest, InvalidSearchFilter) as e:
+            return _invalid_request_response(e)
+        except Exception as e:
+            logger.error("POST /api/memories/search/lexical failed: %s", e, exc_info=True)
+            return Response(json.dumps({"detail": "Internal error"}), status_code=500,
+                            media_type="application/json")
+
     async def handle_keywords(self, request: Request):
         from starlette.concurrency import run_in_threadpool
         started = time.perf_counter()
@@ -560,6 +591,7 @@ class AdminAPI:
             Route("/api/memories", endpoint=self.handle_add_memory, methods=["POST"]),
             Route("/api/memories", endpoint=self.handle_clear_memories, methods=["DELETE"]),
             Route("/api/memories/search", endpoint=self.handle_search_memories, methods=["POST"]),
+            Route("/api/memories/search/lexical", endpoint=self.handle_search_lexical, methods=["POST"]),
             Route("/api/memories/details", endpoint=self.handle_get_details, methods=["POST"]),
             Route("/api/memories/{memory_id}", endpoint=self.handle_get_memory, methods=["GET"]),
             Route("/api/memories/{memory_id}", endpoint=self.handle_update_memory, methods=["PUT"]),

@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 
 from .index_value_resolver import IndexValueResolver, MAX_FILTER_VALUES
 from .embed import EmbeddingError
+from .lexical import LexicalQueryError
 from . import audit
 from .summary_policy import derive_summary, normalize_summary
 from .jsonl_transfer import load_jsonl, write_clean_jsonl, sha256_file, unlink_quietly
@@ -339,6 +340,27 @@ class MemoryService:
         except Exception as e:
             logger.error("search failed: %s", e, exc_info=True)
             raise
+
+    def memory_search_lexical(self, query: str, k: int = 10,
+                              namespace: str | None = None) -> list[dict]:
+        """Content-only lexical (FTS5/BM25) search; scores are not cosine-comparable."""
+        if namespace is not None and not isinstance(namespace, str):
+            raise InvalidNamespace("namespace must be a string")
+        namespace = normalize_namespace(namespace)
+        if namespace is not None:
+            namespace = self.check_namespace(namespace)
+        logger.info("lexical search: query_len=%d k=%s namespace=%s",
+                    len(query) if isinstance(query, str) else -1, k, namespace)
+        try:
+            results = self.storage.search_lexical(query, k=k, namespace=namespace)
+        except LexicalQueryError:
+            # Expected input validation; transports map it to a structured 4xx.
+            raise
+        except Exception as e:
+            logger.error("lexical search failed: %s", e, exc_info=True)
+            raise
+        logger.info("lexical search: %d results", len(results))
+        return [_strip_internal_fields(r) for r in results]
 
     def memory_list(self, namespace: str | None = None, limit: int = 100,
                     offset: int = 0, sort_by: str = "created_at",

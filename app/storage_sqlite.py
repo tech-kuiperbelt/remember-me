@@ -14,6 +14,11 @@ from .categories import MAX_CATEGORIES
 from .embedding_codec import decode_embedding, encode_embedding, inspect_embedding_blob
 from .summary_policy import summary_for_add, summary_for_update
 from .database_lock import DatabaseWriterLock
+from .lexical import LEXICAL_INDEX_VERSION, build_match, normalize_k, DEFAULT_K
+
+
+# storage_state key holding the single derived lexical-index version.
+_LEXICAL_INDEX_STATE_KEY = "lexical_index_version"
 
 
 # Both dimensions are persisted in memories.metadata and indexed through one
@@ -188,6 +193,7 @@ class SQLiteStorage(MemoryStorage):
                 ON index_value_embeddings(profile_id, index_value_id);
         """)
         self._migrate_legacy_metadata_indexes()
+        self._ensure_lexical_index()
         self.conn.commit()
         self._load_active_embedding_profile()
         if self.embedding_spec is not None:
@@ -694,6 +700,69 @@ class SQLiteStorage(MemoryStorage):
             )
             self.conn.commit()
 
+    # -- derived lexical (FTS5) index ---------------------------------------
+
+    def _fts_tables_present(self) -> bool:
+        row = self.conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'memory_content_fts'"
+        ).fetchone()
+        return row is not None
+
+    def _ensure_lexical_index(self) -> None:
+        """Create/rebuild the content FTS index when the table or version is missing.
+
+        FTS is derived data. The table's **pre-existing** presence is checked before
+        any CREATE: recreating the table first would leave it present-but-empty and
+        make the version check skip the rebuild, silently emptying lexical results
+        for existing memories across restarts. A missing table, a missing
+        ``lexical_index_version`` record or a version mismatch all trigger a full
+        rebuild from authoritative ``memories``; the rebuild and the version marker
+        commit in one transaction and a failure propagates so startup fails before
+        the service is published. Read-only instances skip ``_init_db``, so they
+        never create or rebuild anything.
+        """
+        present = self._fts_tables_present()
+        current = self._get_storage_state(_LEXICAL_INDEX_STATE_KEY)
+        if present and current == LEXICAL_INDEX_VERSION:
+            return
+        if not present:
+            self.conn.execute(
+                "CREATE VIRTUAL TABLE memory_content_fts "
+                "USING fts5(memory_id UNINDEXED, text, tokenize = 'unicode61')"
+            )
+        self._rebuild_lexical_index()
+
+    def _rebuild_lexical_index(self) -> None:
+        """Rebuild ``memory_content_fts`` from live memories and stamp the version."""
+        try:
+            self.conn.execute("DELETE FROM memory_content_fts")
+            self.conn.executemany(
+                "INSERT INTO memory_content_fts(memory_id, text) VALUES (?, ?)",
+                [(row["id"], row["text"]) for row in self.conn.execute(
+                    "SELECT id, text FROM memories WHERE deleted = 0")],
+            )
+            self.conn.execute(
+                "INSERT INTO storage_state(key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (_LEXICAL_INDEX_STATE_KEY, json.dumps(LEXICAL_INDEX_VERSION)),
+            )
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
+
+    def _sync_content_fts(self, memory_id: str, text: str) -> None:
+        """Replace one memory's content FTS row. Must run inside the caller's transaction."""
+        self.conn.execute("DELETE FROM memory_content_fts WHERE memory_id = ?", (memory_id,))
+        self.conn.execute(
+            "INSERT INTO memory_content_fts(memory_id, text) VALUES (?, ?)",
+            (memory_id, text),
+        )
+
+    def _remove_content_fts(self, memory_id: str) -> None:
+        """Remove one memory's content FTS row. Must run inside the caller's transaction."""
+        self.conn.execute("DELETE FROM memory_content_fts WHERE memory_id = ?", (memory_id,))
+
     def _serialize(self, emb: list[float]) -> bytes:
         if self.embedding_spec is not None:
             expected = int(self.embedding_spec["dimension"])
@@ -1103,6 +1172,7 @@ class SQLiteStorage(MemoryStorage):
             if self._active_profile_id:
                 self._store_active_embedding(memory_id, embedding)
             self._sync_metadata_indexes(memory_id, metadata or {})
+            self._sync_content_fts(memory_id, text)
             self.conn.commit()
 
     # -- internal sync protocol (outbox pattern) --
@@ -1180,6 +1250,7 @@ class SQLiteStorage(MemoryStorage):
                     self._store_active_embedding(eid, embedding)
                 self._sync_metadata_indexes(eid, metadata or {})
                 self._store_index_value_embeddings(index_embeddings)
+                self._sync_content_fts(eid, text)
                 self.conn.commit()
             except Exception:
                 self.conn.rollback()
@@ -1227,6 +1298,44 @@ class SQLiteStorage(MemoryStorage):
                 scored.append((score, d))
         scored.sort(key=lambda x: x[0], reverse=True)
         return [{**d, "score": round(s, 6)} for s, d in scored[:k]]
+
+    def search_lexical(self, query, k=DEFAULT_K, namespace=None):
+        """Content-only FTS5/BM25 search.
+
+        The public score is ``-raw_bm25`` so a higher score is better while the
+        SQL ordering follows FTS5's ascending bm25. ``match_info`` echoes the raw
+        value and marks the retrieval type; scores are not comparable with
+        semantic (cosine) scores.
+        """
+        match = build_match(query)
+        if match is None:
+            return []
+        k = normalize_k(k)
+        clauses = ["m.deleted = 0"]
+        params = [match]
+        if namespace:
+            clauses.append("m.namespace = ?")
+            params.append(namespace)
+        params.append(k)
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT m.*, bm25(memory_content_fts) AS _bm25_raw "
+                "FROM memory_content_fts "
+                "JOIN memories m ON m.id = memory_content_fts.memory_id "
+                f"WHERE memory_content_fts MATCH ? AND {' AND '.join(clauses)} "
+                "ORDER BY bm25(memory_content_fts) LIMIT ?",
+                params,
+            ).fetchall()
+        results = []
+        for row in rows:
+            raw = float(row["_bm25_raw"])
+            record = self._row_to_dict(row)
+            record.pop("_bm25_raw", None)
+            record["score"] = round(-raw, 6)
+            record["match_info"] = {"type": "lexical", "score_type": "fts5_bm25",
+                                    "raw_bm25": round(raw, 6)}
+            results.append(record)
+        return results
 
     def list_memories(self, namespace=None, limit=100, offset=0, sort_by="created_at",
                       updated_after=None, updated_before=None, keywords=None,
@@ -1297,6 +1406,8 @@ class SQLiteStorage(MemoryStorage):
                 # Only dimensions explicitly present in metadata are replaced.
                 self._sync_metadata_indexes(memory_id, meta, changed_dimensions=metadata or {})
                 self._store_index_value_embeddings(index_embeddings)
+                if new_text is not None:
+                    self._sync_content_fts(memory_id, text)
                 self.conn.commit()
             except Exception:
                 self.conn.rollback()
@@ -1370,6 +1481,7 @@ class SQLiteStorage(MemoryStorage):
             )
             if c.rowcount > 0:
                 self._remove_metadata_indexes(memory_id)
+                self._remove_content_fts(memory_id)
             self.conn.commit()
         return c.rowcount > 0
 
@@ -1391,6 +1503,11 @@ class SQLiteStorage(MemoryStorage):
                     "(SELECT id FROM memories WHERE namespace = ?)",
                     (namespace,),
                 )
+                self.conn.execute(
+                    "DELETE FROM memory_content_fts WHERE memory_id IN "
+                    "(SELECT id FROM memories WHERE namespace = ?)",
+                    (namespace,),
+                )
             else:
                 n = self.conn.execute(
                     "SELECT COUNT(*) FROM memories WHERE deleted = 0"
@@ -1401,6 +1518,7 @@ class SQLiteStorage(MemoryStorage):
                     (_now(),),
                 )
                 self.conn.execute("DELETE FROM memory_index_values")
+                self.conn.execute("DELETE FROM memory_content_fts")
             self.conn.commit()
         return n
 
@@ -1467,6 +1585,7 @@ class SQLiteStorage(MemoryStorage):
                     )
                     self._store_active_embedding(memory_id, memory_embeddings[source_id])
                     self._sync_metadata_indexes(memory_id, memory.get("metadata") or {})
+                    self._sync_content_fts(memory_id, memory["text"])
                     for dimension in _INDEX_DIMENSIONS:
                         used_index_keys.update(
                             (dimension, value) for value in self._extract_index_values(

@@ -77,6 +77,15 @@ class MemoryStorage(ABC):
                keywords: Optional[list[str]] = None) -> list[dict[str, Any]]: ...
 
     @abstractmethod
+    def search_lexical(self, query: str, k: int = 10,
+                       namespace: Optional[str] = None) -> list[dict[str, Any]]:
+        """Content-only FTS5/BM25 search, ordered best-first.
+
+        Score is ``-raw_bm25``; callers must not compare it with cosine scores.
+        """
+        ...
+
+    @abstractmethod
     def list_memories(self, namespace: Optional[str] = None, limit: int = 100,
                       offset: int = 0, sort_by: str = "created_at",
                       updated_after: Optional[str] = None,

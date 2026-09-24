@@ -446,6 +446,9 @@ class DualStorage(MemoryStorage):
     def search(self, *args, **kwargs):
         return self.primary.search(*args, **kwargs)
 
+    def search_lexical(self, *args, **kwargs):
+        return self.primary.search_lexical(*args, **kwargs)
+
     def list_memories(self, *args, **kwargs):
         return self.primary.list_memories(*args, **kwargs)
 

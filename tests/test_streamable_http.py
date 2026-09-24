@@ -70,7 +70,7 @@ def test_streamable_http_protocol(tmp_path):
                 async with _session(streams) as session:
                     await session.initialize()
                     tools = await session.list_tools()
-                    assert len(tools.tools) == 9
+                    assert len(tools.tools) == 10
                     result = await session.call_tool("stats", {})
                     assert not result.isError
                     assert json.loads(result.content[0].text)["total"] == 0

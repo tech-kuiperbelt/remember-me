@@ -67,15 +67,17 @@ command = "<REPO>/bin/start.sh"
 
 ## 4. 功能概览
 
-- 工具（9 个）：`add`、`search_semantic`、`search_meta`、`get_details`、`update`、`delete`、`stats`、`report`、`list_keywords`
+- 工具（10 个）：`add`、`search_semantic`、`search_lexical`、`search_meta`、`get_details`、`update`、`delete`、`stats`、`report`、`list_keywords`
 - 资源（2 个）：`memories://stats`、`memories://list`
+
+`search_lexical` 面向英文/代码类文本（类名、异常码、符号、版本号），且 BM25 分数与 `search_semantic` 的余弦分不可比较；连续中文在 FTS 中不切分，中文与概念检索请用 `search_semantic`。
 
 权威清单以客户端连上后的 MCP `tools/list` 为准；本页只给概要。
 
 ## 5. 快速验证
 
 1. 客户端完成 MCP `initialize`。
-2. 调用 `tools/list`，应返回上述 9 个工具。
+2. 调用 `tools/list`，应返回上述 10 个工具。
 3. 调用 `stats`，应返回记忆总数与命名空间统计。
 
 ## 6. 注意事项

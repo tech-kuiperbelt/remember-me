@@ -1,6 +1,6 @@
 # [39] Retrieval Extension Phase 1 — Lexical Search
 
-2026-09-24 coding plan；**未实现**。设计依据：`docs/design/memory-retrieval-hld.md`、
+2026-09-24 coding plan；**已实现（未提交）**，含 2 处 review 修复；Phase 1 benchmark 待做。设计依据：`docs/design/memory-retrieval-hld.md`、
 `docs/design/memory-retrieval-detailed-design.md`、`docs/design/memory-retrieval-pre-coding-validation.md`。
 本项是 [39]（Phase 1）与 [40]（Phase 2，Anchor）中的第一阶段；Phase 3 不纳入。
 
@@ -108,6 +108,44 @@ match_info = {"type": "lexical", "score_type": "fts5_bm25", "raw_bm25": <float>}
 - 按分组记录 Hit@1、Hit@5、MRR、无结果率：技术标识符、异常码、中文、中英混排、自然语言。
 - 记录 `unicode61` 的中文/标识符召回实况，判断是否需要预分词（Phase A/B）。
 - 说明限制：现有审计正例来自已展示结果，有展示选择偏差，不是无偏基线；指标仅描述所评样本。
+
+## 实现后观测与已知限制（2026-09-24 实测）
+
+实现并重启生产服务后（1056 live memories；`memory_content_fts` 1056 行；`lexical_index_version=1`），
+以**只读**方式观测索引与真实文档分词，实测结论：
+
+1. **中文不切字，整段汉字成为一个 token**。如 `与其他索引保持一致`、`导致数据库初始化时`、
+   `拆分后有3个技术债` 各为单个 token。后果：`search_lexical` 对中文**基本无效**——查询「索引」
+   无法命中含「与其他索引保持一致」的记忆；中文检索应继续使用 `search_semantic`。
+   处置：由 Phase 1 benchmark 量化；若确认不可用，则在工具描述与文档中明确限定
+   `search_lexical` 的适用域，不承诺中文召回；是否预分词由 benchmark 数据决定。
+2. **短前缀误召回**：`ORA-00060` → `ora` + `00060`，单查 `ora` 会连带召回其他 `ORA-*`；
+   `bge-m3` → `bge` + `m3` 同理。工具描述已提示"标识符可能被拆分，请给出可区分的部分"，
+   但不保证整串精确匹配。处置：由 benchmark 观察该类误召回率。
+3. **CamelCase 整体保留（小写化）的双向影响**：`PoolAcquirePendingLimitException` 是单个 token，
+   **整词可命中**；但搜其子词（如 `Pending`、`Acquire`）**不会命中**。
+   处置：工具描述已建议给整串或可区分部分；由 benchmark 记录实况。
+4. **工具适用域未显式排除中文**：原 description 面向"标识符/异常码/类名"，未写明中文/概念查询应改用
+   `search_semantic`。**已修复（2026-09-24）**：`search_lexical` 的 description 补入"连续中文在本索引中
+   不切分，中文查询请用 `search_semantic`"；`app/read_me.md` 同步该说明。
+
+其中 1–3 属设计阶段已预期的限制，此处补充**实测证据**；4 为本轮新发现并已修复的可改进项。
+以上均不改变 `score=-raw_bm25`、`search_id`、事务与重建契约。
+
+### 实现后 review 修复（2026-09-24）
+
+两处 P2 已修复并补回归测试：
+
+1. **缺表恢复会让 lexical 永久为空**（`storage_sqlite.py`）：原实现在 `_init_db` 先执行
+   `CREATE VIRTUAL TABLE IF NOT EXISTS`，再由 `_ensure_lexical_index()` 检查表是否存在。
+   当 FTS 表被删而 `lexical_index_version` 仍有效时，会先建出一张空表、随后因"表存在且版本匹配"
+   跳过重建，导致已有记忆在之后每次重启都从 lexical 结果中消失。现改为**先检测存在性、再创建**：
+   表缺失（无论版本戳是否存在）→ 创建并全量重建。回归：
+   `test_startup_rebuilds_when_table_missing_but_version_kept`。
+2. **lexical 的未知 namespace 信封不一致**（`server.py`）：`except NamespaceNotFound` 的 search
+   分类原先未包含 `search_lexical`，于是返回写拒绝载荷（缺 `search_id`/`total`/`items`），并提示
+   用 `confirm_codes` 重试——而该搜索工具并不接受 `confirm_codes`。已把 `search_lexical` 纳入
+   search 分类，返回统一空搜索信封与可操作指引。回归断言同步加强。
 
 ## 不在范围
 
