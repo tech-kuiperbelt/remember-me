@@ -14,6 +14,7 @@
 
 ### [29] MCP Streamable HTTP（新 SSE）传输支持
 
+- 计划：详见 `docs/project-management/plans/29-streamable-http-and-read-me.md`（含新增 `/read-me` 配置发现页；2026-09-23 定稿，未实现）。
 - 背景：当前 `--port` 暴露的是 MCP 旧版 HTTP+SSE 传输（`mcp.server.sse.SseServerTransport`，`GET /sse` + `POST /messages/`）；新规范以 Streamable HTTP 取代（单端点、POST/GET、可选 SSE 流）。
 - 目标：保留旧 `/sse` 兼容的同时新增 Streamable HTTP 端点，供新客户端接入；mcp 1.28.0 已内置 `mcp.server.streamable_http` / `streamable_http_manager`，可评估直接使用或改用 FastMCP。
 - 关注点：会话管理（Mcp-Session-Id）、GET 流式订阅与断线重连、与 stdio 双模式共存、调用来源关联（复用 [25]）；同步更新 `.env`/`@remember-me`/MCP 客户端配置与 AGENTS.md。
