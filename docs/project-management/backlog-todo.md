@@ -4,21 +4,19 @@
 
 ## 当前待办
 
-### [34] 已完成，详见 `docs/project-management/plans/34-operations-runbook.md`
+### [39] Retrieval Extension Phase 1 — Lexical Search
 
-- 背景：embedding 维护、keyword/category 迁移和 JSONL recovery 目前分别暴露 Python module 命令；`bin/recover.sh` 只初始化 venv，没有像 `bin/start.sh` 一样加载 `.env`。停服务、选择正确 provider/path、备份、重启和健康检查仍依赖人工拼装命令。
-- 目标：在 `bin/` 下提供统一且可发现的运维入口或职责清晰的脚本，复用同一套项目目录、`.venv`、`.env`、SQLite/JSONL 默认路径和错误处理；覆盖 embedding `status`/codec migration/reindex/index-value reindex/activate、keyword/category dry-run 与正式迁移、JSONL→SQLite recovery。
-- 安全约束：明确区分在线只读与离线写操作；写操作必须依赖主库 writer lock fail-fast，不自动 kill 服务、不删除 lock file。恢复和高风险维护前提示或检查备份，失败不得覆盖原主库；脚本参数必须能覆盖默认数据库、replica、profile、namespace 和 batch size。
-- Runbook：新增根目录 `README.md`，说明推荐启动方式、在线可执行操作、标准“Full Sync/Export → 正常停服 → 运维/迁移/恢复 → 重启 → Stats 验证”流程、embedding profile 配置一致性，以及 `.writer.lock` 文件存在不等于锁被占用。
-- 验收：所有脚本支持 `--help`，从任意工作目录调用均可正确定位项目并加载环境；只读命令可在服务运行时成功，写命令在服务运行时明确失败，停服后成功；README 示例与实际 CLI 一致，并覆盖 `pending=0`、`in_sync=true`、missing/extra/corrupt_lines 为零的验收检查。
+- 计划：详见 `docs/project-management/plans/39-memory-retrieval-lexical.md`；设计见 `docs/design/memory-retrieval-hld.md`、`memory-retrieval-detailed-design.md`、`memory-retrieval-pre-coding-validation.md`。
+- 目标：为正文增加独立 Lexical Search primitive（SQLite FTS5 + BM25），与 Semantic 并列，不做 Hybrid/fusion。新增 `memory_content_fts`、单一 `lexical_index_version`、共用最小 QueryBuilder、`SQLiteStorage.search_lexical`、MCP `search_lexical` 与 `POST /api/memories/search/lexical`。
+- 约束：仅 `query`/`k`（默认 10，范围 1–100）/`namespace`；query ≤4096 字符且 ≤256 token，超限拒绝不截断；纯标点空结果；`score=-raw_bm25`；复用现有 `search_id`/`report`；缺表/缺版本/版本不符时进入 running 前全量重建，失败即启动失败；写路径同事务同步 FTS。
+- 验收：事务回滚、启动重建与失败路径、import/recovery、命名空间信封、query/k 边界、审计与 `/read-me` 工具列表同步、全量 pytest 与浏览器回归；Phase 1 tokenizer/BM25 benchmark（脱敏 query→positive、同一 DB 快照、分组 Hit@1/Hit@5/MRR/无结果率）。
 
-### [29] MCP Streamable HTTP（新 SSE）传输支持
+### [40] Retrieval Extension Phase 2 — Manual Anchors + Anchor Search
 
-- 计划：详见 `docs/project-management/plans/29-streamable-http-and-read-me.md`（2026-09-24 review 修订，未实现；明确 GET 405、Origin 校验、stateless 审计边界、SDK 下限和真实 Codex 无桥接直连验收；含 `/read-me` 配置发现页）。
-- 背景：当前 `--port` 暴露的是 MCP 旧版 HTTP+SSE 传输（`mcp.server.sse.SseServerTransport`，`GET /sse` + `POST /messages/`）；新规范以 Streamable HTTP 取代（单端点、POST/GET、可选 SSE 流）。
-- 目标：保留 stdio、旧 `/sse` 与 `/messages/`，新增 `/mcp`，让 Codex 原生 URL 直连同一实例，无需 `mcp-remote` 桥接；使用 SDK `StreamableHTTPSessionManager`，stateless + JSON，非 POST 方法校验后 405（`Allow: POST`），不提供独立 GET SSE 流。
-- 关注点：复用 SDK Host/Origin 校验（本次 loopback Host 范围），验证 task group 的审计 contextvar 传播和每请求关联 ID，明确无跨请求 clientInfo 的限制；依赖统一为 `mcp>=1.28.0,<2`，覆盖关闭/重启排空。新增 `/read-me` 与 README/AGENTS.md 配置说明，不改用户持久 MCP 客户端配置。
-- 验收：最低 SDK 版本、Python SDK 与双客户端调用、旧 `/sse`/stdio、审计及生命周期回归、全量 pytest 和浏览器回归。真实 Codex 直连由用户自行实测（不阻塞归档）；未通过不得宣称 Codex 原生直连目标完成。
+- 计划：详见 `docs/project-management/plans/40-memory-retrieval-anchors.md`；依赖 [39] 完成。
+- 目标：调用方通过 `metadata.anchors` 提供 Anchor（≤5，严格校验），复用 `index_values`/`memory_index_values` 通用关系结构；新增独立 `memory_anchor_fts`、`search_anchor` 与 `POST /api/memories/search/anchor`；服务端不自动生成 Anchor。
+- 隔离约束：`_INDEX_DIMENSIONS` 增加 `requires_embedding`；anchors 不写 `index_value_embeddings`，不参与完整性检查/回填/reindex/activate，`IndexValueResolver` 对其 semantic resolution 显式报错；Python 与 SQL 两层过滤；不新增 anchor 版本或状态机。
+- 验收：Anchor 校验与隔离（无向量）、写路径事务语义（正文实质变化清空/空白等价保留/显式提交优先）、导入恢复重建且不产生 anchor 向量、NDJSON 不含 FTS、回归；Phase 2 增量价值与 Agent 工具选择 benchmark，据此决定是否启动 Phase 3。
 
 ### [27] LLM 结构化检索与分类写入引导
 
