@@ -17,8 +17,15 @@
 - 计划：详见 `docs/project-management/plans/40-memory-retrieval-anchors.md`；依赖 [39] 完成。
 - 目标：调用方通过 `metadata.anchors` 提供 Anchor（≤5，严格校验），复用 `index_values`/`memory_index_values` 通用关系结构；新增独立 `memory_anchor_fts`、`search_anchor` 与 `POST /api/memories/search/anchor`；服务端不自动生成 Anchor。
 - 隔离约束：`_INDEX_DIMENSIONS` 增加 `requires_embedding`；anchors 不写 `index_value_embeddings`，不参与完整性检查/回填/reindex/activate，`IndexValueResolver` 对其 semantic resolution 显式报错；Python 与 SQL 两层过滤；不新增 anchor 版本或状态机。
-- 状态：已实现（未提交，432 pytest + 浏览器回归通过）。`app/anchors.py`（严格 `normalize_anchors` / 宽松 `clean_anchors`）、`memory_anchor_fts`（`LEXICAL_INDEX_VERSION` 升到 3，content+anchor 同步重建，并**同时回填 anchors 关系维度**）、写语义（显式锚点替换/`[]` 清空/正文实质变化清空/空白等价保留）、MCP `search_anchor`（工具 11 个）、`POST /api/memories/search/anchor`、`invalid_anchors` 结构化拒绝、stats 加 `anchor_total`/`memories_with_anchors`/`lexical_index_version`。含 2 处 P2 review 修复（升级回填 anchors 关系维度、`search_anchor` 纳入审计裁剪）。生效需重启（会触发 v3 全量重建两张 FTS + anchors 关系回填）。
+- 状态：主体已提交 `d41f149` 并在线生效；2026-09-28 完成写入引导收尾验收（引导改动未提交），433 pytest + 浏览器回归通过。`app/anchors.py`（严格 `normalize_anchors` / 宽松 `clean_anchors`）、`memory_anchor_fts`（`LEXICAL_INDEX_VERSION=3`，content+anchor 同步重建，并**同时回填 anchors 关系维度**）、写语义（显式锚点替换/`[]` 清空/正文实质变化清空/空白等价保留）、MCP `search_anchor`（工具 11 个）、`POST /api/memories/search/anchor`、`invalid_anchors` 结构化拒绝、stats 加 `anchor_total`/`memories_with_anchors`/`lexical_index_version`。含 2 处 P2 review 修复（升级回填 anchors 关系维度、`search_anchor` 纳入审计裁剪）。在线 tools/list 已确认 add/update anchors schema 与新版引导，/read-me 同步，v3 索引和 dual 健康检查通过，无需再次重启。功能收尾完成；新会话自然采用率及效果 benchmark 仍待验证，因此本项暂留开放清单。
 - 验收：Anchor 校验与隔离（无向量）、写路径事务语义、导入恢复重建且不产生 anchor 向量、NDJSON 不含 FTS、回归；Phase 2 增量价值与 Agent 工具选择 benchmark，据此决定是否启动 Phase 3。
+
+### [41] Historical Anchor Backfill
+
+- 计划：详见 `docs/project-management/plans/41-historical-anchor-backfill.md`。
+- 目标：通过离线 DeepSeek CLI 为历史记忆生成 anchors 候选，经人工审核后写入；先在 `remember-me` 小批量试点，校准质量后扩展到其余 `remember-me` 记录，再分批覆盖其他 namespace。
+- 约束：在线 add/update 不生成 anchors；默认只处理缺少 anchors 的记录；候选必须来自正文且通过 `normalize_anchors`；apply 仅接受人工批准项，按内容 hash/namespace/当前 anchors 检查陈旧状态；通过 `update_metadata` 保持 `updated_at`；服务停机后持 writer lock 写入。
+- 状态：已完成计划，尚未实现。
 
 ### [27] LLM 结构化检索与分类写入引导
 

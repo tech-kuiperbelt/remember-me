@@ -72,7 +72,7 @@ command = "<REPO>/bin/start.sh"
 
 `search_lexical` 面向英文/代码类文本（类名、异常码、符号、版本号），且 BM25 分数与 `search_semantic` 的余弦分不可比较；连续中文在 FTS 中不切分，中文与概念检索请用 `search_semantic`。
 
-`search_anchor` 只匹配记忆声明过的 **anchors**（写入时通过 `metadata.anchors` 提供 0–5 个有辨识度的标识符：类名、API、异常码、配置键、版本号等），不搜索正文、keywords 或 categories。三种检索的原始分数互不可比；`search_anchor` 无结果时改用 `search_lexical` 或 `search_semantic`。写入引导：为每条记忆提供有辨识度的 anchors，不要编造，没有就传 `[]`；正文实质变化且未重新提交 anchors 会清空旧值。
+`search_anchor` 只匹配记忆声明过的 **anchors**（写入时通过 `metadata.anchors` 提供 0–5 个有辨识度的标识符：类名、API、异常码、配置键、版本号等），不搜索正文、keywords 或 categories。三种检索的原始分数互不可比；`search_anchor` 无结果时改用 `search_lexical` 或 `search_semantic`。写入引导：新增记忆或修改正文时，从内容中选择 0–5 个有辨识度的 anchors，保留原拼写，不要编造或直接复制泛化的 keywords，没有就传 `[]`。keywords 表示内容概念，categories 表示记忆性质，anchors 标识具体对象。显式 anchors 替换旧列表，`[]` 清空；正文实质变化且未重新提交 anchors 会清空旧值，仅改其他元数据或空白等价正文时省略 anchors 则保留原值。
 
 权威清单以客户端连上后的 MCP `tools/list` 为准；本页只给概要。
 

@@ -274,6 +274,43 @@ def test_service_search_anchor_and_stats(service):
     assert stats["anchor_total"] == 1 and stats["memories_with_anchors"] == 1
 
 
+def test_mcp_write_anchor_contract_and_roundtrip(service):
+    from app.audit import _trim_params
+    from app.server import create_mcp_server
+    api = create_mcp_server(service=service)
+    tools = {tool.name: tool for tool in asyncio.run(api.handle_list_tools()).tools}
+    for name in ("add", "update"):
+        schema = tools[name].inputSchema["properties"]["metadata"]["properties"]["anchors"]
+        assert schema["type"] == "array"
+        assert schema["items"]["type"] == "string"
+        assert schema["maxItems"] == MAX_ANCHORS
+        assert "provide metadata.anchors" in tools[name].description
+        assert "Pass [] when there are none" in schema["description"]
+
+    def call(name, arguments):
+        return json.loads(asyncio.run(api.handle_call_tool(name, arguments)).content[0].text)
+
+    args = {"text": "RedisStore uses CACHE_LIMIT", "summary": "RedisStore config",
+            "metadata": {"anchors": ["RedisStore", "CACHE_LIMIT"]}}
+    added = call("add", args)
+    mid = added["id"]
+    assert "metadata.anchors" in added["hint"]
+    assert _trim_params("add", args)["metadata"]["anchors"] == args["metadata"]["anchors"]
+    details = call("get_details", {"memory_ids": [mid]})
+    assert details["found"][0]["metadata"]["anchors"] == args["metadata"]["anchors"]
+
+    args = {"memory_id": mid, "text": "RedisStore uses CACHE_TIMEOUT",
+            "summary": "RedisStore timeout", "metadata": {"anchors": ["CACHE_TIMEOUT"]}}
+    updated = call("update", args)
+    assert "metadata.anchors" in updated["hint"]
+    assert _trim_params("update", args)["metadata"]["anchors"] == ["CACHE_TIMEOUT"]
+    assert call("search_anchor", {"query": "CACHE_TIMEOUT"})["total"] == 1
+    call("update", {"memory_id": mid, "metadata": {"note": "preserve anchors"}})
+    assert call("get_details", {"memory_ids": [mid]})["found"][0]["metadata"]["anchors"] == ["CACHE_TIMEOUT"]
+    call("update", {"memory_id": mid, "metadata": {"anchors": []}})
+    assert call("search_anchor", {"query": "CACHE_TIMEOUT"})["total"] == 0
+
+
 def test_mcp_tools_and_anchor_envelopes(service):
     from app.server import create_mcp_server
     api = create_mcp_server(service=service)

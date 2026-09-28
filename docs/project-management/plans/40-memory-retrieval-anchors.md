@@ -1,6 +1,6 @@
 # [40] Retrieval Extension Phase 2 — Manual Anchors + Anchor Search
 
-2026-09-24 coding plan；**已实现（未提交）**，依赖 [39] 完成。设计依据：`docs/design/memory-retrieval-hld.md`、
+2026-09-24 coding plan；**主体已提交 `d41f149` 并在线生效；写入引导已验证、未提交；效果评测待做**，依赖 [39] 完成。设计依据：`docs/design/memory-retrieval-hld.md`、
 `docs/design/memory-retrieval-detailed-design.md`、`docs/design/memory-retrieval-pre-coding-validation.md`。
 
 ## 目标与范围
@@ -110,6 +110,28 @@ USING fts5(memory_id UNINDEXED, anchors, tokenize = 'unicode61');
    未包含 `search_anchor`，导致每次成功调用都按 `dict(result)` 记录完整结果与引导文案，放大滚动
    日志。现将其纳入两处分支（与 semantic/lexical 一致：只留 `{id, summary, score}`）。回归：
    `test_audit_trims_search_anchor_results`。
+
+### LLM 写入引导修复（2026-09-28）
+
+- 对比 keywords/categories：两者在 add/update 的 metadata schema 中有显式字段，写入 hint
+  也有持续提醒；anchors 仅出现在工具描述中且措辞为可选，schema 和写入 hint 均遗漏。
+- add/update 补齐 anchors 数组 schema（最多 5 个字符串），描述、字段说明和返回 hint
+  共用写入引导：新增或修改正文时从内容中选择身份标识，没有则传 `[]`，不编造或复制泛化关键词。
+  说明显式替换/清空及省略时的保留/清空语义；同步 `/read-me` 与详情 hint。
+- 审计检查：现有 `_trim_params` 已保留 metadata.anchors，无需更改裁剪逻辑；新增回归覆盖
+  schema、MCP 写入/读回/更新/检索及 add/update 审计参数保留。
+- 初次验证：433 pytest 与浏览器回归通过；当时尚未提交或重启生产。
+
+### 收尾验收（2026-09-28）
+
+- 再次运行全量 pytest：433 passed（5 条依赖弃用警告）；浏览器回归通过。
+- 在线 `POST /mcp` 的 `tools/list` 已确认 add/update 均暴露 anchors 数组 schema
+  （最多 5 项）与新版写入引导，`GET /read-me` 同步；运行进程已加载修改，无需再次重启。
+- 在线 `/api/stats`：`lexical_index_version=3`、`anchor_total=9`、
+  `memories_with_anchors=4`；`pending=0`、`in_sync=true`，missing/extra/corrupt_lines 均为 0，
+  active profile 的 keyword/category 向量完整。计数为验收时快照。
+- 写入引导及回归测试仍未提交。功能与服务端引导验收完成；新客户端会话的自然采用率、
+  增量召回及工具选择质量仍待观察/评测，本会话已被明确提醒 anchors，不能作为无提示采用证据。
 
 ## 测试
 

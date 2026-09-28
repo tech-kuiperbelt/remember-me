@@ -35,6 +35,25 @@ logger = logging.getLogger("server")
 
 _CATEGORIES_JOINED = ", ".join(CATEGORY_VOCABULARY)
 
+_ANCHOR_GUIDANCE = (
+    "When adding a memory or changing its text, provide metadata.anchors: 0-"
+    + str(MAX_ANCHORS) + " distinctive identifiers present in the content that a future "
+    "query could use to identify it (names, classes, APIs, error codes, config keys, "
+    "versions). Keywords describe topics; anchors identify specific things. "
+    "Select anchors from the content, preserve their spelling, and do not invent them "
+    "or copy generic keywords. Pass [] when there are none. "
+    "Explicit anchors replace the old list; [] clears it. Changing text without "
+    "resubmitting anchors clears old anchors; metadata-only and whitespace-equivalent "
+    "text updates preserve them when omitted. "
+)
+_ANCHOR_SCHEMA = {
+    "type": "array",
+    "items": {"type": "string"},
+    "maxItems": MAX_ANCHORS,
+    "description": _ANCHOR_GUIDANCE + "Each anchor must be non-empty and at most 128 "
+                   "characters after NFKC and whitespace normalization; invalid input is rejected.",
+}
+
 class MCPApplication:
     def __init__(self, service=None, *, runtime=None):
         if service is None and runtime is None:
@@ -125,10 +144,7 @@ class MCPApplication:
                             "topics). Pass categories as an array in metadata.categories — memory "
                             "nature/classification, up to " + str(MAX_CATEGORIES) + " values, prefer "
                             "these canonical categories: " + _CATEGORIES_JOINED + ". "
-                            "You may also pass metadata.anchors — 0-" + str(MAX_ANCHORS) + " distinctive identifiers "
-                            "(names, classes, APIs, error codes, config keys, versions); an empty array "
-                            "clears them. Changing the text without resubmitting anchors clears the old "
-                            "anchors; metadata-only updates preserve them. "
+                            + _ANCHOR_GUIDANCE +
                             "An unknown namespace is rejected without writing; call 'stats' to see "
                             "the available namespaces, then retry with "
                             'confirm_codes=["namespace_not_found"] to deliberately create a new one.',
@@ -149,6 +165,7 @@ class MCPApplication:
                                     "items": {"type": "string"},
                                     "description": "Content keywords (concrete concepts in the memory, not category/type). Prefer reusing existing keywords from list_keywords semantic candidates; create a new keyword only when none fits. Normalized to lowercase.",
                                 },
+                                "anchors": _ANCHOR_SCHEMA,
                                 "categories": {
                                     "type": "array",
                                     "items": {"type": "string"},
@@ -343,11 +360,7 @@ class MCPApplication:
                             "nature/classification, up to " + str(MAX_CATEGORIES) + " values, prefer the "
                             "canonical categories from stats' category_counts: " + _CATEGORIES_JOINED + ". "
                             "An empty array clears the memory's categories. "
-                            "You may also pass metadata.anchors — 0-" + str(MAX_ANCHORS) + " distinctive terms a future "
-                            "query may use to identify this memory (names, classes, APIs, error codes, "
-                            "config keys, versions, identifiers, distinctive phrases). Prefer distinctive "
-                            "identifiers over generic topics; do not invent anchors and pass [] if there "
-                            "are none. "
+                            + _ANCHOR_GUIDANCE +
                             "Moving a memory to an unknown namespace is rejected; call 'stats' to see "
                             "the available namespaces, then retry with "
                             'confirm_codes=["namespace_not_found"] to deliberately create a new one.',
@@ -368,6 +381,7 @@ class MCPApplication:
                                     "items": {"type": "string"},
                                     "description": "Content keywords (concrete concepts in the memory, not category/type). Prefer reusing existing keywords from list_keywords semantic candidates; create a new keyword only when none fits. Normalized to lowercase. Empty array clears.",
                                 },
+                                "anchors": _ANCHOR_SCHEMA,
                                 "categories": {
                                     "type": "array",
                                     "items": {"type": "string"},
@@ -625,13 +639,13 @@ def create_mcp_server(service=None, *, runtime=None):
 # with the returned data. Kept intentionally concise.
 _TOOL_HINTS: dict[str, str] = {
     "list_keywords": "Reuse a candidate only if it accurately expresses your concept; score measures similarity, not equivalence. New keywords are allowed when none fits. Counts reflect live memories in the requested namespace. Pass this keyword_query_id to a later add/update/search when it informed your choice. Use browse/literal offset for more results; lower semantic min_score to broaden candidates. No report is needed.",
-    "add": "When setting keywords, first use list_keywords semantic mode in the target namespace to find reusable terms. Memory stored. A supplied summary was saved directly; if it was missing or blank, a deterministic extract from the leading text was stored. If created=false, an identical record already exists and remains untouched — consider 'update' instead. Reuse canonical categories from stats' category_counts (up to 3). An unknown namespace is rejected unless you pass confirm_codes=[\"namespace_not_found\"].",
+    "add": _ANCHOR_GUIDANCE + "When setting keywords, first use list_keywords semantic mode in the target namespace to find reusable terms. Memory stored. A supplied summary was saved directly; if it was missing or blank, a deterministic extract from the leading text was stored. If created=false, an identical record already exists and remains untouched — consider 'update' instead. Reuse canonical categories from stats' category_counts (up to 3). An unknown namespace is rejected unless you pass confirm_codes=[\"namespace_not_found\"].",
     "search_semantic": "Results are ranked by relevance (score). Use 'get_details' with an id to read the full original text, then call 'report' with this search_id to rate how helpful each result was (-10..10). filter_resolution shows how exact or semantic keywords/categories constrained candidates before scoring. Values within one dimension use OR, while dimensions combine using AND. If a whole supplied dimension could not be resolved, the result is empty. response_code='namespace_not_found' means the namespace does not exist (empty items is then not a real 'no match').",
     "search_lexical": "Results are exact-term matches ranked by BM25; the score is NOT comparable with semantic scores. Items carry a stored summary or deterministic leading-text extract. Use 'get_details' with an id to read the full original text, then call 'report' with this search_id to rate how helpful each result was (-10..10). response_code='namespace_not_found' means the namespace does not exist; use response_meta.known_namespaces or omit it. If nothing matched, retry with 'search_semantic'.",
     "search_anchor": "Results are anchor matches ranked by BM25; the score is NOT comparable with the other search scores. Items carry a stored summary or deterministic leading-text extract. Use 'get_details' with an id to read the full original text, then call 'report' with this search_id to rate how helpful each result was (-10..10). If nothing matched, retry with 'search_lexical' or 'search_semantic'. response_code='namespace_not_found' means the namespace does not exist; use response_meta.known_namespaces or omit it.",
     "search_meta": "Use 'get_details' with an id to read the full original text, or call 'search_semantic' for fuzzy/topic/keyword lookup. Filter further with keywords= and/or categories=. After using these results, call 'report' with this search_id to rate how helpful each id was (-10..10). response_code='namespace_not_found' means the namespace does not exist; the real available namespaces are in response_meta.known_namespaces.",
-    "get_details": "You now have the full text, including metadata.keywords and metadata.categories. Pass source_search_id from the originating search to link this lookup in audit. If a memory is relevant, use search_meta(keywords=[...]) or search_meta(categories=[...]) to find related memories.",
-    "update": "When replacing keywords, first use list_keywords semantic mode in the target namespace; other updates need no keyword lookup. Memory updated. A supplied summary was saved directly; changed text without one received a deterministic leading-text extract. Metadata-only and whitespace-equivalent text updates preserve the existing summary. Use 'get_details' with the id to verify the change. Categories (if any) were taken from metadata.categories — see stats' category_counts for the canonical list (up to 3). Moving to an unknown namespace is rejected unless you pass confirm_codes=[\"namespace_not_found\"].",
+    "get_details": "You now have the full text, including metadata.keywords, metadata.categories and metadata.anchors. Pass source_search_id from the originating search to link this lookup in audit. If a memory is relevant, use search_meta(keywords=[...]) or search_meta(categories=[...]) to find related memories.",
+    "update": _ANCHOR_GUIDANCE + "When replacing keywords, first use list_keywords semantic mode in the target namespace; other updates need no keyword lookup. Memory updated. A supplied summary was saved directly; changed text without one received a deterministic leading-text extract. Metadata-only and whitespace-equivalent text updates preserve the existing summary. Use 'get_details' with the id to verify the change. Categories (if any) were taken from metadata.categories — see stats' category_counts for the canonical list (up to 3). Moving to an unknown namespace is rejected unless you pass confirm_codes=[\"namespace_not_found\"].",
     "delete": "Memory soft-deleted. It no longer appears in 'search_semantic'/'search_meta'. Call 'stats' to confirm the count.",
     "stats": "Use 'namespace_counts' to pick a namespace, then 'search_meta' or 'search_semantic' within it. Use 'list_keywords' to find existing keywords and 'category_counts' as the canonical category vocabulary (up to 3 per memory) for search_meta/add. Embedding provider/model/profile describe the active comparable vector space. Use 'server_time' for time-based queries.",
     "report": "Feedback recorded. Continue with the task, or run another search if the results were unhelpful.",
