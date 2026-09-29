@@ -106,7 +106,7 @@ class MCPApplication:
                 name="list_keywords",
                 description="Browse the complete in-use keyword vocabulary or find existing words by meaning. "
                             "Before setting keywords in add/update, use semantic mode with 1–20 concepts in queries "
-                            "and the target namespace; reuse candidates only when their meaning fits, otherwise new "
+                            "and the target namespace (omit namespace when creating a new one); reuse candidates only when their meaning fits, otherwise new "
                             "words are allowed. Similarity is not synonym equivalence. Metadata updates without "
                             "keywords need no lookup. Literal mode matches one substring; browse takes no queries. "
                             "Counts are scoped to live memories in namespace (omit for all). Semantic results include "
@@ -138,12 +138,12 @@ class MCPApplication:
                             "Deduplicated by content+namespace: if the same text already exists in the "
                             "target namespace, no duplicate is inserted and the existing record's id is "
                             "returned with created=false. "
-                            "Before adding, call 'list_keywords' in semantic mode with your keyword concepts and target namespace; call 'stats' for category_counts "
-                            "and reuse an existing keyword/category when semantically appropriate; "
+                            "Before adding, call 'list_keywords' in semantic mode with your keyword concepts and target namespace; for a new namespace, omit the namespace during lookup. Call 'stats' for category_counts. "
+                            "Reuse an existing keyword/category when semantically appropriate; "
                             "create a new one only when no existing value matches. Pass keywords as an "
                             "array in metadata.keywords — they are content concepts (e.g. entities, "
-                            "topics). Pass categories as an array in metadata.categories — memory "
-                            "nature/classification, up to " + str(MAX_CATEGORIES) + " values, prefer "
+                            "topics). For each new memory, provide 1–3 relevant categories in "
+                            "metadata.categories to describe its nature/classification; prefer "
                             "these canonical categories: " + _CATEGORIES_JOINED + ". "
                             + _ANCHOR_GUIDANCE +
                             "An unknown namespace is rejected without writing; call 'stats' to see "
@@ -171,7 +171,7 @@ class MCPApplication:
                                     "type": "array",
                                     "items": {"type": "string"},
                                     "maxItems": MAX_CATEGORIES,
-                                    "description": "Memory nature/classification, 1-%d values. Prefer the canonical categories, only introduce a new one when none fits: %s. Normalized to lowercase." % (MAX_CATEGORIES, _CATEGORIES_JOINED),
+                                    "description": "For a new memory provide 1-%d relevant categories describing its nature/classification. Prefer canonical values; introduce a new one only when none fits: %s. Normalized to lowercase." % (MAX_CATEGORIES, _CATEGORIES_JOINED),
                                 },
                             },
                         },
@@ -195,14 +195,16 @@ class MCPApplication:
                             "call 'get_details' with the returned IDs to fetch full content. "
                             "For time-based questions (e.g. \"what did we do recently / last session\") "
                             "use 'search_meta' with sort_by='updated_at' instead. "
-                            "You may optionally pass keywords= and/or categories= to pre-filter candidates "
+                            "When you know the memory's keyword or category, pass keywords= and/or categories= to pre-filter candidates "
                             "before similarity scoring. Exact index values are used directly; unmatched values "
                             "are semantically resolved to the closest existing values in the same dimension and "
-                            "namespace. The response reports the applied mapping in filter_resolution. "
+                            "namespace. For exploratory questions, omit filters to keep the full candidate set. "
+                            "Use 'list_keywords' or 'stats' to inspect existing values. The response reports "
+                            "the applied mapping in filter_resolution. "
                             "Values within each dimension use OR; keywords and "
                             "categories combine with each other and namespace using AND. "
-                            "If no results are found, call 'stats' first to verify the correct namespace, "
-                            "then try searching again. If the response has response_code='namespace_not_found', "
+                            "If no results are found, inspect filter_resolution when filters were supplied, "
+                            "or call 'stats' to verify the namespace before retrying. If the response has response_code='namespace_not_found', "
                             "the requested namespace does not exist; use response_meta.known_namespaces or omit "
                             "the namespace to search all namespaces.",
                 inputSchema={
@@ -216,13 +218,13 @@ class MCPApplication:
                             "type": "array",
                             "maxItems": 20,
                             "items": {"type": "string"},
-                            "description": "Restrict the search to memories carrying any of these keywords (OR). Exact values are preferred; natural-language or alternate forms are semantically resolved within the same namespace. Combined with categories and namespace using AND.",
+                            "description": "Use when the desired content concept is known. Restrict candidates to memories carrying any of these keywords (OR) before memory-text cosine scoring. Exact values win; unmatched words are semantically resolved within the same namespace. Omit for broad discovery. Combined with categories and namespace using AND.",
                         },
                         "categories": {
                             "type": "array",
                             "maxItems": 20,
                             "items": {"type": "string"},
-                            "description": "Restrict the search to memories carrying any of these categories (OR). Exact values are preferred; natural-language or alternate forms are semantically resolved within the same namespace. Combined with keywords and namespace using AND.",
+                            "description": "Use when the desired memory nature/classification is known. Restrict candidates to memories carrying any of these categories (OR) before memory-text cosine scoring. Exact values win; unmatched words are semantically resolved within the same namespace. Omit for broad discovery. Combined with keywords and namespace using AND.",
                         },
                         "keyword_query_id": {"type": "string", "description": "Optional ID from list_keywords; audit linkage only."},
                     },
@@ -263,8 +265,8 @@ class MCPApplication:
                 name="search_anchor",
                 description="Search the retrieval anchors a memory declared — distinctive "
                             "identifiers, names, class/API names, error codes, config keys, "
-                            "versions. Use this when the query is likely to match an anchor "
-                            "exactly (e.g. a class name or ticket id stored as an anchor). "
+                            "versions. Use this when the query contains distinctive terms "
+                            "likely to appear in a declared anchor (e.g. a class name or ticket id). "
                             "It matches the ANCHORS field only (not memory text, keywords or "
                             "categories), so it can be narrower than 'search_lexical' and "
                             "'search_semantic'; retry with those when it returns nothing. "
@@ -329,9 +331,9 @@ class MCPApplication:
             types.Tool(
                 name="get_details",
                 description="Fetch full content for one or more memories by ID. "
-                            "Accepts a single ID or an array of IDs. "
+                            "Pass an array of IDs, including for a single memory. "
                             "Returns the complete text of each found memory plus the list of IDs that "
-                            "do not exist (partial success). Use this when a search_semantic/search_meta summary looks "
+                            "do not exist (partial success). Use this when a search result summary looks "
                             "relevant and you need the full original content.",
                 inputSchema={
                     "type": "object",
@@ -339,7 +341,7 @@ class MCPApplication:
                         "memory_ids": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "Array of memory IDs to fetch full content for (a single ID also works)",
+                            "description": "Array of memory IDs to fetch full content for; use a one-element array for a single ID.",
                         },
                         "source_search_id": {"type": "string", "description": "Optional search_id from the search whose results prompted this lookup; audit linkage only."},
                     },
@@ -355,6 +357,8 @@ class MCPApplication:
                             "be corrected without changing text; metadata-only updates leave it untouched. "
                             "Long project documents belong in the repository; store only their concise "
                             "summary and path in memory. Oversized text is rejected, never silently truncated. "
+                            "When changing the memory text, provide 1–3 relevant categories in metadata.categories "
+                            "for the updated memory; metadata-only changes can preserve existing categories. "
                             "When updating metadata you may pass metadata.keywords — content concepts; "
                             "reuse existing keywords from list_keywords semantic candidates when one fits; an empty "
                             "array clears. You may also pass metadata.categories — memory "
@@ -387,7 +391,7 @@ class MCPApplication:
                                     "type": "array",
                                     "items": {"type": "string"},
                                     "maxItems": MAX_CATEGORIES,
-                                    "description": "Memory nature/classification, 1-%d values. Prefer the canonical categories, only introduce a new one when none fits: %s. Normalized to lowercase. Empty array clears." % (MAX_CATEGORIES, _CATEGORIES_JOINED),
+                                    "description": "When changing text, provide 1-%d relevant categories describing the updated memory's nature/classification. Prefer canonical values; introduce a new one only when none fits: %s. Metadata-only updates may omit this field; empty array clears." % (MAX_CATEGORIES, _CATEGORIES_JOINED),
                                 },
                             },
                         },
@@ -403,7 +407,7 @@ class MCPApplication:
             ),
             types.Tool(
                 name="delete",
-                description="Soft-delete a memory by ID. It is removed from search results but can technically be restored via force_sync.",
+                description="Soft-delete a memory by ID. It is removed from all search results.",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -418,8 +422,8 @@ class MCPApplication:
                             "(map of namespace -> record count, e.g. check namespaces before search/add to "
                             "avoid missing results or creating duplicates), 'keyword_total' (the global "
                             "number of distinct in-use keywords; use list_keywords to browse or find words), "
-                            "'category_counts' (the canonical category vocabulary — with the seed values "
-                            "always listed, count 0 when unused; reuse these up to 3 values per memory), "
+                            "'category_counts' (seed categories, always listed with count 0 when unused, "
+                            "plus any custom categories in use; prefer seed values, up to 3 per memory), "
                             "and 'server_time' (current UTC time). Check 'server_time' first when a user asks "
                             "a time-based question (e.g. \"what did we do last week / this month\") so you can "
                             "compute the correct updated_after/updated_before values for the 'search_meta' tool. The "
@@ -429,17 +433,17 @@ class MCPApplication:
             types.Tool(
                 name="report",
                 description="Report how helpful a previous search's results were for the current "
-                            "question or context. You must call this AFTER using results from "
-                            "search_semantic/search_meta — pass the search_id from that search's "
-                            "response plus ratings per memory id. rating is an integer from -10 to 10: "
+                            "question or context. After using results from search_semantic, search_lexical, "
+                            "search_anchor or search_meta, pass its search_id plus ratings per memory id. "
+                            "rating is an integer from -10 to 10: "
                             "positive = helpful (larger = more useful), negative = misleading/interference "
                             "(more negative = stronger interference), 0 = neither helpful nor harmful. "
                             "You may rate any subset of the returned ids. The feedback is recorded for "
-                            "later search-quality analysis and takes one tool call — do not skip it.",
+                            "later search-quality analysis. Do not report on an empty result set.",
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "search_id": {"type": "string", "description": "The search_id from a previous search_semantic/search_meta response"},
+                        "search_id": {"type": "string", "description": "The search_id from a previous search_semantic/search_lexical/search_anchor/search_meta response"},
                         "ratings": {
                             "type": "array",
                             "description": "Per-memory feedback. Rating -10..10 (out-of-range values are clamped).",
@@ -483,11 +487,6 @@ class MCPApplication:
                 data = self.service.memory_add(arguments["text"], arguments.get("metadata"),
                                   arguments.get("namespace"), arguments.get("summary"),
                                   arguments.get("confirm_codes"))
-                hint = _TOOL_HINTS["add"]
-                if data.get("categories_dropped"):
-                    hint += (" You provided more than %d categories; only the first %d were kept — "
-                             "next time pass at most %d in metadata.categories."
-                             % (MAX_CATEGORIES, MAX_CATEGORIES, MAX_CATEGORIES))
                 if data.get("id"):
                     memory_refs = [{"id": data["id"], "namespace": arguments.get("namespace") or self.service.settings.DEFAULT_NAMESPACE}]
             elif name == "search_semantic":
@@ -498,19 +497,16 @@ class MCPApplication:
                     categories=arguments.get("categories"), return_resolution=True)
                 search_result["items"] = _prepare_for_llm(search_result["items"])
                 data = _wrap_search_semantic(search_result)
-                hint = _TOOL_HINTS["search_semantic"]
             elif name == "search_lexical":
                 items = _prepare_for_llm(self.service.memory_search_lexical(
                     arguments["query"], int(arguments.get("k", 10)),
                     arguments.get("namespace")))
                 data = _wrap_search_lexical(items)
-                hint = _TOOL_HINTS["search_lexical"]
             elif name == "search_anchor":
                 items = _prepare_for_llm(self.service.memory_search_anchor(
                     arguments["query"], int(arguments.get("k", 10)),
                     arguments.get("namespace")))
                 data = _wrap_search_anchor(items)
-                hint = _TOOL_HINTS["search_anchor"]
             elif name == "search_meta":
                 ns = arguments.get("namespace")
                 limit = int(arguments.get("limit", 100))
@@ -521,12 +517,10 @@ class MCPApplication:
                                                      keywords=arguments.get("keywords"),
                                                      categories=arguments.get("categories")))
                 data = _wrap_search_meta(items, ns, limit, offset, sort_by)
-                hint = _TOOL_HINTS["search_meta"]
             elif name == "get_details":
                 data = self.service.memory_get_details(arguments["memory_ids"])
                 memory_refs = [{"id": item.get("id"), "namespace": item.get("namespace")}
                                for item in data.get("found", [])[:100]]
-                hint = _TOOL_HINTS["get_details"]
             elif name == "update":
                 old = self.service.storage.get(arguments["memory_id"])
                 data = self.service.memory_update(arguments["memory_id"], arguments.get("text"),
@@ -536,26 +530,18 @@ class MCPApplication:
                 memory_refs = [{"id": arguments["memory_id"],
                                 "namespace_before": old.get("namespace") if old else None,
                                 "namespace": new.get("namespace") if new else None}]
-                hint = _TOOL_HINTS["update"]
-                if data.get("categories_dropped"):
-                    hint += (" You provided more than %d categories; only the first %d were kept — "
-                             "next time pass at most %d in metadata.categories."
-                             % (MAX_CATEGORIES, MAX_CATEGORIES, MAX_CATEGORIES))
             elif name == "delete":
                 data = self.service.memory_delete(arguments["memory_id"])
-                hint = _TOOL_HINTS["delete"]
             elif name == "list_keywords":
                 data = self.service.memory_list_keywords(**arguments)
                 data["keyword_query_id"] = "kq_" + secrets.token_hex(8)
-                hint = _TOOL_HINTS["list_keywords"]
             elif name == "stats":
                 data = _wrap_stats(self.service.memory_stats())
-                hint = _TOOL_HINTS["stats"]
             elif name == "report":
                 data = self.service.memory_report(arguments.get("search_id"), arguments.get("ratings"))
-                hint = _TOOL_HINTS["report"]
             else:
                 raise ValueError(f"Unknown tool: {name}")
+            hint = _result_hint(name, arguments, data)
             self.audit.record(name, arguments, data, (time.perf_counter() - start) * 1000,
                               context=context, memory_refs=memory_refs)
             return _ok(data, hint)
@@ -593,7 +579,9 @@ class MCPApplication:
             code = "invalid_anchors"
             data = {"response_code": code, "detail": str(exc)}
             hint = ("Fix metadata.anchors (0-5 distinct strings, each non-empty and at most "
-                    "128 characters) and retry, or omit the field to keep existing anchors.")
+                    "128 characters) and retry. Pass [] for no anchors. On update, omitting "
+                    "anchors preserves them only when the text is unchanged or whitespace-equivalent; "
+                    "a substantive text change clears them.")
             self.audit.record(name, arguments, data, (time.perf_counter() - start) * 1000,
                               error={"type": type(exc).__name__, "message": str(exc)},
                               response_code=code, context=context)
@@ -658,18 +646,78 @@ def create_mcp_server(service=None, *, runtime=None):
 # Guidance appended to each tool's result so the LLM knows what it can do next
 # with the returned data. Kept intentionally concise.
 _TOOL_HINTS: dict[str, str] = {
-    "list_keywords": "Reuse a candidate only if it accurately expresses your concept; score measures similarity, not equivalence. New keywords are allowed when none fits. Counts reflect live memories in the requested namespace. Pass this keyword_query_id to a later add/update/search when it informed your choice. Use browse/literal offset for more results; lower semantic min_score to broaden candidates. No report is needed.",
-    "add": _ANCHOR_GUIDANCE + "When setting keywords, first use list_keywords semantic mode in the target namespace to find reusable terms. Memory stored. A supplied summary was saved directly; if it was missing or blank, a deterministic extract from the leading text was stored. If created=false, an identical record already exists and remains untouched — consider 'update' instead. Reuse canonical categories from stats' category_counts (up to 3). An unknown namespace is rejected unless you pass confirm_codes=[\"namespace_not_found\"].",
-    "search_semantic": "Results are ranked by relevance (score). Use 'get_details' with an id to read the full original text, then call 'report' with this search_id to rate how helpful each result was (-10..10). filter_resolution shows how exact or semantic keywords/categories constrained candidates before scoring. Values within one dimension use OR, while dimensions combine using AND. If a whole supplied dimension could not be resolved, the result is empty. response_code='namespace_not_found' means the namespace does not exist (empty items is then not a real 'no match').",
-    "search_lexical": "Results are exact-term matches ranked by BM25; the score is NOT comparable with semantic scores. Items carry a stored summary or deterministic leading-text extract. Use 'get_details' with an id to read the full original text, then call 'report' with this search_id to rate how helpful each result was (-10..10). response_code='namespace_not_found' means the namespace does not exist; use response_meta.known_namespaces or omit it. If nothing matched, retry with 'search_semantic'.",
-    "search_anchor": "Results are anchor matches ranked by BM25; the score is NOT comparable with the other search scores. Items carry a stored summary or deterministic leading-text extract. Use 'get_details' with an id to read the full original text, then call 'report' with this search_id to rate how helpful each result was (-10..10). If nothing matched, retry with 'search_lexical' or 'search_semantic'. response_code='namespace_not_found' means the namespace does not exist; use response_meta.known_namespaces or omit it.",
-    "search_meta": "Use 'get_details' with an id to read the full original text, or call 'search_semantic' for fuzzy/topic/keyword lookup. Filter further with keywords= and/or categories=. After using these results, call 'report' with this search_id to rate how helpful each id was (-10..10). response_code='namespace_not_found' means the namespace does not exist; the real available namespaces are in response_meta.known_namespaces.",
-    "get_details": "You now have the full text, including metadata.keywords, metadata.categories and metadata.anchors. Pass source_search_id from the originating search to link this lookup in audit. If a memory is relevant, use search_meta(keywords=[...]) or search_meta(categories=[...]) to find related memories.",
-    "update": _ANCHOR_GUIDANCE + "When replacing keywords, first use list_keywords semantic mode in the target namespace; other updates need no keyword lookup. Memory updated. A supplied summary was saved directly; changed text without one received a deterministic leading-text extract. Metadata-only and whitespace-equivalent text updates preserve the existing summary. Use 'get_details' with the id to verify the change. Categories (if any) were taken from metadata.categories — see stats' category_counts for the canonical list (up to 3). Moving to an unknown namespace is rejected unless you pass confirm_codes=[\"namespace_not_found\"].",
-    "delete": "Memory soft-deleted. It no longer appears in 'search_semantic'/'search_meta'. Call 'stats' to confirm the count.",
-    "stats": "Use 'namespace_counts' to pick a namespace, then 'search_meta' or 'search_semantic' within it. Use 'list_keywords' to find existing keywords and 'category_counts' as the canonical category vocabulary (up to 3 per memory) for search_meta/add. Embedding provider/model/profile describe the active comparable vector space. Use 'server_time' for time-based queries.",
-    "report": "Feedback recorded. Continue with the task, or run another search if the results were unhelpful.",
+    "list_keywords": "Reuse a candidate only if it expresses your concept; new keywords are allowed. Counts reflect live memories in the requested namespace. Pass keyword_query_id to a later add/update/search when it informed your choice. No report is needed.",
+    "add": "Memory stored. For future writes, use list_keywords to reuse fitting content concepts, 1–3 relevant metadata.categories from stats, and metadata.anchors for distinctive identifiers. Call get_details with memory_ids=[id] if you need to verify the stored record.",
+    "search_semantic": "Results are ranked by memory-text cosine similarity. Use get_details(memory_ids=[...], source_search_id=this search_id) for full text; after using results, call report with this search_id and helpfulness ratings (-10..10).",
+    "search_lexical": "Results are ranked by BM25; scores are not comparable with semantic scores. Use get_details(memory_ids=[...], source_search_id=this search_id) for full text; after using results, call report with this search_id and helpfulness ratings (-10..10).",
+    "search_anchor": "Results match declared anchors and are ranked by BM25; scores are not comparable with other search scores. Use get_details(memory_ids=[...], source_search_id=this search_id) for full text; after using results, call report with this search_id and helpfulness ratings (-10..10).",
+    "search_meta": "Results match exact filters, sorted by the requested time field. Use get_details(memory_ids=[...], source_search_id=this search_id) for full text; after using results, call report with this search_id and helpfulness ratings (-10..10). For conceptual lookup, use search_semantic.",
+    "get_details": "Read the returned full text and metadata. To find related records, use search_meta for known exact keywords/categories, search_anchor for a declared identifier, or search_semantic for conceptual similarity.",
+    "update": "Memory updated. Call get_details with memory_ids=[memory_id] if you need to verify the stored record. When changing text in future, provide an updated summary, 1–3 relevant metadata.categories, and fresh metadata.anchors when distinctive identifiers exist.",
+    "delete": "Memory soft-deleted and removed from search results. Call stats if you need to verify the record count.",
+    "stats": "Use namespace_counts to choose a namespace. Use search_meta for recent records or exact filters, search_semantic for concepts, search_lexical for literal text, and search_anchor for declared identifiers. Use list_keywords for the full keyword vocabulary, category_counts for category choices, and server_time for relative date ranges.",
+    "report": "Feedback recorded. Continue with the task or search again if the results were unhelpful.",
 }
+
+
+def _result_hint(name: str, arguments: dict, data: dict) -> str:
+    """Choose next-step guidance from the actual result, not only the tool name."""
+    hint = _TOOL_HINTS[name]
+    if name == "list_keywords":
+        if data.get("mode") == "semantic":
+            return (hint + " Scores measure similarity, not equivalence. Lower min_score "
+                    "to broaden semantic candidates when needed.")
+        return (hint + " Use offset and limit to page through browse/literal results; "
+                "use semantic mode to find related terms by meaning.")
+    if name == "add":
+        if data.get("created") is False:
+            return ("No new memory was stored: identical text already exists in this namespace. "
+                    "Call get_details with memory_ids=[id] to inspect it; use update if it needs changes.")
+    elif name in ("search_semantic", "search_lexical", "search_anchor", "search_meta"):
+        if not data.get("items"):
+            if name == "search_semantic":
+                if data.get("filter_resolution") is not None:
+                    return ("No memories matched. Inspect filter_resolution; adjust or remove "
+                            "unresolved filters if present, otherwise broaden the query or filters. "
+                            "Use stats to verify the namespace.")
+                return ("No memories matched. Verify the namespace with stats; try a broader "
+                        "semantic query, search_lexical for literal identifiers, or search_meta for recent records.")
+            if name == "search_lexical":
+                return ("No literal content match. Check the namespace with stats; try "
+                        "search_anchor for a declared identifier or search_semantic for concepts/Chinese text.")
+            if name == "search_anchor":
+                return ("No declared anchor matched. Check the namespace with stats; try "
+                        "search_lexical for content terms or search_semantic for concepts.")
+            return ("No memories in this page. Check the namespace and exact filters or widen "
+                    "the time range; reset offset if paginating. Try search_semantic for concepts.")
+        if name == "search_semantic" and data.get("filter_resolution") is not None:
+            hint += " Inspect filter_resolution to see which exact or semantic filter values were applied."
+        if name == "search_meta":
+            limit = int(arguments.get("limit", 100))
+            if limit > 0 and len(data["items"]) == limit:
+                hint += (f" This page is full; more records may exist. To continue, "
+                         f"retry with offset={int(arguments.get('offset', 0)) + limit}.")
+    elif name == "get_details":
+        if not data.get("found"):
+            return ("None of the requested IDs were found. Recheck the IDs or run a new search; "
+                    "missing lists the unresolved IDs.")
+        if data.get("missing"):
+            hint += " Some IDs were missing; recheck those IDs or search again."
+    elif name == "update":
+        if not data.get("success"):
+            return ("No memory was updated because the ID was not found. "
+                    "Search again and use an existing ID before retrying.")
+    elif name == "delete":
+        if not data.get("success"):
+            return ("No memory was deleted because the ID was not found or already deleted. "
+                    "Search again if you need to locate it.")
+    elif name == "report" and not data.get("count"):
+        return ("No valid ratings were recorded. If you used a nonempty search result, "
+                "pass ratings for IDs from that result and its search_id.")
+    if name in ("add", "update") and data.get("categories_dropped"):
+        hint += (f" Only the first {MAX_CATEGORIES} categories were kept; "
+                 f"pass at most {MAX_CATEGORIES} in metadata.categories next time.")
+    return hint
 
 
 def _ok(data, hint: str = "") -> types.CallToolResult:
@@ -697,14 +745,15 @@ def _wrap_search_meta(items: list, namespace: str | None, limit: int, offset: in
     this wrapper is only applied at the MCP tool boundary.
     """
     scope = f"namespace={namespace!r}" if namespace else "all namespaces"
-    note = (
-        f"{len(items)} memories (limit={limit}, offset={offset}) from {scope}, "
-        f"sorted by {sort_by} descending. Items carry a stored summary or a "
-        f"deterministic leading-text extract. To see the complete original content, call 'get_details' "
-        f"with the returned ids. After using these results, call 'report' with "
-        f"this search_id and rate how helpful each id was for the current question "
-        f"(-10..10, may rate a subset)."
-    )
+    if items:
+        note = (
+            f"{len(items)} memories in this page (limit={limit}, offset={offset}) from {scope}, "
+            f"sorted by {sort_by} descending. Items carry summaries. For full text, call "
+            f"get_details with memory_ids and source_search_id=this search_id. After using "
+            f"these results, call report with this search_id and rate reviewed ids (-10..10)."
+        )
+    else:
+        note = f"0 memories in this page (limit={limit}, offset={offset}) from {scope}; no ids to inspect or report."
     return {"search_id": _new_search_id(), "note": note, "total": len(items), "items": items}
 
 
@@ -715,13 +764,14 @@ def _wrap_search_semantic(search_result: dict) -> dict:
     if isinstance(search_result, list):
         search_result = {"items": search_result, "filter_resolution": None}
     items = search_result["items"]
-    note = (
-        f"{len(items)} results, ranked by semantic similarity (score). Items carry "
-        f"a stored summary or deterministic leading-text extract. To see the complete original "
-        f"content, call 'get_details' with the returned ids. After using these "
-        f"results, call 'report' with this search_id and rate how helpful each id "
-        f"was for the current question (-10..10, may rate a subset)."
-    )
+    if items:
+        note = (
+            f"{len(items)} results ranked by semantic similarity. Items carry summaries. "
+            f"For full text, call get_details with memory_ids and source_search_id=this search_id. "
+            f"After using these results, call report with this search_id and rate reviewed ids (-10..10)."
+        )
+    else:
+        note = "0 semantic results; no ids to inspect or report."
     result = {"search_id": _new_search_id(), "note": note,
               "total": len(items), "items": items}
     if search_result.get("filter_resolution") is not None:
@@ -731,26 +781,27 @@ def _wrap_search_semantic(search_result: dict) -> dict:
 
 def _wrap_search_lexical(items: list) -> dict:
     """Attach usage guidance to search_lexical results (same rationale as search_meta)."""
-    note = (
-        f"{len(items)} results, ranked by lexical term match (BM25). Items carry a "
-        f"stored summary or deterministic leading-text extract. Scores are not comparable "
-        f"with semantic scores. To see the complete original content, call 'get_details' with "
-        f"the returned ids. After using these results, call 'report' with this search_id and "
-        f"rate how helpful each id was for the current question (-10..10, may rate a subset)."
-    )
+    if items:
+        note = (
+            f"{len(items)} results ranked by lexical BM25. Scores are not comparable with semantic scores. "
+            f"For full text, call get_details with memory_ids and source_search_id=this search_id. "
+            f"After using these results, call report with this search_id and rate reviewed ids (-10..10)."
+        )
+    else:
+        note = "0 lexical results; no ids to inspect or report."
     return {"search_id": _new_search_id(), "note": note, "total": len(items), "items": items}
 
 
 def _wrap_search_anchor(items: list) -> dict:
     """Attach usage guidance to search_anchor results (same rationale as search_meta)."""
-    note = (
-        f"{len(items)} results, ranked by anchor match (BM25). Items carry a stored "
-        f"summary or deterministic leading-text extract. Scores are not comparable with "
-        f"the other search scores. To see the complete original content, call 'get_details' "
-        f"with the returned ids. After using these results, call 'report' with this "
-        f"search_id and rate how helpful each id was for the current question "
-        f"(-10..10, may rate a subset)."
-    )
+    if items:
+        note = (
+            f"{len(items)} results ranked by anchor BM25. Scores are not comparable with other search scores. "
+            f"For full text, call get_details with memory_ids and source_search_id=this search_id. "
+            f"After using these results, call report with this search_id and rate reviewed ids (-10..10)."
+        )
+    else:
+        note = "0 anchor results; no ids to inspect or report."
     return {"search_id": _new_search_id(), "note": note, "total": len(items), "items": items}
 
 
