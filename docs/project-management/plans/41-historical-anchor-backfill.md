@@ -109,3 +109,14 @@ Frozen contract for `bin/manage migrate anchors apply`. It is the only writing s
 - Estimate for the remaining 115 `remember-me` records at serial pace: ≈ 90–110 minutes (allow ~2h).
 - Manifest timestamps (`header.created_at`, row `drafted_at`, `trailer.completed_at`) give exact per-record timing without extra instrumentation.
 - Full `remember-me` batch (115 records, manifest `remember-me-full-v2.jsonl`): first pass 5823.7s ≈ 97.1 min (112 generated, 1 skip, 2 error); a resume retried the 2 errors in 101.1s → 114 generated / 1 skip / 0 error, complete. Total ≈ 98.8 min for 115 records ≈ 51.5s/record.
+
+## Execution status (2026-09-29)
+
+Stage 1 and most of Stage 3 are done and verified. The implementation is committed (`af0cf58`); this note records the rollout results.
+
+- Implementation: `bin/manage migrate anchors draft/apply`, `SQLiteStorage.update_anchors_batch` (single-transaction batch), batched extraction, and `--exclude-manifest` ledger batching. Tests: 458 passed.
+- `remember-me`: v1 pilot 10 + v2 full 115 (114 generated / 1 skip) applied in single transactions; `live 145`, `has_anchors 141`.
+- `atos-next-master`: 941 drafted across 95 manifests (all `generated`, 0 skip/error), applied manifest-by-manifest (941 rows, 0 failures, `updated_at` unchanged). After restart: dual `in_sync=true`, `pending=0`, replica integrity 0; namespace `live 956`, `needs_anchors 0`.
+- Global: `anchor_total=3166`, `memories_with_anchors=1097`, anchor vectors 0; `search_anchor` hits.
+- Remaining (optional): the few `remember-me` records added during the run, `待报销` (2), and any future writes — same flow (draft, then apply with the service stopped).
+- Reproduce a call from its server-side Request ID (= opencode assistant message id): `/tmp/opencode/inspect_call.py <msg_...|ses_...>`.

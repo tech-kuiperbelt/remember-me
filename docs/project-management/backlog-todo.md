@@ -6,10 +6,16 @@
 
 ### [41] Historical Anchor Backfill
 
-- 计划：详见 `docs/project-management/plans/41-historical-anchor-backfill.md`。
-- 目标：通过离线 DeepSeek CLI 为历史记忆生成并自动写入 anchors；先在 `remember-me` 小批量试跑，检查整体效果后扩展到其余 `remember-me` 记录，再分批覆盖其他 namespace。
-- 约束：在线 add/update 不生成 anchors；默认只处理缺少 anchors 的记录；每次给 LLM 一条记忆的小上下文并将结果追加到 ID 关联的临时 JSONL；整批生成完成后才写库，一个 manifest 对应一个 SQLite 原子事务；任一条陈旧/冲突或事务错误则整批不写；成功提交后由 dual outbox 同步 JSONL；候选可不逐字出现在正文，按记忆语义生成；不设逐条人工审核。
-- 状态：离线 `bin/manage migrate anchors draft/apply` 已实现并通过自动化测试；尚未在真实数据上执行小批量试跑、对账和后续 namespace 回填。计划文档中的 rollout 仍待执行。
+- 计划：详见 `docs/project-management/plans/41-historical-anchor-backfill.md`（含 Draft/Apply 冻结规格与 manifest v2 线格式）。
+- 目标：通过离线 DeepSeek CLI 为历史记忆生成并自动写入 anchors；分批覆盖各 namespace。
+- 约束：在线 add/update 不生成 anchors；默认只处理缺少 anchors 的记录；批量模式下一次 `opencode run` 处理 `--batch-size`（默认 10）条记忆并按 id 回填，结果追加到 manifest（一个 manifest = 一批 = 一个 SQLite 原子事务）；用 `--exclude-manifest` 以既有 manifest 作账本分批（下一批 = eligible − 已提取），因此不 apply 也能推进且各批不重叠；任一条陈旧/冲突或事务错误则整批不写；成功提交后由 dual outbox 同步 JSONL；候选可不逐字出现在正文；不设逐条人工审核。
+- 状态：2026-09-29 已实现并在真实数据上执行完成（实现提交于 `af0cf58`；本次文档更新记录执行结果）。
+  - 实现：`bin/manage migrate anchors draft/apply`、`SQLiteStorage.update_anchors_batch`（单事务整批）、批量抽取、`--exclude-manifest` 账本式分批；pytest 458 通过。
+  - `remember-me`：试点 + 全量（115 条 → 114 generated / 1 skip）单事务 apply 完成；该 namespace live 145 中 141 有 anchors。
+  - `atos-next-master`：941 条 draft（95 个 manifest，全 generated、0 skip/0 error），逐个 manifest 单事务 apply 完成（941 条、0 失败、`updated_at` 不变）；重启后 dual `in_sync=true`、`pending=0`、replica integrity 0；该 namespace live **956/956 全部有 anchors**。
+  - 全局：`anchor_total=3166`、`memories_with_anchors=1097`；anchor 向量 0（隔离未破坏）。
+  - 剩余（可选）：`remember-me` 期间新增的少量记录、`待报销` 2 条、以及后续新增记忆；沿用同一流程（draft → 停机 apply）。
+  - 调用复现：服务端 Request ID = opencode assistant messageID（`msg_…`）；可用 opencode DB（session/message/part）还原该次发送的 prompt 与 response（本地辅助脚本，未入库）。
 
 ### [27] LLM 结构化检索与分类写入引导
 
