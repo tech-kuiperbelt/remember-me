@@ -92,11 +92,24 @@ class SQLiteStorage(MemoryStorage):
     def close(self):
         """Close the SQLite connection and release an optional writer lock."""
         with self._lock:
+            self.close_connection()
+            if self._writer_lock is not None:
+                self._writer_lock.release()
+
+    def close_connection(self):
+        """Keep the lifetime writer lock while swapping the database contents."""
+        with self._lock:
             if self.conn is not None:
                 self.conn.close()
                 self.conn = None
-            if self._writer_lock is not None:
-                self._writer_lock.release()
+
+    def reopen_connection(self):
+        with self._lock:
+            if self.conn is not None:
+                raise RuntimeError("database connection is already open")
+            self.conn = sqlite3.connect(self.path, check_same_thread=False)
+            self.conn.row_factory = sqlite3.Row
+            self._load_active_embedding_profile()
 
     def stop(self):
         """Storage lifecycle hook used by the server shutdown path."""

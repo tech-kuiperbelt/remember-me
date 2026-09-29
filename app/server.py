@@ -30,6 +30,7 @@ from .namespace_policy import NamespaceNotFound, NAMESPACE_NOT_FOUND
 from .embed import EmbeddingError, EmbeddingInputTooLong
 from .lexical import LexicalQueryError
 from .anchors import InvalidAnchors, MAX_ANCHORS
+from .maintenance import MaintenanceRejected
 
 logger = logging.getLogger("server")
 
@@ -458,6 +459,19 @@ class MCPApplication:
         ])
 
     async def handle_call_tool(self, name: str, arguments: dict) -> types.CallToolResult:
+        if self.runtime is None:
+            return await self._handle_call_tool_unchecked(name, arguments)
+        try:
+            with self.runtime.maintenance.access(write=name in ("add", "update", "delete")):
+                return await self._handle_call_tool_unchecked(name, arguments)
+        except MaintenanceRejected as exc:
+            data = {"response_code": exc.code, "detail": str(exc)}
+            hint = "Maintenance is in progress. Retry this operation later."
+            self.audit.record(name, arguments, data, 0.0, response_code=exc.code,
+                              context=self._audit_context())
+            return _ok(data, hint)
+
+    async def _handle_call_tool_unchecked(self, name: str, arguments: dict) -> types.CallToolResult:
         logger.info("Tool call: %s %s", name, arguments)
         start = time.perf_counter()
         context = self._audit_context()
@@ -617,6 +631,12 @@ class MCPApplication:
         ])
 
     async def handle_read_resource(self, uri: str) -> types.ReadResourceResult:
+        if self.runtime is not None:
+            with self.runtime.maintenance.access():
+                return await self._handle_read_resource_unchecked(uri)
+        return await self._handle_read_resource_unchecked(uri)
+
+    async def _handle_read_resource_unchecked(self, uri: str) -> types.ReadResourceResult:
         logger.info("Resource read: %s", uri)
         if uri == "memories://stats":
             return types.ReadResourceResult(contents=[

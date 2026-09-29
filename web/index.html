@@ -97,6 +97,7 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
   <a id="nav-ops" onclick="switchPage('ops')">运维</a>
   <a id="nav-audit" onclick="switchPage('audit')">Audit</a>
 </div>
+<div id="maintenance-banner" style="display:none;padding:8px 16px;background:#fff3cd;color:#7a5300">Maintenance is active. Memory writes are paused; searches remain available.</div>
 
 <div class="content">
 
@@ -288,6 +289,15 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
 
 <!-- Ops (运维) -->
 <div class="page" id="page-ops">
+  <div class="card">
+    <div class="card-header">Maintenance Mode</div>
+    <div class="card-body">
+      <p id="maintenance-status">Loading maintenance status...</p>
+      <button id="btn-maintenance-enter" class="btn btn-primary" onclick="enterMaintenance()">Enter Maintenance</button>
+      <button id="btn-maintenance-exit" class="btn btn-outline" onclick="exitMaintenance()">Exit Maintenance</button>
+      <span id="maintenance-result" style="margin-left:12px;font-size:13px"></span>
+    </div>
+  </div>
   <!-- Server controls -->
   <div class="card">
     <div class="card-header">Server</div>
@@ -296,6 +306,17 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
       <button id="btn-restart" class="btn btn-primary" onclick="doRestartServer()">Restart Server</button>
       <button id="btn-shutdown" class="btn btn-danger" onclick="doShutdownServer()">Shut Down Server</button>
       <span id="restart-result" style="margin-left:12px;font-size:13px"></span>
+    </div>
+  </div>
+
+  <!-- Import -->
+  <div class="card">
+    <div class="card-header">JSONL Recover</div>
+    <div class="card-body">
+      <p style="color:#c62828">Replaces all memories in the current database from an uploaded JSONL backup.</p>
+      <input id="recover-file" type="file" accept=".jsonl,.ndjson,application/x-ndjson">
+      <button id="btn-recover" class="btn btn-danger" onclick="doRecover()">Recover</button>
+      <span id="recover-result" style="margin-left:12px;font-size:13px"></span>
     </div>
   </div>
 
@@ -782,15 +803,9 @@ async function deleteMemory(id) {
 async function clearNamespace() {
   const ns = currentNamespace;
   if (!ns) { toast('Select a namespace first', 'error'); return }
-  if (!confirm('Delete ALL memories in namespace "' + ns + '"?')) return;
-  try {
-    const r = await api('/memories?namespace=' + encodeURIComponent(ns), {method: 'DELETE'});
-    toast('Deleted ' + r.deleted + ' memories');
-    loadMemories();
-    loadStats();
-  } catch(e) {
-    toast(e.message, 'error');
-  }
+  switchPage('ops');
+  $('clear-ns').value = ns;
+  toast('Enter maintenance mode, then use Clear in Ops.', 'info');
 }
 
 // Search
@@ -1170,6 +1185,7 @@ function onDebugClick(e) {
 }
 
 async function loadOpsPage() {
+  await refreshMaintenance();
   const data = await api('/stats');
   const nsList = data.namespace_counts ? Object.keys(data.namespace_counts) : [];
   nsList.sort();
@@ -1214,6 +1230,85 @@ async function loadOpsPage() {
   });
   $('migrate-result').textContent = '';
 }
+
+const MAINTENANCE_ACTION_IDS = [
+  'btn-restart', 'btn-shutdown', 'btn-recover', 'btn-import',
+  'btn-export-full', 'btn-export-ns', 'btn-sync', 'btn-clear', 'btn-migrate'
+];
+
+async function refreshMaintenance() {
+  try {
+    const state = await api('/maintenance');
+    const ready = state.state === 'maintenance' && !state.action;
+    $('maintenance-banner').style.display = state.state === 'normal' ? 'none' : 'block';
+    $('btn-add-submit').disabled = state.state !== 'normal';
+    $('maintenance-status').textContent = `State: ${state.state}` +
+      (state.action ? ` · Running: ${state.action}` : '') +
+      (state.error ? ` · Error: ${state.error}` : '');
+    $('btn-maintenance-enter').disabled = state.state !== 'normal';
+    $('btn-maintenance-exit').disabled = !ready || !!state.error;
+    MAINTENANCE_ACTION_IDS.forEach(id => {
+      $(id).disabled = !ready || !!state.error && !['btn-sync', 'btn-restart', 'btn-shutdown'].includes(id);
+    });
+    if (state.state !== 'normal') {
+      $('btn-clear-ns').disabled = true;
+    } else {
+      $('btn-clear-ns').disabled = false;
+    }
+  } catch(e) {
+    $('maintenance-status').textContent = 'Maintenance status unavailable: ' + e.message;
+    MAINTENANCE_ACTION_IDS.forEach(id => { $(id).disabled = true; });
+  }
+}
+
+async function enterMaintenance() {
+  $('maintenance-result').textContent = 'Waiting for active writes...';
+  try {
+    await api('/maintenance/enter', {method:'POST'});
+    $('maintenance-result').textContent = 'Maintenance mode active.';
+  } catch(e) { $('maintenance-result').textContent = 'Error: ' + e.message; }
+  await refreshMaintenance();
+}
+
+async function exitMaintenance() {
+  try {
+    await api('/maintenance/exit', {method:'POST'});
+    $('maintenance-result').textContent = 'Normal service restored.';
+  } catch(e) { $('maintenance-result').textContent = 'Error: ' + e.message; }
+  await refreshMaintenance();
+}
+
+async function doRecover() {
+  const file = $('recover-file').files[0];
+  const resultEl = $('recover-result');
+  if (!file) { resultEl.textContent = 'Select a JSONL file.'; return; }
+  if (!confirm(`Replace ALL current memories with records from ${file.name}?`)) return;
+  const form = new FormData();
+  form.append('file', file);
+  resultEl.textContent = 'Uploading...';
+  try {
+    const response = await fetch('/api/recover', {method:'POST', body:form});
+    const job = await response.json();
+    if (!response.ok) throw new Error(job.detail || response.statusText);
+    await refreshMaintenance();
+    while (true) {
+      const status = await api('/recover/' + encodeURIComponent(job.id));
+      resultEl.textContent = `Recover: ${status.phase} ${status.completed}/${status.total}`;
+      if (status.status === 'completed') {
+        resultEl.textContent = `Recovered ${status.result.recovered} memories.`;
+        refreshStats();
+        break;
+      }
+      if (status.status === 'failed') throw new Error(status.error);
+      await new Promise(resolve => setTimeout(resolve, 750));
+    }
+  } catch(e) { resultEl.textContent = 'Error: ' + e.message; }
+  await refreshMaintenance();
+}
+
+setInterval(() => {
+  refreshMaintenance();
+}, 2000);
 
 async function doMigrate() {
   const source = $('migrate-source').value;

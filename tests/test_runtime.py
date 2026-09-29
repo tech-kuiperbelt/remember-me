@@ -222,6 +222,7 @@ def test_export_routes_after_service_split(tmp_path):
     rt = runtime(tmp_path)
     with TestClient(create_http_app(rt)) as client:
         rt.service.memory_add('export body')
+        assert client.post('/api/maintenance/enter').status_code == 200
         for endpoint, body in [('full', {}), ('namespace', {'namespace': 'default'})]:
             response = client.post('/api/export/' + endpoint, json=body)
             assert response.status_code == 200

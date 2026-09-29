@@ -23,9 +23,20 @@
 ### [41] Historical Anchor Backfill
 
 - 计划：详见 `docs/project-management/plans/41-historical-anchor-backfill.md`。
-- 目标：通过离线 DeepSeek CLI 为历史记忆生成 anchors 候选，经人工审核后写入；先在 `remember-me` 小批量试点，校准质量后扩展到其余 `remember-me` 记录，再分批覆盖其他 namespace。
-- 约束：在线 add/update 不生成 anchors；默认只处理缺少 anchors 的记录；候选必须来自正文且通过 `normalize_anchors`；apply 仅接受人工批准项，按内容 hash/namespace/当前 anchors 检查陈旧状态；通过 `update_metadata` 保持 `updated_at`；服务停机后持 writer lock 写入。
-- 状态：已完成计划，尚未实现。
+- 目标：通过离线 DeepSeek CLI 为历史记忆生成并自动写入 anchors；先在 `remember-me` 小批量试跑，检查整体效果后扩展到其余 `remember-me` 记录，再分批覆盖其他 namespace。
+- 约束：在线 add/update 不生成 anchors；默认只处理缺少 anchors 的记录；每次给 LLM 一条记忆的小上下文并将结果追加到 ID 关联的临时 JSONL；整批生成完成后才写库，一个 manifest 对应一个 SQLite 原子事务；任一条陈旧/冲突或事务错误则整批不写；成功提交后由 dual outbox 同步 JSONL；候选可不逐字出现在正文，按记忆语义生成；不设逐条人工审核。
+- 状态：离线 `bin/manage migrate anchors draft/apply` 已实现并通过自动化测试；尚未在真实数据上执行小批量试跑、对账和后续 namespace 回填。计划文档中的 rollout 仍待执行。
+
+### [42] Runtime Maintenance Mode — 在线运维窗口
+
+- 目标：服务进程保持运行时允许执行受控维护，减少为离线运维停服/重启的需要。
+- 流程：Ops 页面显式进入维护状态；runtime 立即拒绝新的 MCP/Web 普通记忆写入，等待已开始的写入及 dual 后台任务排空；MCP/Web 查询继续。退出维护后恢复普通写入与后台任务。
+- 并发约束：复用现有 SQLite/replica writer lock；维护期间普通记忆写入关闭。Ops 页面同一时刻只允许一个维护动作执行（含后台 import/recover）；runtime 负责排空、互斥和异常恢复；进程崩溃时 writer lock 随进程释放，普通维护状态不持久化。
+- 运维边界：在线维护只支持由 Ops API/UI 在当前服务进程内执行；runtime 始终持有现有 writer lock，并串行协调维护操作。独立 CLI 不接入 maintenance mode，任何需要 CLI 的运维仍须先正常停服，再由 CLI 获取 writer lock。
+- 接口/行为：`/api/maintenance` 状态与 enter/exit API；MCP/Web 普通写入口统一门禁，返回可识别的 `maintenance_mode` 和重试 hint；查询与 Ops 状态在线；所有 Ops 动作都要求维护状态并排他执行，动作中不能退出；关闭/重启也受此约束。
+- Recover：Ops 上传完整 JSONL 备份；临时库重建期间查询继续，切换主库时短暂排空查询；持有 writer lock，通过 SQLite backup 原子替换主库，并将恢复后的全库精确同步至 JSONL。崩溃恢复标记保证启动时补齐副本；不启动独立 CLI。
+- 验收：并发进入/退出、在途调用排空、maintenance hint、MCP/记忆写入拒绝、Ops 单动作互斥、recover 失败/成功后的恢复、dual sync 暂停与恢复、writer lock 竞争、进程中断恢复及浏览器回归。
+- 状态：功能已实现，465 pytest 与浏览器回归通过；待服务部署及实际运行验证，尤其是上传备份后的 Recover/副本对账和进程中断恢复演练。详见 `docs/project-management/plans/42-runtime-maintenance-mode.md`。
 
 ### [27] LLM 结构化检索与分类写入引导
 

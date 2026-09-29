@@ -1,4 +1,5 @@
 import json
+import asyncio
 import sys
 import os
 import logging
@@ -19,6 +20,7 @@ from .lexical import LexicalQueryError
 from .anchors import InvalidAnchors
 from .namespace_policy import NamespaceNotFound, InvalidNamespace
 from .jsonl_transfer import safe_filename_part, unlink_quietly
+from .maintenance import MaintenanceRejected
 
 logger = logging.getLogger("admin")
 
@@ -108,6 +110,13 @@ def _export_response(result, filename):
     )
 
 
+def _maintenance_response(exc):
+    status = 503 if exc.code in ("maintenance_mode", "maintenance_switching",
+                                 "maintenance_unavailable") else 409
+    return Response(json.dumps({"detail": str(exc), "response_code": exc.code}),
+                    status_code=status, media_type="application/json")
+
+
 class AdminAPI:
     def __init__(self, service=None, *, runtime=None):
         if service is None and runtime is None:
@@ -127,6 +136,161 @@ class AdminAPI:
     def _audit_context(request):
         state = request.scope.get("state", {}) if hasattr(request, "scope") else {}
         return {"source": "admin_http", "request_id": state.get("audit_request_id") or "rq_" + os.urandom(8).hex()}
+
+    async def handle_maintenance_status(self, request):
+        if self.runtime is None:
+            return Response(json.dumps({"state": "unavailable", "action": None,
+                                        "readers": 0, "writers": 0, "error": None}),
+                            media_type="application/json")
+        return Response(json.dumps(self.runtime.maintenance.snapshot()),
+                        media_type="application/json")
+
+    async def handle_maintenance_enter(self, request):
+        if self.runtime is None:
+            return Response(json.dumps({"detail": "maintenance requires a runtime"}),
+                            status_code=503, media_type="application/json")
+        try:
+            await asyncio.to_thread(self.runtime.enter_maintenance)
+            self.audit.record("maintenance_enter", {}, self.runtime.maintenance.snapshot(), 0,
+                              context=self._audit_context(request))
+            return Response(json.dumps(self.runtime.maintenance.snapshot()),
+                            media_type="application/json")
+        except MaintenanceRejected as exc:
+            return _maintenance_response(exc)
+
+    async def handle_maintenance_exit(self, request):
+        if self.runtime is None:
+            return Response(json.dumps({"detail": "maintenance requires a runtime"}),
+                            status_code=503, media_type="application/json")
+        try:
+            self.runtime.exit_maintenance()
+            self.audit.record("maintenance_exit", {}, self.runtime.maintenance.snapshot(), 0,
+                              context=self._audit_context(request))
+            return Response(json.dumps(self.runtime.maintenance.snapshot()),
+                            media_type="application/json")
+        except MaintenanceRejected as exc:
+            return _maintenance_response(exc)
+
+    async def handle_recover(self, request):
+        if self.runtime is None:
+            return Response(json.dumps({"detail": "recover requires a runtime"}),
+                            status_code=503, media_type="application/json")
+        path = None
+        try:
+            self.runtime.maintenance.start_action("recover")
+        except MaintenanceRejected as exc:
+            return _maintenance_response(exc)
+        try:
+            form = await request.form()
+            upload = form.get("file")
+            if upload is None or not hasattr(upload, "read"):
+                raise ValueError("multipart field 'file' is required")
+            filename = getattr(upload, "filename", "") or ""
+            if not filename.lower().endswith((".jsonl", ".ndjson")):
+                raise ValueError("file must end with .jsonl or .ndjson")
+            fd, path = tempfile.mkstemp(prefix="remember-me-recover-", suffix=".jsonl")
+            total = 0
+            with os.fdopen(fd, "wb") as dest:
+                while True:
+                    chunk = await upload.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if total > self.service.settings.IMPORT_MAX_BYTES:
+                        raise ValueError("recover file exceeds import size limit")
+                    dest.write(chunk)
+            result = self.runtime.start_recover(path, os.path.basename(filename), reserved=True)
+            self.audit.record("online_recover_start", {"filename": os.path.basename(filename),
+                                                       "bytes": total}, result, 0,
+                              context=self._audit_context(request))
+            path = None
+            return Response(json.dumps(result), status_code=202, media_type="application/json")
+        except (ValueError, RuntimeError) as exc:
+            self.runtime.maintenance.finish_action(error=exc)
+            return Response(json.dumps({"detail": str(exc)}), status_code=400,
+                            media_type="application/json")
+        except BaseException as exc:
+            self.runtime.maintenance.finish_action(error=exc)
+            logger.exception("recover upload failed")
+            return Response(json.dumps({"detail": "Recover upload failed"}), status_code=500,
+                            media_type="application/json")
+        finally:
+            if path is not None:
+                unlink_quietly(path)
+
+    async def handle_recover_status(self, request):
+        if self.runtime is None:
+            return Response(json.dumps({"detail": "recover requires a runtime"}),
+                            status_code=503, media_type="application/json")
+        job = self.runtime.recover_jobs.get(request.path_params["recover_id"])
+        if job is None:
+            return Response(json.dumps({"detail": "Recover job not found"}), status_code=404,
+                            media_type="application/json")
+        return Response(json.dumps(dict(job)), media_type="application/json")
+
+    def _guard(self, endpoint, *, write=False, action=None):
+        async def guarded(request):
+            if self.runtime is None:
+                return await endpoint(request)
+            gate = self.runtime.maintenance
+            if action:
+                try:
+                    gate.start_action(action)
+                except MaintenanceRejected as exc:
+                    return _maintenance_response(exc)
+                try:
+                    response = await endpoint(request)
+                    if action in ("restart", "shutdown") and response.status_code < 400:
+                        background = response.background
+
+                        async def finish_process_control():
+                            try:
+                                if background is not None:
+                                    await background()
+                            finally:
+                                gate.finish_action()
+
+                        response.background = BackgroundTask(finish_process_control)
+                    elif action == "import" and response.status_code == 202:
+                        import_id = json.loads(response.body)["import_id"]
+
+                        def await_import():
+                            try:
+                                while True:
+                                    status = self.service.memory_import_status(import_id)
+                                    if status is None or status["status"] in ("completed", "failed"):
+                                        break
+                                    threading.Event().wait(0.1)
+                                for worker in list(self.service._workers):
+                                    if worker.name == f"memory-import-{import_id}":
+                                        worker.join()
+                            finally:
+                                gate.finish_action(result={"import_id": import_id})
+
+                        threading.Thread(target=await_import, daemon=True,
+                                         name=f"maintenance-import-{import_id}").start()
+                    else:
+                        if action == "sync" and response.status_code < 400:
+                            marker = Path(f"{self.runtime.settings.STORAGE_PATH}.online-recover")
+                            if marker.exists():
+                                try:
+                                    self.runtime._verify_recovered_replica()
+                                except RuntimeError:
+                                    pass
+                                else:
+                                    marker.unlink()
+                                    gate.clear_error()
+                        gate.finish_action()
+                    return response
+                except BaseException as exc:
+                    gate.finish_action(error=exc)
+                    raise
+            try:
+                with gate.access(write=write):
+                    return await endpoint(request)
+            except MaintenanceRejected as exc:
+                return _maintenance_response(exc)
+        return guarded
 
     async def handle_admin(self, request: Request):
         logger.info("GET /admin/console")
@@ -631,7 +795,7 @@ class AdminAPI:
 
     @property
     def routes(self):
-        return [
+        routes = [
             Route("/admin/console", endpoint=self.handle_admin, methods=["GET"]),
             Route("/api/memories", endpoint=self.handle_list_memories, methods=["GET"]),
             Route("/api/memories", endpoint=self.handle_add_memory, methods=["POST"]),
@@ -655,7 +819,42 @@ class AdminAPI:
             Route("/api/restart", endpoint=self.handle_restart, methods=["POST"]),
             Route("/api/namespaces/migrate", endpoint=self.handle_migrate_namespace, methods=["POST"]),
             Route("/api/audit", endpoint=self.handle_audit, methods=["GET"]),
+            Route("/api/maintenance", endpoint=self.handle_maintenance_status, methods=["GET"]),
+            Route("/api/maintenance/enter", endpoint=self.handle_maintenance_enter, methods=["POST"]),
+            Route("/api/maintenance/exit", endpoint=self.handle_maintenance_exit, methods=["POST"]),
+            Route("/api/recover", endpoint=self.handle_recover, methods=["POST"]),
+            Route("/api/recover/{recover_id}", endpoint=self.handle_recover_status, methods=["GET"]),
         ]
+        actions = {
+            ("/api/memories", "DELETE"): "clear",
+            ("/api/import", "POST"): "import",
+            ("/api/export/full", "POST"): "export_full",
+            ("/api/export/namespace", "POST"): "export_namespace",
+            ("/api/sync", "POST"): "sync",
+            ("/api/shutdown", "POST"): "shutdown",
+            ("/api/restart", "POST"): "restart",
+            ("/api/namespaces/migrate", "POST"): "migrate_namespace",
+        }
+        exempt = {"/admin/console", "/api/audit", "/api/storage-paths",
+                  "/api/import/{import_id}", "/api/maintenance",
+                  "/api/maintenance/enter", "/api/maintenance/exit",
+                  "/api/recover", "/api/recover/{recover_id}"}
+        guarded = []
+        for route in routes:
+            method = next(iter(route.methods))
+            action = actions.get((route.path, method))
+            if action:
+                endpoint = self._guard(route.endpoint, action=action)
+            elif route.path in exempt:
+                endpoint = route.endpoint
+            else:
+                endpoint = self._guard(
+                    route.endpoint, write=method in ("POST", "PUT", "PATCH", "DELETE")
+                    and route.path == "/api/memories"
+                    or method == "PUT" and route.path == "/api/memories/{memory_id}"
+                    or method == "DELETE" and route.path == "/api/memories/{memory_id}")
+            guarded.append(Route(route.path, endpoint=endpoint, methods=list(route.methods)))
+        return guarded
 
 
 def create_admin_routes(service=None, *, runtime=None):

@@ -105,6 +105,23 @@ class DualStorage(MemoryStorage):
             self._run_due_health_check("scheduled")
             self._run_due_compact("scheduled")
 
+    def pause_background(self):
+        """Drain scheduled work without releasing either writer lock."""
+        with self._lifecycle_lock:
+            self._stop.set()
+            if self._job is not None:
+                self._job.join()
+                self._job = None
+
+    def resume_background(self):
+        with self._lifecycle_lock:
+            if self._closed or not self._started or self._job is not None:
+                return
+            self._stop = threading.Event()
+            self._job = threading.Thread(target=self._sync_loop, daemon=True,
+                                         name="memory-replica")
+            self._job.start()
+
     @staticmethod
     def _iso_timestamp(value):
         if not value:

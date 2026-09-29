@@ -2,9 +2,10 @@
 
 ## 启动和关闭
 
-从仓库根目录运行 `bin/start.sh`。推荐先在管理台的 Ops 页面执行 **Shut Down
-Server**，等待页面确认服务停止，再执行离线维护。Restart Server 会在导入、同步和
-锁释放完成后重新启动进程。
+从仓库根目录运行 `bin/start.sh`。Ops 页面执行任何运维动作前，先点 **Enter
+Maintenance**；此时普通记忆写入暂停，查询继续。动作完成后点 **Exit Maintenance**。
+Restart Server 和 Shut Down Server 也要求先进入维护状态。需要执行独立 CLI 时，
+在维护状态下点击 Shut Down Server，等待服务退出。
 
 关闭后也可以从终端执行：
 
@@ -94,7 +95,11 @@ bin/manage migrate categories --dry-run --limit 20
 
 ## JSONL 恢复
 
-Recovery 会从不含 embedding 的 JSONL 重建 SQLite，并在成功前不替换目标数据库：
+服务运行时，可在 Ops 进入维护状态，上传完整 JSONL 备份并点击 Recover。重建期间查询
+继续；主库切换时查询会短暂收到重试提示。页面显示任务进度，成功后会对 dual 副本执行
+Full Sync。若副本同步失败，保持维护状态，使用 Ops 的 Sync 重试后再退出。
+
+离线恢复仍可用；它从不含 embedding 的 JSONL 重建 SQLite，并在成功前不替换目标数据库：
 
 ```bash
 bin/manage recover

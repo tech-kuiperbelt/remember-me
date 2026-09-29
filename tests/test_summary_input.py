@@ -141,9 +141,9 @@ def test_online_summary_generation_route_and_ui_are_removed(admin):
     assert "summary_fallback" not in ui
 
 
-def test_online_recover_route_and_ui_are_removed(admin):
+def test_online_recover_route_and_ui_are_present(admin):
     admin_routes = admin.routes
-    assert all(route.path != "/api/recover" for route in admin_routes)
+    assert any(route.path == "/api/recover" for route in admin_routes)
     ui = Path("web/index.html").read_text(encoding="utf-8")
-    assert "doRecover" not in ui
-    assert "btn-recover" not in ui
+    assert "doRecover" in ui
+    assert "btn-recover" in ui

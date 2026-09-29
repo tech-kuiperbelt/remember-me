@@ -121,6 +121,7 @@ def test_sse_protocol_and_process_exit_with_open_connection(process_config, acti
                         if action == 'signal':
                             proc.terminate()
                         else:
+                            assert (await client.post(base + '/api/maintenance/enter')).status_code == 200
                             result = await client.post(base + '/api/' + action)
                             assert result.status_code == 200
                             assert result.json()['status'] == ('stopping' if action == 'shutdown' else 'restarting')
@@ -182,6 +183,7 @@ def test_streamable_http_protocol_and_process_exit(process_config):
                 async with sse_client(base + '/sse', httpx_client_factory=factory) as streams:
                     await check_protocol(streams)
                 async with httpx.AsyncClient(timeout=5, trust_env=False) as client:
+                    assert (await client.post(base + '/api/maintenance/enter')).status_code == 200
                     result = await client.post(base + '/api/shutdown')
                     assert result.status_code == 200
                 await asyncio.to_thread(proc.wait, 10)
