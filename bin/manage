@@ -19,6 +19,7 @@ Offline writes (stop the service first):
   embedding <status|download-model|migrate-codec|reindex|reindex-index-values|activate> [args]
   migrate keywords [args]        DeepSeek keyword backfill (--dry-run supported)
   migrate categories [args]      DeepSeek category backfill (--dry-run supported)
+  migrate anchors <draft|apply>  Offline anchor backfill (draft is read-only)
   recover [SOURCE] [TARGET]      Rebuild SQLite from vector-free JSONL
 
 Defaults come from .env and the repository layout. Use the underlying command's
@@ -88,7 +89,7 @@ case "$1" in
         ;;
     migrate)
         if [[ "${2:-}" == "--help" || "${2:-}" == "-h" ]]; then
-            echo "Usage: bin/manage migrate {keywords|categories} [migration options]"
+            echo "Usage: bin/manage migrate {keywords|categories|anchors} [migration options]"
             echo "Pass --help after the migration name for the underlying CLI options."
             exit 0
         fi
@@ -97,6 +98,7 @@ case "$1" in
         case "$kind" in
             keywords) module=app.keyword_migrate_deepseek ;;
             categories) module=app.category_migrate_deepseek ;;
+            anchors) module=app.anchor_migrate_deepseek ;;
             *) echo "Unknown migration: $kind" >&2; usage >&2; exit 2 ;;
         esac
         has_db=0

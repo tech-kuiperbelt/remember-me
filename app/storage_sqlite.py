@@ -1568,6 +1568,43 @@ class SQLiteStorage(MemoryStorage):
                 raise
         return True
 
+    def update_anchors_batch(self, entries):
+        """Atomically replace ``metadata.anchors`` for a whole batch.
+
+        ``entries`` is an iterable of ``(memory_id, anchors)``. Every row is
+        updated inside a single SQLite transaction: metadata, the ``anchors``
+        relation index and Anchor FTS are synced, outbox versions are bumped and
+        ``updated_at`` is preserved. Any error rolls the entire batch back, so a
+        partially applied batch is impossible. Returns the number of rows
+        updated.
+        """
+        prepared = [(memory_id, list(anchors or [])) for memory_id, anchors in entries]
+        with self._lock:
+            try:
+                updated = 0
+                for memory_id, anchors in prepared:
+                    existing = self.get(memory_id)
+                    if not existing:
+                        raise RuntimeError(f"memory not found or deleted: {memory_id}")
+                    merged = {**existing.get("metadata", {}), "anchors": anchors}
+                    cursor = self.conn.execute(
+                        "UPDATE memories SET metadata = ?, synced = 0, version = version + 1 "
+                        "WHERE id = ? AND deleted = 0",
+                        (json.dumps(merged), memory_id),
+                    )
+                    if cursor.rowcount != 1:
+                        raise RuntimeError(
+                            f"batch update matched {cursor.rowcount} rows for {memory_id}")
+                    self._sync_metadata_index("anchors", memory_id, merged)
+                    self._sync_anchor_fts(
+                        memory_id, self._extract_index_values("anchors", merged))
+                    updated += 1
+                self.conn.commit()
+                return updated
+            except Exception:
+                self.conn.rollback()
+                raise
+
     def get_details(self, memory_ids):
         """Fetch full records by ID list. Partial success: missing IDs are reported."""
         found, missing = [], []

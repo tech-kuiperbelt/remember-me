@@ -408,6 +408,10 @@ class DualStorage(MemoryStorage):
                 memory_id, metadata, index_embeddings=index_embeddings
             )
 
+    def update_anchors_batch(self, entries):
+        with self._lock:
+            return self.primary.update_anchors_batch(entries)
+
     def delete(self, memory_id):
         with self._lock:
             return self.primary.delete(memory_id)
