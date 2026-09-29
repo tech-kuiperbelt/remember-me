@@ -2,6 +2,8 @@
 
 本文件归档已完成的项目待办。详细实现记录保留在 git 提交和项目变更日志中。
 
+- [41] Historical Anchor Backfill（2026-09-29 按用户决定标记完成；实现 commit `af0cf58`）：离线 `draft/apply`、批量抽取及单事务写入已实现，458 项 pytest 通过。真实数据上，`remember-me` 115 条试点与批量处理得到 114 generated / 1 skip；`atos-next-master` 的 941 条分 95 个 manifest 全部生成并应用，0 失败、`updated_at` 不变；重启后 dual 健康检查通过，anchor 向量仍为 0。归档时主库尚有 `remember-me` 3 条和 `待报销` 2 条未进入 manifest，另有 1 条已记录的 skip；用户确认这些零星余项不阻碍本项结束。详见 [`plans/41-historical-anchor-backfill.md`](plans/41-historical-anchor-backfill.md)。
+- [27] LLM 结构化检索与分类写入引导（2026-09-29 按用户决定标记完成；commit `f8af65d`）：更新 11 个 MCP 工具的描述和按结果生成的 hint，并同步 `/read-me`；475 项 pytest 通过，服务重启后已通过在线 `/read-me`、MCP `tools/list` 及实际空搜索/详情/找词返回验证。Audit 基线显示 2026-09-24 起 61/66 条新建记忆带 categories，但同期 23 次语义搜索均未使用关键词或分类过滤；因此尚无证据判断新引导对检索效果的影响，用户确认此观察不作为归档门槛。详见 [`plans/27-structured-retrieval-guidance.md`](plans/27-structured-retrieval-guidance.md)。
 - [42] Runtime Maintenance Mode — 在线运维窗口（2026-09-29 按用户指示标记完成）：功能已实现，465 项 pytest 与浏览器回归通过。此前记录的部署及运行演练待办随本次标记关闭；原状态未记载 Recover/副本对账/中断恢复演练结果。详见 [`plans/42-runtime-maintenance-mode.md`](plans/42-runtime-maintenance-mode.md)。
 - [40] Retrieval Extension Phase 2 — Manual Anchors + Anchor Search（2026-09-29 标记完成）：主体 commit `d41f149`；2026-09-28 完成写入引导收尾验收，433 项 pytest 与浏览器回归通过。Anchor 校验、写入语义、FTS 检索与索引回填、embedding 隔离、MCP/admin API、审计及 `/read-me` 均已验收。采用率和效果 benchmark 未开展，暂不作为继续保持开放状态的条件。详见 [`plans/40-memory-retrieval-anchors.md`](plans/40-memory-retrieval-anchors.md)。
 - [39] Retrieval Extension Phase 1 — Lexical Search（2026-09-29 标记完成）：实现并提交（`4b47dbe`、`dcc9dd1`），408 项 pytest 与浏览器回归通过，已部署并逐项验证。Lexical Search、FTS 写入与启动重建、API/MCP、审计及 `/read-me` 均已验收。Phase 1 benchmark 暂缓；已知中文不切字、短前缀误召回及 CamelCase 子词检索限制记录于计划文档。详见 [`plans/39-memory-retrieval-lexical.md`](plans/39-memory-retrieval-lexical.md)。
