@@ -56,9 +56,7 @@ class DualStorage(MemoryStorage):
         self._sync_count = 0
         self._lock = threading.RLock()
         self._sync_mutex = threading.Lock()
-        acquire = getattr(type(secondary), "acquire_writer_lock", None)
-        if callable(acquire):
-            secondary.acquire_writer_lock()
+        secondary.acquire_writer_lock()
 
         # Background sync thread
         self._stop = threading.Event()
@@ -164,7 +162,7 @@ class DualStorage(MemoryStorage):
 
     def _inspect_replica_locked(self) -> tuple[dict, dict]:
         """Return one exact primary/replica comparison while both locks are held."""
-        pending = self.primary._count_unsynced()
+        pending = self.primary.count_unsynced()
         primary_ids = {item["id"] for item in self.primary.export_records()}
         secondary_stats = self.secondary.get_stats()
         inspected_ids = secondary_stats.pop("_integrity_ids", None)
@@ -363,7 +361,7 @@ class DualStorage(MemoryStorage):
         """Durably publish an outbox batch, then conditionally acknowledge it."""
         synced = 0
         while True:
-            batch = self.primary._get_unsynced(limit=500)
+            batch = self.primary.get_unsynced_records(limit=500)
             if not batch:
                 break
             events = []
@@ -382,7 +380,7 @@ class DualStorage(MemoryStorage):
             except Exception:
                 logger.warning("incremental sync: failed to durably publish batch", exc_info=True)
                 return
-            synced += self.primary._mark_synced_versions(versions)
+            synced += self.primary.mark_synced_versions(versions)
         if synced:
             self._last_sync_mono = time.monotonic()
             logger.info("incremental sync: %d synced", synced)
@@ -499,7 +497,7 @@ class DualStorage(MemoryStorage):
             after_bytes = self.secondary.get_stats().get("file_bytes", 0)
             self._record_full_sync_compaction(before_bytes, after_bytes)
             if result.get("ids"):
-                self.primary._mark_synced_batch(result["ids"])
+                self.primary.mark_synced_batch(result["ids"])
             self._last_sync_mono = time.monotonic()
             self._record_verified_health("full_sync")
             return result
@@ -529,7 +527,7 @@ class DualStorage(MemoryStorage):
             shutil.copyfile(self.secondary.path, destination)
             after_bytes = os.path.getsize(self.secondary.path)
             self._record_full_sync_compaction(before_bytes, after_bytes)
-            self.primary._mark_synced_batch(result.get("ids", []))
+            self.primary.mark_synced_batch(result.get("ids", []))
             self._last_sync_mono = time.monotonic()
             self._record_verified_health("full_export")
             return {"records": len(primary_records), "bytes": os.path.getsize(destination),
@@ -538,6 +536,14 @@ class DualStorage(MemoryStorage):
                     "source_path": self.secondary.path,
                     "integrity": {"missing": 0, "extra": 0, "mismatched": 0,
                                   "corrupt_lines": 0}}
+
+    def active_embedding_profile(self):
+        return self.primary.active_embedding_profile()
+
+    def storage_paths(self) -> dict:
+        return {"backend": "dual",
+                "primary_path": getattr(self.primary, "path", "?"),
+                "secondary_path": getattr(self.secondary, "path", "?")}
 
     def get_stats(self) -> dict:
         with self._lock, self._sync_mutex:
@@ -552,7 +558,7 @@ class DualStorage(MemoryStorage):
                     "checked": True,
                 }
             except Exception as exc:
-                pending = self.primary._count_unsynced()
+                pending = self.primary.count_unsynced()
                 live_health = {
                     "outcome": "error", "in_sync": False, "pending": pending,
                     "missing": None, "extra": None, "corrupt_lines": None,
@@ -622,9 +628,7 @@ class DualStorage(MemoryStorage):
                         logger.exception("shutdown sync failed; pending outbox retained")
             finally:
                 try:
-                    release = getattr(type(self.secondary), "release_writer_lock", None)
-                    if callable(release):
-                        self.secondary.release_writer_lock()
+                    self.secondary.release_writer_lock()
                 finally:
                     self.primary.stop()
                     self._closed = True

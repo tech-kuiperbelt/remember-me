@@ -134,9 +134,10 @@ def test_memory_update_metadata_only_preserves_summary(service, mocked):
 def test_storage_paths_dual(service, monkeypatch):
     """Dual mode exposes primary (sqlite) and secondary (jsonl) paths."""
     storage = MagicMock()
-    storage.get_stats.return_value = {"backend": "dual"}
-    storage.primary.path = "data/memories.db"
-    storage.secondary.path = "data/memories.jsonl"
+    storage.storage_paths.return_value = {
+        "backend": "dual", "primary_path": "data/memories.db",
+        "secondary_path": "data/memories.jsonl",
+    }
     monkeypatch.setattr(service, "storage", storage)
 
     result = service.memory_storage_paths()
@@ -148,11 +149,7 @@ def test_storage_paths_dual(service, monkeypatch):
 def test_storage_paths_single_backend(service, monkeypatch):
     """Single-backend mode reports backend only, no replica paths."""
     storage = MagicMock()
-    storage.get_stats.return_value = {"backend": "sqlite"}
-    # MagicMock auto-creates attributes; remove them to simulate a
-    # single-backend storage that has no primary/secondary.
-    del storage.primary
-    del storage.secondary
+    storage.storage_paths.return_value = {"backend": "sqlite"}
     monkeypatch.setattr(service, "storage", storage)
 
     result = service.memory_storage_paths()

@@ -222,6 +222,7 @@ def test_memory_list_normalizes_keywords(monkeypatch, service):
 def test_memory_search_normalizes_keywords(monkeypatch, service):
     storage = MagicMock()
     storage.search.return_value = []
+    storage.exact_index_values.return_value = {"proj", "testing"}
     monkeypatch.setattr(service, "storage", storage)
     monkeypatch.setattr(service, "embed", lambda t: FAKE_EMB)
 

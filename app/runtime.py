@@ -13,7 +13,7 @@ from .settings import Settings
 from .model_preparation import ModelProgress, PreparationCancelled, download_progress
 from .provider_adapter import wrap_provider
 from .service import MemoryService
-from .storage import create_storage
+from .storage import create_storage, SQLitePrimaryStorage
 from .storage_dual import DualStorage
 from .maintenance import MaintenanceGate
 
@@ -338,7 +338,6 @@ class Runtime:
         def run():
             from .recovery import build_recovery_database, install_recovery_database
             from .jsonl_transfer import unlink_quietly
-            from .storage_sqlite import SQLiteStorage
             target = self.settings.STORAGE_PATH
             temp_path = None
             marker = None
@@ -360,12 +359,12 @@ class Runtime:
                     embed_documents=self.provider.embed_documents,
                     max_records=self.settings.IMPORT_MAX_RECORDS, progress=progress)
                 primary = self.storage.primary if isinstance(self.storage, DualStorage) else self.storage
-                if not isinstance(primary, SQLiteStorage):
+                if not isinstance(primary, SQLitePrimaryStorage):
                     raise RuntimeError("online recover requires SQLite primary")
                 self._update_recover_job(job_id, phase="switching")
                 with self.maintenance.switching():
                     marker = install_recovery_database(temp_path, target, primary)
-                    if primary.get_stats()["embedding_profile"]["active"] != spec["profile_id"]:
+                    if primary.active_embedding_profile() != spec["profile_id"]:
                         raise RuntimeError("recovered database profile does not match provider")
                 if isinstance(self.storage, DualStorage):
                     self._update_recover_job(job_id, phase="syncing_replica")

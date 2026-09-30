@@ -193,6 +193,7 @@ def test_search_combines_namespace_and_categories(db):
 def test_memory_search_normalizes_categories(monkeypatch, service):
     storage = MagicMock()
     storage.search.return_value = []
+    storage.exact_index_values.return_value = {"bug", "design"}
     monkeypatch.setattr(service, "storage", storage)
     monkeypatch.setattr(service, "embed", lambda t: FAKE_EMB)
 

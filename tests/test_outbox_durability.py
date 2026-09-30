@@ -32,7 +32,7 @@ def test_concurrent_update_remains_pending_after_old_version_published(tmp_path,
     dual = DualStorage(primary, replica, start_background=False)
     try:
         memory_id = dual.add("old text", fake_emb, namespace="ns")["id"]
-        real_get_unsynced = primary._get_unsynced
+        real_get_unsynced = primary.get_unsynced_records
         calls = 0
 
         def one_batch_only(*args, **kwargs):
@@ -40,7 +40,7 @@ def test_concurrent_update_remains_pending_after_old_version_published(tmp_path,
             calls += 1
             return real_get_unsynced(*args, **kwargs) if calls == 1 else []
 
-        primary._get_unsynced = one_batch_only
+        primary.get_unsynced_records = one_batch_only
         worker = threading.Thread(target=dual._incremental_sync)
         worker.start()
         assert replica.written.wait(timeout=5)
@@ -55,7 +55,7 @@ def test_concurrent_update_remains_pending_after_old_version_published(tmp_path,
         assert pending["synced"] == 0
         assert replica.list_records(limit=10)[0]["text"] == "old text"
 
-        primary._get_unsynced = real_get_unsynced
+        primary.get_unsynced_records = real_get_unsynced
         dual._incremental_sync()
         assert primary.get(memory_id)["synced"] == 1
         assert replica.list_records(limit=10)[0]["text"] == "new text"

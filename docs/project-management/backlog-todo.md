@@ -4,7 +4,7 @@
 
 ## 当前待办
 
-- [48] 后端重构：阶段 1（隔离阻塞业务与取消/停服）与阶段 2（收回导入/恢复协调职责）已完成，630 pytest + 浏览器回归通过；阶段 3–5 待实现（补齐存储/provider 契约，集中工具及路由策略，合并 CLI 重复代码并优化完整健康核验读取）。详见 [`plans/48-backend-refactoring.md`](plans/48-backend-refactoring.md)。
+- [48] 后端重构：阶段 1–3 已完成（隔离阻塞业务与取消/停服；收回导入/恢复协调职责；补齐存储/provider 契约），643 pytest + 浏览器回归通过；阶段 4–5 待实现（集中工具及路由策略，合并 CLI 重复代码并优化完整健康核验读取）。详见 [`plans/48-backend-refactoring.md`](plans/48-backend-refactoring.md)。
 
 ### 其他开放项
 

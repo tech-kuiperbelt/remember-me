@@ -9,7 +9,7 @@ from pathlib import Path
 
 logger = logging.getLogger("storage_sqlite")
 
-from .storage import MemoryStorage, _now, _new_id, _cosine_similarity, DEFAULT_NAMESPACE
+from .storage import SQLitePrimaryStorage, _now, _new_id, _cosine_similarity, DEFAULT_NAMESPACE
 from .categories import MAX_CATEGORIES
 from .embedding_codec import decode_embedding, encode_embedding, inspect_embedding_blob
 from .summary_policy import summary_for_add, summary_for_update, normalize_whitespace
@@ -52,7 +52,7 @@ def _materially_changes_text(existing_text: str, new_text) -> bool:
             and normalize_whitespace(new_text) != normalize_whitespace(existing_text))
 
 
-class SQLiteStorage(MemoryStorage):
+class SQLiteStorage(SQLitePrimaryStorage):
     def __init__(self, path: str = "data/memories.db", embedding_dtype: str = "float16",
                  embedding_spec: dict | None = None, read_only: bool = False,
                  writer_lock: bool = False):
@@ -1281,7 +1281,7 @@ class SQLiteStorage(MemoryStorage):
 
     # -- internal sync protocol (outbox pattern) --
 
-    def _get_unsynced(self, limit=500):
+    def get_unsynced_records(self, limit=500):
         """Return records with synced=0 (including deleted), ordered by updated_at.
         Internal use only (DualStorage outbox sync job).
         """
@@ -1292,7 +1292,7 @@ class SQLiteStorage(MemoryStorage):
             ).fetchall()
         return [self._row_to_dict(r) for r in rows]
 
-    def _mark_synced_batch(self, memory_ids):
+    def mark_synced_batch(self, memory_ids):
         """Batch-mark records as synced. Internal use only."""
         if not memory_ids:
             return
@@ -1304,7 +1304,7 @@ class SQLiteStorage(MemoryStorage):
             )
             self.conn.commit()
 
-    def _mark_synced_versions(self, entries):
+    def mark_synced_versions(self, entries):
         """Acknowledge only outbox versions that have not changed since read.
 
         A concurrent write increments ``version`` and remains pending rather
@@ -1321,7 +1321,7 @@ class SQLiteStorage(MemoryStorage):
             self.conn.commit()
         return cursor.rowcount
 
-    def _count_unsynced(self) -> int:
+    def count_unsynced(self) -> int:
         """Count active records awaiting sync. Internal use only (stats)."""
         with self._lock:
             return self.conn.execute(
@@ -1856,3 +1856,9 @@ class SQLiteStorage(MemoryStorage):
             "backend": "sqlite",
             "path": self.path,
         }
+
+    def active_embedding_profile(self):
+        return self._active_profile_id
+
+    def storage_paths(self) -> dict:
+        return {"backend": "sqlite"}

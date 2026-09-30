@@ -5,10 +5,6 @@ from __future__ import annotations
 MAX_FILTER_VALUES = 20
 
 
-class SemanticIndexUnsupported(RuntimeError):
-    """The selected storage backend cannot resolve an unmatched index value."""
-
-
 class IndexValueResolver:
     """Resolve normalized filter values without mixing their scores into memory ranking."""
 
@@ -23,8 +19,6 @@ class IndexValueResolver:
 
     def prepare_embeddings(self, metadata: dict | None) -> dict:
         """Generate document vectors for new/missing index values before a write."""
-        if not callable(getattr(type(self.storage), "missing_index_value_embeddings", None)):
-            return {}
         missing = self.storage.missing_index_value_embeddings(metadata)
         if not missing:
             return {}
@@ -74,19 +68,10 @@ class IndexValueResolver:
 
     def _exact_values(self, dimension: str, values: list[str],
                       namespace: str | None) -> set[str]:
-        if callable(getattr(type(self.storage), "exact_index_values", None)):
-            return self.storage.exact_index_values(dimension, values, namespace)
-        # Test doubles and legacy custom backends preserve the old exact-filter
-        # behavior without accidentally invoking a dynamically-created mock method.
-        return set(values)
+        return self.storage.exact_index_values(dimension, values, namespace)
 
     def _semantic_values(self, dimension: str, value: str,
                          namespace: str | None) -> list[dict]:
-        if not callable(getattr(type(self.storage), "semantic_index_values", None)):
-            raise SemanticIndexUnsupported(
-                "semantic keyword/category resolution is supported only by SQLite/dual storage; "
-                f"'{value}' has no exact {dimension} match"
-            )
         query_embedding = self.embed_query(value)
         candidates = self.storage.semantic_index_values(
             dimension, query_embedding, namespace
@@ -103,16 +88,16 @@ class IndexValueResolver:
 
 
 def resolver_for_configured_profile(storage):
-    """Build a write resolver for an offline migration, or None for legacy stores."""
-    if not callable(getattr(type(storage), "missing_index_value_embeddings", None)):
-        return None
-    from .embed import create_embedder
-
-    provider = create_embedder()
+    """Build a write resolver for an offline migration, or None when the store
+    has no active embedding profile."""
     profile = storage.get_stats().get("embedding_profile") or {}
     active = profile.get("active")
     if not active:
         return None
+
+    from .embed import create_embedder
+
+    provider = create_embedder()
     if provider.spec.profile_id != active:
         raise RuntimeError(
             "configured embedding provider does not match the active database profile: "

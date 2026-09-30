@@ -291,10 +291,7 @@ def main(argv=None) -> int:
     # Seed the vocabulary with all keywords already present in the store so
     # previously migrated records keep their word forms and new records
     # converge toward them.
-    if hasattr(storage, "get_keyword_vocabulary"):
-        existing_keywords = storage.get_keyword_vocabulary(namespace=args.namespace)
-    else:
-        existing_keywords = list(storage.get_stats().get("keyword_counts", {}).keys())
+    existing_keywords = storage.get_keyword_vocabulary(namespace=args.namespace)
     vocabulary = KeywordVocabulary(existing_keywords)
     logger.info("vocabulary seeded with %d existing keywords", len(vocabulary))
 

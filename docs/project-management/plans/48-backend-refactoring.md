@@ -1,16 +1,18 @@
 # [48] 后端重构 Coding Plan
 
-日期：2026-09-30。状态：阶段 1、2 已实现，阶段 3–5 待实现。基线：`d16be35`。
+日期：2026-09-30。状态：阶段 1–3 已实现，阶段 4、5 待实现。基线：`d16be35`。
 
 ## 实施进度
 
 - 阶段 1（隔离阻塞业务，明确取消与停服）：已完成。新增 `app/calls.py`（Runtime 拥有的 `AsyncCallAdapter`：4 业务 worker + 1 控制 worker、延迟创建、worker 内准入、`asyncio.shield` 取消语义、关闭时取消排队并等待运行中任务）与 `app/provider_adapter.py`（`SerializedProvider` 单把可重入锁串行 query/document/batch/warmup/close）。MCP 工具/resource 与 Admin 阻塞业务全部经适配器执行，配置读写走控制池；Admin 变更类记忆路由把准入推迟到 worker，排队写入会在维护进入后被重新拒绝。`Runtime.close()` 先关闭适配器再释放存储/provider/audit。
 - 阶段 2（收回任务与恢复协调职责）：已完成。新增 `app/import_coordinator.py`（每个导入一个完成 Event，最外层 finally 统一收尾，`wait_import` 返回终态且保证清理完成）；`Runtime.start_maintenance_import()` 拥有导入维护动作的启动与收尾（单个等待线程），`maintenance_import_status()` 供 Admin 查询；`Runtime.maintenance_sync()` 集中 force_sync、恢复标记核验/删除与 sticky error 清除；恢复 job 读写加锁并提供 `recover_status()` 快照；`Runtime._close_business()` 统一业务资源释放（任一步失败也继续释放并保留首个错误）。Admin 删除 100ms 轮询、额外维护等待线程及对 `service._workers` / `runtime._verify_recovered_replica()` 的访问。
-- 阶段 3：待实现（补齐 `MemoryStorage`/`ReplicaStorage` 契约，移除 Ollama 名称分支）。
+- 阶段 3（补齐存储契约与 provider 边界）：已完成。`MemoryStorage` 补全 `stop` 与索引/关键词/分类业务接口，并把 `force_sync`/`export_full_snapshot` 变为默认抛 `StorageCapabilityError` 的具体能力方法；新增窄接口 `SQLitePrimaryStorage`（outbox、连接替换、embedding profile 维护，方法公开化）与 `ReplicaStorage` 的 `acquire/release_writer_lock`；Service 删除 `_primary_storage`/`hasattr`/`isinstance(DualStorage)` 能力探测，导入准备与导出直接走 `self.storage`，并用 `active_embedding_profile()` 避免 dual 全量 `get_stats` 扫描；provider 门面统一委托 `embed_document/embed_query/embed_documents`，删除 Ollama 名称分支，异常转换集中到 `SerializedProvider`。新增 `tests/test_storage_contract.py`（sqlite/dual 同契约、能力异常、不完整替身构造失败、provider 委托与异常）。
 - 阶段 4：待实现（静态 ToolSpec 表、路由策略声明、响应公共逻辑）。
 - 阶段 5：待实现（离线 CLI 去重、完整健康核验只读 ID 查询）。
 
-实测：阶段 1 完成时 610 pytest；阶段 2 完成后全量 630 pytest 通过，浏览器回归通过。无 schema/数据迁移，未改工具/schema/hint、HTTP 状态与字段、配置/目录、embedding profile、SQLite/JSONL 格式。
+实测：阶段 1 完成时 610 pytest；阶段 2 完成后 630；阶段 3 完成后 643 pytest 通过，浏览器回归通过。无 schema/数据迁移，未改工具/schema/hint、HTTP 状态与字段、配置/目录、embedding profile 格式、SQLite/JSONL 格式。
+
+生产冒烟（2026-09-30 21:03）：在加载未提交阶段 3 代码并重启的服务（dual 模式，端口 1314）上通过。`GET /read-me` 200、`POST /mcp` tools/list 正常、`GET /api/storage-paths` 返回 dual 的 primary/secondary 路径（验证新 `storage_paths()` 契约）、`GET /api/stats` total=1140 backend=dual in_sync=true pending=0 且副本 missing/extra/corrupt=0；MCP 走通 `add → get_details → search_lexical → search_anchor → update → delete` 闭环并清理，`list_keywords`（browse/semantic）、`search_semantic`/`search_meta`、`report` 均正常。
 
 
 
@@ -104,3 +106,9 @@
 - 维护等待线程启动失败时，由当前调用 worker 等待已启动导入的完成事件；清理完成后才释放 action 并返回任务 ID，避免 HTTP 错误路径提前删除输入文件。请求取消仍等待该收尾路径结束。
 - `wait_import(timeout)` / `ImportCoordinator.wait()` 在完成事件未触发且超时后抛出 `TimeoutError`；未知任务仍返回 None，只有完成事件触发后才返回已清理的任务状态。
 - 新增超时、等待线程启动失败、失败收尾期间 HTTP 取消的三项回归；相关导入、取消、维护和 Runtime 共 46 项测试通过。本轮未重跑全量与浏览器，未提交、未重启。
+
+## 阶段 3 Review 修复记录（2026-09-30）
+
+- `resolver_for_configured_profile` 先读取 active profile，缺失时直接返回 None，再创建 embedder；避免对无 profile 的存储在实例化 provider 之后才早退。
+- `MemoryStorage.storage_paths` docstring 与实际返回对齐：始终返回 `backend`，仅 replica 后端附带 primary/secondary 路径。
+- 全量 643 项 pytest 通过；未提交、未重启。

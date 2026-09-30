@@ -107,7 +107,7 @@ def test_start_close_once_and_final_sync(tmp_path, monkeypatch):
     assert rt.start() is rt and rt.storage._job is job
     assert rt.storage._sync_count == 1
     memory = rt.service.memory_add("saved before shutdown")
-    assert rt.storage.primary._count_unsynced() == 1
+    assert rt.storage.primary.count_unsynced() == 1
     rt.close()
     rt.close()
     assert not job.is_alive()
@@ -201,7 +201,7 @@ def test_failed_final_sync_keeps_durable_outbox(tmp_path, monkeypatch):
     from app.storage_sqlite import SQLiteStorage
     store = SQLiteStorage(str(tmp_path / 'test.db'))
     try:
-        assert store._count_unsynced() == 1
+        assert store.count_unsynced() == 1
     finally:
         store.close()
 

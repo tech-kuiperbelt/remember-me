@@ -17,7 +17,7 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 
-from .storage import create_storage
+from .storage import create_storage, SQLitePrimaryStorage
 from .jsonl_transfer import load_jsonl
 from .database_lock import DatabaseWriterLock
 
@@ -127,7 +127,7 @@ def build_recovery_database(source_path, temp_path, embed_fn, *, batch_size=500,
         rebuilt.close()
 
 
-def install_recovery_database(temp_path, target_path, primary):
+def install_recovery_database(temp_path, target_path, primary: SQLitePrimaryStorage):
     """SQLite backup commits a complete replacement under the existing writer lock."""
     marker = Path(f"{target_path}.online-recover")
     with open(marker, "w", encoding="utf-8") as handle:

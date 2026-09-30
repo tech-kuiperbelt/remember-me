@@ -5,8 +5,9 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 from .index_value_resolver import IndexValueResolver, MAX_FILTER_VALUES
-from .embed import EmbeddingError
 from .import_coordinator import ImportCoordinator
+from .provider_adapter import wrap_provider
+from .storage import StorageCapabilityError
 from .lexical import LexicalQueryError
 from .anchors import normalize_anchors, InvalidAnchors
 from . import audit
@@ -174,7 +175,9 @@ class MemoryService:
     def __init__(self, settings, storage, embedding_provider, audit_journal=None):
         self.settings = settings
         self.storage = storage
-        self.embedding_provider = embedding_provider
+        # One shared provider adapter: serializes calls and translates errors,
+        # no matter whether the runtime or a test constructed the service.
+        self.embedding_provider = wrap_provider(embedding_provider)
         self.audit = audit_journal or audit
         # Resolve the job method at call time so tests can patch the seam.
         self._imports = ImportCoordinator(lambda *args: self._run_import_job(*args))
@@ -187,40 +190,13 @@ class MemoryService:
         return self._start_import(file_path, original_name, namespace_prefix)
 
     def embed(self, text: str) -> list[float]:
-        try:
-            return self.embedding_provider.embed_document(text)
-        except Exception as e:
-            logger.error("embed failed: %s", e, exc_info=True)
-            if isinstance(e, EmbeddingError):
-                raise
-            raise EmbeddingError(f"embedding provider failed: {e}") from e
+        return self.embedding_provider.embed_document(text)
 
     def embed_query(self, text: str) -> list[float]:
-        try:
-            # Ollama's current bge-m3 path has identical query/document handling.
-            # Calling the public wrapper preserves compatibility with tests and
-            # deployments that patch ``service.embed``. Prefix-aware providers use
-            # their dedicated query method.
-            if self.embedding_provider.spec.provider == "ollama":
-                return self.embed(text)
-            return self.embedding_provider.embed_query(text)
-        except Exception as e:
-            logger.error("query embed failed: %s", e, exc_info=True)
-            if isinstance(e, EmbeddingError):
-                raise
-            raise EmbeddingError(f"embedding provider failed: {e}") from e
+        return self.embedding_provider.embed_query(text)
 
     def embed_documents(self, texts) -> list[list[float]]:
-        # Preserve the patchable legacy embed() seam used by Ollama deployments
-        # and tests; native batch providers use their efficient batch path.
-        try:
-            if self.embedding_provider.spec.provider == "ollama":
-                return [self.embed(text) for text in texts]
-            return self.embedding_provider.embed_documents(texts)
-        except Exception as e:
-            if isinstance(e, EmbeddingError):
-                raise
-            raise EmbeddingError(f"embedding provider failed: {e}") from e
+        return self.embedding_provider.embed_documents(texts)
 
     def _index_resolver(self) -> IndexValueResolver:
         return IndexValueResolver(
@@ -566,23 +542,17 @@ class MemoryService:
             logger.error("stats failed: %s", e, exc_info=True)
             raise
 
-    def _primary_storage(self):
-        # Avoid duck-typing here: mocks and proxy objects commonly synthesize a
-        # ``primary`` attribute, which would route imports to the wrong object.
-        from .storage_dual import DualStorage
-        return self.storage.primary if isinstance(self.storage, DualStorage) else self.storage
-
     def memory_export_full(self, destination: str) -> dict:
-        from .storage_dual import DualStorage
-        if not isinstance(self.storage, DualStorage):
-            raise RuntimeError("Full Export requires MEMORY_STORAGE=dual")
-        return self.storage.export_full_snapshot(destination)
+        try:
+            return self.storage.export_full_snapshot(destination)
+        except StorageCapabilityError as exc:
+            raise RuntimeError(str(exc)) from exc
 
     def memory_export_namespace(self, namespace: str, destination: str) -> dict:
         namespace = (namespace or "").strip()
         if not namespace:
             raise ValueError("namespace is required")
-        records = self._primary_storage().export_records(namespace)
+        records = self.storage.export_records(namespace)
         if not records:
             raise LookupError(f"namespace not found: {namespace}")
         write_clean_jsonl(records, destination)
@@ -619,9 +589,8 @@ class MemoryService:
                 records.append(copied)
             records = _deduplicate_source(records)
             effective_total = len(records)
-            primary = self._primary_storage()
             target_pairs = {(item["namespace"], item["text"])
-                            for item in primary.export_records()}
+                            for item in self.storage.export_records()}
             pre_skipped = source_total - effective_total
             planned = []
             for item in records:
@@ -630,7 +599,7 @@ class MemoryService:
                 else:
                     planned.append(item)
             timings["validating"] = round((time.perf_counter() - phase_started) * 1000, 3)
-            profile = primary.get_stats().get("embedding_profile", {}).get("active")
+            profile = self.storage.active_embedding_profile()
             if not profile:
                 raise RuntimeError("target database has no active embedding profile")
 
@@ -653,7 +622,7 @@ class MemoryService:
             phase_started = time.perf_counter()
             missing = set()
             for item in planned:
-                missing.update(primary.missing_index_value_embeddings(item.get("metadata") or {}))
+                missing.update(self.storage.missing_index_value_embeddings(item.get("metadata") or {}))
             missing = sorted(missing)
             index_vectors_list = (
                 self.embed_documents([value for _dimension, value in missing]) if missing else []
@@ -719,8 +688,8 @@ class MemoryService:
         """Manually trigger full sync of secondary from primary (dual mode only)."""
         logger.info("sync")
         try:
-            if hasattr(self.storage, "force_sync"):
-                return self.storage.force_sync()
+            return self.storage.force_sync()
+        except StorageCapabilityError:
             return {"error": "storage backend does not support sync"}
         except Exception as e:
             logger.error("sync failed: %s", e, exc_info=True)
@@ -741,11 +710,7 @@ class MemoryService:
         NDJSON disaster-recovery replica. In single-backend mode only the
         backend type is reported (no replica paths).
         """
-        stats = self.storage.get_stats()
-        result = {"backend": stats.get("backend", "?")}
-        if hasattr(self.storage, "primary"):
-            result["primary_path"] = getattr(self.storage.primary, "path", "?")
-            result["secondary_path"] = getattr(self.storage.secondary, "path", "?")
+        result = self.storage.storage_paths()
         return self._relative_paths(result) if self.settings.environment.get("MEMORY_PATHS_ACTIVE") == "1" else result
 
     def _relative_paths(self, value):

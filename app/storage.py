@@ -51,6 +51,10 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
     return float(np.dot(a_np, b_np) / (np.linalg.norm(a_np) * np.linalg.norm(b_np) + 1e-10))
 
 
+class StorageCapabilityError(RuntimeError):
+    """The selected backend does not implement an optional storage capability."""
+
+
 # ---------------------------------------------------------------------------
 # Abstract base
 # ---------------------------------------------------------------------------
@@ -148,9 +152,133 @@ class MemoryStorage(ABC):
     @abstractmethod
     def get_stats(self) -> dict[str, Any]: ...
 
+    # -- business index and lifecycle surface used by Service/IndexValueResolver --
+
+    @abstractmethod
+    def stop(self) -> None:
+        """Release this storage's resources. Safe to call more than once."""
+        ...
+
+    @abstractmethod
+    def active_embedding_profile(self) -> Optional[str]:
+        """Active embedding profile id, or None when the store has none.
+
+        A cheap accessor: unlike ``get_stats`` it never inspects a replica.
+        """
+        ...
+
+    @abstractmethod
+    def keyword_counts(self, namespace: Optional[str] = None) -> dict[str, int]: ...
+
+    @abstractmethod
+    def exact_index_values(self, dimension: str, values: list[str],
+                           namespace: Optional[str] = None) -> set[str]: ...
+
+    @abstractmethod
+    def semantic_index_values(self, dimension: str, query_embedding: list[float],
+                              namespace: Optional[str] = None) -> list[dict[str, Any]]: ...
+
+    @abstractmethod
+    def missing_index_value_embeddings(self, metadata: Optional[dict]) -> list[tuple[str, str]]: ...
+
+    @abstractmethod
+    def index_embedding_completeness(self, profile_id: Optional[str] = None) -> dict[str, Any]: ...
+
+    @abstractmethod
+    def backfill_missing_index_value_embeddings(self, embed_documents) -> int: ...
+
+    @abstractmethod
+    def update_metadata(self, memory_id: str, metadata: dict,
+                        index_embeddings: Optional[dict] = None) -> bool: ...
+
+    @abstractmethod
+    def update_anchors_batch(self, entries) -> int: ...
+
+    @abstractmethod
+    def rebuild_keyword_index(self) -> dict[str, Any]: ...
+
+    @abstractmethod
+    def rebuild_category_index(self) -> dict[str, Any]: ...
+
+    @abstractmethod
+    def get_keyword_vocabulary(self, namespace: Optional[str] = None) -> list[str]: ...
+
+    @abstractmethod
+    def storage_paths(self) -> dict[str, Any]:
+        """Operator-facing storage description for the admin UI.
+
+        Always reports ``backend``; replica-backed backends also report their
+        ``primary_path``/``secondary_path``. A single SQLite backend reports
+        only ``backend`` (matching ``MemoryService.memory_storage_paths``).
+        """
+        ...
+
+    # -- replica-coordination capabilities (not every backend has a replica) --
+
+    def force_sync(self) -> dict[str, Any]:
+        """Rebuild the replica from the primary. Backends without a replica
+        raise :class:`StorageCapabilityError`."""
+        raise StorageCapabilityError("storage backend does not support sync")
+
+    def export_full_snapshot(self, destination: str) -> dict[str, Any]:
+        """Full-sync, verify and copy an immutable download snapshot. Backends
+        without a replica raise :class:`StorageCapabilityError`."""
+        raise StorageCapabilityError("Full Export requires MEMORY_STORAGE=dual")
+
+
+class SQLitePrimaryStorage(MemoryStorage):
+    """The SQLite primary's capabilities: outbox, connection swap and
+    embedding-profile maintenance.
+
+    These deliberately do not live on :class:`ReplicaStorage`: they are primary
+    database concerns, not part of the vector-free JSONL replica contract.
+    """
+
+    @abstractmethod
+    def count_unsynced(self) -> int: ...
+
+    @abstractmethod
+    def get_unsynced_records(self, limit: int = 500): ...
+
+    @abstractmethod
+    def mark_synced_versions(self, entries) -> int: ...
+
+    @abstractmethod
+    def mark_synced_batch(self, memory_ids) -> int: ...
+
+    @abstractmethod
+    def close_connection(self) -> None:
+        """Close the SQLite connection while keeping any lifetime writer lock."""
+
+    @abstractmethod
+    def reopen_connection(self) -> None: ...
+
+    @abstractmethod
+    def configure_embedding_profile(self, spec: dict) -> dict[str, Any]: ...
+
+    @abstractmethod
+    def reencode_active_embeddings(self, dtype: str) -> dict[str, Any]: ...
+
+    @abstractmethod
+    def reindex_embeddings(self, spec: dict, embed_documents, batch_size: int = 50,
+                           progress_callback=None) -> dict[str, Any]: ...
+
+    @abstractmethod
+    def reindex_index_values(self, profile_id: str, embed_documents,
+                             batch_size: int = 50, progress_callback=None) -> dict[str, Any]: ...
+
+    @abstractmethod
+    def activate_embedding_profile(self, profile_id: str) -> dict[str, Any]: ...
+
 
 class ReplicaStorage(ABC):
     """Narrow contract for a vector-free disaster-recovery replica."""
+
+    @abstractmethod
+    def acquire_writer_lock(self) -> None: ...
+
+    @abstractmethod
+    def release_writer_lock(self) -> None: ...
 
     @abstractmethod
     def upsert(self, record: dict) -> None: ...
