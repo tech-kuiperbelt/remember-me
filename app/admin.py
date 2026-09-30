@@ -112,14 +112,14 @@ def _export_response(result, filename):
 
 def _maintenance_response(exc):
     status = 503 if exc.code in ("maintenance_mode", "maintenance_switching",
-                                 "maintenance_unavailable") else 409
+                                 "maintenance_unavailable", "model_not_ready") else 409
     return Response(json.dumps({"detail": str(exc), "response_code": exc.code}),
                     status_code=status, media_type="application/json")
 
 
 class AdminAPI:
     def _temp_dir(self):
-        directory = Path(self.service.settings.TEMP_DIR)
+        directory = Path((self.runtime.settings if self.runtime is not None else self.service.settings).TEMP_DIR)
         directory.mkdir(parents=True, exist_ok=True)
         return str(directory)
 
@@ -147,8 +147,40 @@ class AdminAPI:
             return Response(json.dumps({"state": "unavailable", "action": None,
                                         "readers": 0, "writers": 0, "error": None}),
                             media_type="application/json")
-        return Response(json.dumps(self.runtime.maintenance.snapshot()),
+        return Response(json.dumps({**self.runtime.maintenance.snapshot(),
+                                    "model": self.runtime.model_status()}),
                         media_type="application/json")
+
+    async def handle_model_status(self, request):
+        if self.runtime is None:
+            return Response(json.dumps({"ready": True, "status": "ready"}), media_type="application/json")
+        return Response(json.dumps(self.runtime.model_status()), media_type="application/json")
+
+    async def handle_model_config(self, request):
+        if self.runtime is None:
+            return Response(json.dumps({"detail": "configuration requires a runtime"}),
+                            status_code=503, media_type="application/json")
+        try:
+            if request.method == "GET":
+                result = self.runtime.model_config()
+            else:
+                changes = await _request_object(request)
+                result = await asyncio.to_thread(self.runtime.save_model_config, changes)
+            return Response(json.dumps(result), media_type="application/json")
+        except MaintenanceRejected as exc:
+            return _maintenance_response(exc)
+        except (ValueError, OSError) as exc:
+            return _invalid_request_response(exc)
+
+    async def handle_model_retry(self, request):
+        if self.runtime is None:
+            return Response(json.dumps({"detail": "model preparation requires a runtime"}),
+                            status_code=503, media_type="application/json")
+        try:
+            return Response(json.dumps(self.runtime.retry_model()), status_code=202,
+                            media_type="application/json")
+        except MaintenanceRejected as exc:
+            return _maintenance_response(exc)
 
     async def handle_maintenance_enter(self, request):
         if self.runtime is None:
@@ -739,7 +771,15 @@ class AdminAPI:
 
     async def handle_storage_paths(self, request: Request):
         try:
-            result = self.service.memory_storage_paths()
+            if self.runtime is not None and self.service is None:
+                s = self.runtime.settings
+                result = {"backend": s.STORAGE_BACKEND}
+                if s.STORAGE_BACKEND == "dual":
+                    relative = s.environment.get("MEMORY_PATHS_ACTIVE") == "1"
+                    result.update(primary_path=os.path.relpath(s.STORAGE_PATH, s.DATA_DIR) if relative else s.STORAGE_PATH,
+                                  secondary_path=os.path.relpath(s.REPLICA_PATH, s.DATA_DIR) if relative else s.REPLICA_PATH)
+            else:
+                result = self.service.memory_storage_paths()
             return Response(json.dumps(result, ensure_ascii=False), media_type="application/json")
         except Exception as e:
             logger.error("GET /api/storage-paths failed: %s", e, exc_info=True)
@@ -825,6 +865,10 @@ class AdminAPI:
             Route("/api/namespaces/migrate", endpoint=self.handle_migrate_namespace, methods=["POST"]),
             Route("/api/audit", endpoint=self.handle_audit, methods=["GET"]),
             Route("/api/maintenance", endpoint=self.handle_maintenance_status, methods=["GET"]),
+            Route("/api/model", endpoint=self.handle_model_status, methods=["GET"]),
+            Route("/api/model/retry", endpoint=self.handle_model_retry, methods=["POST"]),
+            Route("/api/config/model", endpoint=self.handle_model_config, methods=["GET", "POST"]),
+            Route("/api/config", endpoint=self.handle_model_config, methods=["GET", "POST"]),
             Route("/api/maintenance/enter", endpoint=self.handle_maintenance_enter, methods=["POST"]),
             Route("/api/maintenance/exit", endpoint=self.handle_maintenance_exit, methods=["POST"]),
             Route("/api/recover", endpoint=self.handle_recover, methods=["POST"]),
@@ -841,7 +885,8 @@ class AdminAPI:
             ("/api/namespaces/migrate", "POST"): "migrate_namespace",
         }
         exempt = {"/admin/console", "/api/audit", "/api/storage-paths",
-                  "/api/import/{import_id}", "/api/maintenance",
+                  "/api/model", "/api/model/retry", "/api/config/model", "/api/config",
+                  "/api/maintenance",
                   "/api/maintenance/enter", "/api/maintenance/exit",
                   "/api/recover", "/api/recover/{recover_id}"}
         guarded = []

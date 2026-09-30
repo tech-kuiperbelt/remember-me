@@ -7,7 +7,7 @@ cd /path/to/remember-me
 source .venv/bin/activate
 python -m app.server              # HTTP mode (default, config port or 1314)
 python -m app.server --stdio       # subprocess stdin/stdout
-python -m app.server --data-dir /path/to/data  # config is <DIR>/config.json
+python -m app.server --data-dir /path/to/data  # config is <DIR>/config.jsonc
 ```
 
 `bin/start.sh` is the recommended launcher: it sets `MEMORY_STORAGE=dual` and
@@ -17,11 +17,36 @@ profile in `data/memories.db`, otherwise startup fails and requires an offline
 `app.embedding_cli reindex`/`activate`.
 
 Data directory selection: `--data-dir` > `MEMORY_DATA_DIR` > project `data`; relative
-directories are resolved against the project root. `<data-dir>/config.json` contains
-`{"port":1314,"language":"zh-CN"}` and is created only on normal startup. Language
-is stored but not yet applied to translations. `--port` temporarily overrides the
+directories are resolved against the project root. `<data-dir>/config.jsonc` contains
+`{"port":1314,"language":"zh-CN","auto_download_model":true,"proxy":{"enabled":false,"url":""}}`
+and is created only on normal startup. Missing fields use these defaults.
+JSONC supports line/block comments and trailing commas; config saves preserve
+existing comments. Legacy config.json is read only when config.jsonc is absent;
+normal startup adopts it into JSONC and retains the old file. Read-only/help
+commands never migrate. With both files present, JSONC is authoritative and
+invalid JSONC never silently falls back to JSON.
+Language is stored but not yet applied to translations. `--port` temporarily overrides the
 configured port; `--stdio` explicitly selects subprocess transport. Runtime paths,
 logs, temporary files and local model caches are contained in the selected root.
+Local providers load cached models without networking first, and download only on
+a cache miss when permitted. In HTTP mode a cache miss starts the configuration
+UI/MCP transport with forced maintenance (`required_reason=model_not_ready`),
+then prepares the model in one owned background worker. Memory access and exiting
+maintenance are blocked until loading, warmup and database validation succeed;
+success allows manual maintenance exit, never auto-exits. Config UI saves proxy
+and retries without restart, showing real dependency byte progress or an
+indeterminate bar. GET /api/model, POST /api/model/retry and GET/POST /api/config
+remain available while preparing. Config writes require no maintenance, support
+all config fields and preserve JSONC comments; port/language apply after restart.
+The config page puts ordinary settings above maintenance-only operations.
+/api/config/model remains a compatibility alias. Shutdown
+cancels and joins the worker before releasing resources. stdio/CLI remain synchronous.
+HTTP/HTTPS proxies are configured solely in config;
+disabled means direct access, ignoring inherited proxy variables. Loopback Ollama
+always bypasses proxies. Config entrypoints override legacy provider/HF offline
+variables and disable Xet to keep downloads on the configured HTTP transport.
+`bin/manage embedding download-model` explicitly permits missing-model downloads
+even with automatic downloads disabled. Ollama models require external `ollama pull`.
 Path environment variables and CLI output paths are root-relative; external paths
 are rejected. Use `bin/manage config migrate --dry-run` then stop the service and
 run without `--dry-run` to copy and verify legacy paths, retaining sources. For a
@@ -68,11 +93,11 @@ HTTP endpoints (all share the same service/runtime/provider/storage):
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server used in `ollama` mode |
 | `FASTEMBED_MODEL` | `intfloat/multilingual-e5-large` | FastEmbed model; must occur in the installed runtime's supported list |
 | `FASTEMBED_CACHE_DIR` | `models/fastembed` | Model cache or copied offline model cache |
-| `FASTEMBED_OFFLINE` | `false` | Disable model downloads and require a populated cache |
+| `FASTEMBED_OFFLINE` | `false` | Legacy low-level API; config entrypoints use `auto_download_model` |
 | `FASTEMBED_MAX_INPUT_TOKENS` | `512` | Token guard for the default FastEmbed model |
 | `SENTENCE_TRANSFORMERS_MODEL` | `BAAI/bge-m3` | Python/PyTorch in-process model |
 | `SENTENCE_TRANSFORMERS_CACHE_DIR` | `models/sentence-transformers` | Model cache directory |
-| `SENTENCE_TRANSFORMERS_OFFLINE` | `false` | Require the model to exist in the local cache |
+| `SENTENCE_TRANSFORMERS_OFFLINE` | `false` | Legacy low-level API; config entrypoints use `auto_download_model` |
 | `SENTENCE_TRANSFORMERS_DEVICE` | auto | Optional `cpu`, `cuda`, or other PyTorch device |
 | `SENTENCE_TRANSFORMERS_MAX_INPUT_TOKENS` | `8192` | Explicit token guard; inputs are never silently truncated |
 | `SENTENCE_TRANSFORMERS_BATCH_SIZE` | `8` | Reindex batch inference size |

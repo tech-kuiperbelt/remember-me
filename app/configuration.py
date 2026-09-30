@@ -3,11 +3,16 @@ import json
 import os
 from pathlib import Path
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
+from urllib.parse import urlsplit
+from . import jsonc
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULTS = {"port": 1314, "language": "zh-CN"}
+DEFAULTS = {"port": 1314, "language": "zh-CN", "auto_download_model": True,
+            "proxy": {"enabled": False, "url": ""}}
+PROXY_VARIABLES = tuple(name for key in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY")
+                        for name in (key, key.lower()))
 PATH_DEFAULTS = {
     "MEMORY_STORAGE_PATH": "memories.db",
     "MEMORY_AUDIT_PATH": "audit.jsonl",
@@ -16,17 +21,19 @@ PATH_DEFAULTS = {
 }
 
 
-def atomic_json(path, value):
+def atomic_text(path, text, *, exclusive=False):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix=".config-", dir=path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            json.dump(value, stream, ensure_ascii=False, indent=2)
-            stream.write("\n")
+            stream.write(text)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary, path)
+        if exclusive:
+            os.link(temporary, path)
+        else:
+            os.replace(temporary, path)
         descriptor = os.open(path.parent, os.O_RDONLY)
         try:
             os.fsync(descriptor)
@@ -34,6 +41,31 @@ def atomic_json(path, value):
             os.close(descriptor)
     finally:
         Path(temporary).unlink(missing_ok=True)
+
+
+def atomic_json(path, value):
+    atomic_text(path, json.dumps(value, ensure_ascii=False, indent=2) + "\n")
+
+
+def default_document(values):
+    encoded = json.dumps(values, ensure_ascii=False, indent=2)
+    comments = {
+        '  "port":': '  // HTTP 端口（1–65535），修改后重启生效。\n',
+        '  "language":': '  // 语言：zh-CN 或 en；目前仅保存选择。\n',
+        '  "auto_download_model":': '  // 模型缓存缺失时自动下载；也可在配置页手动重试。\n',
+        '  "proxy":': '  // 代理关闭时直连；只支持 HTTP/HTTPS。\n',
+        '    "url":': '    // 可包含端口及用户名/密码，例如 http://127.0.0.1:7890。\n',
+    }
+    for prefix, comment in comments.items():
+        encoded = encoded.replace(prefix, comment + prefix, 1)
+    return encoded + "\n"
+
+
+def atomic_config(path, values, *, source_text=None):
+    path = Path(path)
+    original = path.read_text(encoding="utf-8") if path.exists() else source_text
+    text = jsonc.update(original, values) if original is not None else default_document(values)
+    atomic_text(path, text)
 
 
 def rooted_path(root, value):
@@ -52,6 +84,22 @@ class Configuration:
     data_dir: Path
     port: int
     language: str
+    auto_download_model: bool = True
+    proxy_enabled: bool = False
+    proxy_url: str = ""
+    source_text: str | None = field(default=None, repr=False, compare=False)
+
+    def save(self):
+        atomic_config(self.path, self.as_dict(), source_text=self.source_text)
+
+    def as_dict(self, *, redact=False):
+        url = self.proxy_url
+        if redact and "@" in url:
+            parts = urlsplit(url)
+            url = f"{parts.scheme}://***@{parts.netloc.rsplit('@', 1)[1]}"
+        return {"port": self.port, "language": self.language,
+                "auto_download_model": self.auto_download_model,
+                "proxy": {"enabled": self.proxy_enabled, "url": url}}
 
     @classmethod
     def load(cls, data_dir=None, *, create=False, environment=None):
@@ -61,42 +109,79 @@ class Configuration:
         if not root.is_absolute():
             root = PROJECT_ROOT / root
         root = root.resolve()
-        location = rooted_path(root, "config.json")
+        location = rooted_path(root, "config.jsonc")
+        legacy = rooted_path(root, "config.json") if not location.exists() else None
         if (root / ".config-migration.json").exists():
             raise ValueError("Interrupted data migration; rerun bin/manage --data-dir PATH config migrate before starting")
-        if location.exists():
+        source = location if location.exists() else legacy
+        text = None
+        if source is not None and source.exists():
             try:
-                values = json.loads(location.read_text(encoding="utf-8"))
+                text = source.read_text(encoding="utf-8")
+                values = jsonc.loads(text)
             except (ValueError, OSError) as exc:
-                raise ValueError(f"Cannot read config {location}: {exc}") from exc
+                raise ValueError(f"Cannot read config {source}: {exc}") from exc
         else:
             values = dict(DEFAULTS)
-            if create:
-                # Publish a complete file without overwriting a concurrent launcher's config.
-                location.parent.mkdir(parents=True, exist_ok=True)
-                fd, temporary = tempfile.mkstemp(prefix=".config-", dir=location.parent)
-                try:
-                    with os.fdopen(fd, "w", encoding="utf-8") as stream:
-                        json.dump(values, stream, ensure_ascii=False, indent=2)
-                        stream.write("\n")
-                        stream.flush()
-                        os.fsync(stream.fileno())
-                    os.link(temporary, location)
-                except FileExistsError:
-                    return cls.load(root, environment=env)
-                finally:
-                    Path(temporary).unlink(missing_ok=True)
+        config = replace(cls.from_values(location, root, values), source_text=text)
+        if create and not location.exists():
+            # Preserve the legacy source and never overwrite a concurrent launch.
+            try:
+                atomic_text(location, text if text is not None else default_document(config.as_dict()), exclusive=True)
+            except FileExistsError:
+                return cls.load(root, environment=env)
+        return config
+
+    @classmethod
+    def from_values(cls, location, root, values):
+        """Validate file and admin configuration through the same rules."""
         if not isinstance(values, dict) or set(values) - set(DEFAULTS):
-            raise ValueError("Config must be an object containing only port and language")
+            raise ValueError("Config contains unknown fields or is not an object")
         values = {**DEFAULTS, **values}
         if type(values["port"]) is not int or not 1 <= values["port"] <= 65535:
             raise ValueError("Config port must be an integer from 1 to 65535")
         if values["language"] not in ("zh-CN", "en"):
             raise ValueError("Config language must be zh-CN or en")
-        return cls(location, root.resolve(), values["port"], values["language"])
+        if type(values["auto_download_model"]) is not bool:
+            raise ValueError("auto_download_model must be a boolean")
+        proxy = values["proxy"]
+        if not isinstance(proxy, dict) or set(proxy) - {"enabled", "url"}:
+            raise ValueError("proxy must contain only enabled and url")
+        proxy = {**DEFAULTS["proxy"], **proxy}
+        if type(proxy["enabled"]) is not bool or not isinstance(proxy["url"], str):
+            raise ValueError("proxy.enabled must be a boolean and proxy.url a string")
+        url = proxy["url"]
+        if proxy["enabled"] and not url:
+            raise ValueError("Enabled proxy requires a HTTP/HTTPS URL")
+        if url:
+            try:
+                parts = urlsplit(url)
+                port = parts.port
+                valid = (parts.scheme in ("http", "https") and parts.hostname
+                         and (port is None or 1 <= port <= 65535)
+                         and parts.path in ("", "/") and not parts.query and not parts.fragment
+                         and not any(c.isspace() for c in url))
+            except ValueError:
+                valid = False
+            if not valid:
+                raise ValueError("proxy.url must be a HTTP/HTTPS proxy address")
+        return cls(location, root.resolve(), values["port"], values["language"],
+                   values["auto_download_model"], proxy["enabled"], url)
 
     def runtime_environment(self, environment=None):
         env = dict(os.environ if environment is None else environment)
+        for key in PROXY_VARIABLES:
+            env.pop(key, None)
+        if self.proxy_enabled:
+            env.update(HTTP_PROXY=self.proxy_url, HTTPS_PROXY=self.proxy_url)
+        env["NO_PROXY"] = "localhost,127.0.0.1,::1"
+        env["MEMORY_AUTO_DOWNLOAD_MODEL"] = str(self.auto_download_model).lower()
+        # Explicit local_files_only controls each load; stale offline globals must
+        # not prevent the subsequent permitted download. Disable the separate Xet
+        # transport so all downloads follow the configured HTTP proxy policy.
+        env.update(HF_HUB_OFFLINE="0", TRANSFORMERS_OFFLINE="0", HF_HUB_DISABLE_XET="1")
+        env["FASTEMBED_OFFLINE"] = env["SENTENCE_TRANSFORMERS_OFFLINE"] = str(
+            not self.auto_download_model).lower()
         for key, default in PATH_DEFAULTS.items():
             value = env.get(key) or default
             if key == "MEMORY_STORAGE_PATH" and value == ":memory:":
@@ -133,6 +218,8 @@ class Configuration:
 
 def activate_environment(env):
     """Process entrypoints only; low-level Settings construction has no side effects."""
+    for key in PROXY_VARIABLES:
+        os.environ.pop(key, None)
     os.environ.update(env)
     root = Path(env["MEMORY_DATA_DIR"])
     root.mkdir(parents=True, exist_ok=True)

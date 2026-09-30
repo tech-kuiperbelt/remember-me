@@ -84,7 +84,7 @@ def _main(journal) -> None:
         args.database = output_path(args.database)
 
     if args.command == "download-model":
-        provider = create_embedder()
+        provider = create_embedder(allow_download=True)
         provider.warmup()
         print(json.dumps(provider.spec.as_dict(), ensure_ascii=False, indent=2))
         return

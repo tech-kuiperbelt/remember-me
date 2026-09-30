@@ -10,9 +10,12 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
+import logging
 import os
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Iterable, Optional, Protocol
+from urllib.parse import urlsplit
 
 import numpy as np
 import requests
@@ -25,6 +28,10 @@ DEFAULT_MAX_INPUT_CHARS = 8_000
 
 class EmbeddingError(RuntimeError):
     """Base error for embedding generation failures."""
+
+
+class ModelCacheMissing(EmbeddingError):
+    """A supported local model needs downloading before business startup."""
 
 
 class EmbeddingInputTooLong(EmbeddingError):
@@ -89,10 +96,54 @@ class Embedder(Protocol):
 
 def _bypass_proxy(url: str) -> dict | None:
     """Disable environment proxies for local Ollama endpoints."""
-    host = url.split("://", 1)[-1].split("/", 1)[0]
-    if host in ("localhost", "127.0.0.1", "::1", "[::1]"):
-        return {"http": None, "https": None}
+    host = urlsplit(url).hostname
+    if host in ("localhost", "127.0.0.1", "::1"):
+        return {"http": "", "https": "", "all": ""}
     return None
+
+
+def _missing_cached_model(exc):
+    """Recognize dependency cache misses without retrying unrelated load errors."""
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        if type(exc).__name__ == "LocalEntryNotFoundError":
+            return True
+        message = str(exc).lower()
+        if isinstance(exc, (OSError, ValueError)) and any(marker in message for marker in (
+            "from any source", "local_files_only=true", "couldn't find them in the cached files",
+            "cannot find the requested files in the disk cache", "not found in the cached files",
+        )):
+            return True
+        exc = exc.__cause__ or exc.__context__
+    return False
+
+
+def _load_local_model(load, model, cache_dir, offline, auto_download):
+    if auto_download is None:
+        return load(offline)  # Compatibility for direct low-level callers.
+    local_path = Path(model).is_absolute() or model.startswith((".", "~"))
+    if local_path and not Path(model).expanduser().exists():
+        raise EmbeddingError(f"Local model path does not exist: {model}; restore it before starting")
+    try:
+        return load(True)
+    except Exception as exc:
+        if not _missing_cached_model(exc) or local_path:
+            raise
+        if not auto_download:
+            raise ModelCacheMissing(
+                f"Model {model} is missing from cache {cache_dir}; auto_download_model=false. "
+                "Run bin/manage embedding download-model or enable auto_download_model."
+            ) from exc
+    logging.getLogger(__name__).info("Model %s missing from cache %s; downloading before startup", model, cache_dir)
+    try:
+        return load(False)
+    except Exception as exc:
+        raise EmbeddingError(
+            f"Could not download/load model {model} into {cache_dir}. "
+            "Check config.jsonc proxy, network access and model availability; "
+            "retry bin/manage embedding download-model."
+        ) from exc
 
 
 class _BaseEmbedder:
@@ -149,6 +200,10 @@ class OllamaEmbedder(_BaseEmbedder):
             except (ValueError, AttributeError):
                 message = response.text or ""
             lowered = message.lower()
+            if response.status_code == 404 and "model" in lowered:
+                raise EmbeddingError(
+                    f"Ollama model is unavailable; run ollama pull {self.spec.model} on the Ollama host"
+                )
             if "context length" in lowered or "input length" in lowered:
                 raise EmbeddingInputTooLong(len(text), self.spec.max_input_chars)
             response.raise_for_status()
@@ -171,7 +226,7 @@ class FastEmbedEmbedder(_BaseEmbedder):
     def __init__(self, model: str, cache_dir: str | None = None,
                  offline: bool = False, max_input_chars: int = DEFAULT_MAX_INPUT_CHARS,
                  max_input_tokens: int = 512, query_prefix: str = "",
-                 document_prefix: str = ""):
+                 document_prefix: str = "", auto_download: bool | None = None):
         try:
             from fastembed import TextEmbedding
         except ImportError as exc:
@@ -189,15 +244,23 @@ class FastEmbedEmbedder(_BaseEmbedder):
         dimension = int(description["dim"])
         kwargs = {"model_name": model}
         signature = inspect.signature(TextEmbedding)
-        if cache_dir and "cache_dir" in signature.parameters:
-            kwargs["cache_dir"] = cache_dir
         supports_extra_kwargs = any(
             parameter.kind == inspect.Parameter.VAR_KEYWORD
             for parameter in signature.parameters.values()
         )
-        if "local_files_only" in signature.parameters or supports_extra_kwargs:
-            kwargs["local_files_only"] = offline
-        self._model = TextEmbedding(**kwargs)
+        if cache_dir and ("cache_dir" in signature.parameters or supports_extra_kwargs):
+            kwargs["cache_dir"] = cache_dir
+        supports_offline = "local_files_only" in signature.parameters or supports_extra_kwargs
+        if auto_download is not None and not supports_offline:
+            raise EmbeddingError("FastEmbed installation cannot enforce local_files_only; upgrade it")
+
+        def load(local_only):
+            options = dict(kwargs)
+            if supports_offline:
+                options["local_files_only"] = local_only
+            return TextEmbedding(**options)
+
+        self._model = _load_local_model(load, model, cache_dir, offline, auto_download)
         self.spec = EmbeddingSpec(
             provider="fastembed", model=model, dimension=dimension,
             normalized=True, query_prefix=query_prefix,
@@ -251,7 +314,8 @@ class SentenceTransformersEmbedder(_BaseEmbedder):
                  revision: str | None = None,
                  max_input_chars: int = DEFAULT_MAX_INPUT_CHARS,
                  max_input_tokens: int = 8192, batch_size: int = 8,
-                 query_prefix: str = "", document_prefix: str = ""):
+                 query_prefix: str = "", document_prefix: str = "",
+                 auto_download: bool | None = None):
         try:
             from sentence_transformers import SentenceTransformer
         except ImportError as exc:
@@ -276,10 +340,17 @@ class SentenceTransformersEmbedder(_BaseEmbedder):
             kwargs["device"] = device
         if revision and supported("revision"):
             kwargs["revision"] = revision
-        if supported("local_files_only"):
-            kwargs["local_files_only"] = offline
+        supports_offline = supported("local_files_only")
+        if auto_download is not None and not supports_offline:
+            raise EmbeddingError("Sentence Transformers installation cannot enforce local_files_only; upgrade it")
 
-        self._model = SentenceTransformer(model, **kwargs)
+        def load(local_only):
+            options = dict(kwargs)
+            if supports_offline:
+                options["local_files_only"] = local_only
+            return SentenceTransformer(model, **options)
+
+        self._model = _load_local_model(load, model, cache_dir, offline, auto_download)
         dimension_fn = getattr(self._model, "get_embedding_dimension", None)
         if dimension_fn is None:
             dimension_fn = self._model.get_sentence_embedding_dimension
@@ -346,10 +417,16 @@ class SentenceTransformersEmbedder(_BaseEmbedder):
         return self._embed(prepared) if prepared else []
 
 
-def create_embedder(provider: str | None = None, *, environment=None) -> Embedder:
+def create_embedder(provider: str | None = None, *, environment=None,
+                    allow_download: bool = False, cache_only: bool = False) -> Embedder:
     env = os.environ if environment is None else environment
     provider = (provider or env.get("EMBED_PROVIDER", "ollama")).strip().lower()
     max_chars = int(env.get("EMBED_MAX_INPUT_CHARS", str(DEFAULT_MAX_INPUT_CHARS)))
+    auto_download = None
+    if allow_download or "MEMORY_AUTO_DOWNLOAD_MODEL" in env:
+        auto_download = allow_download or env.get("MEMORY_AUTO_DOWNLOAD_MODEL") == "true"
+    if cache_only:
+        auto_download = False
     if provider == "ollama":
         return OllamaEmbedder(
             base_url=env.get("OLLAMA_BASE_URL", OLLAMA_BASE_URL),
@@ -363,6 +440,7 @@ def create_embedder(provider: str | None = None, *, environment=None) -> Embedde
         default_query_prefix = "query: " if "e5" in model.lower() else ""
         default_document_prefix = "passage: " if "e5" in model.lower() else ""
         return FastEmbedEmbedder(
+            auto_download=auto_download,
             model=model,
             cache_dir=env.get("FASTEMBED_CACHE_DIR") or None,
             offline=env.get("FASTEMBED_OFFLINE", "false").lower() in ("1", "true", "yes"),
@@ -373,6 +451,7 @@ def create_embedder(provider: str | None = None, *, environment=None) -> Embedde
         )
     if provider in ("sentence_transformers", "sentence-transformers"):
         return SentenceTransformersEmbedder(
+            auto_download=auto_download,
             model=env.get("SENTENCE_TRANSFORMERS_MODEL", "BAAI/bge-m3"),
             cache_dir=env.get("SENTENCE_TRANSFORMERS_CACHE_DIR") or None,
             offline=env.get(

@@ -2,6 +2,14 @@
 
 本文件归档已完成的项目待办。详细实现记录保留在 git 提交和项目变更日志中。
 
+- [47] 完整配置表单与维护操作分区（2026-09-30 实现，随本次提交归档、生产未重启）：配置页上方可编辑所有 JSONC 配置，保存无需维护且不暂停业务；下方集中维护动作。新增 `/api/config`，端口/语言重启生效，保持注释及凭据脱敏。573 项 pytest 和浏览器回归通过。详见 [`plans/47-config-page-and-maintenance-actions.md`](plans/47-config-page-and-maintenance-actions.md)。
+
+- [46] JSONC 配置及注释保留（2026-09-30 实现，随本次提交归档、生产未重启）：配置固定为 `config.jsonc`，支持注释及尾随逗号，UI 保存保留注释；兼容旧 JSON 文件转换、数据迁移及旧迁移日志恢复，已转换当前 data 配置且值不变。573 项 pytest 通过。详见 [`plans/46-jsonc-configuration.md`](plans/46-jsonc-configuration.md)。
+
+- [45] 模型缺失时的配置入口与强制维护（2026-09-30 实现，随本次提交归档、生产未重启）：HTTP 在缺模型时先开放配置页和 MCP 传输，强制维护并阻止业务访问/退出；后台准备模型，UI 展示实际下载进度、代理保存和串行重试，加载及验证完成后允许手动退出。失败保留配置入口，关机取消清理任务；浏览器回归及真实空缓存 HTTP 配置入口验证通过。详见 [`plans/45-model-bootstrap-maintenance.md`](plans/45-model-bootstrap-maintenance.md)。
+
+- [44] 模型下载与代理配置（2026-09-30 实现，随本次提交归档、生产未重启）：config 新增自动下载及 HTTP/HTTPS 代理；缓存优先、默认直连并覆盖系统代理/旧离线设置，手动下载明确允许联网，Ollama 本地直连且缺失模型提示 pull。迁移保留字段、状态隐藏凭据；539 项 pytest 通过，真实缓存加载/warmup 及空缓存报错均确认网络尝试 0、profile 不变。详见 [`plans/44-model-download-and-proxy.md`](plans/44-model-download-and-proxy.md)。
+
 - [43] 配置文件与统一数据目录（2026-09-30 实现并完成生产迁移）：仅通过 `--data-dir` / `MEMORY_DATA_DIR` 选择数据目录，固定读取目录内 `config.json`（默认端口 1314、语言 zh-CN；语言暂不驱动翻译）。默认 HTTP、显式 `--stdio`；数据库、日志、审计、临时文件、维护产物和本地模型缓存统一归根内，路径越界拒绝。新增离线复制校验、配置切换和崩溃恢复命令；迁移源缓存和日志保留。517 项 pytest 与浏览器回归通过；真实缓存与日志迁入 `data` 后无参数启动成功，1106 条记忆及 active profile 不变，`pending=0`、`in_sync=true`，页面与 API 路径验证通过。按用户要求清理历史 `anchor-backfill` 与 `archive`，保留运行期 `tmp`。详见 [`plans/43-config-and-data-root.md`](plans/43-config-and-data-root.md)。
 - [26] report 反馈可信度与来源标记（2026-09-30 实现并验证）：MCP `report` 使用进程内搜索回执校验 `search_id` 和结果 ID，严格检查评分并结构化拒绝无效反馈；来源/用途为调用方声明，audit 保存关联上下文与分析分组，不能据此核实人工身份。491 项 pytest 通过；生产服务重启后，在线 `/mcp` 确认新参数、跨结果 ID 拒绝、合法测试反馈接受，audit 分别记录 error/ok 和 `declared_test`。历史反馈不追溯验证。详见 [`plans/26-report-feedback-trust.md`](plans/26-report-feedback-trust.md)。
 - [41] Historical Anchor Backfill（2026-09-29 按用户决定标记完成；实现 commit `af0cf58`）：离线 `draft/apply`、批量抽取及单事务写入已实现，458 项 pytest 通过。真实数据上，`remember-me` 115 条试点与批量处理得到 114 generated / 1 skip；`atos-next-master` 的 941 条分 95 个 manifest 全部生成并应用，0 失败、`updated_at` 不变；重启后 dual 健康检查通过，anchor 向量仍为 0。归档时主库尚有 `remember-me` 3 条和 `待报销` 2 条未进入 manifest，另有 1 条已记录的 skip；用户确认这些零星余项不阻碍本项结束。详见 [`plans/41-historical-anchor-backfill.md`](plans/41-historical-anchor-backfill.md)。

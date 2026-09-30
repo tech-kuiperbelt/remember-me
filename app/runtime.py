@@ -6,7 +6,10 @@ import threading
 from pathlib import Path
 
 from . import audit, log_config
-from .embed import create_embedder
+from .embed import create_embedder, ModelCacheMissing
+from .configuration import Configuration, activate_environment
+from .settings import Settings
+from .model_preparation import ModelProgress, PreparationCancelled, download_progress
 from .service import MemoryService
 from .storage import create_storage
 from .storage_dual import DualStorage
@@ -32,8 +35,12 @@ class Runtime:
         self.shutdown_callback = None
         self.maintenance = MaintenanceGate()
         self.recover_jobs = {}
+        self.model_progress = ModelProgress()
+        self._model_worker = None
+        self._model_cancel = threading.Event()
+        self._model_retry_requested = False
 
-    def start(self):
+    def start(self, *, background_model=False):
         with self._lock:
             if self.state == "running":
                 return self
@@ -44,25 +51,21 @@ class Runtime:
                 if self.configure_logging:
                     self._handlers = log_config.configure(self.log_dir or self.settings.LOG_DIR)
                 self.audit = audit.AuditJournal(self.settings.environment)
-                self.provider = self.provider_factory(environment=self.settings.environment)
-                s = self.settings
-                self.storage = self.storage_factory(
-                    s.STORAGE_BACKEND, path=s.STORAGE_PATH, primary_path=s.STORAGE_PATH,
-                    secondary_path=s.REPLICA_PATH, embedding_dtype=s.EMBED_DTYPE,
-                    embedding_spec=self.provider.spec.as_dict(), sync_interval=s.SYNC_INTERVAL,
-                    compact_interval=s.COMPACT_INTERVAL, compact_min_bytes=s.COMPACT_MIN_BYTES,
-                    compact_min_ratio=s.COMPACT_MIN_RATIO, health_check_interval=s.HEALTH_CHECK_INTERVAL,
-                    start_background=False, audit_journal=self.audit,
-                )
-                completeness = self.storage.index_embedding_completeness()
-                if not completeness["complete"]:
-                    raise RuntimeError("active embedding profile is missing keyword/category vectors; "
-                                       "stop the service and run embedding_cli reindex-index-values")
-                self.service = MemoryService(s, self.storage, self.provider, audit_journal=self.audit)
-                self.service.warmup_embedding_provider()
-                self._finish_interrupted_recovery()
-                if isinstance(self.storage, DualStorage):
-                    self.storage.start()
+                try:
+                    options = {"environment": self.settings.environment}
+                    if background_model and self.provider_factory is create_embedder:
+                        options["cache_only"] = True
+                    self.provider = self.provider_factory(**options)
+                except ModelCacheMissing:
+                    if not background_model:
+                        raise
+                    self.maintenance.require("model_not_ready")
+                    self.model_progress.set("waiting")
+                    self.state = "running"
+                    if self.settings.environment.get("MEMORY_AUTO_DOWNLOAD_MODEL", "true") == "true":
+                        self.retry_model()
+                    return self
+                self._start_business()
                 self.state = "running"
                 return self
             except BaseException:
@@ -71,6 +74,128 @@ class Runtime:
                 except BaseException:
                     logger.exception("cleanup after startup failure failed")
                 raise
+
+    def _start_business(self):
+        s = self.settings
+        self.storage = self.storage_factory(
+            s.STORAGE_BACKEND, path=s.STORAGE_PATH, primary_path=s.STORAGE_PATH,
+            secondary_path=s.REPLICA_PATH, embedding_dtype=s.EMBED_DTYPE,
+            embedding_spec=self.provider.spec.as_dict(), sync_interval=s.SYNC_INTERVAL,
+            compact_interval=s.COMPACT_INTERVAL, compact_min_bytes=s.COMPACT_MIN_BYTES,
+            compact_min_ratio=s.COMPACT_MIN_RATIO, health_check_interval=s.HEALTH_CHECK_INTERVAL,
+            start_background=False, audit_journal=self.audit,
+        )
+        if not self.storage.index_embedding_completeness()["complete"]:
+            raise RuntimeError("active embedding profile is missing keyword/category vectors; "
+                               "stop the service and run embedding_cli reindex-index-values")
+        self.service = MemoryService(s, self.storage, self.provider, audit_journal=self.audit)
+        self.service.warmup_embedding_provider()
+        self._finish_interrupted_recovery()
+        if isinstance(self.storage, DualStorage):
+            self.storage.start()
+            if self.maintenance.state == "maintenance":
+                self.storage.pause_background()
+
+    def model_status(self):
+        return {**self.model_progress.snapshot(), "ready": self.service is not None
+                and self.maintenance.required_reason is None}
+
+    def model_config(self):
+        return Configuration.load(self.settings.DATA_DIR).as_dict(redact=True)
+
+    def save_model_config(self, changes):
+        from .maintenance import MaintenanceRejected
+        with self._lock:
+            if self.state != "running":
+                raise MaintenanceRejected("maintenance_busy", "Service is closing; configuration cannot be saved")
+            if not isinstance(changes, dict) or set(changes) - {"port", "language", "proxy", "auto_download_model"}:
+                raise ValueError("Only port, language, proxy and auto_download_model may be changed here")
+            config = Configuration.load(self.settings.DATA_DIR)
+            values = config.as_dict()
+            if "proxy" in changes:
+                if not isinstance(changes["proxy"], dict):
+                    raise ValueError("proxy must be an object")
+                values["proxy"] = {**values["proxy"], **changes["proxy"]}
+            for key in ("port", "language", "auto_download_model"):
+                if key in changes:
+                    values[key] = changes[key]
+            validated = Configuration.from_values(config.path, config.data_dir, values)
+            if "***@" in validated.proxy_url:
+                raise ValueError("Enter the actual proxy URL; leave URL unchanged to preserve credentials")
+            from dataclasses import replace
+            replace(validated, source_text=config.source_text).save()
+            self.audit.record("model_config", {}, validated.as_dict(redact=True), 0)
+            return validated.as_dict(redact=True)
+
+    def retry_model(self):
+        from .maintenance import MaintenanceRejected
+        with self._lock:
+            if self.state != "running" or not self.maintenance.required_reason:
+                raise MaintenanceRejected("maintenance_busy", "Model preparation is not required")
+            if self._model_worker and self._model_worker.is_alive():
+                self._model_retry_requested = True
+                self._model_cancel.set()
+                self.model_progress.set("cancelling")
+            else:
+                self._model_cancel.clear()
+                self._model_worker = threading.Thread(target=self._prepare_model,
+                                                      name="model-preparation", daemon=True)
+                self._model_worker.start()
+            result = self.model_status()
+            self.audit.record("model_retry", {}, result, 0)
+            return result
+
+    def _prepare_model(self):
+        while True:
+            try:
+                with self._lock:
+                    if self.state != "running":
+                        return
+                    config = Configuration.load(self.settings.DATA_DIR)
+                    self.settings = Settings.from_env(config.runtime_environment(self.settings.environment))
+                    activate_environment(self.settings.environment)
+                    self._model_cancel.clear()
+                    self._model_retry_requested = False
+                    self.model_progress.set("downloading")
+                provider_name = self.settings.environment.get("EMBED_PROVIDER", "ollama").replace("-", "_")
+                with download_progress(provider_name, self.model_progress, self._model_cancel):
+                    self.provider = self.provider_factory(environment=self.settings.environment, allow_download=True)
+                with self._lock:
+                    if self.state != "running" or self._model_cancel.is_set():
+                        raise PreparationCancelled()
+                    self.model_progress.set("validating")
+                    self._start_business()
+                    self.maintenance.release_requirement()
+                    self.model_progress.set("ready")
+                    self.audit.record("model_prepare", {}, self.model_status(), 0)
+            except PreparationCancelled:
+                self._release_model_business()
+            except Exception as exc:
+                self._release_model_business()
+                message = str(exc)
+                if "config" in locals() and config.proxy_url:
+                    message = message.replace(config.proxy_url, "[proxy]")
+                self.model_progress.set("failed", error=message)
+                self.audit.record("model_prepare", {}, self.model_status(), 0,
+                                  error={"type": type(exc).__name__, "message": message})
+                logger.error("Model preparation failed: %s", message)
+            with self._lock:
+                if self.state == "running" and self._model_retry_requested:
+                    continue
+                # Clear ownership under the same lock used by retry_model, so a
+                # retry at thread completion cannot be lost.
+                self._model_worker = None
+                return
+
+    def _release_model_business(self):
+        if self.service is not None:
+            self.service.close()
+        if self.storage is not None:
+            self.storage.stop()
+        close = getattr(self.provider, "close", None)
+        if callable(close):
+            close()
+        self.service = self.storage = self.provider = None
 
     def _finish_interrupted_recovery(self):
         """An atomic primary restore may have finished before its replica sync."""
@@ -186,6 +311,12 @@ class Runtime:
                 self.shutdown_callback()
 
     def close(self):
+        with self._lock:
+            self.state = "closing" if self.state != "closed" else "closed"
+            self._model_cancel.set()
+            worker = self._model_worker
+        if worker is not None and worker is not threading.current_thread():
+            worker.join()
         self.maintenance.wait_idle()
         with self._lock:
             if self.state == "closed":

@@ -484,7 +484,9 @@ class MCPApplication:
                 return await self._handle_call_tool_unchecked(name, arguments)
         except MaintenanceRejected as exc:
             data = {"response_code": exc.code, "detail": str(exc)}
-            hint = "Maintenance is in progress. Retry this operation later."
+            hint = ("Model is not ready. Open /admin/console to configure proxy, view download progress and retry; "
+                    "exit maintenance only after the model is ready." if exc.code == "model_not_ready"
+                    else "Maintenance is in progress. Retry this operation later.")
             self.audit.record(name, arguments, data, 0.0, response_code=exc.code,
                               context=self._audit_context())
             return _ok(data, hint)
@@ -939,7 +941,7 @@ def create_http_app(runtime, *, port=None):
     @asynccontextmanager
     async def lifespan(app):
         try:
-            runtime.start()
+            runtime.start(background_model=True)
             # Entered after start() and exited before close() so in-flight work
             # drains before storage/provider are released.
             async with session_manager.run():
@@ -1133,7 +1135,7 @@ async def main(argv=None):
     from .runtime import create_runtime
     from .configuration import activate_environment
     parser = argparse.ArgumentParser(description="Memory MCP Server")
-    parser.add_argument("--data-dir", help="Data directory (default: project data); contains config.json")
+    parser.add_argument("--data-dir", help="Data directory (default: project data); contains config.jsonc")
     transport = parser.add_mutually_exclusive_group()
     transport.add_argument("--stdio", action="store_true", help="Use subprocess stdin/stdout instead of HTTP")
     transport.add_argument("--port", type=int, default=None,

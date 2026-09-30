@@ -41,15 +41,51 @@ url = "http://127.0.0.1:1314/mcp"
 
 默认数据目录是仓库的 `data`，与启动时的工作目录无关。可通过 `--data-dir DIR` 或
 `MEMORY_DATA_DIR` 指定；相对目录按仓库根目录解析，命令参数优先。配置固定在选中目录的
-`config.json`，首次正常启动会创建：
+`config.jsonc`，首次正常启动会创建：
 
-```json
-{"port": 1314, "language": "zh-CN"}
+```jsonc
+{
+  // HTTP 端口
+  "port": 1314,
+  "language": "zh-CN",
+  "auto_download_model": true,
+  // 代理地址可以包含端口
+  "proxy": {"enabled": false, "url": ""}
+}
 ```
+
+支持 `//` 单行注释、`/* … */` 块注释及尾随逗号；配置页面保存时保留已有注释。
+仅存在旧 `config.json` 时，正常启动会沿用原值并生成 `config.jsonc`，旧文件保留作备份。
+两者同时存在时只读取 `config.jsonc`；新文件出错不会退回旧文件。只读状态及帮助不迁移文件。
 
 端口允许 1–65535，语言允许 `zh-CN` 和 `en`；本版只保存语言选择，尚未进行界面翻译。
 修改配置后重启生效。`--port PORT` 临时覆盖端口（0 表示随机可用端口），`--stdio` 显式
 启动标准输入输出模式，两者互斥。模块导入和 `--help` 不会创建配置或其他文件。
+
+旧配置缺少新字段时自动使用默认值。Sentence Transformers / FastEmbed 优先仅从本地缓存
+加载；缓存缺失时 HTTP 服务先开放配置页并强制进入维护状态，若 `auto_download_model=true`
+则后台下载。完整缓存启动不联网。禁止自动下载时等待操作，下载失败时保留配置页并显示错误；不会自动更换模型
+或数据库 embedding profile。显式本地模型路径缺失时请恢复该目录，服务不把路径当作远程模型名。
+
+代理默认关闭，直连且忽略系统的 `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY`（含小写）。
+启用时设置 `"proxy": {"enabled": true, "url": "http://127.0.0.1:7890"}`；只支持 HTTP/HTTPS
+代理，允许 URL 中的用户名/密码，`config status` 隐藏凭据。本地 Ollama 请求始终直连。
+该策略用于 Memory 进程及其模型下载，不修改独立 Ollama 服务的代理设置。
+配置入口以 `auto_download_model` 为准，覆盖旧 `.env` 的 `FASTEMBED_OFFLINE`、
+`SENTENCE_TRANSFORMERS_OFFLINE`、`HF_HUB_OFFLINE`、`TRANSFORMERS_OFFLINE`；
+模型库在加载时通过 `local_files_only` 控制联网。禁用独立 Xet 下载通道，让模型下载统一遵循 HTTP 代理配置。
+
+首次模型缺失时，浏览器打开 `/admin/console` 自动进入配置页，可保存代理并重试，不需要
+为代理变更重启。页面每两秒更新真实字节进度（当前文件或下载批次）；总量未知、等待网络
+或验证期间显示不确定进度。保存后重试会先结束旧任务，再使用新配置准备，保持一个任务运行。
+模型下载、加载及数据库校验完成前，记忆读写/搜索不可用，后端拒绝退出维护；完成后仍保持维护，
+由操作者手动退出。重启、关机始终可用，并等待模型任务取消和资源清理。
+配置页面上方可修改端口、语言、自动下载和代理，保存无需进入维护，也不暂停当前记忆服务。
+端口与语言重启后生效（显式 `--port` 仍优先），下载策略供下次模型准备/启动使用。
+页面下方集中提供需要维护模式的操作，包括模型重试、重启/关机、导入/恢复、导出、Sync、清空及 namespace 迁移。
+stdio 和维护 CLI 仍同步准备模型，失败退出；没有 Web 配置页。也可预先执行
+`bin/manage embedding download-model`：该命令明确允许下载，即使自动下载关闭，也使用同一代理
+和 data 下的缓存。Ollama 模型仍由其服务管理，缺失时执行 `ollama pull MODEL`。
 
 ```bash
 bin/start.sh --data-dir /path/to/runtime-data

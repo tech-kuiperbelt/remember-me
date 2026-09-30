@@ -39,7 +39,7 @@ def exec_probe(executable, argv):
 os.execv = exec_probe
 asyncio.run(main())
 ''')
-    config = tmp_path / 'config.json'
+    config = tmp_path / 'config.jsonc'
     config.write_text(json.dumps({'port': 1314, 'language': 'zh-CN'}))
     env = {**os.environ, 'PYTHONPATH': str(root), 'MEMORY_STORAGE': 'dual',
            'MEMORY_DATA_DIR': str(tmp_path),
@@ -158,7 +158,7 @@ def test_streamable_http_protocol_and_process_exit(process_config, launch):
     if launch == 'override':
         args = [sys.executable, str(runner), '--port', str(port)]
     else:
-        (runner.parent / 'config.json').write_text(json.dumps({'port': port, 'language': 'en'}))
+        (runner.parent / 'config.jsonc').write_text(json.dumps({'port': port, 'language': 'en'}))
         args = [sys.executable, str(runner)]
         if launch == 'data-dir':
             env['MEMORY_DATA_DIR'] = str(runner.parent / 'unused')

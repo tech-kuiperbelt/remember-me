@@ -52,8 +52,8 @@ def main(argv=None):
     if args.command == "config":
         if tail != ["status"]:
             parser.error("config requires status or migrate")
-        print(json.dumps({"config": str(config.path), "port": config.port,
-                          "language": config.language, "data_dir": str(config.data_dir)}, ensure_ascii=False, indent=2))
+        print(json.dumps({"config": str(config.path), **config.as_dict(redact=True),
+                          "data_dir": str(config.data_dir)}, ensure_ascii=False, indent=2))
         return 0
     if args.command == "status":
         shown_primary = primary if primary == ":memory:" else str(Path(primary).relative_to(config.data_dir))

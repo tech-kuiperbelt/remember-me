@@ -11,7 +11,7 @@ import sqlite3
 import tempfile
 
 from .configuration import (Configuration, DEFAULTS, PATH_DEFAULTS,
-                            PROJECT_ROOT, atomic_json, rooted_path)
+                            PROJECT_ROOT, atomic_json, atomic_config, rooted_path)
 from .database_lock import DatabaseWriterLock
 
 
@@ -60,7 +60,8 @@ def _atomic_text(path, text):
 def _rollback(state, project_root, target_root):
     if state["project_root"] != str(project_root):
         raise ValueError("Migration journal belongs to a different installation")
-    env_path, config_path = project_root / ".env", target_root / "config.json"
+    env_path = project_root / ".env"
+    config_path = rooted_path(target_root, state.get("config_file", "config.json"))
     for path, original in ((env_path, state["old_env"]), (config_path, state["old_config"])):
         if original is None:
             path.unlink(missing_ok=True)
@@ -106,11 +107,11 @@ def migrate(data_dir=None, source_data_dir=None, *, dry_run=False, environment=N
     journal = rooted_path(target_root, ".config-migration.json")
     if journal.exists():
         return _recover(journal, project_root, target_root, dry_run)
-    location = target_root / "config.json"
+    location = target_root / "config.jsonc"
     existed = location.exists()
-    source_config = source_root / "config.json"
-    has_source_config = source_config.exists()
-    config = Configuration.load(target_root, environment={}) if existed else (
+    has_source_config = any((source_root / name).exists() for name in ("config.jsonc", "config.json"))
+    has_target_config = existed or (target_root / "config.json").exists()
+    config = Configuration.load(target_root, environment={}) if has_target_config else (
         Configuration.load(source_root, environment={}) if has_source_config else Configuration(
             location, target_root, DEFAULTS["port"], DEFAULTS["language"]))
     if target_root != source_root and (target_root.is_relative_to(source_root)
@@ -163,7 +164,7 @@ def migrate(data_dir=None, source_data_dir=None, *, dry_run=False, environment=N
                     mappings[Path(str(destination) + suffix)] = rotated
     if source_root.exists() and source_root != target_root:
         for source in source_root.iterdir():
-            if source.name in ("config.json", "tmp") or source.name.endswith(".lock"):
+            if source.name in ("config.jsonc", "config.json", "tmp") or source.name.endswith(".lock"):
                 continue
             destination = rooted_path(target_root, source.name)
             mappings.setdefault(destination, source)
@@ -211,6 +212,7 @@ def migrate(data_dir=None, source_data_dir=None, *, dry_run=False, environment=N
         old_env = (project_root / ".env").read_text(encoding="utf-8") if (project_root / ".env").exists() else None
         old_config = location.read_text(encoding="utf-8") if existed else None
         state = {"project_root": str(project_root), "old_env": old_env, "old_config": old_config,
+                 "config_file": "config.jsonc",
                  "databases": [str(primary), str(target_primary)], "staging": str(staging),
                  "phase": "copying", "published": []}
         try:
@@ -242,7 +244,7 @@ def migrate(data_dir=None, source_data_dir=None, *, dry_run=False, environment=N
             lines.extend(f"{key}={shlex.quote(value)}" for key, value in path_updates.items())
             lines.append(f"MEMORY_DATA_DIR={shlex.quote(os.path.relpath(target_root, project_root))}")
             _atomic_text(project_root / ".env", "\n".join(lines) + "\n")
-            atomic_json(location, {"port": config.port, "language": config.language})
+            atomic_config(location, config.as_dict(), source_text=config.source_text)
             state["phase"] = "committed"
             atomic_json(journal, state)
         except BaseException:

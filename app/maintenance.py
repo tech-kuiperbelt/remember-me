@@ -19,16 +19,29 @@ class MaintenanceGate:
         self.writers = 0
         self.last_result = None
         self.error = None
+        self.required_reason = None
+
+    def require(self, reason):
+        with self._condition:
+            self.required_reason = reason
+            self.state = "maintenance"
+
+    def release_requirement(self):
+        with self._condition:
+            self.required_reason = None
 
     def snapshot(self):
         with self._condition:
             return {"state": self.state, "action": self.action,
                     "readers": self.readers, "writers": self.writers,
-                    "last_result": self.last_result, "error": self.error}
+                    "last_result": self.last_result, "error": self.error,
+                    "required_reason": self.required_reason}
 
     @contextmanager
     def access(self, *, write=False):
         with self._condition:
+            if self.required_reason:
+                raise MaintenanceRejected("model_not_ready", "Model is not ready. Configure proxy and retry at /admin/console")
             if self.state == "switching":
                 raise MaintenanceRejected("maintenance_switching", "database is switching; retry shortly")
             if self.state == "unavailable":
@@ -70,6 +83,8 @@ class MaintenanceGate:
 
     def exit(self):
         with self._condition:
+            if self.required_reason:
+                raise MaintenanceRejected("model_not_ready", "Model must finish downloading, loading and validation before maintenance can exit")
             if self.state != "maintenance" or self.action or self.error:
                 raise MaintenanceRejected("maintenance_busy", "maintenance cannot exit while work or an error remains")
             self.state = "normal"
@@ -77,6 +92,8 @@ class MaintenanceGate:
 
     def start_action(self, name):
         with self._condition:
+            if self.required_reason and name not in ("restart", "shutdown"):
+                raise MaintenanceRejected("model_not_ready", "Model is not ready; configure proxy and retry first")
             if self.state != "maintenance":
                 raise MaintenanceRejected("maintenance_required", "enter maintenance mode first")
             if self.action:

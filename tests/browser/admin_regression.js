@@ -103,6 +103,41 @@ try {
  assert(requested==='/shutdown' && $('btn-restart').disabled && $('btn-shutdown').disabled, 'shutdown accepted');
  assert($('restart-result').textContent.includes('terminal'), 'shutdown recovery instructions');
  api=originalApi;window.confirm=originalConfirm;
- result.textContent='PASS: shutdown controls; special characters, safe actions and errors;  browse, pagination, literal, semantic, exact jump, selection retention, low-frequency, stale response';
+ const preparing={state:'maintenance', action:null, required_reason:'model_not_ready',
+   model:{status:'downloading',ready:false,completed:40,total:100,percent:40,file:'weights.bin'}};
+ let saved, retried=false;
+ api=async (path, options) => {
+   if (path==='/maintenance') return preparing;
+   if (path==='/config' && options?.method==='POST') {saved=JSON.parse(options.body);return {};}
+   if (path==='/config') return {port:1314,language:'zh-CN',auto_download_model:true,proxy:{enabled:true,url:'http://***@localhost:7890'}};
+   if (path==='/model/retry') {retried=true;return {};}
+   throw new Error('Unexpected bootstrap request '+path);
+ };
+ await loadOpsPage();
+ assert($('btn-maintenance-exit').disabled && $('btn-sync').disabled, 'forced maintenance locks actions');
+ assert(!$('btn-shutdown').disabled && !$('btn-model-save').disabled, 'bootstrap configuration and shutdown available');
+ assert($('model-progress').value===40 && $('model-progress-detail').textContent.includes('40.0%'), 'actual byte progress');
+ $('model-proxy-url').value='http://127.0.0.1:7890';
+ await saveModelConfig();
+ assert(saved.proxy.url==='http://127.0.0.1:7890' && retried, 'save proxy and retry');
+ assert($('model-proxy-url').value==='', 'proxy credential input cleared');
+ preparing.model={status:'failed',ready:false,percent:null,error:'<img src=x onerror=window.injected=1>'};
+ await refreshMaintenance();
+ assert(!$('model-progress').hasAttribute('value'), 'indeterminate progress');
+ assert($('model-error').textContent===preparing.model.error && !$('model-error').querySelector('img'), 'model error safely rendered');
+ preparing.required_reason=null;preparing.model={status:'ready',ready:true};
+ await refreshMaintenance();
+ assert(!$('btn-maintenance-exit').disabled && $('model-progress').value===100, 'ready permits manual exit');
+ preparing.state='normal';
+ await refreshMaintenance();
+ assert(!$('btn-model-save').disabled && $('btn-sync').disabled && $('btn-restart').disabled, 'normal mode permits config but blocks maintenance actions');
+ $('config-port').value='2314';$('config-language').value='en';
+ retried=false;
+ await saveModelConfig();
+ assert(saved.port===2314 && saved.language==='en' && !retried, 'full config save in normal mode');
+ assert($('model-config-result').textContent.includes('重启后生效'), 'restart requirement shown');
+ assert($('model-card').compareDocumentPosition($('model-preparation-card')) & Node.DOCUMENT_POSITION_FOLLOWING, 'configuration above maintenance');
+ api=originalApi;
+ result.textContent='PASS: model bootstrap/progress/proxy/retry; shutdown controls; special characters, safe actions and errors; browse, pagination, literal, semantic, exact jump, selection retention, low-frequency, stale response';
 } catch(e) {result.textContent='FAIL: '+e.stack;}
 })();

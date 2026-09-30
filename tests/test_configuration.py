@@ -9,6 +9,7 @@ import sys
 import pytest
 
 from app.configuration import Configuration, rooted_path
+from app.jsonc import loads
 from app.config_migrate import migrate
 from app.database_lock import DatabaseWriterLock
 from app.settings import Settings
@@ -16,7 +17,7 @@ from app.settings import Settings
 
 def config(directory, **values):
     directory.mkdir(parents=True, exist_ok=True)
-    path = directory / "config.json"
+    path = directory / "config.jsonc"
     path.write_text(json.dumps(values), encoding="utf-8")
     return path
 
@@ -25,12 +26,12 @@ def test_data_directory_selects_config_and_defaults_without_cwd(tmp_path, monkey
     monkeypatch.setattr("app.configuration.PROJECT_ROOT", tmp_path)
     monkeypatch.chdir(tmp_path.parent)
     result = Configuration.load("custom", environment={})
-    assert result.path == tmp_path / "custom/config.json"
+    assert result.path == tmp_path / "custom/config.jsonc"
     assert result.data_dir == tmp_path / "custom"
     assert (result.port, result.language) == (1314, "zh-CN")
     assert not result.path.exists()
     Configuration.load("custom", create=True, environment={})
-    assert json.loads(result.path.read_text()) == {"port": 1314, "language": "zh-CN"}
+    assert loads(result.path.read_text()) == result.as_dict()
 
 
 @pytest.mark.parametrize("values", [
@@ -38,14 +39,14 @@ def test_data_directory_selects_config_and_defaults_without_cwd(tmp_path, monkey
     {"language": "fr"}, {"data_dir": "."}, [],
 ])
 def test_invalid_configuration_fails_before_runtime(tmp_path, values):
-    path = tmp_path / "config.json"
+    path = tmp_path / "config.jsonc"
     path.write_text(json.dumps(values))
     with pytest.raises(ValueError):
         Configuration.load(tmp_path, environment={})
 
 
 def test_malformed_configuration_is_not_overwritten(tmp_path):
-    path = tmp_path / "config.json"
+    path = tmp_path / "config.jsonc"
     path.write_text('{"port":')
     with pytest.raises(ValueError, match="Cannot read config"):
         Configuration.load(tmp_path, create=True, environment={})
@@ -114,7 +115,7 @@ def test_migration_preview_is_read_only_then_copies_and_switches(tmp_path):
     project, source, env = legacy_layout(tmp_path)
     target = tmp_path / "new-data"
     preview = migrate(target, environment=env, project_root=project, dry_run=True)
-    assert not target.exists() and not (source / "config.json").exists()
+    assert not target.exists() and not (source / "config.jsonc").exists()
     assert not preview["conflicts"]
     result = migrate(target, environment=env, project_root=project)
     assert result["migrated"] and result["source_files_retained"]
@@ -122,7 +123,7 @@ def test_migration_preview_is_read_only_then_copies_and_switches(tmp_path):
     assert (target / "logs/server.log").read_text() == "old logs"
     assert (target / "models/sentence-transformers/weights.bin").read_bytes() == b"model weights"
     assert not (target / "models/sentence-transformers/alias.bin").is_symlink()
-    assert json.loads((target / "config.json").read_text()) == {"port": 1314, "language": "zh-CN"}
+    assert loads((target / "config.jsonc").read_text()) == Configuration.load(target).as_dict()
     assert "EMBED_PROVIDER=sentence_transformers" in (project / ".env").read_text()
     assert "SENTENCE_TRANSFORMERS_CACHE_DIR=models/sentence-transformers" in (project / ".env").read_text()
     settings = Settings.from_config(target, environment=result["path_settings"])
@@ -134,7 +135,7 @@ def test_in_place_migration_does_not_copy_existing_database(tmp_path):
     result = migrate(environment=env, project_root=project)
     assert result["migrated"]
     assert (source / "logs/server.log").exists()
-    assert (source / "config.json").exists()
+    assert (source / "config.jsonc").exists()
 
 
 def test_migration_rejects_conflicts_and_live_writer(tmp_path):
@@ -154,17 +155,17 @@ def test_failed_migration_keeps_original_configuration_and_files(tmp_path, monke
     project, source, env = legacy_layout(tmp_path)
     original_env = (project / ".env").read_text()
     target = tmp_path / "new-data"
-    from app.config_migrate import atomic_json
+    from app.config_migrate import atomic_config
     def failed_publish(path, *args, **kwargs):
-        if Path(path).name == "config.json":
+        if Path(path).name == "config.jsonc":
             raise OSError("simulated publish failure")
-        return atomic_json(path, *args, **kwargs)
-    monkeypatch.setattr("app.config_migrate.atomic_json", failed_publish)
+        return atomic_config(path, *args, **kwargs)
+    monkeypatch.setattr("app.config_migrate.atomic_config", failed_publish)
     with pytest.raises(OSError, match="simulated"):
         migrate(target, environment=env, project_root=project)
     assert (project / ".env").read_text() == original_env
     assert not (target / "memories.db").exists()
-    assert not (target / "config.json").exists()
+    assert not (target / "config.jsonc").exists()
     assert (source / "memories.db").exists()
 
 

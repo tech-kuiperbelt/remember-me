@@ -16,7 +16,7 @@ def pytest_configure(config):
     """Runs before any test module import — pin storage to in-memory SQLite."""
     config._test_environment = dict(os.environ)
     config._test_directory = tempfile.TemporaryDirectory(prefix="remember-me-tests-")
-    config_path = Path(config._test_directory.name) / "config.json"
+    config_path = Path(config._test_directory.name) / "config.jsonc"
     config_path.write_text(json.dumps({"port": 1314, "language": "zh-CN"}))
     for key in list(os.environ):
         if key.startswith(("MEMORY_", "EMBED_", "FASTEMBED_", "SENTENCE_TRANSFORMERS_", "OLLAMA_")):

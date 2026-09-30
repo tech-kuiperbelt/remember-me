@@ -83,5 +83,5 @@ class Settings:
             DATA_DIR=root, TEMP_DIR=env.get("MEMORY_TEMP_DIR", str(Path(root) / "tmp")),
             LOG_DIR=env.get("MEMORY_LOG_DIR", str(Path(root) / "logs")),
             PORT=int(env.get("MEMORY_PORT", "1314")),
-            LANGUAGE=env.get("MEMORY_LANGUAGE", "zh-CN"), CONFIG_PATH=str(Path(root) / "config.json"),
+            LANGUAGE=env.get("MEMORY_LANGUAGE", "zh-CN"), CONFIG_PATH=str(Path(root) / "config.jsonc"),
         )

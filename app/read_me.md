@@ -7,6 +7,8 @@
 
 - 本服务地址（自引用，端口跟随服务启动参数）：`{base}`
 - 主机固定为 `127.0.0.1`；`localhost` 与之等价。
+- 模型缓存缺失时，配置页面 `{base}/admin/console` 仍可访问，可设置下载代理、查看进度并重试。
+  此时记忆工具返回 `model_not_ready`，请先完成模型准备；模型就绪后由操作者退出维护再写入。
 
 ## 1. 概述
 
@@ -57,8 +59,8 @@ args = ["--stdio"]
 ```
 
   将 `<REPO>` 替换为本仓库的绝对路径；`bin/start.sh` 会加载 `.env` 与 `.venv`。
-  无参数启动默认 HTTP，端口取自数据目录中的 `config.json`（默认 1314）；stdio 必须显式传 `--stdio`。
-  数据目录默认 `<REPO>/data`，可传 `--data-dir <DIR>`；配置文件固定为该目录下的 `config.json`。
+  无参数启动默认 HTTP，端口取自数据目录中的 `config.jsonc`（默认 1314）；stdio 必须显式传 `--stdio`。
+  数据目录默认 `<REPO>/data`，可传 `--data-dir <DIR>`；配置文件固定为该目录下的 `config.jsonc`。
 - 限制：**无法支持多个客户端同时连接**；且当同一主库已有 HTTP 服务在运行时，
   不能再启动 stdio 写入进程（单主库写锁）。
 

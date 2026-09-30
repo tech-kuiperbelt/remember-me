@@ -24,7 +24,7 @@ Offline writes (stop the service first):
   migrate anchors <draft|apply>  Offline anchor backfill (draft is read-only)
   recover [SOURCE] [TARGET]      Rebuild SQLite from vector-free JSONL
 
-Defaults come from data/config.json and .env. Use --data-dir PATH before the command. Use the underlying command's
+Defaults come from data/config.jsonc and .env. Use --data-dir PATH before the command. Use the underlying command's
 --help for all provider, profile, namespace, and batch-size options.
 EOF
 }
