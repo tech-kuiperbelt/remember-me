@@ -1,0 +1,131 @@
+"""Admin routes declare their access and error policy explicitly."""
+
+import json
+
+import pytest
+from starlette.requests import Request
+
+from app.admin import AdminAPI, domain_error_response
+from app.anchors import InvalidAnchors
+from app.embed import EmbeddingInputTooLong
+from app.lexical import LexicalQueryError
+from app.namespace_policy import InvalidNamespace, NamespaceNotFound
+from app.service import InvalidSearchFilter
+
+ALLOWED_POLICIES = {"static", "read", "write", "action", "control", "exempt"}
+EXPECTED_ORDER = [
+    ("/admin/console", ("GET",)),
+    ("/api/memories", ("GET",)),
+    ("/api/memories", ("POST",)),
+    ("/api/memories", ("DELETE",)),
+    ("/api/memories/search", ("POST",)),
+    ("/api/memories/search/lexical", ("POST",)),
+    ("/api/memories/search/anchor", ("POST",)),
+    ("/api/memories/details", ("POST",)),
+    ("/api/memories/{memory_id}", ("GET",)),
+    ("/api/memories/{memory_id}", ("PUT",)),
+    ("/api/memories/{memory_id}", ("DELETE",)),
+    ("/api/keywords/query", ("POST",)),
+    ("/api/stats", ("GET",)),
+    ("/api/storage-paths", ("GET",)),
+    ("/api/import", ("POST",)),
+    ("/api/import/{import_id}", ("GET",)),
+    ("/api/export/full", ("POST",)),
+    ("/api/export/namespace", ("POST",)),
+    ("/api/sync", ("POST",)),
+    ("/api/shutdown", ("POST",)),
+    ("/api/restart", ("POST",)),
+    ("/api/namespaces/migrate", ("POST",)),
+    ("/api/audit", ("GET",)),
+    ("/api/maintenance", ("GET",)),
+    ("/api/model", ("GET",)),
+    ("/api/model/retry", ("POST",)),
+    ("/api/config/model", ("GET", "POST")),
+    ("/api/config", ("GET", "POST")),
+    ("/api/maintenance/enter", ("POST",)),
+    ("/api/maintenance/exit", ("POST",)),
+    ("/api/recover", ("POST",)),
+    ("/api/recover/{recover_id}", ("GET",)),
+]
+
+
+def test_route_table_is_ordered_unique_and_complete():
+    table = AdminAPI.ROUTE_TABLE
+    assert [(r.path, r.methods) for r in table] == EXPECTED_ORDER
+    assert len({(r.path, r.methods) for r in table}) == len(table)
+    for route in table:
+        assert route.policy in ALLOWED_POLICIES
+        assert route.errors in {"boundary", "none"}
+        assert hasattr(AdminAPI, route.handler)
+
+
+def test_action_write_and_read_sets():
+    table = AdminAPI.ROUTE_TABLE
+    actions = {(r.path, r.methods, r.action) for r in table if r.policy == "action"}
+    assert actions == {
+        ("/api/memories", ("DELETE",), "clear"),
+        ("/api/export/full", ("POST",), "export_full"),
+        ("/api/export/namespace", ("POST",), "export_namespace"),
+        ("/api/sync", ("POST",), "sync"),
+        ("/api/shutdown", ("POST",), "shutdown"),
+        ("/api/restart", ("POST",), "restart"),
+        ("/api/namespaces/migrate", ("POST",), "migrate_namespace"),
+    }
+    writes = {(r.path, r.methods) for r in table if r.policy == "write"}
+    assert writes == {
+        ("/api/memories", ("POST",)),
+        ("/api/memories/{memory_id}", ("PUT",)),
+        ("/api/memories/{memory_id}", ("DELETE",)),
+    }
+    # Every route has exactly one declared policy; control/exempt are unguarded.
+    assert {r.policy for r in table} <= ALLOWED_POLICIES
+
+
+def test_boundary_routes_use_the_shared_mapper():
+    for route in AdminAPI.ROUTE_TABLE:
+        handler = getattr(AdminAPI, route.handler)
+        if route.errors == "boundary":
+            assert hasattr(handler, "__wrapped__"), route.handler
+        else:
+            assert not hasattr(handler, "__wrapped__"), route.handler
+
+
+def test_generated_routes_keep_declared_order_and_methods():
+    api = AdminAPI.__new__(AdminAPI)
+    api._service = None
+    api.runtime = None
+    routes = AdminAPI.routes.fget(api)
+    assert [(r.path, tuple(sorted(r.methods))) for r in routes] == [
+        (path, tuple(sorted(methods + (("HEAD",) if "GET" in methods else ()))))
+        for path, methods in EXPECTED_ORDER
+    ]
+
+
+def _response(exc):
+    response = domain_error_response(exc)
+    return response.status_code, json.loads(response.body)
+
+
+def test_domain_error_mapping_preserves_codes():
+    status, body = _response(NamespaceNotFound("missing", ["a"]))
+    assert status == 400 and body["response_code"] == "namespace_not_found"
+    assert body["response_meta"]["known_namespaces"] == ["a"]
+
+    status, body = _response(InvalidNamespace("bad name"))
+    assert status == 400 and body["response_code"] == "invalid_namespace"
+
+    status, body = _response(InvalidAnchors("bad anchor"))
+    assert status == 400 and body["response_code"] == "invalid_anchors"
+    assert body["response_meta"] == {"field": "metadata.anchors"}
+
+    status, body = _response(EmbeddingInputTooLong(9, 8))
+    assert status == 413 and body["code"] == "embedding_input_too_long"
+    assert "response_code" not in body
+
+    status, body = _response(InvalidSearchFilter("too many"))
+    assert status == 400 and body["response_code"] == "invalid_request"
+
+    status, body = _response(LexicalQueryError("blank"))
+    assert status == 400 and body["response_code"] == "invalid_query"
+
+    assert domain_error_response(ValueError("plain")) is None

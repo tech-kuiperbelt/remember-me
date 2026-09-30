@@ -1,18 +1,20 @@
 # [48] 后端重构 Coding Plan
 
-日期：2026-09-30。状态：阶段 1–3 已实现，阶段 4、5 待实现。基线：`d16be35`。
+日期：2026-09-30。状态：阶段 1–4 已实现，阶段 5 待实现。基线：`d16be35`。
 
 ## 实施进度
 
 - 阶段 1（隔离阻塞业务，明确取消与停服）：已完成。新增 `app/calls.py`（Runtime 拥有的 `AsyncCallAdapter`：4 业务 worker + 1 控制 worker、延迟创建、worker 内准入、`asyncio.shield` 取消语义、关闭时取消排队并等待运行中任务）与 `app/provider_adapter.py`（`SerializedProvider` 单把可重入锁串行 query/document/batch/warmup/close）。MCP 工具/resource 与 Admin 阻塞业务全部经适配器执行，配置读写走控制池；Admin 变更类记忆路由把准入推迟到 worker，排队写入会在维护进入后被重新拒绝。`Runtime.close()` 先关闭适配器再释放存储/provider/audit。
 - 阶段 2（收回任务与恢复协调职责）：已完成。新增 `app/import_coordinator.py`（每个导入一个完成 Event，最外层 finally 统一收尾，`wait_import` 返回终态且保证清理完成）；`Runtime.start_maintenance_import()` 拥有导入维护动作的启动与收尾（单个等待线程），`maintenance_import_status()` 供 Admin 查询；`Runtime.maintenance_sync()` 集中 force_sync、恢复标记核验/删除与 sticky error 清除；恢复 job 读写加锁并提供 `recover_status()` 快照；`Runtime._close_business()` 统一业务资源释放（任一步失败也继续释放并保留首个错误）。Admin 删除 100ms 轮询、额外维护等待线程及对 `service._workers` / `runtime._verify_recovered_replica()` 的访问。
 - 阶段 3（补齐存储契约与 provider 边界）：已完成。`MemoryStorage` 补全 `stop` 与索引/关键词/分类业务接口，并把 `force_sync`/`export_full_snapshot` 变为默认抛 `StorageCapabilityError` 的具体能力方法；新增窄接口 `SQLitePrimaryStorage`（outbox、连接替换、embedding profile 维护，方法公开化）与 `ReplicaStorage` 的 `acquire/release_writer_lock`；Service 删除 `_primary_storage`/`hasattr`/`isinstance(DualStorage)` 能力探测，导入准备与导出直接走 `self.storage`，并用 `active_embedding_profile()` 避免 dual 全量 `get_stats` 扫描；provider 门面统一委托 `embed_document/embed_query/embed_documents`，删除 Ollama 名称分支，异常转换集中到 `SerializedProvider`。新增 `tests/test_storage_contract.py`（sqlite/dual 同契约、能力异常、不完整替身构造失败、provider 委托与异常）。
-- 阶段 4：待实现（静态 ToolSpec 表、路由策略声明、响应公共逻辑）。
+- 阶段 4（声明工具与路由策略，合并响应公共逻辑）：已完成。新增 `app/tool_definitions.py`（11 个工具 schema/描述逐字迁出）与 `app/tools.py`（`ToolSpec` 表关联 definition/handler/write/search/namespace_mode，审计策略登记在 `app/audit.py` 注册表，`list_tools` 与分发同源，共享 `execute_tool` 统一准入、计时、异常、检索回执与审计；参数适配仍是普通函数）；`server.py` 变薄只留传输生命周期。`audit.py` 裁剪改为显式 `AUDIT_EVENTS` + `PARAM_POLICIES`/`RESULT_POLICIES` 注册表，去掉隐式兜底。`admin.py` 用声明式 `ROUTE_TABLE`（static/read/write/action/control/exempt）替换 actions/exempt/deferred_writes 与 `next(iter(methods))`，共享 JSON/错误响应映射并用 `_maps_domain_errors` 统一标准 handler，import/export/recover/keywords/config 保留自有清理与审计，lexical/anchor 共用 `_terms_search`。新增 `tests/test_tool_specs.py`、`tests/test_audit_policies.py`、`tests/test_admin_routes.py` 与 golden fixtures。
 - 阶段 5：待实现（离线 CLI 去重、完整健康核验只读 ID 查询）。
 
-实测：阶段 1 完成时 610 pytest；阶段 2 完成后 630；阶段 3 完成后 643 pytest 通过，浏览器回归通过。无 schema/数据迁移，未改工具/schema/hint、HTTP 状态与字段、配置/目录、embedding profile 格式、SQLite/JSONL 格式。
+实测：阶段 1 完成时 610 pytest；阶段 2 完成后 630；阶段 3 完成后 643；阶段 4 完成后 658（review 修复后 659）pytest 通过，浏览器回归均通过。无 schema/数据迁移，未改工具/schema/hint、HTTP 状态与字段、配置/目录、embedding profile 格式、SQLite/JSONL 格式。
 
 生产冒烟（2026-09-30 21:03）：在加载未提交阶段 3 代码并重启的服务（dual 模式，端口 1314）上通过。`GET /read-me` 200、`POST /mcp` tools/list 正常、`GET /api/storage-paths` 返回 dual 的 primary/secondary 路径（验证新 `storage_paths()` 契约）、`GET /api/stats` total=1140 backend=dual in_sync=true pending=0 且副本 missing/extra/corrupt=0；MCP 走通 `add → get_details → search_lexical → search_anchor → update → delete` 闭环并清理，`list_keywords`（browse/semantic）、`search_semantic`/`search_meta`、`report` 均正常。
+
+生产冒烟（2026-09-30 21:49）：重启（execv，PID 6059）加载未提交阶段 4 代码后通过。`GET /read-me` 200、`POST /mcp` tools/list 返回 11 个工具、`GET /api/storage-paths` 返回 dual 路径、`GET /api/stats` total=1141 in_sync=true pending=0；分别经 `/mcp` HTTP 端点与重连后的 MCP 客户端走通 `add → get_details → search_lexical → search_anchor → update → delete` 并清理，计数回到写入前（delta 0）。重启会令旧 MCP 客户端会话失效（-32602），客户端重连后恢复，服务端不受影响。
 
 
 
@@ -112,3 +114,17 @@
 - `resolver_for_configured_profile` 先读取 active profile，缺失时直接返回 None，再创建 embedder；避免对无 profile 的存储在实例化 provider 之后才早退。
 - `MemoryStorage.storage_paths` docstring 与实际返回对齐：始终返回 `backend`，仅 replica 后端附带 primary/secondary 路径。
 - 全量 643 项 pytest 通过；未提交、未重启。
+
+## 阶段 4 实现记录（2026-09-30）
+
+- 新增 `app/tool_definitions.py`（11 个工具 schema/描述由 `server.py` 逐字迁出）与 `app/tools.py`（`ToolSpec` 表：definition/handler/write/search/namespace_mode；审计策略登记在 `app/audit.py` 注册表；`execute_tool` 统一准入、计时、异常映射、检索回执与审计；参数适配保持普通函数）。`server.py` 仅保留传输生命周期与薄适配。
+- `app/audit.py` 裁剪改为显式 `AUDIT_EVENTS` + `PARAM_POLICIES`/`RESULT_POLICIES` 注册表，移除隐式兜底，新增工具/事件与裁剪策略完整性测试。
+- `app/admin.py` 用声明式 `ROUTE_TABLE`（static/read/write/action/control/exempt）替换 `actions`/`exempt`/`deferred_writes` 与 `next(iter(methods))`；提取 `json_response`/`error_response`/`domain_error_response`/`internal_error_response`，标准 handler 经 `_maps_domain_errors` 统一映射，import/export/recover/keywords/config 保留自有清理与审计；lexical/anchor 共用 `_terms_search`。
+- 新增 golden fixtures（`tests/fixtures/`）与 `tests/test_tool_specs.py`、`tests/test_audit_policies.py`、`tests/test_admin_routes.py`，保证工具 schema/hint/note 与错误码逐字不变。
+- 全量 658 pytest + 浏览器回归通过；未改工具名称/schema/hint/审计关联与 HTTP 状态码/字段；无 schema/数据迁移。尚未提交。
+
+## 阶段 4 Review 修复记录（2026-09-30）
+
+- 移除无效的 `ToolSpec.audit_policy` 字段（裁剪按工具名/事件名键控）；`test_tool_specs` 改为校验 `spec.name` 同时登记在 `AUDIT_EVENTS` 与裁剪策略注册表，避免"声明了却不生效"。
+- `_maps_domain_errors` 增加 `domain=False`；`/api/namespaces/migrate` 保持原有 `{"detail": ...}` 错误形状，不套用统一领域 envelope，避免客户端契约漂移（新增回归 `test_migrate_namespace_keeps_plain_error_envelope`）。
+- 全量 659 pytest + 浏览器回归通过；未提交。

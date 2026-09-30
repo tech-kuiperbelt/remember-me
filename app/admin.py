@@ -2,10 +2,12 @@ import json
 import asyncio
 import sys
 import os
+import functools
 import logging
 import time
 import tempfile
 import secrets
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from starlette.responses import Response, FileResponse
@@ -28,32 +30,36 @@ THIS_DIR = Path(__file__).resolve().parent
 ADMIN_HTML_PATH = THIS_DIR.parent / "web" / "index.html"
 
 
+def json_response(data, status=200):
+    return Response(json.dumps(data, ensure_ascii=False, default=str),
+                    status_code=status, media_type="application/json")
+
+
+def error_response(status, detail, *, code=None, response_meta=None):
+    payload = {"detail": detail}
+    if code is not None:
+        payload["response_code"] = code
+    if response_meta is not None:
+        payload["response_meta"] = response_meta
+    return json_response(payload, status)
+
+
 def _namespace_not_found_response(exc: NamespaceNotFound) -> Response:
     """HTTP 400 with the same machine-readable envelope used by MCP."""
     available = ", ".join(exc.known) or "(none)"
-    return Response(
-        json.dumps({
-            "detail": f"namespace not found: {exc.requested}. Available: {available}",
-            "response_code": NamespaceNotFound.code,
-            "response_meta": {
-                "requested_namespace": exc.requested,
-                "known_namespaces": exc.known,
-            },
-        }, ensure_ascii=False),
-        status_code=400, media_type="application/json",
+    return error_response(
+        400,
+        f"namespace not found: {exc.requested}. Available: {available}",
+        code=NamespaceNotFound.code,
+        response_meta={"requested_namespace": exc.requested,
+                       "known_namespaces": exc.known},
     )
 
 
 def _invalid_namespace_response(exc: InvalidNamespace) -> Response:
     """HTTP 400 for namespace format/type validation failures."""
-    return Response(
-        json.dumps({
-            "detail": str(exc),
-            "response_code": "invalid_namespace",
-            "response_meta": {"reason": str(exc)},
-        }, ensure_ascii=False),
-        status_code=400, media_type="application/json",
-    )
+    return error_response(400, str(exc), code="invalid_namespace",
+                          response_meta={"reason": str(exc)})
 
 
 class InvalidRequest(ValueError):
@@ -61,17 +67,79 @@ class InvalidRequest(ValueError):
 
 
 def _invalid_request_response(exc):
-    return Response(json.dumps({"detail": str(exc), "response_code": "invalid_request",
-                               "response_meta": {"reason": str(exc)}}),
-                    status_code=400, media_type="application/json")
+    return error_response(400, str(exc), code="invalid_request",
+                          response_meta={"reason": str(exc)})
 
 
 def _invalid_anchors_response(exc):
     """HTTP 400 for strict metadata.anchors validation failures."""
-    return Response(json.dumps({"detail": str(exc), "response_code": "invalid_anchors",
-                               "response_meta": {"field": "metadata.anchors"}},
-                              ensure_ascii=False),
-                    status_code=400, media_type="application/json")
+    return error_response(400, str(exc), code="invalid_anchors",
+                          response_meta={"field": "metadata.anchors"})
+
+
+def _embedding_too_long_response(exc):
+    # HTTP contract uses ``code`` (not ``response_code``) for this endpoint family.
+    return json_response({"detail": str(exc), "code": "embedding_input_too_long"}, status=413)
+
+
+# Exact-type domain exception mapping shared by the standard handlers. An
+# unrecognised exception (including a bare ValueError) stays a 500 unless a
+# route explicitly opts into mapping it.
+_DOMAIN_ERROR_RESPONSES = (
+    (NamespaceNotFound, _namespace_not_found_response),
+    (InvalidNamespace, _invalid_namespace_response),
+    (InvalidAnchors, _invalid_anchors_response),
+    (EmbeddingInputTooLong, _embedding_too_long_response),
+    (InvalidRequest, _invalid_request_response),
+    (InvalidSearchFilter, _invalid_request_response),
+    (LexicalQueryError, lambda exc: error_response(400, str(exc), code="invalid_query")),
+)
+
+
+def domain_error_response(exc):
+    for exc_type, builder in _DOMAIN_ERROR_RESPONSES:
+        if isinstance(exc, exc_type):
+            return builder(exc)
+    return None
+
+
+def internal_error_response(exc, *, label="request"):
+    """Return the shared 500 payload, logging exactly one traceback at the boundary."""
+    logger.error("%s failed: %s", label, exc, exc_info=True)
+    return error_response(500, "Internal error")
+
+
+def _maps_domain_errors(endpoint=None, *, domain=True, extras=()):
+    """Map known domain exceptions to their HTTP response at the handler edge.
+
+    Keeps unknown exceptions as a single logged 500. Applied per standard
+    handler so direct calls and routed calls behave identically; handlers with
+    bespoke cleanup/audit (import/export/recover/keywords/config) are not
+    decorated. ``domain=False`` skips the shared domain mapping for a route that
+    must keep its own exception shape (e.g. namespace migrate).
+    """
+    def decorate(fn):
+        label = getattr(fn, "__name__", "request")
+
+        @functools.wraps(fn)
+        async def wrapped(self, request):
+            try:
+                return await fn(self, request)
+            except MaintenanceRejected:
+                raise
+            except Exception as exc:
+                if domain:
+                    response = domain_error_response(exc)
+                    if response is not None:
+                        return response
+                for exc_type, builder in extras:
+                    if isinstance(exc, exc_type):
+                        return builder(exc)
+                return internal_error_response(exc, label=label)
+        return wrapped
+    if endpoint is None:
+        return decorate
+    return decorate(endpoint)
 
 
 async def _request_object(request, required=(), string_fields=()):
@@ -115,6 +183,25 @@ def _maintenance_response(exc):
                                  "maintenance_unavailable", "model_not_ready") else 409
     return Response(json.dumps({"detail": str(exc), "response_code": exc.code}),
                     status_code=status, media_type="application/json")
+
+
+@dataclass(frozen=True)
+class _Route:
+    """One admin route and its explicitly declared access/error policy.
+
+    policy: ``static`` (asset), ``read`` (reader admission), ``write`` (deferred
+    writer admission), ``action`` (single maintenance action), ``control`` and
+    ``exempt`` (no admission wrapper). errors: ``boundary`` when the handler maps
+    domain exceptions via ``_maps_domain_errors``; ``none`` when it keeps its own
+    cleanup/audit handling.
+    """
+
+    path: str
+    methods: tuple
+    handler: str
+    policy: str
+    action: str | None = None
+    errors: str = "boundary"
 
 
 class AdminAPI:
@@ -345,167 +432,85 @@ class AdminAPI:
             "Expires": "0",
         })
 
+    @_maps_domain_errors
     async def handle_list_memories(self, request: Request):
-        try:
-            ns = request.query_params.get("namespace")
-            limit = _number(request.query_params.get("limit", 100), int, "limit")
-            offset = _number(request.query_params.get("offset", 0), int, "offset")
-            sort_by = request.query_params.get("sort_by", "created_at")
-            updated_after = request.query_params.get("updated_after")
-            updated_before = request.query_params.get("updated_before")
-            # keywords 支持多值 (?keywords=a&keywords=b) 和逗号分隔两种传法
-            keywords = request.query_params.getlist("keywords")
-            if keywords:
-                merged = []
-                for kw in keywords:
-                    merged.extend(kw.split(","))
-                keywords = [k.strip() for k in merged if k.strip()]
-            else:
-                keywords = None
-            logger.info("GET /api/memories namespace=%s limit=%d offset=%d sort_by=%s updated_after=%s updated_before=%s keywords=%s",
-                        ns, limit, offset, sort_by, updated_after, updated_before, keywords)
-            result = await self._run(lambda: self.service.memory_list(
-                namespace=ns, limit=limit, offset=offset, sort_by=sort_by,
-                updated_after=updated_after, updated_before=updated_before,
-                keywords=keywords))
-            return Response(
-                json.dumps(result, ensure_ascii=False, default=str),
-                media_type="application/json",
-            )
-        except NamespaceNotFound as e:
-            logger.warning("GET /api/memories rejected: %s", e)
-            return _namespace_not_found_response(e)
-        except InvalidNamespace as e:
-            logger.warning("GET /api/memories invalid request: %s", e)
-            return _invalid_namespace_response(e)
-        except InvalidRequest as e:
-            return _invalid_request_response(e)
-        except Exception as e:
-            logger.error("GET /api/memories failed: %s", e, exc_info=True)
-            return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
+        ns = request.query_params.get("namespace")
+        limit = _number(request.query_params.get("limit", 100), int, "limit")
+        offset = _number(request.query_params.get("offset", 0), int, "offset")
+        sort_by = request.query_params.get("sort_by", "created_at")
+        updated_after = request.query_params.get("updated_after")
+        updated_before = request.query_params.get("updated_before")
+        # keywords 支持多值 (?keywords=a&keywords=b) 和逗号分隔两种传法
+        keywords = request.query_params.getlist("keywords")
+        if keywords:
+            merged = []
+            for kw in keywords:
+                merged.extend(kw.split(","))
+            keywords = [k.strip() for k in merged if k.strip()]
+        else:
+            keywords = None
+        logger.info("GET /api/memories namespace=%s limit=%d offset=%d sort_by=%s updated_after=%s updated_before=%s keywords=%s",
+                    ns, limit, offset, sort_by, updated_after, updated_before, keywords)
+        result = await self._run(lambda: self.service.memory_list(
+            namespace=ns, limit=limit, offset=offset, sort_by=sort_by,
+            updated_after=updated_after, updated_before=updated_before,
+            keywords=keywords))
+        return json_response(result)
 
+    @_maps_domain_errors
     async def handle_get_memory(self, request: Request):
-        try:
-            mid = request.path_params.get("memory_id")
-            logger.info("GET /api/memories/%s", mid)
-            result = await self._run(lambda: self.service.memory_get(mid))
-            if result is None:
-                return Response(json.dumps({"detail": "Not found"}), status_code=404, media_type="application/json")
-            return Response(
-                json.dumps(result, ensure_ascii=False, default=str),
-                media_type="application/json",
-            )
-        except Exception as e:
-            logger.error("GET /api/memories/%s failed: %s", request.path_params.get("memory_id", ""), e, exc_info=True)
-            return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
+        mid = request.path_params.get("memory_id")
+        logger.info("GET /api/memories/%s", mid)
+        result = await self._run(lambda: self.service.memory_get(mid))
+        if result is None:
+            return error_response(404, "Not found")
+        return json_response(result)
 
+    @_maps_domain_errors
     async def handle_get_details(self, request: Request):
-        try:
-            body = await request.json()
-            ids = body.get("memory_ids", [])
-            logger.info("POST /api/memories/details count=%d", len(ids))
-            result = await self._run(lambda: self.service.memory_get_details(ids))
-            return Response(
-                json.dumps(result, ensure_ascii=False, default=str),
-                media_type="application/json",
-            )
-        except Exception as e:
-            logger.error("POST /api/memories/details failed: %s", e, exc_info=True)
-            return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
+        body = await request.json()
+        ids = body.get("memory_ids", [])
+        logger.info("POST /api/memories/details count=%d", len(ids))
+        result = await self._run(lambda: self.service.memory_get_details(ids))
+        return json_response(result)
 
+    @_maps_domain_errors
     async def handle_add_memory(self, request: Request):
-        try:
-            body = await _request_object(request, required=("text",), string_fields=("text",))
-            logger.info("POST /api/memories text_len=%d", len(body.get("text", "")))
-            result = await self._run(lambda: self.service.memory_add(
-                body["text"], body.get("metadata"), body.get("namespace"),
-                body.get("summary"), body.get("confirm_codes")), write=True)
-            return Response(json.dumps(result), status_code=201, media_type="application/json")
-        except EmbeddingInputTooLong as e:
-            logger.warning("POST /api/memories rejected: %s", e)
-            return Response(
-                json.dumps({"detail": str(e), "code": "embedding_input_too_long"}),
-                status_code=413, media_type="application/json",
-            )
-        except NamespaceNotFound as e:
-            logger.warning("POST /api/memories rejected: %s", e)
-            return _namespace_not_found_response(e)
-        except InvalidNamespace as e:
-            logger.warning("POST /api/memories invalid namespace: %s", e)
-            return _invalid_namespace_response(e)
-        except InvalidAnchors as e:
-            logger.warning("POST /api/memories invalid anchors: %s", e)
-            return _invalid_anchors_response(e)
-        except InvalidRequest as e:
-            return _invalid_request_response(e)
-        except MaintenanceRejected:
-            raise
-        except Exception as e:
-            logger.error("POST /api/memories failed: %s", e, exc_info=True)
-            return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
+        body = await _request_object(request, required=("text",), string_fields=("text",))
+        logger.info("POST /api/memories text_len=%d", len(body.get("text", "")))
+        result = await self._run(lambda: self.service.memory_add(
+            body["text"], body.get("metadata"), body.get("namespace"),
+            body.get("summary"), body.get("confirm_codes")), write=True)
+        return json_response(result, status=201)
 
+    @_maps_domain_errors
     async def handle_update_memory(self, request: Request):
-        try:
-            mid = request.path_params.get("memory_id")
-            body = await _request_object(request, required=(), string_fields=("text",))
-            logger.info("PUT /api/memories/%s", mid)
-            result = await self._run(lambda: self.service.memory_update(
-                mid, body.get("text"), body.get("metadata"),
-                body.get("namespace"), body.get("summary"),
-                body.get("confirm_codes")), write=True)
-            if not result["success"]:
-                return Response(json.dumps({"detail": "Not found"}), status_code=404, media_type="application/json")
-            return Response(json.dumps(result), media_type="application/json")
-        except EmbeddingInputTooLong as e:
-            logger.warning("PUT /api/memories/%s rejected: %s",
-                           request.path_params.get("memory_id", ""), e)
-            return Response(
-                json.dumps({"detail": str(e), "code": "embedding_input_too_long"}),
-                status_code=413, media_type="application/json",
-            )
-        except NamespaceNotFound as e:
-            logger.warning("PUT /api/memories/%s rejected: %s",
-                           request.path_params.get("memory_id", ""), e)
-            return _namespace_not_found_response(e)
-        except InvalidNamespace as e:
-            logger.warning("PUT /api/memories/%s invalid namespace: %s",
-                           request.path_params.get("memory_id", ""), e)
-            return _invalid_namespace_response(e)
-        except InvalidAnchors as e:
-            logger.warning("PUT /api/memories/%s invalid anchors: %s",
-                           request.path_params.get("memory_id", ""), e)
-            return _invalid_anchors_response(e)
-        except InvalidRequest as e:
-            return _invalid_request_response(e)
-        except MaintenanceRejected:
-            raise
-        except Exception as e:
-            logger.error("PUT /api/memories/%s failed: %s", request.path_params.get("memory_id", ""), e, exc_info=True)
-            return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
+        mid = request.path_params.get("memory_id")
+        body = await _request_object(request, required=(), string_fields=("text",))
+        logger.info("PUT /api/memories/%s", mid)
+        result = await self._run(lambda: self.service.memory_update(
+            mid, body.get("text"), body.get("metadata"),
+            body.get("namespace"), body.get("summary"),
+            body.get("confirm_codes")), write=True)
+        if not result["success"]:
+            return error_response(404, "Not found")
+        return json_response(result)
 
+    @_maps_domain_errors
     async def handle_delete_memory(self, request: Request):
-        try:
-            mid = request.path_params.get("memory_id")
-            logger.info("DELETE /api/memories/%s", mid)
-            result = await self._run(lambda: self.service.memory_delete(mid), write=True)
-            if not result["success"]:
-                return Response(json.dumps({"detail": "Not found"}), status_code=404, media_type="application/json")
-            return Response(json.dumps(result), media_type="application/json")
-        except MaintenanceRejected:
-            raise
-        except Exception as e:
-            logger.error("DELETE /api/memories/%s failed: %s", request.path_params.get("memory_id", ""), e, exc_info=True)
-            return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
+        mid = request.path_params.get("memory_id")
+        logger.info("DELETE /api/memories/%s", mid)
+        result = await self._run(lambda: self.service.memory_delete(mid), write=True)
+        if not result["success"]:
+            return error_response(404, "Not found")
+        return json_response(result)
 
+    @_maps_domain_errors
     async def handle_clear_memories(self, request: Request):
-        try:
-            ns = request.query_params.get("namespace")
-            logger.info("DELETE /api/memories namespace=%s", ns)
-            result = await self._run(lambda: self.service.memory_clear(namespace=ns))
-            return Response(json.dumps(result), media_type="application/json")
-        except Exception as e:
-            logger.error("DELETE /api/memories (clear) failed: %s", e, exc_info=True)
-            return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
+        ns = request.query_params.get("namespace")
+        logger.info("DELETE /api/memories namespace=%s", ns)
+        result = await self._run(lambda: self.service.memory_clear(namespace=ns))
+        return json_response(result)
 
     async def handle_import_memories(self, request: Request):
         temp_path = None
@@ -612,6 +617,7 @@ class AdminAPI:
             )
             return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
 
+    @_maps_domain_errors
     async def handle_import_status(self, request: Request):
         if self.runtime is not None:
             result = self.runtime.maintenance_import_status(request.path_params["import_id"])
@@ -698,96 +704,38 @@ class AdminAPI:
             return Response(json.dumps({"detail": detail}), status_code=status,
                             media_type="application/json")
 
+    @_maps_domain_errors
     async def handle_search_memories(self, request: Request):
-        try:
-            body = await _request_object(request, required=("query",), string_fields=("query",))
-            logger.info("POST /api/memories/search query_len=%d", len(body.get("query", "")))
-            results = await self._run(lambda: self.service.memory_search(
-                body["query"], _number(body.get("k", 5), int, "k"),
-                _number(body.get("threshold", 0.0), float, "threshold"), body.get("namespace"),
-                keywords=body.get("keywords"),
-                categories=body.get("categories")))
-            return Response(
-                json.dumps(results, ensure_ascii=False, default=str),
-                media_type="application/json",
-            )
-        except EmbeddingInputTooLong as e:
-            logger.warning("POST /api/memories/search rejected: %s", e)
-            return Response(
-                json.dumps({"detail": str(e), "code": "embedding_input_too_long"}),
-                status_code=413, media_type="application/json",
-            )
-        except NamespaceNotFound as e:
-            logger.warning("POST /api/memories/search rejected: %s", e)
-            return _namespace_not_found_response(e)
-        except InvalidNamespace as e:
-            logger.warning("POST /api/memories/search invalid namespace: %s", e)
-            return _invalid_namespace_response(e)
-        except (InvalidRequest, InvalidSearchFilter) as e:
-            return _invalid_request_response(e)
-        except Exception as e:
-            logger.error("POST /api/memories/search failed: %s", e, exc_info=True)
-            return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
+        body = await _request_object(request, required=("query",), string_fields=("query",))
+        logger.info("POST /api/memories/search query_len=%d", len(body.get("query", "")))
+        results = await self._run(lambda: self.service.memory_search(
+            body["query"], _number(body.get("k", 5), int, "k"),
+            _number(body.get("threshold", 0.0), float, "threshold"), body.get("namespace"),
+            keywords=body.get("keywords"),
+            categories=body.get("categories")))
+        return json_response(results)
 
+    async def _terms_search(self, request, operation, default_k, label):
+        """Shared mechanical flow for the lexical/anchor term searches.
+
+        Parsing, namespace handling and the JSON envelope are shared; the
+        operation's query implementation and scoring stay in the service.
+        """
+        body = await _request_object(request, required=("query",), string_fields=("query",))
+        logger.info("%s query_len=%d", label, len(body.get("query", "")))
+        results = await self._run(lambda: operation(
+            body["query"], _number(body.get("k", default_k), int, "k"), body.get("namespace")))
+        return json_response(results)
+
+    @_maps_domain_errors
     async def handle_search_lexical(self, request: Request):
-        try:
-            body = await _request_object(request, required=("query",), string_fields=("query",))
-            logger.info("POST /api/memories/search/lexical query_len=%d", len(body.get("query", "")))
-            results = await self._run(lambda: self.service.memory_search_lexical(
-                body["query"], _number(body.get("k", 10), int, "k"), body.get("namespace")))
-            return Response(
-                json.dumps(results, ensure_ascii=False, default=str),
-                media_type="application/json",
-            )
-        except NamespaceNotFound as e:
-            logger.warning("POST /api/memories/search/lexical rejected: %s", e)
-            return _namespace_not_found_response(e)
-        except InvalidNamespace as e:
-            logger.warning("POST /api/memories/search/lexical invalid namespace: %s", e)
-            return _invalid_namespace_response(e)
-        except LexicalQueryError as e:
-            logger.warning("POST /api/memories/search/lexical invalid query: %s", e)
-            return Response(
-                json.dumps({"detail": str(e), "response_code": "invalid_query"},
-                           ensure_ascii=False),
-                status_code=400, media_type="application/json",
-            )
-        except (InvalidRequest, InvalidSearchFilter) as e:
-            return _invalid_request_response(e)
-        except Exception as e:
-            logger.error("POST /api/memories/search/lexical failed: %s", e, exc_info=True)
-            return Response(json.dumps({"detail": "Internal error"}), status_code=500,
-                            media_type="application/json")
+        return await self._terms_search(request, self.service.memory_search_lexical, 10,
+                                        "POST /api/memories/search/lexical")
 
+    @_maps_domain_errors
     async def handle_search_anchor(self, request: Request):
-        try:
-            body = await _request_object(request, required=("query",), string_fields=("query",))
-            logger.info("POST /api/memories/search/anchor query_len=%d", len(body.get("query", "")))
-            results = await self._run(lambda: self.service.memory_search_anchor(
-                body["query"], _number(body.get("k", 10), int, "k"), body.get("namespace")))
-            return Response(
-                json.dumps(results, ensure_ascii=False, default=str),
-                media_type="application/json",
-            )
-        except NamespaceNotFound as e:
-            logger.warning("POST /api/memories/search/anchor rejected: %s", e)
-            return _namespace_not_found_response(e)
-        except InvalidNamespace as e:
-            logger.warning("POST /api/memories/search/anchor invalid namespace: %s", e)
-            return _invalid_namespace_response(e)
-        except LexicalQueryError as e:
-            logger.warning("POST /api/memories/search/anchor invalid query: %s", e)
-            return Response(
-                json.dumps({"detail": str(e), "response_code": "invalid_query"},
-                           ensure_ascii=False),
-                status_code=400, media_type="application/json",
-            )
-        except (InvalidRequest, InvalidSearchFilter) as e:
-            return _invalid_request_response(e)
-        except Exception as e:
-            logger.error("POST /api/memories/search/anchor failed: %s", e, exc_info=True)
-            return Response(json.dumps({"detail": "Internal error"}), status_code=500,
-                            media_type="application/json")
+        return await self._terms_search(request, self.service.memory_search_anchor, 10,
+                                        "POST /api/memories/search/anchor")
 
     async def handle_keywords(self, request: Request):
         started = time.perf_counter()
@@ -816,42 +764,33 @@ class AdminAPI:
                          (time.perf_counter() - started) * 1000, error=error,
                          context=self._audit_context(request))
 
+    @_maps_domain_errors
     async def handle_stats(self, request: Request):
-        try:
-            logger.info("GET /api/stats")
-            stats = await self._run(lambda: self.service.memory_stats())
-            return Response(json.dumps(stats, ensure_ascii=False), media_type="application/json")
-        except Exception as e:
-            logger.error("GET /api/stats failed: %s", e, exc_info=True)
-            return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
+        logger.info("GET /api/stats")
+        stats = await self._run(lambda: self.service.memory_stats())
+        return json_response(stats)
 
+    @_maps_domain_errors
     async def handle_sync(self, request: Request):
-        try:
-            logger.info("POST /api/sync")
-            if self.runtime is not None:
-                result = await self._run(lambda: self.runtime.maintenance_sync())
-            else:
-                result = await self._run(lambda: self.service.memory_sync())
-            return Response(json.dumps(result, ensure_ascii=False), media_type="application/json")
-        except Exception as e:
-            logger.error("POST /api/sync failed: %s", e, exc_info=True)
-            return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
+        logger.info("POST /api/sync")
+        if self.runtime is not None:
+            result = await self._run(lambda: self.runtime.maintenance_sync())
+        else:
+            result = await self._run(lambda: self.service.memory_sync())
+        return json_response(result)
 
+    @_maps_domain_errors
     async def handle_storage_paths(self, request: Request):
-        try:
-            if self.runtime is not None and self.service is None:
-                s = self.runtime.settings
-                result = {"backend": s.STORAGE_BACKEND}
-                if s.STORAGE_BACKEND == "dual":
-                    relative = s.environment.get("MEMORY_PATHS_ACTIVE") == "1"
-                    result.update(primary_path=os.path.relpath(s.STORAGE_PATH, s.DATA_DIR) if relative else s.STORAGE_PATH,
-                                  secondary_path=os.path.relpath(s.REPLICA_PATH, s.DATA_DIR) if relative else s.REPLICA_PATH)
-            else:
-                result = await self._run(lambda: self.service.memory_storage_paths())
-            return Response(json.dumps(result, ensure_ascii=False), media_type="application/json")
-        except Exception as e:
-            logger.error("GET /api/storage-paths failed: %s", e, exc_info=True)
-            return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
+        if self.runtime is not None and self.service is None:
+            s = self.runtime.settings
+            result = {"backend": s.STORAGE_BACKEND}
+            if s.STORAGE_BACKEND == "dual":
+                relative = s.environment.get("MEMORY_PATHS_ACTIVE") == "1"
+                result.update(primary_path=os.path.relpath(s.STORAGE_PATH, s.DATA_DIR) if relative else s.STORAGE_PATH,
+                              secondary_path=os.path.relpath(s.REPLICA_PATH, s.DATA_DIR) if relative else s.REPLICA_PATH)
+        else:
+            result = await self._run(lambda: self.service.memory_storage_paths())
+        return json_response(result)
 
     async def handle_restart(self, request):
         return self._shutdown_response(restart=True)
@@ -873,111 +812,84 @@ class AdminAPI:
         return Response(json.dumps(data), media_type="application/json",
                         background=BackgroundTask(request_shutdown))
 
+    @_maps_domain_errors(domain=False, extras=((ValueError, lambda exc: error_response(400, str(exc))),))
     async def handle_migrate_namespace(self, request: Request):
-        try:
-            body = await request.json()
-            source = body["source"]
-            target = body["target"]
-            logger.info("POST /api/namespaces/migrate source=%s target=%s", source, target)
-            result = await self._run(lambda: self.service.memory_migrate_namespace(source, target))
-            return Response(json.dumps(result, ensure_ascii=False), media_type="application/json")
-        except ValueError as e:
-            logger.warning("POST /api/namespaces/migrate rejected: %s", e)
-            return Response(json.dumps({"detail": str(e)}, ensure_ascii=False),
-                            status_code=400, media_type="application/json")
-        except Exception as e:
-            logger.error("POST /api/namespaces/migrate failed: %s", e, exc_info=True)
-            return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
+        body = await request.json()
+        source = body["source"]
+        target = body["target"]
+        logger.info("POST /api/namespaces/migrate source=%s target=%s", source, target)
+        result = await self._run(lambda: self.service.memory_migrate_namespace(source, target))
+        return json_response(result)
 
+    @_maps_domain_errors
     async def handle_audit(self, request: Request):
         """Tool-call and background-work audit journal (newest first)."""
         try:
-            try:
-                limit = int(request.query_params.get("limit", "500"))
-            except (TypeError, ValueError):
-                limit = 500
-            limit = max(1, min(limit, 5000))
-            tool = request.query_params.get("tool") or None
-            namespace = request.query_params.get("namespace") or None
-            logger.info("GET /api/audit limit=%d tool=%s namespace=%s", limit, tool, namespace)
-            events = await self._run(lambda: self.audit.read_events(
-                limit=limit, tool=tool, namespace=namespace))
-            return Response(json.dumps(events, ensure_ascii=False), media_type="application/json")
-        except Exception as e:
-            logger.error("GET /api/audit failed: %s", e, exc_info=True)
-            return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
+            limit = int(request.query_params.get("limit", "500"))
+        except (TypeError, ValueError):
+            limit = 500
+        limit = max(1, min(limit, 5000))
+        tool = request.query_params.get("tool") or None
+        namespace = request.query_params.get("namespace") or None
+        logger.info("GET /api/audit limit=%d tool=%s namespace=%s", limit, tool, namespace)
+        events = await self._run(lambda: self.audit.read_events(
+            limit=limit, tool=tool, namespace=namespace))
+        return json_response(events)
+
+    # Explicit access policy per route. ``boundary`` applies the shared domain
+    # error mapping; ``none`` keeps the handler's own cleanup/audit handling.
+    ROUTE_TABLE: tuple[_Route, ...] = (
+        _Route("/admin/console", ("GET",), "handle_admin", "static", errors="none"),
+        _Route("/api/memories", ("GET",), "handle_list_memories", "read"),
+        _Route("/api/memories", ("POST",), "handle_add_memory", "write"),
+        _Route("/api/memories", ("DELETE",), "handle_clear_memories", "action", action="clear"),
+        _Route("/api/memories/search", ("POST",), "handle_search_memories", "read"),
+        _Route("/api/memories/search/lexical", ("POST",), "handle_search_lexical", "read"),
+        _Route("/api/memories/search/anchor", ("POST",), "handle_search_anchor", "read"),
+        _Route("/api/memories/details", ("POST",), "handle_get_details", "read"),
+        _Route("/api/memories/{memory_id}", ("GET",), "handle_get_memory", "read"),
+        _Route("/api/memories/{memory_id}", ("PUT",), "handle_update_memory", "write"),
+        _Route("/api/memories/{memory_id}", ("DELETE",), "handle_delete_memory", "write"),
+        _Route("/api/keywords/query", ("POST",), "handle_keywords", "read", errors="none"),
+        _Route("/api/stats", ("GET",), "handle_stats", "read"),
+        _Route("/api/storage-paths", ("GET",), "handle_storage_paths", "exempt"),
+        _Route("/api/import", ("POST",), "handle_import_memories", "exempt", errors="none"),
+        _Route("/api/import/{import_id}", ("GET",), "handle_import_status", "read"),
+        _Route("/api/export/full", ("POST",), "handle_export_full", "action",
+               action="export_full", errors="none"),
+        _Route("/api/export/namespace", ("POST",), "handle_export_namespace", "action",
+               action="export_namespace", errors="none"),
+        _Route("/api/sync", ("POST",), "handle_sync", "action", action="sync"),
+        _Route("/api/shutdown", ("POST",), "handle_shutdown", "action",
+               action="shutdown", errors="none"),
+        _Route("/api/restart", ("POST",), "handle_restart", "action",
+               action="restart", errors="none"),
+        _Route("/api/namespaces/migrate", ("POST",), "handle_migrate_namespace", "action",
+               action="migrate_namespace"),
+        _Route("/api/audit", ("GET",), "handle_audit", "exempt"),
+        _Route("/api/maintenance", ("GET",), "handle_maintenance_status", "exempt", errors="none"),
+        _Route("/api/model", ("GET",), "handle_model_status", "control", errors="none"),
+        _Route("/api/model/retry", ("POST",), "handle_model_retry", "control", errors="none"),
+        _Route("/api/config/model", ("GET", "POST"), "handle_model_config", "control", errors="none"),
+        _Route("/api/config", ("GET", "POST"), "handle_model_config", "control", errors="none"),
+        _Route("/api/maintenance/enter", ("POST",), "handle_maintenance_enter", "control", errors="none"),
+        _Route("/api/maintenance/exit", ("POST",), "handle_maintenance_exit", "control", errors="none"),
+        _Route("/api/recover", ("POST",), "handle_recover", "exempt", errors="none"),
+        _Route("/api/recover/{recover_id}", ("GET",), "handle_recover_status", "exempt", errors="none"),
+    )
 
     @property
     def routes(self):
-        routes = [
-            Route("/admin/console", endpoint=self.handle_admin, methods=["GET"]),
-            Route("/api/memories", endpoint=self.handle_list_memories, methods=["GET"]),
-            Route("/api/memories", endpoint=self.handle_add_memory, methods=["POST"]),
-            Route("/api/memories", endpoint=self.handle_clear_memories, methods=["DELETE"]),
-            Route("/api/memories/search", endpoint=self.handle_search_memories, methods=["POST"]),
-            Route("/api/memories/search/lexical", endpoint=self.handle_search_lexical, methods=["POST"]),
-            Route("/api/memories/search/anchor", endpoint=self.handle_search_anchor, methods=["POST"]),
-            Route("/api/memories/details", endpoint=self.handle_get_details, methods=["POST"]),
-            Route("/api/memories/{memory_id}", endpoint=self.handle_get_memory, methods=["GET"]),
-            Route("/api/memories/{memory_id}", endpoint=self.handle_update_memory, methods=["PUT"]),
-            Route("/api/memories/{memory_id}", endpoint=self.handle_delete_memory, methods=["DELETE"]),
-            Route("/api/keywords/query", endpoint=self.handle_keywords, methods=["POST"]),
-            Route("/api/stats", endpoint=self.handle_stats, methods=["GET"]),
-            Route("/api/storage-paths", endpoint=self.handle_storage_paths, methods=["GET"]),
-            Route("/api/import", endpoint=self.handle_import_memories, methods=["POST"]),
-            Route("/api/import/{import_id}", endpoint=self.handle_import_status, methods=["GET"]),
-            Route("/api/export/full", endpoint=self.handle_export_full, methods=["POST"]),
-            Route("/api/export/namespace", endpoint=self.handle_export_namespace, methods=["POST"]),
-            Route("/api/sync", endpoint=self.handle_sync, methods=["POST"]),
-            Route("/api/shutdown", endpoint=self.handle_shutdown, methods=["POST"]),
-            Route("/api/restart", endpoint=self.handle_restart, methods=["POST"]),
-            Route("/api/namespaces/migrate", endpoint=self.handle_migrate_namespace, methods=["POST"]),
-            Route("/api/audit", endpoint=self.handle_audit, methods=["GET"]),
-            Route("/api/maintenance", endpoint=self.handle_maintenance_status, methods=["GET"]),
-            Route("/api/model", endpoint=self.handle_model_status, methods=["GET"]),
-            Route("/api/model/retry", endpoint=self.handle_model_retry, methods=["POST"]),
-            Route("/api/config/model", endpoint=self.handle_model_config, methods=["GET", "POST"]),
-            Route("/api/config", endpoint=self.handle_model_config, methods=["GET", "POST"]),
-            Route("/api/maintenance/enter", endpoint=self.handle_maintenance_enter, methods=["POST"]),
-            Route("/api/maintenance/exit", endpoint=self.handle_maintenance_exit, methods=["POST"]),
-            Route("/api/recover", endpoint=self.handle_recover, methods=["POST"]),
-            Route("/api/recover/{recover_id}", endpoint=self.handle_recover_status, methods=["GET"]),
-        ]
-        actions = {
-            ("/api/memories", "DELETE"): "clear",
-            ("/api/export/full", "POST"): "export_full",
-            ("/api/export/namespace", "POST"): "export_namespace",
-            ("/api/sync", "POST"): "sync",
-            ("/api/shutdown", "POST"): "shutdown",
-            ("/api/restart", "POST"): "restart",
-            ("/api/namespaces/migrate", "POST"): "migrate_namespace",
-        }
-        exempt = {"/admin/console", "/api/audit", "/api/storage-paths",
-                  "/api/model", "/api/model/retry", "/api/config/model", "/api/config",
-                  "/api/maintenance",
-                  "/api/maintenance/enter", "/api/maintenance/exit",
-                  "/api/import",
-                  "/api/recover", "/api/recover/{recover_id}"}
-        # Mutating memory routes defer admission into the worker so a call queued
-        # behind slow inference is re-checked after maintenance entered.
-        deferred_writes = {
-            ("/api/memories", "POST"),
-            ("/api/memories/{memory_id}", "PUT"),
-            ("/api/memories/{memory_id}", "DELETE"),
-        }
         guarded = []
-        for route in routes:
-            method = next(iter(route.methods))
-            action = actions.get((route.path, method))
-            if action:
-                endpoint = self._guard(route.endpoint, action=action)
-            elif route.path in exempt:
-                endpoint = route.endpoint
-            elif (route.path, method) in deferred_writes:
-                endpoint = self._guard(route.endpoint, defer=True)
-            else:
-                endpoint = self._guard(route.endpoint)
-            guarded.append(Route(route.path, endpoint=endpoint, methods=list(route.methods)))
+        for spec in self.ROUTE_TABLE:
+            endpoint = getattr(self, spec.handler)
+            if spec.policy == "action":
+                endpoint = self._guard(endpoint, action=spec.action)
+            elif spec.policy == "write":
+                endpoint = self._guard(endpoint, defer=True)
+            elif spec.policy == "read":
+                endpoint = self._guard(endpoint)
+            guarded.append(Route(spec.path, endpoint=endpoint, methods=list(spec.methods)))
         return guarded
 
 

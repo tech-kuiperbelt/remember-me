@@ -1,0 +1,77 @@
+{
+  "anchor_empty": {
+    "items": [],
+    "note": "0 anchor results; no ids to inspect or report.",
+    "total": 0
+  },
+  "anchor_items": {
+    "items": [
+      {
+        "id": "m1",
+        "score": 0.5,
+        "summary": "s1"
+      }
+    ],
+    "note": "1 results ranked by anchor BM25. Scores are not comparable with other search scores. For full text, call get_details with memory_ids and source_search_id=this search_id. After using these results, call report with this search_id and rate reviewed ids (-10..10).",
+    "total": 1
+  },
+  "lexical_empty": {
+    "items": [],
+    "note": "0 lexical results; no ids to inspect or report.",
+    "total": 0
+  },
+  "lexical_items": {
+    "items": [
+      {
+        "id": "m1",
+        "score": 0.5,
+        "summary": "s1"
+      }
+    ],
+    "note": "1 results ranked by lexical BM25. Scores are not comparable with semantic scores. For full text, call get_details with memory_ids and source_search_id=this search_id. After using these results, call report with this search_id and rate reviewed ids (-10..10).",
+    "total": 1
+  },
+  "meta_all_ns": {
+    "items": [
+      {
+        "id": "m1",
+        "score": 0.5,
+        "summary": "s1"
+      }
+    ],
+    "note": "1 memories in this page (limit=5, offset=0) from all namespaces, sorted by updated_at descending. Items carry summaries. For full text, call get_details with memory_ids and source_search_id=this search_id. After using these results, call report with this search_id and rate reviewed ids (-10..10).",
+    "total": 1
+  },
+  "meta_empty": {
+    "items": [],
+    "note": "0 memories in this page (limit=10, offset=0) from namespace='ns'; no ids to inspect or report.",
+    "total": 0
+  },
+  "meta_items": {
+    "items": [
+      {
+        "id": "m1",
+        "score": 0.5,
+        "summary": "s1"
+      }
+    ],
+    "note": "1 memories in this page (limit=10, offset=0) from namespace='ns', sorted by created_at descending. Items carry summaries. For full text, call get_details with memory_ids and source_search_id=this search_id. After using these results, call report with this search_id and rate reviewed ids (-10..10).",
+    "total": 1
+  },
+  "semantic_empty": {
+    "items": [],
+    "note": "0 semantic results; no ids to inspect or report.",
+    "total": 0
+  },
+  "semantic_items": {
+    "items": [
+      {
+        "id": "m1",
+        "score": 0.5,
+        "summary": "s1"
+      }
+    ],
+    "note": "1 results ranked by semantic similarity. Items carry summaries. For full text, call get_details with memory_ids and source_search_id=this search_id. After using these results, call report with this search_id and rate reviewed ids (-10..10).",
+    "total": 1
+  }
+}

@@ -129,8 +129,10 @@ def admin(service):
 
 
 def server_namespace(service=None):
-    from app import server
-    result = vars(server).copy()
+    from app import server, tools
+    # Tool schemas/helpers live in app.tools; expose both namespaces so tests can
+    # reach either the transport adapter or the tool helpers.
+    result = {**vars(tools), **vars(server)}
     # Tool schemas/helpers do not access resources; constructing a fake service
     # is unnecessary for those tests.
     from unittest.mock import MagicMock

@@ -46,6 +46,22 @@ _MAX_FILTER_MATCHES = 3
 _MAX_CONFIRM_CODES = 10
 _MAX_AUDIT_RATINGS = 1000
 
+_DEFAULT_POLICY = "default"
+
+# Every event name the journal can receive: MCP tools plus background/admin
+# events that have no MCP tool. Each name is explicitly bound to a params and a
+# result policy below, so a new tool cannot silently inherit default trimming.
+# Tests assert the MCP tool set is a subset of this set.
+AUDIT_EVENTS = frozenset({
+    "add", "update", "delete", "stats", "report",
+    "search_semantic", "search_lexical", "search_anchor", "search_meta",
+    "get_details", "list_keywords",
+    "memory_import", "memory_export", "maintenance_enter", "maintenance_exit",
+    "model_config", "model_prepare", "model_retry", "online_recover",
+    "online_recover_start", "ndjson_health_check", "ndjson_compact",
+    "embedding_reindex", "index_value_reindex",
+})
+
 _default_lock = threading.RLock()
 _default_journal = None
 
@@ -54,64 +70,104 @@ def _now_utc_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _params_default(args, result):
+    """No tool-specific params handling; the common text/id rules still apply."""
+    return args
+
+
+def _params_list_keywords(args, result):
+    args = {k: v for k, v in args.items() if k in
+            ("namespace", "mode", "queries", "limit", "offset", "sort_by", "min_score")}
+    queries = args.get("queries")
+    if isinstance(queries, list):
+        args["queries"] = [str(q)[:1000] for q in queries[:20]]
+        args["queries_truncated"] = len(queries) > 20 or any(len(str(q)) > 1000 for q in queries[:20])
+    return args
+
+
+def _params_add(args, result):
+    summary = args.get("summary")
+    if isinstance(result, dict) and result.get("created") is False:
+        args["summary_mode"] = "duplicate"
+    elif isinstance(summary, str) and summary.strip():
+        args["summary_mode"] = "input"
+    else:
+        args["summary_mode"] = "text_extract"
+    return args
+
+
+def _params_update(args, result):
+    summary = args.get("summary")
+    if isinstance(summary, str) and summary.strip():
+        args["summary_mode"] = "input"
+    elif args.get("text") is not None:
+        args["summary_mode"] = "text_extract"
+    else:
+        args["summary_mode"] = "preserved"
+    return args
+
+
+def _params_transfer(args, result):
+    args.pop("path", None)
+    return args
+
+
+def _params_search_semantic(args, result):
+    for dimension in ("keywords", "categories"):
+        values = args.get(dimension)
+        if isinstance(values, list) and len(values) > _MAX_FILTER_VALUES:
+            args[dimension] = values[:_MAX_FILTER_VALUES]
+            args[f"{dimension}_total"] = len(values)
+            args[f"{dimension}_truncated"] = True
+    return args
+
+
+def _params_report(args, result):
+    for field in ("search_id", "feedback_source", "feedback_purpose"):
+        if field in args:
+            args[field] = str(args[field])[:64]
+    ratings = args.get("ratings")
+    if isinstance(ratings, list):
+        args["ratings"] = [
+            {"m_id": str(item.get("m_id"))[:64],
+             "rating": item.get("rating") if type(item.get("rating")) is int
+             else str(item.get("rating"))[:32]}
+            if isinstance(item, dict) else {"invalid_type": type(item).__name__}
+            for item in ratings[:_MAX_AUDIT_RATINGS]
+        ]
+        if len(ratings) > _MAX_AUDIT_RATINGS:
+            args["ratings_total"] = len(ratings)
+            args["ratings_truncated"] = True
+    elif "ratings" in args:
+        args["ratings"] = {"invalid_type": type(ratings).__name__}
+    return args
+
+
+# Every AUDIT_EVENTS name is bound to a policy here (default unless overridden),
+# so adding a tool forces an explicit trimming decision.
+PARAM_POLICIES: dict[str, object] = {
+    **{name: _params_default for name in AUDIT_EVENTS},
+    _DEFAULT_POLICY: _params_default,
+    "list_keywords": _params_list_keywords,
+    "add": _params_add,
+    "update": _params_update,
+    "memory_import": _params_transfer,
+    "memory_export": _params_transfer,
+    "search_semantic": _params_search_semantic,
+    "report": _params_report,
+}
+
+
 def _trim_params(tool: str, arguments: dict | None, result=None) -> dict:
     """Per-tool params record — drop user-content fields, keep metadata."""
     args = dict(arguments or {})
     for key in ("keyword_query_id", "source_search_id"):
         if key in args:
             args[key] = str(args[key])[:64]
-    if tool == "list_keywords":
-        args = {k: v for k, v in args.items() if k in
-                ("namespace", "mode", "queries", "limit", "offset", "sort_by", "min_score")}
-        queries = args.get("queries")
-        if isinstance(queries, list):
-            args["queries"] = [str(q)[:1000] for q in queries[:20]]
-            args["queries_truncated"] = len(queries) > 20 or any(len(str(q)) > 1000 for q in queries[:20])
-    if tool == "add":
-        summary = args.get("summary")
-        if isinstance(result, dict) and result.get("created") is False:
-            args["summary_mode"] = "duplicate"
-        elif isinstance(summary, str) and summary.strip():
-            args["summary_mode"] = "input"
-        else:
-            args["summary_mode"] = "text_extract"
-    elif tool == "update":
-        summary = args.get("summary")
-        if isinstance(summary, str) and summary.strip():
-            args["summary_mode"] = "input"
-        elif args.get("text") is not None:
-            args["summary_mode"] = "text_extract"
-        else:
-            args["summary_mode"] = "preserved"
-    elif tool in ("memory_import", "memory_export"):
-        args.pop("path", None)
+    policy = PARAM_POLICIES.get(tool, PARAM_POLICIES[_DEFAULT_POLICY])
+    args = policy(args, result)
     for key in _TEXT_KEYS:
         args.pop(key, None)
-    if tool == "search_semantic":
-        for dimension in ("keywords", "categories"):
-            values = args.get(dimension)
-            if isinstance(values, list) and len(values) > _MAX_FILTER_VALUES:
-                args[dimension] = values[:_MAX_FILTER_VALUES]
-                args[f"{dimension}_total"] = len(values)
-                args[f"{dimension}_truncated"] = True
-    if tool == "report":
-        for field in ("search_id", "feedback_source", "feedback_purpose"):
-            if field in args:
-                args[field] = str(args[field])[:64]
-        ratings = args.get("ratings")
-        if isinstance(ratings, list):
-            args["ratings"] = [
-                {"m_id": str(item.get("m_id"))[:64],
-                 "rating": item.get("rating") if type(item.get("rating")) is int
-                 else str(item.get("rating"))[:32]}
-                if isinstance(item, dict) else {"invalid_type": type(item).__name__}
-                for item in ratings[:_MAX_AUDIT_RATINGS]
-            ]
-            if len(ratings) > _MAX_AUDIT_RATINGS:
-                args["ratings_total"] = len(ratings)
-                args["ratings_truncated"] = True
-        elif "ratings" in args:
-            args["ratings"] = {"invalid_type": type(ratings).__name__}
     return args
 
 
@@ -151,74 +207,96 @@ def _trim_filter_resolution(resolution):
     return trimmed
 
 
+def _result_default(tool, result):
+    return dict(result)
+
+
+def _result_search(tool, result):
+    items = result.get("items") or []
+    keep_score = tool in ("search_semantic", "search_lexical", "search_anchor")
+    trimmed = {
+        "search_id": result.get("search_id"),
+        "total": result.get("total", len(items)),
+        **({"filter_resolution": _trim_filter_resolution(result.get("filter_resolution"))}
+           if tool == "search_semantic" and result.get("filter_resolution") is not None
+           else {}),
+        "items": [
+            {"id": it.get("id"),
+             "summary": it.get("summary"),
+             **({"score": it.get("score")} if keep_score else {})}
+            for it in items
+        ],
+    }
+    if result.get("response_code") is not None:
+        trimmed["response_code"] = result["response_code"]
+    if result.get("response_meta") is not None:
+        trimmed["response_meta"] = result["response_meta"]
+    return trimmed
+
+
+def _result_list_keywords(tool, result):
+    trimmed = {k: v for k, v in result.items() if k != "results"}
+    groups = result.get("results", [])
+    trimmed["results"] = [
+        {"query": str(g["query"])[:1000] if g.get("query") is not None else None,
+         "total": g.get("total"), "items": g.get("items", [])[:5],
+         "items_truncated": len(g.get("items", [])) > 5}
+        for g in groups[:20]]
+    trimmed["results_truncated"] = len(groups) > 20
+    return trimmed
+
+
+def _result_get_details(tool, result):
+    found = []
+    for it in result.get("found") or []:
+        found.append({"id": it.get("id"), "summary": it.get("summary"),
+                      "keywords": (it.get("metadata") or {}).get("keywords"),
+                      "categories": (it.get("metadata") or {}).get("categories")})
+    return {"found": found, "missing": result.get("missing", [])}
+
+
+def _result_stats(tool, result):
+    # Drop the keyword vocabulary (hundreds of entries would bloat the journal
+    # on every stats call) and provider URLs (config, not stats).
+    return {k: v for k, v in result.items()
+            if k not in ("keyword_counts", "ollama_base_url")}
+
+
+def _result_transfer(tool, result):
+    return {key: value for key, value in result.items()
+            if key not in ("path", "source_path", "imported_ids")}
+
+
+# Every AUDIT_EVENTS name is bound to a policy here (default unless overridden),
+# so adding a tool forces an explicit trimming decision.
+RESULT_POLICIES: dict[str, object] = {
+    **{name: _result_default for name in AUDIT_EVENTS},
+    _DEFAULT_POLICY: _result_default,
+    "search_semantic": _result_search,
+    "search_lexical": _result_search,
+    "search_anchor": _result_search,
+    "search_meta": _result_search,
+    "list_keywords": _result_list_keywords,
+    "get_details": _result_get_details,
+    "stats": _result_stats,
+    "memory_import": _result_transfer,
+    "memory_export": _result_transfer,
+}
+
+
 def _trim_result(tool: str, result) -> dict | None:
     """Per-tool result record — keep light summaries only.
 
-    - search_semantic: ``[{id, summary, score}]``
-    - search_lexical:  ``[{id, summary, score}]`` (BM25 score, not cosine)
-    - search_anchor:   ``[{id, summary, score}]`` (BM25 score, not cosine)
-    - search_meta:     ``[{id, summary}]`` (no score — list is exact, not cosine)
-    - get_details:     ``{found: [{id, summary, keywords}], missing: [...]}``
-    - stats:           everything except the keyword vocabulary and model URLs
-    - others:          pass through as-is (already small).
+    - search_*: ``[{id, summary, score?}]`` (BM25 for lexical/anchor)
+    - list_keywords / get_details / stats / transfer events: bounded subsets
+    - others: pass through as-is (already small).
     """
     if result is None:
         return None
     if not isinstance(result, dict):
         return {"value": str(result)}
-
-    if tool in ("search_semantic", "search_meta", "search_lexical", "search_anchor"):
-        items = result.get("items") or []
-        keep_score = tool in ("search_semantic", "search_lexical", "search_anchor")
-        trimmed = {
-            "search_id": result.get("search_id"),
-            "total": result.get("total", len(items)),
-            **({"filter_resolution": _trim_filter_resolution(result.get("filter_resolution"))}
-               if tool == "search_semantic" and result.get("filter_resolution") is not None
-               else {}),
-            "items": [
-                {"id": it.get("id"),
-                 "summary": it.get("summary"),
-                 **({"score": it.get("score")} if keep_score else {})}
-                for it in items
-            ],
-        }
-        if result.get("response_code") is not None:
-            trimmed["response_code"] = result["response_code"]
-        if result.get("response_meta") is not None:
-            trimmed["response_meta"] = result["response_meta"]
-        return trimmed
-
-    if tool == "list_keywords":
-        trimmed = {k: v for k, v in result.items() if k != "results"}
-        groups = result.get("results", [])
-        trimmed["results"] = [
-            {"query": str(g["query"])[:1000] if g.get("query") is not None else None,
-             "total": g.get("total"), "items": g.get("items", [])[:5],
-             "items_truncated": len(g.get("items", [])) > 5}
-            for g in groups[:20]]
-        trimmed["results_truncated"] = len(groups) > 20
-        return trimmed
-
-    if tool == "get_details":
-        found = []
-        for it in result.get("found") or []:
-            found.append({"id": it.get("id"), "summary": it.get("summary"),
-                          "keywords": (it.get("metadata") or {}).get("keywords"),
-                          "categories": (it.get("metadata") or {}).get("categories")})
-        return {"found": found, "missing": result.get("missing", [])}
-
-    if tool == "stats":
-        # Drop the keyword vocabulary (hundreds of entries would bloat the
-        # journal on every stats call) and provider URLs (config, not stats).
-        return {k: v for k, v in result.items()
-                if k not in ("keyword_counts", "ollama_base_url")}
-
-    if tool in ("memory_import", "memory_export"):
-        return {key: value for key, value in result.items()
-                if key not in ("path", "source_path", "imported_ids")}
-
-    return dict(result)
+    policy = RESULT_POLICIES.get(tool, RESULT_POLICIES[_DEFAULT_POLICY])
+    return policy(tool, result)
 
 
 class AuditJournal:

@@ -1,0 +1,13 @@
+{
+  "add": "Memory stored. For future writes, use list_keywords to reuse fitting content concepts, 1–3 relevant metadata.categories from stats, and metadata.anchors for distinctive identifiers. Call get_details with memory_ids=[id] if you need to verify the stored record.",
+  "delete": "Memory soft-deleted and removed from search results. Call stats if you need to verify the record count.",
+  "get_details": "Read the returned full text and metadata. To find related records, use search_meta for known exact keywords/categories, search_anchor for a declared identifier, or search_semantic for conceptual similarity.",
+  "list_keywords": "Reuse a candidate only if it expresses your concept; new keywords are allowed. Counts reflect live memories in the requested namespace. Pass keyword_query_id to a later add/update/search when it informed your choice. No report is needed.",
+  "report": "Feedback recorded. Continue with the task or search again if the results were unhelpful.",
+  "search_anchor": "Results match declared anchors and are ranked by BM25; scores are not comparable with other search scores. Use get_details(memory_ids=[...], source_search_id=this search_id) for full text; after using results, call report with this search_id and helpfulness ratings (-10..10).",
+  "search_lexical": "Results are ranked by BM25; scores are not comparable with semantic scores. Use get_details(memory_ids=[...], source_search_id=this search_id) for full text; after using results, call report with this search_id and helpfulness ratings (-10..10).",
+  "search_meta": "Results match exact filters, sorted by the requested time field. Use get_details(memory_ids=[...], source_search_id=this search_id) for full text; after using results, call report with this search_id and helpfulness ratings (-10..10). For conceptual lookup, use search_semantic.",
+  "search_semantic": "Results are ranked by memory-text cosine similarity. Use get_details(memory_ids=[...], source_search_id=this search_id) for full text; after using results, call report with this search_id and helpfulness ratings (-10..10).",
+  "stats": "Use namespace_counts to choose a namespace. Use search_meta for recent records or exact filters, search_semantic for concepts, search_lexical for literal text, and search_anchor for declared identifiers. Use list_keywords for the full keyword vocabulary, category_counts for category choices, and server_time for relative date ranges.",
+  "update": "Memory updated. Call get_details with memory_ids=[memory_id] if you need to verify the stored record. When changing text in future, provide an updated summary, 1–3 relevant metadata.categories, and fresh metadata.anchors when distinctive identifiers exist."
+}

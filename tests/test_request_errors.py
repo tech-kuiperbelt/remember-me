@@ -110,6 +110,15 @@ def test_normal_crud_with_fake_embeddings(monkeypatch, service, admin):
         db.close()
 
 
+def test_migrate_namespace_keeps_plain_error_envelope(admin):
+    """Namespace migrate keeps its own error shape (detail only, no response_code)."""
+    status, data = invoke(admin.handle_migrate_namespace,
+                          Request({'source': 'known', 'target': 'all'}))
+    assert status == 400
+    assert 'response_code' not in data
+    assert data['detail']
+
+
 @pytest.mark.parametrize('dimension', ['keywords', 'categories'])
 def test_search_filter_limit_is_request_error(dimension, admin):
     status, data = invoke(admin.handle_search_memories,
