@@ -44,6 +44,7 @@ _TEXT_KEYS = ("text", "summary")
 _MAX_FILTER_VALUES = 20
 _MAX_FILTER_MATCHES = 3
 _MAX_CONFIRM_CODES = 10
+_MAX_AUDIT_RATINGS = 1000
 
 _default_lock = threading.RLock()
 _default_journal = None
@@ -93,6 +94,24 @@ def _trim_params(tool: str, arguments: dict | None, result=None) -> dict:
                 args[dimension] = values[:_MAX_FILTER_VALUES]
                 args[f"{dimension}_total"] = len(values)
                 args[f"{dimension}_truncated"] = True
+    if tool == "report":
+        for field in ("search_id", "feedback_source", "feedback_purpose"):
+            if field in args:
+                args[field] = str(args[field])[:64]
+        ratings = args.get("ratings")
+        if isinstance(ratings, list):
+            args["ratings"] = [
+                {"m_id": str(item.get("m_id"))[:64],
+                 "rating": item.get("rating") if type(item.get("rating")) is int
+                 else str(item.get("rating"))[:32]}
+                if isinstance(item, dict) else {"invalid_type": type(item).__name__}
+                for item in ratings[:_MAX_AUDIT_RATINGS]
+            ]
+            if len(ratings) > _MAX_AUDIT_RATINGS:
+                args["ratings_total"] = len(ratings)
+                args["ratings_truncated"] = True
+        elif "ratings" in args:
+            args["ratings"] = {"invalid_type": type(ratings).__name__}
     return args
 
 
@@ -257,13 +276,14 @@ class AuditJournal:
         try:
             with self._lock:
                 self._open()
+                search_id = ((result or {}).get("search_id") if isinstance(result, dict)
+                             else None) or (arguments or {}).get("search_id")
                 event = {
                     "ts": _now_utc_iso(), "tool": tool,
                     "status": "error" if error else "ok",
                     "duration_ms": round(duration_ms, 1),
                     "namespace": (arguments or {}).get("namespace"),
-                    "search_id": ((result or {}).get("search_id") if isinstance(result, dict)
-                                  else None) or (arguments or {}).get("search_id"),
+                    "search_id": str(search_id)[:64] if search_id else None,
                     "source_search_id": str((arguments or {}).get("source_search_id"))[:64]
                                         if (arguments or {}).get("source_search_id") else None,
                     "keyword_query_id": ((result or {}).get("keyword_query_id")

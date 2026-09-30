@@ -95,7 +95,7 @@ def test_keyword_and_report_hints_follow_mode_and_count(service, monkeypatch):
     assert "min_score" in semantic["hint"] and "offset" not in semantic["hint"]
     empty_report = call(api, "report", {"search_id": "se_example", "ratings": []})
     assert empty_report["count"] == 0
-    assert "No valid ratings" in empty_report["hint"]
+    assert empty_report["response_code"] == "invalid_report"
 
 
 def test_invalid_anchors_hint_does_not_claim_omission_always_preserves(service):

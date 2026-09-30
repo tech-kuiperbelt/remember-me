@@ -1,8 +1,8 @@
 """Tests for the memory_report service function (search-result feedback).
 
-The report tool itself is pure record-keeping: service.memory_report validates
-and normalizes ratings; the audit journal records the event at the MCP
-boundary (covered by tests/test_audit.py). No storage/DB is involved here.
+The service helper retains its legacy lenient normalization. The MCP report
+tool validates search ownership and strict rating input before calling it;
+that contract is covered in test_report_validation.py.
 """
 
 import pytest

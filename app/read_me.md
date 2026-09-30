@@ -72,6 +72,8 @@ command = "<REPO>/bin/start.sh"
 
 四种搜索有结果时，可用 `get_details(memory_ids=[...], source_search_id=<search_id>)` 读取全文；使用结果后，再用 `report` 和同一个 `search_id` 反馈有用程度。空结果按返回 hint 放宽条件或更换搜索方式，无需对空结果调用 `report`。`get_details` 的 `memory_ids` 始终是数组，单条记忆也传一个元素的数组。
 
+`report` 只接受当前服务进程中最近 24 小时内、仍在保留范围内的非空搜索结果；每个评分 ID 必须属于该次结果，评分须为 -10～10 的整数，同一 ID 只能评一次。无效反馈返回 `response_code=invalid_report` 且不计为有效评分。可选的 `feedback_source`（`llm` / `human` / `test`）和 `feedback_purpose`（`task` / `evaluation` / `test`）是调用方声明；audit 另存服务端观察到的传输与客户端上下文，不能仅凭声明认定为已核实的人工标注。未声明的旧客户端反馈归入 `unclassified`。
+
 Ops 进入运维状态时，`add`、`update`、`delete` 暂停并返回 `response_code=maintenance_mode`；请稍后重试。检索、详情、统计和资源读取继续服务；Recover 切换数据库的短暂窗口可能返回 `maintenance_switching`，同样稍后重试。
 
 `search_lexical` 面向英文/代码类文本（类名、异常码、符号、版本号），且 BM25 分数与 `search_semantic` 的余弦分不可比较；连续中文在 FTS 中不切分，中文与概念检索请用 `search_semantic`。

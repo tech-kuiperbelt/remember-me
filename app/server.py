@@ -31,6 +31,9 @@ from .embed import EmbeddingError, EmbeddingInputTooLong
 from .lexical import LexicalQueryError
 from .anchors import InvalidAnchors, MAX_ANCHORS
 from .maintenance import MaintenanceRejected
+from .report_feedback import (InvalidReport, SearchReceiptRegistry, SEARCH_TOOLS,
+                              FEEDBACK_SOURCES, FEEDBACK_PURPOSES, MAX_REPORT_RATINGS,
+                              analysis_group)
 
 logger = logging.getLogger("server")
 
@@ -62,6 +65,7 @@ class MCPApplication:
         self._service = service
         self.runtime = runtime
         self._session_ids = weakref.WeakKeyDictionary()
+        self._search_receipts = SearchReceiptRegistry()
         self.server = Server("memory-server")
         self.server.list_tools()(self.handle_list_tools)
         self.server.call_tool()(self.handle_call_tool)
@@ -435,27 +439,37 @@ class MCPApplication:
                 description="Report how helpful a previous search's results were for the current "
                             "question or context. After using results from search_semantic, search_lexical, "
                             "search_anchor or search_meta, pass its search_id plus ratings per memory id. "
-                            "rating is an integer from -10 to 10: "
+                            "Only IDs returned by that nonempty search are accepted. rating must be an integer "
+                            "from -10 to 10: "
                             "positive = helpful (larger = more useful), negative = misleading/interference "
                             "(more negative = stronger interference), 0 = neither helpful nor harmful. "
-                            "You may rate any subset of the returned ids. The feedback is recorded for "
-                            "later search-quality analysis. Do not report on an empty result set.",
+                            "You may rate any nonempty subset of the returned ids. Declare feedback_source "
+                            "and feedback_purpose so audit can separate task feedback from tests; these are "
+                            "caller declarations, not verified human identity. Reports from an earlier server "
+                            "process or expired searches are rejected.",
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "search_id": {"type": "string", "description": "The search_id from a previous search_semantic/search_lexical/search_anchor/search_meta response"},
+                        "search_id": {"type": "string", "maxLength": 64,
+                                      "description": "The search_id from a recent nonempty search_semantic/search_lexical/search_anchor/search_meta response in this server process"},
                         "ratings": {
                             "type": "array",
-                            "description": "Per-memory feedback. Rating -10..10 (out-of-range values are clamped).",
+                            "minItems": 1, "maxItems": MAX_REPORT_RATINGS,
+                            "description": "Rate 1–1000 distinct IDs returned by this search. Values outside -10..10 or non-integers are rejected.",
                             "items": {
                                 "type": "object",
                                 "properties": {
                                     "m_id": {"type": "string", "description": "Memory id from the search results"},
-                                    "rating": {"type": "integer", "description": "-10..10; positive helpful, negative interfering, 0 neutral"},
+                                    "rating": {"type": "integer", "minimum": -10, "maximum": 10,
+                                               "description": "-10..10; positive helpful, negative interfering, 0 neutral"},
                                 },
                                 "required": ["m_id", "rating"],
                             },
                         },
+                        "feedback_source": {"type": "string", "enum": sorted(FEEDBACK_SOURCES),
+                                            "description": "Optional caller-declared origin: llm, human, or test. Omitted means unspecified; this does not verify human identity."},
+                        "feedback_purpose": {"type": "string", "enum": sorted(FEEDBACK_PURPOSES),
+                                             "description": "Optional caller-declared use: task, evaluation, or test. Omitted means unspecified."},
                     },
                     "required": ["search_id", "ratings"],
                 },
@@ -538,9 +552,27 @@ class MCPApplication:
             elif name == "stats":
                 data = _wrap_stats(self.service.memory_stats())
             elif name == "report":
-                data = self.service.memory_report(arguments.get("search_id"), arguments.get("ratings"))
+                receipt = self._search_receipts.validate(
+                    arguments.get("search_id"), arguments.get("ratings"),
+                    arguments.get("feedback_source"), arguments.get("feedback_purpose"))
+                data = self.service.memory_report(arguments["search_id"], arguments["ratings"])
+                data["feedback_context"] = {
+                    "declared_source": arguments.get("feedback_source") or "unspecified",
+                    "declared_purpose": arguments.get("feedback_purpose") or "unspecified",
+                    "declaration_trust": "caller_declared",
+                    "analysis_group": analysis_group(arguments.get("feedback_source"),
+                                                     arguments.get("feedback_purpose")),
+                    "search_tool": receipt.tool,
+                    "search_namespace": receipt.namespace,
+                    "search_request_id": receipt.request_id,
+                    "search_transport": receipt.transport,
+                    "result_membership": "validated",
+                }
             else:
                 raise ValueError(f"Unknown tool: {name}")
+            if name in SEARCH_TOOLS and data.get("items"):
+                self._search_receipts.remember(data["search_id"], name, data["items"],
+                                               arguments.get("namespace"), context)
             hint = _result_hint(name, arguments, data)
             self.audit.record(name, arguments, data, (time.perf_counter() - start) * 1000,
                               context=context, memory_refs=memory_refs)
@@ -594,6 +626,17 @@ class MCPApplication:
             self.audit.record(name, arguments, data, (time.perf_counter() - start) * 1000,
                               error={"type": type(exc).__name__, "message": str(exc)},
                               response_code=code, context=context)
+            return _ok(data, hint)
+        except InvalidReport as exc:
+            data = {"recorded": False, "count": 0, "response_code": "invalid_report",
+                    "response_meta": {"reason": exc.reason,
+                                      **({"invalid_ids": exc.invalid_ids} if exc.invalid_ids else {})}}
+            hint = ("Use a search_id from a recent nonempty search in this server process "
+                    "and rate only distinct IDs returned by it, with integer ratings from -10 to 10. "
+                    "Declare feedback_source and feedback_purpose if known.")
+            self.audit.record(name, arguments, data, (time.perf_counter() - start) * 1000,
+                              error={"type": "InvalidReport", "message": str(exc)},
+                              response_code="invalid_report", context=context)
             return _ok(data, hint)
         except Exception as e:
             self.audit.record(name, arguments, None, (time.perf_counter() - start) * 1000,
@@ -735,7 +778,7 @@ def _ok(data, hint: str = "") -> types.CallToolResult:
 
 def _new_search_id() -> str:
     """Generate a per-call search id for correlating searches with reports."""
-    return "se_" + secrets.token_hex(4)
+    return "se_" + secrets.token_hex(16)
 
 
 def _wrap_search_meta(items: list, namespace: str | None, limit: int, offset: int, sort_by: str) -> dict:

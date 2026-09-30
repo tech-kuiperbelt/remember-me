@@ -2,6 +2,7 @@
 
 本文件归档已完成的项目待办。详细实现记录保留在 git 提交和项目变更日志中。
 
+- [26] report 反馈可信度与来源标记（2026-09-30 实现并验证）：MCP `report` 使用进程内搜索回执校验 `search_id` 和结果 ID，严格检查评分并结构化拒绝无效反馈；来源/用途为调用方声明，audit 保存关联上下文与分析分组，不能据此核实人工身份。491 项 pytest 通过；生产服务重启后，在线 `/mcp` 确认新参数、跨结果 ID 拒绝、合法测试反馈接受，audit 分别记录 error/ok 和 `declared_test`。历史反馈不追溯验证。详见 [`plans/26-report-feedback-trust.md`](plans/26-report-feedback-trust.md)。
 - [41] Historical Anchor Backfill（2026-09-29 按用户决定标记完成；实现 commit `af0cf58`）：离线 `draft/apply`、批量抽取及单事务写入已实现，458 项 pytest 通过。真实数据上，`remember-me` 115 条试点与批量处理得到 114 generated / 1 skip；`atos-next-master` 的 941 条分 95 个 manifest 全部生成并应用，0 失败、`updated_at` 不变；重启后 dual 健康检查通过，anchor 向量仍为 0。归档时主库尚有 `remember-me` 3 条和 `待报销` 2 条未进入 manifest，另有 1 条已记录的 skip；用户确认这些零星余项不阻碍本项结束。详见 [`plans/41-historical-anchor-backfill.md`](plans/41-historical-anchor-backfill.md)。
 - [27] LLM 结构化检索与分类写入引导（2026-09-29 按用户决定标记完成；commit `f8af65d`）：更新 11 个 MCP 工具的描述和按结果生成的 hint，并同步 `/read-me`；475 项 pytest 通过，服务重启后已通过在线 `/read-me`、MCP `tools/list` 及实际空搜索/详情/找词返回验证。Audit 基线显示 2026-09-24 起 61/66 条新建记忆带 categories，但同期 23 次语义搜索均未使用关键词或分类过滤；因此尚无证据判断新引导对检索效果的影响，用户确认此观察不作为归档门槛。详见 [`plans/27-structured-retrieval-guidance.md`](plans/27-structured-retrieval-guidance.md)。
 - [42] Runtime Maintenance Mode — 在线运维窗口（2026-09-29 按用户指示标记完成）：功能已实现，465 项 pytest 与浏览器回归通过。此前记录的部署及运行演练待办随本次标记关闭；原状态未记载 Recover/副本对账/中断恢复演练结果。详见 [`plans/42-runtime-maintenance-mode.md`](plans/42-runtime-maintenance-mode.md)。
