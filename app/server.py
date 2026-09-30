@@ -25,6 +25,7 @@ import uvicorn
 
 from .service import _prepare_for_llm
 from . import audit
+from .calls import INLINE_RUNNER
 from .categories import CATEGORY_VOCABULARY, MAX_CATEGORIES
 from .namespace_policy import NamespaceNotFound, NAMESPACE_NOT_FOUND
 from .embed import EmbeddingError, EmbeddingInputTooLong
@@ -476,25 +477,31 @@ class MCPApplication:
             ),
         ])
 
+    def _call_runner(self):
+        return self.runtime.calls if self.runtime is not None else INLINE_RUNNER
+
     async def handle_call_tool(self, name: str, arguments: dict) -> types.CallToolResult:
-        if self.runtime is None:
-            return await self._handle_call_tool_unchecked(name, arguments)
+        # Read the SDK/transport context on the event loop, then carry it as a
+        # value into the worker; workers never touch the SDK's async context.
+        context = self._audit_context()
+        write = name in ("add", "update", "delete")
+        admission = (self.runtime.maintenance.access(write=write)
+                     if self.runtime is not None else None)
         try:
-            with self.runtime.maintenance.access(write=name in ("add", "update", "delete")):
-                return await self._handle_call_tool_unchecked(name, arguments)
+            return await self._call_runner().run(
+                lambda: self._call_tool_sync(name, arguments, context), admission=admission)
         except MaintenanceRejected as exc:
             data = {"response_code": exc.code, "detail": str(exc)}
             hint = ("Model is not ready. Open /admin/console to configure proxy, view download progress and retry; "
                     "exit maintenance only after the model is ready." if exc.code == "model_not_ready"
                     else "Maintenance is in progress. Retry this operation later.")
             self.audit.record(name, arguments, data, 0.0, response_code=exc.code,
-                              context=self._audit_context())
+                              context=context)
             return _ok(data, hint)
 
-    async def _handle_call_tool_unchecked(self, name: str, arguments: dict) -> types.CallToolResult:
+    def _call_tool_sync(self, name: str, arguments: dict, context: dict) -> types.CallToolResult:
         logger.info("Tool call: %s %s", name, arguments)
         start = time.perf_counter()
-        context = self._audit_context()
         memory_refs = []
         try:
             if self.runtime is not None and self.runtime.state != "running":
@@ -664,12 +671,11 @@ class MCPApplication:
         ])
 
     async def handle_read_resource(self, uri: str) -> types.ReadResourceResult:
-        if self.runtime is not None:
-            with self.runtime.maintenance.access():
-                return await self._handle_read_resource_unchecked(uri)
-        return await self._handle_read_resource_unchecked(uri)
+        admission = self.runtime.maintenance.access() if self.runtime is not None else None
+        return await self._call_runner().run(
+            lambda: self._read_resource_sync(uri), admission=admission)
 
-    async def _handle_read_resource_unchecked(self, uri: str) -> types.ReadResourceResult:
+    def _read_resource_sync(self, uri: str) -> types.ReadResourceResult:
         logger.info("Resource read: %s", uri)
         if uri == "memories://stats":
             return types.ReadResourceResult(contents=[

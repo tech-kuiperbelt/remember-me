@@ -15,6 +15,7 @@ from starlette.routing import Route
 from starlette.requests import Request
 
 from .service import InvalidSearchFilter
+from .calls import INLINE_RUNNER, ServiceClosing
 from .embed import EmbeddingInputTooLong
 from .lexical import LexicalQueryError
 from .anchors import InvalidAnchors
@@ -137,6 +138,27 @@ class AdminAPI:
     def audit(self):
         return self.runtime.audit if self.runtime is not None else self.service.audit
 
+    def _call_runner(self):
+        return self.runtime.calls if self.runtime is not None else INLINE_RUNNER
+
+    async def _run(self, work, *, control=False, write=False):
+        """Run synchronous business off the event loop via the runtime adapter.
+
+        Ordinary reads/writes are admitted by ``_guard``. Mutating memory routes
+        defer admission to the worker (``write=True``) so a call queued before
+        maintenance entered is re-checked when it actually runs.
+        """
+        admission = None
+        if self.runtime is not None and write and not control:
+            admission = self.runtime.maintenance.access(write=True)
+        def checked_work():
+            if self.runtime is not None and self.runtime.state != "running":
+                raise ServiceClosing("service is closing; no new work accepted")
+            return work()
+
+        return await self._call_runner().run(
+            checked_work, control=control, admission=admission, wait_on_cancel=True)
+
     @staticmethod
     def _audit_context(request):
         state = request.scope.get("state", {}) if hasattr(request, "scope") else {}
@@ -162,10 +184,11 @@ class AdminAPI:
                             status_code=503, media_type="application/json")
         try:
             if request.method == "GET":
-                result = self.runtime.model_config()
+                result = await self._run(self.runtime.model_config, control=True)
             else:
                 changes = await _request_object(request)
-                result = await asyncio.to_thread(self.runtime.save_model_config, changes)
+                result = await self._run(
+                    lambda: self.runtime.save_model_config(changes), control=True)
             return Response(json.dumps(result), media_type="application/json")
         except MaintenanceRejected as exc:
             return _maintenance_response(exc)
@@ -265,7 +288,25 @@ class AdminAPI:
                             media_type="application/json")
         return Response(json.dumps(dict(job)), media_type="application/json")
 
-    def _guard(self, endpoint, *, write=False, action=None):
+    def _watch_import(self, import_id):
+        # A started import owns the maintenance action even if its HTTP request
+        # was cancelled before receiving the job ID.
+        def await_import():
+            try:
+                while True:
+                    status = self.service.memory_import_status(import_id)
+                    if status is None or status["status"] in ("completed", "failed"):
+                        break
+                    threading.Event().wait(0.1)
+                for worker in list(self.service._workers):
+                    if worker.name == f"memory-import-{import_id}":
+                        worker.join()
+            finally:
+                self.runtime.maintenance.finish_action(result={"import_id": import_id})
+        threading.Thread(target=await_import, daemon=True,
+                         name=f"maintenance-import-{import_id}").start()
+
+    def _guard(self, endpoint, *, action=None, defer=False):
         async def guarded(request):
             if self.runtime is None:
                 return await endpoint(request)
@@ -289,23 +330,7 @@ class AdminAPI:
 
                         response.background = BackgroundTask(finish_process_control)
                     elif action == "import" and response.status_code == 202:
-                        import_id = json.loads(response.body)["import_id"]
-
-                        def await_import():
-                            try:
-                                while True:
-                                    status = self.service.memory_import_status(import_id)
-                                    if status is None or status["status"] in ("completed", "failed"):
-                                        break
-                                    threading.Event().wait(0.1)
-                                for worker in list(self.service._workers):
-                                    if worker.name == f"memory-import-{import_id}":
-                                        worker.join()
-                            finally:
-                                gate.finish_action(result={"import_id": import_id})
-
-                        threading.Thread(target=await_import, daemon=True,
-                                         name=f"maintenance-import-{import_id}").start()
+                        self._watch_import(json.loads(response.body)["import_id"])
                     else:
                         if action == "sync" and response.status_code < 400:
                             marker = Path(f"{self.runtime.settings.STORAGE_PATH}.online-recover")
@@ -320,10 +345,26 @@ class AdminAPI:
                         gate.finish_action()
                     return response
                 except BaseException as exc:
-                    gate.finish_action(error=exc)
+                    import_id = request.scope.get("_started_import_id") if action == "import" else None
+                    if import_id:
+                        self._watch_import(import_id)
+                    else:
+                        gate.finish_action(error=exc)
                     raise
+            if defer:
+                # Reject early (before parsing) while the work still re-checks
+                # admission inside the worker, so a call queued behind slow
+                # inference cannot bypass maintenance that entered afterwards.
+                try:
+                    gate.check(write=True)
+                except MaintenanceRejected as exc:
+                    return _maintenance_response(exc)
+                try:
+                    return await endpoint(request)
+                except MaintenanceRejected as exc:
+                    return _maintenance_response(exc)
             try:
-                with gate.access(write=write):
+                with gate.access():
                     return await endpoint(request)
             except MaintenanceRejected as exc:
                 return _maintenance_response(exc)
@@ -358,11 +399,12 @@ class AdminAPI:
                 keywords = None
             logger.info("GET /api/memories namespace=%s limit=%d offset=%d sort_by=%s updated_after=%s updated_before=%s keywords=%s",
                         ns, limit, offset, sort_by, updated_after, updated_before, keywords)
+            result = await self._run(lambda: self.service.memory_list(
+                namespace=ns, limit=limit, offset=offset, sort_by=sort_by,
+                updated_after=updated_after, updated_before=updated_before,
+                keywords=keywords))
             return Response(
-                json.dumps(self.service.memory_list(namespace=ns, limit=limit, offset=offset, sort_by=sort_by,
-                                       updated_after=updated_after, updated_before=updated_before,
-                                       keywords=keywords),
-                           ensure_ascii=False, default=str),
+                json.dumps(result, ensure_ascii=False, default=str),
                 media_type="application/json",
             )
         except NamespaceNotFound as e:
@@ -381,7 +423,7 @@ class AdminAPI:
         try:
             mid = request.path_params.get("memory_id")
             logger.info("GET /api/memories/%s", mid)
-            result = self.service.memory_get(mid)
+            result = await self._run(lambda: self.service.memory_get(mid))
             if result is None:
                 return Response(json.dumps({"detail": "Not found"}), status_code=404, media_type="application/json")
             return Response(
@@ -397,7 +439,7 @@ class AdminAPI:
             body = await request.json()
             ids = body.get("memory_ids", [])
             logger.info("POST /api/memories/details count=%d", len(ids))
-            result = self.service.memory_get_details(ids)
+            result = await self._run(lambda: self.service.memory_get_details(ids))
             return Response(
                 json.dumps(result, ensure_ascii=False, default=str),
                 media_type="application/json",
@@ -410,8 +452,9 @@ class AdminAPI:
         try:
             body = await _request_object(request, required=("text",), string_fields=("text",))
             logger.info("POST /api/memories text_len=%d", len(body.get("text", "")))
-            result = self.service.memory_add(body["text"], body.get("metadata"), body.get("namespace"),
-                                body.get("summary"), body.get("confirm_codes"))
+            result = await self._run(lambda: self.service.memory_add(
+                body["text"], body.get("metadata"), body.get("namespace"),
+                body.get("summary"), body.get("confirm_codes")), write=True)
             return Response(json.dumps(result), status_code=201, media_type="application/json")
         except EmbeddingInputTooLong as e:
             logger.warning("POST /api/memories rejected: %s", e)
@@ -430,6 +473,8 @@ class AdminAPI:
             return _invalid_anchors_response(e)
         except InvalidRequest as e:
             return _invalid_request_response(e)
+        except MaintenanceRejected:
+            raise
         except Exception as e:
             logger.error("POST /api/memories failed: %s", e, exc_info=True)
             return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
@@ -439,9 +484,10 @@ class AdminAPI:
             mid = request.path_params.get("memory_id")
             body = await _request_object(request, required=(), string_fields=("text",))
             logger.info("PUT /api/memories/%s", mid)
-            result = self.service.memory_update(mid, body.get("text"), body.get("metadata"),
-                                   body.get("namespace"), body.get("summary"),
-                                   body.get("confirm_codes"))
+            result = await self._run(lambda: self.service.memory_update(
+                mid, body.get("text"), body.get("metadata"),
+                body.get("namespace"), body.get("summary"),
+                body.get("confirm_codes")), write=True)
             if not result["success"]:
                 return Response(json.dumps({"detail": "Not found"}), status_code=404, media_type="application/json")
             return Response(json.dumps(result), media_type="application/json")
@@ -466,6 +512,8 @@ class AdminAPI:
             return _invalid_anchors_response(e)
         except InvalidRequest as e:
             return _invalid_request_response(e)
+        except MaintenanceRejected:
+            raise
         except Exception as e:
             logger.error("PUT /api/memories/%s failed: %s", request.path_params.get("memory_id", ""), e, exc_info=True)
             return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
@@ -474,10 +522,12 @@ class AdminAPI:
         try:
             mid = request.path_params.get("memory_id")
             logger.info("DELETE /api/memories/%s", mid)
-            result = self.service.memory_delete(mid)
+            result = await self._run(lambda: self.service.memory_delete(mid), write=True)
             if not result["success"]:
                 return Response(json.dumps({"detail": "Not found"}), status_code=404, media_type="application/json")
             return Response(json.dumps(result), media_type="application/json")
+        except MaintenanceRejected:
+            raise
         except Exception as e:
             logger.error("DELETE /api/memories/%s failed: %s", request.path_params.get("memory_id", ""), e, exc_info=True)
             return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
@@ -486,7 +536,7 @@ class AdminAPI:
         try:
             ns = request.query_params.get("namespace")
             logger.info("DELETE /api/memories namespace=%s", ns)
-            result = self.service.memory_clear(namespace=ns)
+            result = await self._run(lambda: self.service.memory_clear(namespace=ns))
             return Response(json.dumps(result), media_type="application/json")
         except Exception as e:
             logger.error("DELETE /api/memories (clear) failed: %s", e, exc_info=True)
@@ -522,9 +572,17 @@ class AdminAPI:
             original_name = getattr(upload, "filename", None) or "upload.jsonl"
             logger.info("POST /api/import file=%s bytes=%d prefix=%s",
                         os.path.basename(original_name), total, prefix)
-            result = self.service.memory_import_start(temp_path, original_name, prefix)
+            def start_import():
+                result = self.service.memory_import_start(temp_path, original_name, prefix)
+                request.scope["_started_import_id"] = result["import_id"]
+                return result
+            result = await self._run(start_import)
             temp_path = None  # background job owns cleanup
             return Response(json.dumps(result), status_code=202, media_type="application/json")
+        except asyncio.CancelledError:
+            if not request.scope.get("_started_import_id"):
+                unlink_quietly(temp_path)
+            raise
         except RuntimeError as e:
             unlink_quietly(temp_path)
             self.audit.record(
@@ -568,80 +626,91 @@ class AdminAPI:
                             media_type="application/json")
         return Response(json.dumps(result, ensure_ascii=False), media_type="application/json")
 
+    async def _run_export(self, path, operation, arguments, context):
+        """The worker owns the completion audit; the response owns a ready file."""
+        def export():
+            started = time.perf_counter()
+            result, error = None, None
+            try:
+                result = operation(path)
+                return result
+            except BaseException as exc:
+                error = {"type": type(exc).__name__, "message": str(exc)}
+                raise
+            finally:
+                self.audit.record("memory_export", arguments, result,
+                                  (time.perf_counter() - started) * 1000,
+                                  error=error, context=context)
+        try:
+            return await self._run(export)
+        except BaseException:
+            # _run drains a running worker before propagating cancellation, so
+            # cleanup cannot race a writer that recreates the exported file.
+            unlink_quietly(path)
+            raise
+
     async def handle_export_full(self, request: Request):
-        started = time.perf_counter()
         fd, path = tempfile.mkstemp(prefix="remember-me-export-full-", suffix=".jsonl", dir=self._temp_dir())
         os.close(fd)
         try:
-            result = self.service.memory_export_full(path)
-            self.audit.record("memory_export", {"type": "full"}, result,
-                         (time.perf_counter() - started) * 1000)
+            result = await self._run_export(
+                path, self.service.memory_export_full, {"type": "full"},
+                self._audit_context(request))
             stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
             return _export_response(result, f"remember-me-full-{stamp}.jsonl")
         except RuntimeError as exc:
             unlink_quietly(path)
-            self.audit.record("memory_export", {"type": "full"}, None,
-                         (time.perf_counter() - started) * 1000,
-                         error={"type": type(exc).__name__, "message": str(exc)})
             return Response(json.dumps({"detail": str(exc)}), status_code=409,
                             media_type="application/json")
-        except Exception as exc:
+        except Exception:
             unlink_quietly(path)
             logger.error("Full Export failed", exc_info=True)
-            self.audit.record("memory_export", {"type": "full"}, None,
-                         (time.perf_counter() - started) * 1000,
-                         error={"type": type(exc).__name__, "message": str(exc)})
             return Response(json.dumps({"detail": "Internal error"}), status_code=500,
                             media_type="application/json")
 
     async def handle_export_namespace(self, request: Request):
-        started = time.perf_counter()
         path = None
         namespace = ""
+        export_started = False
+        started = time.perf_counter()
+        context = self._audit_context(request)
         try:
             body = await request.json()
             namespace = body.get("namespace", "")
             fd, path = tempfile.mkstemp(prefix="remember-me-export-ns-", suffix=".jsonl", dir=self._temp_dir())
             os.close(fd)
-            result = self.service.memory_export_namespace(namespace, path)
-            self.audit.record("memory_export", {"type": "namespace", "namespace": namespace}, result,
-                         (time.perf_counter() - started) * 1000)
+            export_started = True
+            result = await self._run_export(
+                path, lambda target: self.service.memory_export_namespace(namespace, target),
+                {"type": "namespace", "namespace": namespace}, context)
             stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-            safe_ns = safe_filename_part(namespace)
             return _export_response(
-                result, f"remember-me-namespace-{safe_ns}-{stamp}.jsonl"
-            )
-        except LookupError as exc:
-            unlink_quietly(path)
-            self.audit.record("memory_export", {"type": "namespace", "namespace": namespace}, None,
-                         (time.perf_counter() - started) * 1000,
-                         error={"type": type(exc).__name__, "message": str(exc)})
-            return Response(json.dumps({"detail": str(exc)}), status_code=404,
-                            media_type="application/json")
-        except (ValueError, TypeError) as exc:
-            unlink_quietly(path)
-            self.audit.record("memory_export", {"type": "namespace", "namespace": namespace}, None,
-                         (time.perf_counter() - started) * 1000,
-                         error={"type": type(exc).__name__, "message": str(exc)})
-            return Response(json.dumps({"detail": str(exc)}), status_code=400,
-                            media_type="application/json")
+                result, f"remember-me-namespace-{safe_filename_part(namespace)}-{stamp}.jsonl")
         except Exception as exc:
             unlink_quietly(path)
-            logger.error("Namespace Export failed", exc_info=True)
-            self.audit.record("memory_export", {"type": "namespace", "namespace": namespace}, None,
-                         (time.perf_counter() - started) * 1000,
-                         error={"type": type(exc).__name__, "message": str(exc)})
-            return Response(json.dumps({"detail": "Internal error"}), status_code=500,
+            if not export_started:
+                self.audit.record("memory_export", {"type": "namespace", "namespace": namespace},
+                                  None, (time.perf_counter() - started) * 1000,
+                                  error={"type": type(exc).__name__, "message": str(exc)}, context=context)
+            if isinstance(exc, LookupError):
+                status, detail = 404, str(exc)
+            elif isinstance(exc, (ValueError, TypeError)):
+                status, detail = 400, str(exc)
+            else:
+                logger.error("Namespace Export failed", exc_info=True)
+                status, detail = 500, "Internal error"
+            return Response(json.dumps({"detail": detail}), status_code=status,
                             media_type="application/json")
 
     async def handle_search_memories(self, request: Request):
         try:
             body = await _request_object(request, required=("query",), string_fields=("query",))
             logger.info("POST /api/memories/search query_len=%d", len(body.get("query", "")))
-            results = self.service.memory_search(body["query"], _number(body.get("k", 5), int, "k"),
-                                    _number(body.get("threshold", 0.0), float, "threshold"), body.get("namespace"),
-                                    keywords=body.get("keywords"),
-                                    categories=body.get("categories"))
+            results = await self._run(lambda: self.service.memory_search(
+                body["query"], _number(body.get("k", 5), int, "k"),
+                _number(body.get("threshold", 0.0), float, "threshold"), body.get("namespace"),
+                keywords=body.get("keywords"),
+                categories=body.get("categories")))
             return Response(
                 json.dumps(results, ensure_ascii=False, default=str),
                 media_type="application/json",
@@ -668,8 +737,8 @@ class AdminAPI:
         try:
             body = await _request_object(request, required=("query",), string_fields=("query",))
             logger.info("POST /api/memories/search/lexical query_len=%d", len(body.get("query", "")))
-            results = self.service.memory_search_lexical(
-                body["query"], _number(body.get("k", 10), int, "k"), body.get("namespace"))
+            results = await self._run(lambda: self.service.memory_search_lexical(
+                body["query"], _number(body.get("k", 10), int, "k"), body.get("namespace")))
             return Response(
                 json.dumps(results, ensure_ascii=False, default=str),
                 media_type="application/json",
@@ -698,8 +767,8 @@ class AdminAPI:
         try:
             body = await _request_object(request, required=("query",), string_fields=("query",))
             logger.info("POST /api/memories/search/anchor query_len=%d", len(body.get("query", "")))
-            results = self.service.memory_search_anchor(
-                body["query"], _number(body.get("k", 10), int, "k"), body.get("namespace"))
+            results = await self._run(lambda: self.service.memory_search_anchor(
+                body["query"], _number(body.get("k", 10), int, "k"), body.get("namespace")))
             return Response(
                 json.dumps(results, ensure_ascii=False, default=str),
                 media_type="application/json",
@@ -725,7 +794,6 @@ class AdminAPI:
                             media_type="application/json")
 
     async def handle_keywords(self, request: Request):
-        from starlette.concurrency import run_in_threadpool
         started = time.perf_counter()
         body, result, error = {}, None, None
         try:
@@ -733,7 +801,7 @@ class AdminAPI:
             allowed = {"namespace", "mode", "queries", "limit", "offset", "sort_by", "min_score"}
             if not isinstance(body, dict) or set(body) - allowed:
                 raise ValueError("expected keyword query object with supported parameters")
-            result = await run_in_threadpool(self.service.memory_list_keywords, **body)
+            result = await self._run(lambda: self.service.memory_list_keywords(**body))
             result["keyword_query_id"] = "kq_" + secrets.token_hex(8)
             return Response(json.dumps(result, ensure_ascii=False), media_type="application/json")
         except NamespaceNotFound as exc:
@@ -755,7 +823,8 @@ class AdminAPI:
     async def handle_stats(self, request: Request):
         try:
             logger.info("GET /api/stats")
-            return Response(json.dumps(self.service.memory_stats(), ensure_ascii=False), media_type="application/json")
+            stats = await self._run(lambda: self.service.memory_stats())
+            return Response(json.dumps(stats, ensure_ascii=False), media_type="application/json")
         except Exception as e:
             logger.error("GET /api/stats failed: %s", e, exc_info=True)
             return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
@@ -763,7 +832,7 @@ class AdminAPI:
     async def handle_sync(self, request: Request):
         try:
             logger.info("POST /api/sync")
-            result = self.service.memory_sync()
+            result = await self._run(lambda: self.service.memory_sync())
             return Response(json.dumps(result, ensure_ascii=False), media_type="application/json")
         except Exception as e:
             logger.error("POST /api/sync failed: %s", e, exc_info=True)
@@ -779,7 +848,7 @@ class AdminAPI:
                     result.update(primary_path=os.path.relpath(s.STORAGE_PATH, s.DATA_DIR) if relative else s.STORAGE_PATH,
                                   secondary_path=os.path.relpath(s.REPLICA_PATH, s.DATA_DIR) if relative else s.REPLICA_PATH)
             else:
-                result = self.service.memory_storage_paths()
+                result = await self._run(lambda: self.service.memory_storage_paths())
             return Response(json.dumps(result, ensure_ascii=False), media_type="application/json")
         except Exception as e:
             logger.error("GET /api/storage-paths failed: %s", e, exc_info=True)
@@ -811,7 +880,7 @@ class AdminAPI:
             source = body["source"]
             target = body["target"]
             logger.info("POST /api/namespaces/migrate source=%s target=%s", source, target)
-            result = self.service.memory_migrate_namespace(source, target)
+            result = await self._run(lambda: self.service.memory_migrate_namespace(source, target))
             return Response(json.dumps(result, ensure_ascii=False), media_type="application/json")
         except ValueError as e:
             logger.warning("POST /api/namespaces/migrate rejected: %s", e)
@@ -832,7 +901,8 @@ class AdminAPI:
             tool = request.query_params.get("tool") or None
             namespace = request.query_params.get("namespace") or None
             logger.info("GET /api/audit limit=%d tool=%s namespace=%s", limit, tool, namespace)
-            events = self.audit.read_events(limit=limit, tool=tool, namespace=namespace)
+            events = await self._run(lambda: self.audit.read_events(
+                limit=limit, tool=tool, namespace=namespace))
             return Response(json.dumps(events, ensure_ascii=False), media_type="application/json")
         except Exception as e:
             logger.error("GET /api/audit failed: %s", e, exc_info=True)
@@ -889,6 +959,13 @@ class AdminAPI:
                   "/api/maintenance",
                   "/api/maintenance/enter", "/api/maintenance/exit",
                   "/api/recover", "/api/recover/{recover_id}"}
+        # Mutating memory routes defer admission into the worker so a call queued
+        # behind slow inference is re-checked after maintenance entered.
+        deferred_writes = {
+            ("/api/memories", "POST"),
+            ("/api/memories/{memory_id}", "PUT"),
+            ("/api/memories/{memory_id}", "DELETE"),
+        }
         guarded = []
         for route in routes:
             method = next(iter(route.methods))
@@ -897,12 +974,10 @@ class AdminAPI:
                 endpoint = self._guard(route.endpoint, action=action)
             elif route.path in exempt:
                 endpoint = route.endpoint
+            elif (route.path, method) in deferred_writes:
+                endpoint = self._guard(route.endpoint, defer=True)
             else:
-                endpoint = self._guard(
-                    route.endpoint, write=method in ("POST", "PUT", "PATCH", "DELETE")
-                    and route.path == "/api/memories"
-                    or method == "PUT" and route.path == "/api/memories/{memory_id}"
-                    or method == "DELETE" and route.path == "/api/memories/{memory_id}")
+                endpoint = self._guard(route.endpoint)
             guarded.append(Route(route.path, endpoint=endpoint, methods=list(route.methods)))
         return guarded
 

@@ -58,6 +58,19 @@ def test_online_recover_replaces_primary_and_replica(tmp_path):
         assert [item['id'] for item in replica] == [first]
 
 
+def test_maintenance_write_is_rejected_before_body_validation(tmp_path):
+    """Deferred writes keep the pre-parse rejection contract in maintenance."""
+    rt = runtime(tmp_path)
+    with TestClient(create_http_app(rt)) as client:
+        assert client.post('/api/maintenance/enter').status_code == 200
+        response = client.post('/api/memories', json={})
+        assert response.status_code == 503
+        assert response.json()['response_code'] == 'maintenance_mode'
+        assert client.post('/api/maintenance/exit').status_code == 200
+        # Outside maintenance the same malformed body is a normal 400.
+        assert client.post('/api/memories', json={}).status_code == 400
+
+
 def test_mcp_write_is_rejected_but_search_remains_available(tmp_path):
     rt = runtime(tmp_path).start()
     try:

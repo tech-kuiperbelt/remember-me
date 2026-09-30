@@ -40,14 +40,7 @@ class MaintenanceGate:
     @contextmanager
     def access(self, *, write=False):
         with self._condition:
-            if self.required_reason:
-                raise MaintenanceRejected("model_not_ready", "Model is not ready. Configure proxy and retry at /admin/console")
-            if self.state == "switching":
-                raise MaintenanceRejected("maintenance_switching", "database is switching; retry shortly")
-            if self.state == "unavailable":
-                raise MaintenanceRejected("maintenance_unavailable", "database recovery needs operator attention")
-            if write and self.state != "normal":
-                raise MaintenanceRejected("maintenance_mode", "memory writes are paused for maintenance; retry later")
+            self._check(write)
             if write:
                 self.writers += 1
             else:
@@ -61,6 +54,25 @@ class MaintenanceGate:
                 else:
                     self.readers -= 1
                 self._condition.notify_all()
+
+    def check(self, *, write=False):
+        """Validate admission without holding a reader/writer slot.
+
+        Callers use this to reject a request early (before parsing) while the
+        actual work still re-checks admission when it runs on a worker.
+        """
+        with self._condition:
+            self._check(write)
+
+    def _check(self, write):
+        if self.required_reason:
+            raise MaintenanceRejected("model_not_ready", "Model is not ready. Configure proxy and retry at /admin/console")
+        if self.state == "switching":
+            raise MaintenanceRejected("maintenance_switching", "database is switching; retry shortly")
+        if self.state == "unavailable":
+            raise MaintenanceRejected("maintenance_unavailable", "database recovery needs operator attention")
+        if write and self.state != "normal":
+            raise MaintenanceRejected("maintenance_mode", "memory writes are paused for maintenance; retry later")
 
     def enter(self, on_ready=None):
         with self._condition:

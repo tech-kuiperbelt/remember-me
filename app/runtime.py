@@ -6,10 +6,12 @@ import threading
 from pathlib import Path
 
 from . import audit, log_config
+from .calls import AsyncCallAdapter
 from .embed import create_embedder, ModelCacheMissing
 from .configuration import Configuration, activate_environment
 from .settings import Settings
 from .model_preparation import ModelProgress, PreparationCancelled, download_progress
+from .provider_adapter import wrap_provider
 from .service import MemoryService
 from .storage import create_storage
 from .storage_dual import DualStorage
@@ -34,6 +36,7 @@ class Runtime:
         self.restart_requested = False
         self.shutdown_callback = None
         self.maintenance = MaintenanceGate()
+        self.calls = AsyncCallAdapter()
         self.recover_jobs = {}
         self.model_progress = ModelProgress()
         self._model_worker = None
@@ -47,6 +50,7 @@ class Runtime:
             if self.state != "created":
                 raise RuntimeError(f"cannot start runtime in state {self.state}")
             self.state = "starting"
+            self.calls.enable()
             try:
                 if self.configure_logging:
                     self._handlers = log_config.configure(self.log_dir or self.settings.LOG_DIR)
@@ -55,7 +59,7 @@ class Runtime:
                     options = {"environment": self.settings.environment}
                     if background_model and self.provider_factory is create_embedder:
                         options["cache_only"] = True
-                    self.provider = self.provider_factory(**options)
+                    self.provider = wrap_provider(self.provider_factory(**options))
                 except ModelCacheMissing:
                     if not background_model:
                         raise
@@ -159,7 +163,8 @@ class Runtime:
                     self.model_progress.set("downloading")
                 provider_name = self.settings.environment.get("EMBED_PROVIDER", "ollama").replace("-", "_")
                 with download_progress(provider_name, self.model_progress, self._model_cancel):
-                    self.provider = self.provider_factory(environment=self.settings.environment, allow_download=True)
+                    self.provider = wrap_provider(
+                        self.provider_factory(environment=self.settings.environment, allow_download=True))
                 with self._lock:
                     if self.state != "running" or self._model_cancel.is_set():
                         raise PreparationCancelled()
@@ -307,16 +312,22 @@ class Runtime:
                 return
             self.restart_requested = restart
             self.state = "closing"
+            self.calls.stop_accepting()
             if self.shutdown_callback is not None:
                 self.shutdown_callback()
 
     def close(self):
         with self._lock:
             self.state = "closing" if self.state != "closed" else "closed"
+            self.calls.stop_accepting()
             self._model_cancel.set()
             worker = self._model_worker
         if worker is not None and worker is not threading.current_thread():
             worker.join()
+        # Reject new work, cancel tasks that never started and wait for running
+        # calls to finish (and release their admission) before storage/provider
+        # are released. This runs in the closing thread, never the event loop.
+        self.calls.close()
         self.maintenance.wait_idle()
         with self._lock:
             if self.state == "closed":

@@ -1,0 +1,97 @@
+# [48] 后端重构 Coding Plan
+
+日期：2026-09-30。状态：阶段 1 已实现，阶段 2–5 待实现。基线：`d16be35`，602 项 pytest 通过。
+
+## 实施进度
+
+- 阶段 1（隔离阻塞业务，明确取消与停服）：已完成。新增 `app/calls.py`（Runtime 拥有的 `AsyncCallAdapter`：4 业务 worker + 1 控制 worker、延迟创建、worker 内准入、`asyncio.shield` 取消语义、关闭时取消排队并等待运行中任务）与 `app/provider_adapter.py`（`SerializedProvider` 单把可重入锁串行 query/document/batch/warmup/close）。MCP 工具/resource 与 Admin 阻塞业务全部经适配器执行，配置读写走控制池；Admin 变更类记忆路由把准入推迟到 worker，排队写入会在维护进入后被重新拒绝。`Runtime.close()` 先关闭适配器再释放存储/provider/audit。实测：全量 pytest 610 通过（新增 `tests/test_calls.py` 7 项与 1 项维护写入契约，共 8 项新增），浏览器回归通过。未改变工具/schema/hint、HTTP 状态与字段、配置/目录、embedding profile、SQLite/JSONL 格式，无数据迁移。
+- 阶段 2：待实现（导入/恢复协调收回 Service/Runtime，删除 Admin 私有成员访问与轮询）。
+- 阶段 3：待实现（补齐 `MemoryStorage`/`ReplicaStorage` 契约，移除 Ollama 名称分支）。
+- 阶段 4：待实现（静态 ToolSpec 表、路由策略声明、响应公共逻辑）。
+- 阶段 5：待实现（离线 CLI 去重、完整健康核验只读 ID 查询）。
+
+
+## 目标与约束
+
+消除同步业务对事件循环的阻塞，收回管理层泄漏的任务协调职责，明确存储与 provider 接口，减少扩展工具和检索时的重复修改。
+
+保持现有 MCP 工具名称、schema、hint、搜索回执和审计关联，HTTP 状态码与响应字段、配置和目录规则、embedding profile、SQLite/JSONL 格式及事务边界。此次无需数据迁移。接口整理过程中允许增加内部类型和公开方法，不增加产品配置项或新的外部 API。
+
+采用组合、小型声明表和明确接口。SQLite 仍是实际主库，dual 仍是副本协调层；保留已有 SQL 事务所有者。此次不按文件行数机械拆分 SQLiteStorage，不引入插件系统、通用工作流引擎或新第三方依赖。
+
+## 编码顺序
+
+### 阶段 1：隔离阻塞业务，明确取消与停服
+
+1. 增加 Runtime 拥有的异步调用适配器，统一承接 MCP、HTTP 和 MCP resource 的同步业务。业务线程池固定最多 4 个 worker；配置读写等控制操作使用独立的单 worker 执行器，避免推理占满业务池时无法配置。纯内存状态和静态路由直接响应。执行器延迟创建，仅启动后可提交，关闭时释放。
+2. 网络请求和上传读取仍在异步层；embedding、SQLite、JSONL 扫描/写入、审计文件读取、配置文件读写等阻塞段进入执行器。先梳理所有入口，避免仅迁移搜索而遗漏 Stats、导出、Sync、resource 和配置保存。
+3. 提交前捕获 request/session/transport 上下文，在线程内通过 `contextvars.copy_context()` 传播。SDK 的 request context 在异步入口读取后作为值传递，worker 不依赖 SDK 的异步上下文访问。
+4. 准入保护与实际业务执行在同一 worker 生命周期内：执行前重新检查 closing/model/maintenance 状态，通过检查才执行；业务、结果登记及审计完成后释放保护。排队中的任务不能凭旧状态绕过新进入的维护模式。
+5. 跟踪每个已提交任务。调用方取消时，尚未开始的任务可取消；已经执行的任务继续到完成，不强行终止线程，也不提前释放维护计数。完成路径负责审计、清理和异常消费，不依赖客户端仍然连接。异步等待通过 shield 保持底层任务所有权。
+6. 停服顺序明确为：拒绝新提交，取消尚未开始的任务，异步等待运行中的调用结束，等待已有 import/recover/model 任务，关闭存储/provider/audit，最后关闭执行器。事件循环内不调用阻塞的 join/shutdown；重启仅在上述清理完成后 exec。
+7. 增加共享 provider 同步适配器，使用同一把可重入锁串行执行 query/document/batch/warmup/close。在线请求、导入和恢复共用它；保留 provider 内部已有批处理。取得存储事务锁前完成推理，避免锁顺序反转。
+
+验收：慢推理期间控制端点和事件循环可响应；并发数量有界；排队写入遇到维护或 closing 被拒绝；取消中的写入、审计和停服清理均不丢失。
+
+### 阶段 2：收回任务和恢复协调职责
+
+1. 将导入任务状态、worker、完成事件及文件清理封装为 service 内部的导入协调对象。MemoryService 继续提供现有 start/status 门面，新增公开 `wait_import(import_id)`，返回最终状态且保证清理结束。
+2. 完成事件在 worker 的最外层 finally 中设置，覆盖成功、失败、文件清理和 active job 状态更新；启动线程失败也必须完成状态收尾。`close()` 等待全部 worker。
+3. Runtime 提供维护导入入口与状态查询，拥有维护动作的预约和完成：后台任务结束后由 Runtime 收尾。Admin 删除 100ms 轮询、额外的维护等待线程及对 `service._workers` 的访问。
+4. Runtime 提供公开的维护 Sync 操作，集中完成 force_sync、恢复标记核验/删除和 sticky error 清除。Admin 不再访问 `_verify_recovered_replica()` 或自行操作恢复标记。
+5. 保留恢复的阶段、写锁与 switching 行为；恢复状态读写增加锁并返回快照，避免 worker 更新和 HTTP 查询共享可变字典。
+6. 统一模型准备失败和正常退出的业务资源释放路径：即使某项 close 抛错，也继续释放后续资源，保留原始错误。模型准备仍独立拥有取消和重试流程。
+
+验收：导入完成前维护动作始终占用；清理或启动失败不会永久卡住维护；恢复错误仅在验证成功后清除；Admin 不访问 Service/Runtime 私有成员。
+
+### 阶段 3：补齐存储契约与 provider 边界
+
+1. 盘点 MemoryService、IndexValueResolver、Runtime 实际调用，补齐 MemoryStorage 的业务查询/索引向量接口及 stop 生命周期方法。SQLiteStorage、DualStorage 与测试替身显式实现，删除必需能力缺失时静默跳过的分支。
+2. outbox、连接替换、embedding profile 维护属于 SQLite 主库能力，明确由 SQLite 类型或专门的窄接口承载；不把这些方法塞进 JSONL ReplicaStorage。
+3. 补齐 ReplicaStorage 被协调层实际依赖的锁生命周期方法。允许 Runtime 在装配位置识别 SQLite/dual，但 Service 的普通检索、导入准备不拆开 dual.primary。Full Export 与 Sync 的特殊能力通过明确接口/适配器表达，不依赖任意 `hasattr`。
+4. Service 统一调用 provider 的 embed_query/embed_document/embed_documents，删除 Ollama 名称分支；异常转换放在共享 provider 适配器。测试改为注入假 provider，保留现有公开方法门面。
+5. 保持 query/document 前缀、批处理、维度校验、token 上限与 profile ID 不变。
+
+验收：SQLite/dual 运行相同的业务契约测试；不完整测试替身在构造或契约测试时失败；各 provider 的 query/document/batch 路径和错误保持一致。
+
+### 阶段 4：声明工具与路由策略，合并响应公共逻辑
+
+1. MCP 使用静态 ToolSpec 表关联工具定义、handler、读写属性和 hint 生成器。list_tools 与 dispatch 从同一表生成；公共外层统一准入、计时、异常处理、搜索回执和审计。各工具参数适配仍是普通函数。
+2. 工具 schema/描述与传输生命周期代码分离。动态 hint 保持原有语义；audit 参数裁剪继续由 audit 模块承担，并增加工具集合与裁剪策略完整性测试；每个工具必须显式声明专用裁剪或允许的默认策略。
+3. Admin 路由声明直接携带 read/write/maintenance-action/control 策略。删除分离的 actions/exempt 集合和路径布尔推断；GET/HEAD、多方法配置路由的策略必须明确，不能依赖 set 的迭代顺序。
+4. 提取 HTTP JSON 响应与领域异常映射，保留各端点既有状态码和 `code`/`response_code` 字段差异，避免借重构改变客户端契约。意外异常只在边界记录一次 traceback。
+5. lexical/anchor 共用请求解析、namespace 校验与结果 envelope 的机械流程，传入明确的业务函数；内容检索与 anchors 检索的评分含义、hint、审计名称和查询实现保持独立。
+
+验收：11 个工具全部具备 handler/hint/audit 策略；HTTP 每个路由策略有覆盖；原有搜索回执、反馈校验、namespace 错误、维护拒绝和传输上下文测试通过。
+
+### 阶段 5：离线 CLI 去重及 Stats 读取优化
+
+1. 从 keyword/category 回填提取共用存储装配、opencode 子进程执行、ANSI/JSON 输出处理和资源关闭辅助函数。保留现有函数门面、不同提示词、候选集合更新、数量限制与逐条容错行为；用原有输出样本验证提取结果。
+2. 删除重复的硬编码默认数据目录，离线入口使用统一配置快照。只读与 dry-run 不取得写锁、不创建配置、不启动副本线程；写入仍受现有主库锁保护。
+3. SQLite 新增只读取 live memory ID 的接口供完整健康检查使用，替换为比较 ID 而导出完整文本/metadata 的逻辑。副本读取仍执行当前的损坏行与 ID 检查。
+4. Stats 保持每次实时完整核验，保留 `in_sync`、pending、缺失/多余/损坏行及 checked_at 语义；本次不引入缓存或新增快速统计 API。
+
+验收：完整健康检查能发现 pending=0 时的副本漂移和损坏；ID 查询不加载正文或向量；迁移 CLI 读写锁和 dry-run 行为保持一致。
+
+## 测试与合入门槛
+
+- 并发测试用 Event/Barrier 控制慢 provider，不依赖短 sleep 和严格耗时阈值：推理阻塞时另一个控制请求必须在释放推理之前完成；同时验证 provider 最大并发为 1。
+- 覆盖取消发生在排队、执行中、写入完成与返回之间；维护进入、恢复 switching、关闭与这些时刻交错。验证一次写入至多提交一次、一次调用只产生一个完成审计，资源关闭前无活跃写者。
+- 保留并运行真实 stdio/SSE/Streamable HTTP 子进程退出与重启测试、维护/恢复故障注入、SQLite outbox 与 JSONL 一致性测试。
+- 每阶段先运行受影响测试；全部阶段完成后跑全量 pytest 和浏览器回归。禁止只凭新接口的 mock 测试替代原有行为验收。
+- 审查依赖方向：Admin 只依赖公开操作，Service 不识别具体 embedding provider，必需存储能力有声明，索引/主记录/outbox 仍在原子事务中更新。
+- 阶段依序实施，每阶段形成可独立 review 的代码差异；提交由用户授权。更新设计文档与 AGENTS，记录实测测试数量和差异。
+
+## 上线与完成标准
+
+完成编码、测试与 review 后安排维护窗口，保存只读统计和 active profile 基线，再优雅重启加载新代码；验证配置页、三类传输、检索、维护进入退出及 SQLite/JSONL 健康。生产不做破坏性恢复演练。
+
+本次重构无 schema 或数据迁移；失败时停止新进程并恢复基线代码启动，避免并行写者。计划完成需代码及验收全部通过，部署状态单独记录；本次编写计划不执行部署。
+
+## 阶段 1 Review 修复记录（2026-09-30）
+
+- HTTP 取消时取消尚未开始的调用；已经开始的 worker 必须完成后才传播取消，包括重复取消，确保外层 reader/action 保护不会提前释放。MCP 保持 worker 内部准入与完成审计。
+- 导出完成审计由 worker 执行；HTTP 取消等待其收尾后清理临时文件，覆盖成功、失败和排队取消。导入启动期间取消时，已启动的后台任务接管维护 action 与上传文件。
+- `stop_accepting()` 与等待关闭分离；Runtime 进入 closing 时立即停止提交并取消业务/控制两条队列，worker 开始执行时再次检查状态。
+- 新增真实 Admin handler 的取消回归；修正原排队取消测试先释放线程再等待取消的竞争。全量 620 项 pytest 与浏览器回归通过。
+- 本次修复未提交、未重启生产服务；阶段 2–5 仍待实施。
