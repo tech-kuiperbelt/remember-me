@@ -163,7 +163,7 @@ class DualStorage(MemoryStorage):
     def _inspect_replica_locked(self) -> tuple[dict, dict]:
         """Return one exact primary/replica comparison while both locks are held."""
         pending = self.primary.count_unsynced()
-        primary_ids = {item["id"] for item in self.primary.export_records()}
+        primary_ids = set(self.primary.live_memory_ids())
         secondary_stats = self.secondary.get_stats()
         inspected_ids = secondary_stats.pop("_integrity_ids", None)
         secondary_ids = (set(inspected_ids) if inspected_ids is not None else
@@ -476,6 +476,9 @@ class DualStorage(MemoryStorage):
 
     def list_namespaces(self, *args, **kwargs):
         return self.primary.list_namespaces(*args, **kwargs)
+
+    def live_memory_ids(self):
+        return self.primary.live_memory_ids()
 
     def get(self, *args, **kwargs):
         return self.primary.get(*args, **kwargs)

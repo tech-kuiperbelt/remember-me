@@ -2,6 +2,8 @@
 
 本文件归档已完成的项目待办。详细实现记录保留在 git 提交和项目变更日志中。
 
+- [48] 后端重构（2026-09-30 阶段 1–5 实现，阶段 5 随本次提交归档）：消除同步业务对事件循环的阻塞（`AsyncCallAdapter` + `SerializedProvider`）、交回导入/恢复协调（`ImportCoordinator` + Runtime 维护入口）、补齐存储/provider 契约（`MemoryStorage`/`SQLitePrimaryStorage`/`ReplicaStorage` + `StorageCapabilityError`）、声明工具与路由策略（`app/tools.py` `ToolSpec` 表、audit 裁剪注册表、`AdminAPI.ROUTE_TABLE`）、离线 CLI 去重与健康检查 ID 轻读（`app/deepseek_cli.py`、`MemoryStorage.live_memory_ids`）。阶段 1–4 提交 `e1eb7a8`/`4f06b6a`/`b0ca23f`/`a5c0769`，阶段 5 随本次提交；683 项 pytest 与浏览器回归通过，无 schema/数据迁移。详见 [`plans/48-backend-refactoring.md`](plans/48-backend-refactoring.md)。
+
 - [47] 完整配置表单与维护操作分区（2026-09-30 实现，随本次提交归档、生产未重启）：配置页上方可编辑所有 JSONC 配置，保存无需维护且不暂停业务；下方集中维护动作。新增 `/api/config`，端口/语言重启生效，保持注释及凭据脱敏。573 项 pytest 和浏览器回归通过。详见 [`plans/47-config-page-and-maintenance-actions.md`](plans/47-config-page-and-maintenance-actions.md)。
 
 - [46] JSONC 配置及注释保留（2026-09-30 实现，随本次提交归档、生产未重启）：配置固定为 `config.jsonc`，支持注释及尾随逗号，UI 保存保留注释；兼容旧 JSON 文件转换、数据迁移及旧迁移日志恢复，已转换当前 data 配置且值不变。573 项 pytest 通过。详见 [`plans/46-jsonc-configuration.md`](plans/46-jsonc-configuration.md)。

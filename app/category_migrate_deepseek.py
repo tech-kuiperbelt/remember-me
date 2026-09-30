@@ -26,13 +26,12 @@ Design (shared with the keyword migration):
 import argparse
 import json
 import logging
-import os
-import re
 import subprocess
 import sys
 import time
 from datetime import datetime, timezone
 
+from . import deepseek_cli
 from .storage import create_storage, resolve_replica_path
 from .index_value_resolver import resolver_for_configured_profile
 from .categories import CATEGORY_VOCABULARY, normalize_categories
@@ -40,8 +39,8 @@ from .categories import CATEGORY_VOCABULARY, normalize_categories
 logger = logging.getLogger("category_migrate_deepseek")
 
 # Default model id as configured in ~/.config/opencode/opencode.jsonc
-DEFAULT_MODEL = "opencode-go/deepseek-v4-flash"
-DEFAULT_CLI = "opencode"
+DEFAULT_MODEL = deepseek_cli.DEFAULT_MODEL
+DEFAULT_CLI = deepseek_cli.DEFAULT_CLI
 
 _MAX_CATEGORIES = 3  # matches categories.MAX_CATEGORIES (kept local for prompts)
 
@@ -63,47 +62,18 @@ CATEGORY_PROMPT_TEMPLATE = (
     "Text:\n{text}"
 ) % (_MAX_CATEGORIES, _MAX_CATEGORIES)
 
-_CANDIDATES_BLOCK_HEADER = "---- candidate categories ----"
-_CANDIDATES_BLOCK_FOOTER = "---- end candidates ----"
-
-# opencode prints a small banner to stderr and the answer to stdout; some
-# output may carry ANSI codes.
-_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
-
-
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
 def format_candidates_block(categories: list[str] | None) -> str:
-    """Render the candidate category list as a delimited block.
-
-    The delimiters make it unambiguous where the candidate list ends and the
-    real text begins.
-    """
-    if not categories:
-        return "(empty candidate list)"
-    body = "\n".join(f"- {c}" for c in categories)
-    return f"{_CANDIDATES_BLOCK_HEADER}\n{body}\n{_CANDIDATES_BLOCK_FOOTER}"
+    """Render the candidate category list as a delimited block."""
+    return deepseek_cli.format_candidates_block(categories, label="categories")
 
 
 def _extract_json_array(output: str) -> list[str] | None:
-    """Parse the first JSON array found in ``output``.
-
-    Tolerates extra text / ANSI codes / markdown fences. Returns None when
-    nothing parseable appears.
-    """
-    text = _ANSI_RE.sub("", output)
-    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip())
-    for match in re.finditer(r"\[.*?\]", text, re.DOTALL):
-        candidate = match.group(0)
-        try:
-            parsed = json.loads(candidate)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(parsed, list):
-            return [str(x) for x in parsed if not isinstance(x, (dict, list))]
-    return None
+    """Parse the first JSON array found in ``output`` (string items only)."""
+    return deepseek_cli.extract_json_array(output, strings_only=True)
 
 
 def extract_categories_deepseek(text: str, candidates: list[str] | None = None,
@@ -121,19 +91,12 @@ def extract_categories_deepseek(text: str, candidates: list[str] | None = None,
         candidates=format_candidates_block(candidates or []),
         text=text,
     )
-    proc = subprocess.run(
-        [cli, "run", "--model", model, "Categorize the memory. Output ONLY the JSON array."],
-        input=prompt,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(f"opencode exited {proc.returncode}: "
-                           f"{proc.stderr.strip()[:200]}")
-    parsed = _extract_json_array(proc.stdout)
+    stdout = deepseek_cli.run_opencode(
+        prompt, instruction="Categorize the memory. Output ONLY the JSON array.",
+        model=model, cli=cli, timeout=timeout)
+    parsed = _extract_json_array(stdout)
     if not parsed:
-        raise ValueError(f"no categories in output: {proc.stdout.strip()[:200]}")
+        raise ValueError(f"no categories in output: {stdout.strip()[:200]}")
     return normalize_categories(parsed)
 
 
@@ -171,32 +134,10 @@ class CategoryCandidates:
 
 
 def build_storage(db_path: str | None = None, read_only: bool = False):
-    """Reuse the same env-based backend resolution as service.py (dual default).
-
-    ``db_path`` (CLI ``--db``) overrides the primary storage path; the backend
-    itself still comes from ``MEMORY_STORAGE``.
-    """
-    # A dry run is a diagnostic read and must not claim either writer lock.
-    # It also deliberately bypasses dual mode: no replica worker is needed to
-    # inspect the primary database.
-    if read_only:
-        path = db_path or os.environ.get("MEMORY_STORAGE_PATH") or "data/memories.db"
-        return create_storage("sqlite", path=path, read_only=True)
-
-    backend = os.environ.get("MEMORY_STORAGE", "sqlite")
-    if backend == "dual":
-        primary = db_path or os.environ.get("MEMORY_STORAGE_PATH", "data/memories.db")
-        secondary = resolve_replica_path(
-            primary, os.environ.get("MEMORY_REPLICA_PATH"),
-            os.environ.get("MEMORY_STORAGE_PATH_DUAL")
-        )
-        return create_storage("dual", primary_path=primary,
-                              secondary_path=secondary,
-                              sync_interval=int(os.environ.get("MEMORY_SYNC_INTERVAL", "300")))
-    if backend != "sqlite":
-        raise RuntimeError("category migration supports only MEMORY_STORAGE=sqlite or dual")
-    path = db_path or os.environ.get("MEMORY_STORAGE_PATH") or "data/memories.db"
-    return create_storage("sqlite", path=path)
+    """Resolve the offline backend for the category backfill."""
+    return deepseek_cli.build_cli_storage(
+        db_path, read_only, role="category",
+        create_storage=create_storage, resolve_replica_path=resolve_replica_path)
 
 
 def main(argv=None) -> int:
@@ -216,7 +157,7 @@ def main(argv=None) -> int:
     parser.add_argument("--dry-run", action="store_true",
                         help="Count what would be processed without calling the model")
     parser.add_argument("--db", default=None,
-                        help="Storage file path override (default: from env or data/memories.db)")
+                        help="Storage file path override (default: MEMORY_STORAGE_PATH or the configured data directory)")
     args = parser.parse_args(argv)
     from .configuration import output_path
     if args.db:
@@ -228,9 +169,7 @@ def main(argv=None) -> int:
     storage = build_storage(args.db, read_only=args.dry_run)
 
     def close_storage():
-        stop = getattr(storage, "stop", None)
-        if callable(stop):
-            stop()
+        deepseek_cli.stop_storage(storage)
     logger.info("category migration (deepseek, serial): namespace=%s mode=%s limit=%s model=%s db=%s",
                 args.namespace, args.mode, args.limit, args.model, args.db)
 

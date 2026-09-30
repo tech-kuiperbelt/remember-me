@@ -43,6 +43,25 @@ def default_data_dir(environment=None, *, system=None, home=None):
     return home / f".{DEFAULT_DIR_NAME}"
 
 
+def resolve_data_dir(data_dir=None, *, environment=None):
+    """Resolve the active data root with no side effects.
+
+    An explicit ``data_dir``/``MEMORY_DATA_DIR`` wins (relative values are
+    resolved against PROJECT_ROOT); otherwise the per-user OS default is used.
+    Reads no config file and creates nothing, so offline/read-only entry points
+    can share it safely.
+    """
+    env = os.environ if environment is None else environment
+    selected = data_dir or env.get("MEMORY_DATA_DIR")
+    if selected:
+        root = Path(selected).expanduser()
+        if not root.is_absolute():
+            root = PROJECT_ROOT / root
+    else:
+        root = default_data_dir(env)
+    return root.resolve()
+
+
 def atomic_text(path, text, *, exclusive=False):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -126,14 +145,7 @@ class Configuration:
     @classmethod
     def load(cls, data_dir=None, *, create=False, environment=None):
         env = os.environ if environment is None else environment
-        selected = data_dir or env.get("MEMORY_DATA_DIR")
-        if selected:
-            root = Path(selected).expanduser()
-            if not root.is_absolute():
-                root = PROJECT_ROOT / root
-        else:
-            root = default_data_dir(env)
-        root = root.resolve()
+        root = resolve_data_dir(data_dir, environment=env)
         location = rooted_path(root, "config.jsonc")
         legacy = rooted_path(root, "config.json") if not location.exists() else None
         if (root / ".config-migration.json").exists():

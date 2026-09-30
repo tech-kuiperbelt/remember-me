@@ -41,17 +41,17 @@ import time
 import unicodedata
 from datetime import datetime, timezone
 
+from . import deepseek_cli
 from .anchors import MAX_ANCHORS, clean_anchors, normalize_anchors
 from .storage import create_storage, resolve_replica_path
 
 logger = logging.getLogger("anchor_migrate_deepseek")
 
 # Default model id as configured in ~/.config/opencode/opencode.jsonc
-DEFAULT_MODEL = "opencode-go/deepseek-v4-flash"
-DEFAULT_CLI = "opencode"
+DEFAULT_MODEL = deepseek_cli.DEFAULT_MODEL
+DEFAULT_CLI = deepseek_cli.DEFAULT_CLI
 SCHEMA_VERSION = "anchor-manifest/2"
 CONTENT_HASH_ALGO = "sha256/text-utf8"
-DEFAULT_MANIFEST_DIR = "data/anchor-backfill"
 PREVIEW_CHARS = 500
 
 MANIFEST_TYPES = ("header", "row", "trailer")
@@ -96,9 +96,6 @@ BATCH_ANCHOR_PROMPT_TEMPLATE = (
     "Memories:\n<<<MEMORIES>>>"
 ) % MAX_ANCHORS
 
-# opencode prints a small banner to stderr and the final answer to stdout; some
-# output may carry ANSI codes.
-_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 _WHITESPACE = re.compile(r"\s+")
 
 
@@ -138,22 +135,7 @@ def _ids_digest(memory_ids) -> str:
 
 def _extract_json_array(output: str):
     """Parse the first JSON array found in ``output``; None when none parses."""
-    text = _ANSI_RE.sub("", output)
-    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip())
-    try:
-        parsed = json.loads(text)
-        if isinstance(parsed, list):
-            return parsed
-    except json.JSONDecodeError:
-        pass
-    for match in re.finditer(r"\[.*\]", text, re.DOTALL):
-        try:
-            parsed = json.loads(match.group(0))
-        except json.JSONDecodeError:
-            continue
-        if isinstance(parsed, list):
-            return parsed
-    return None
+    return deepseek_cli.extract_json_array(output)
 
 
 def extract_anchors_batch_deepseek(memories, model: str = DEFAULT_MODEL,
@@ -171,20 +153,12 @@ def extract_anchors_batch_deepseek(memories, model: str = DEFAULT_MODEL,
         blocks.append(f"--- id={memory_id} ---")
         blocks.append((text or "")[:MEMORY_TEXT_CAP])
     prompt = BATCH_ANCHOR_PROMPT_TEMPLATE.replace("<<<MEMORIES>>>", "\n".join(blocks))
-    proc = subprocess.run(
-        [cli, "run", "--model", model,
-         "Extract anchors for every memory. Output ONLY the JSON array."],
-        input=prompt,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(f"opencode exited {proc.returncode}: "
-                           f"{proc.stderr.strip()[:200]}")
-    parsed = _extract_json_array(proc.stdout)
+    stdout = deepseek_cli.run_opencode(
+        prompt, instruction="Extract anchors for every memory. Output ONLY the JSON array.",
+        model=model, cli=cli, timeout=timeout)
+    parsed = _extract_json_array(stdout)
     if parsed is None:
-        raise ValueError(f"no anchor array in output: {proc.stdout.strip()[:200]}")
+        raise ValueError(f"no anchor array in output: {stdout.strip()[:200]}")
     result: dict[str, dict] = {}
     for item in parsed:
         if isinstance(item, dict) and isinstance(item.get("id"), str):
@@ -236,32 +210,16 @@ def _has_anchors(metadata) -> bool:
 
 
 def build_storage(db_path: str | None = None, read_only: bool = False):
-    """Reuse the same env-based backend resolution as the other migration CLIs."""
-    if read_only:
-        path = db_path or os.environ.get("MEMORY_STORAGE_PATH") or "data/memories.db"
-        return create_storage("sqlite", path=path, read_only=True)
-
-    backend = os.environ.get("MEMORY_STORAGE", "sqlite")
-    if backend == "dual":
-        primary = db_path or os.environ.get("MEMORY_STORAGE_PATH", "data/memories.db")
-        secondary = resolve_replica_path(
-            primary, os.environ.get("MEMORY_REPLICA_PATH"),
-            os.environ.get("MEMORY_STORAGE_PATH_DUAL")
-        )
-        return create_storage("dual", primary_path=primary,
-                              secondary_path=secondary,
-                              sync_interval=int(os.environ.get("MEMORY_SYNC_INTERVAL", "300")))
-    if backend != "sqlite":
-        raise RuntimeError("anchor migration supports only MEMORY_STORAGE=sqlite or dual")
-    path = db_path or os.environ.get("MEMORY_STORAGE_PATH") or "data/memories.db"
-    return create_storage("sqlite", path=path)
+    """Resolve the offline backend for the anchor backfill."""
+    return deepseek_cli.build_cli_storage(
+        db_path, read_only, role="anchor",
+        create_storage=create_storage, resolve_replica_path=resolve_replica_path)
 
 
 def _default_manifest_path() -> str:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     from .configuration import output_path
-    directory = "anchor-backfill" if os.environ.get("MEMORY_DATA_DIR") else DEFAULT_MANIFEST_DIR
-    return output_path(os.path.join(directory, f"draft-{stamp}.jsonl"))
+    return output_path(os.path.join("anchor-backfill", f"draft-{stamp}.jsonl"))
 
 
 def _write_manifest(path: str, entries: list[dict]) -> None:
@@ -498,9 +456,7 @@ def run_draft(args) -> int:
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 0 if complete else 2
     finally:
-        stop = getattr(storage, "stop", None)
-        if callable(stop):
-            stop()
+        deepseek_cli.stop_storage(storage)
 
 
 # ---------------------------------------------------------------------------
@@ -590,10 +546,10 @@ def _validate_manifest(path: str) -> _Manifest:
 
 
 def _write_outcome(manifest_path: str, outcome: dict) -> str:
-    out_dir = os.path.dirname(manifest_path) or DEFAULT_MANIFEST_DIR
-    if os.environ.get("MEMORY_DATA_DIR"):
+    out_dir = os.path.dirname(manifest_path) or "anchor-backfill"
+    root = os.environ.get("MEMORY_DATA_DIR")
+    if root:
         from .configuration import rooted_path
-        root = os.environ["MEMORY_DATA_DIR"]
         try:
             out_dir = str(rooted_path(root, out_dir))
         except ValueError:
@@ -735,9 +691,7 @@ def run_apply(args) -> int:
         print(json.dumps({"stage": "apply", **outcome}, ensure_ascii=False, indent=2))
         return 2 if updated_at_mismatch else 0
     finally:
-        stop = getattr(storage, "stop", None)
-        if callable(stop):
-            stop()
+        deepseek_cli.stop_storage(storage)
 
 
 def main(argv=None) -> int:
@@ -754,7 +708,8 @@ def main(argv=None) -> int:
                          help="Memories per opencode call (default 10). The CLI pays a "
                               "fixed ~30s startup per call, so batching amortizes it.")
     p_draft.add_argument("--manifest", default=None,
-                         help="Manifest path (default data/anchor-backfill/draft-<UTC>.jsonl)")
+                         help="Manifest path (default anchor-backfill/draft-<UTC>.jsonl, "
+                              "rooted under the data directory when configured)")
     p_draft.add_argument("--exclude-manifest", action="append", default=None, metavar="PATH",
                          help="Skip memory_ids already present in this manifest (repeatable). "
                               "Use prior manifests as the ledger to draft disjoint batches "
@@ -766,7 +721,7 @@ def main(argv=None) -> int:
     p_draft.add_argument("--dry-run", action="store_true",
                          help="Count eligible records only; no model calls, no manifest")
     p_draft.add_argument("--db", default=None,
-                         help="SQLite path override (default: from env or data/memories.db)")
+                         help="SQLite path override (default: MEMORY_STORAGE_PATH or the configured data directory)")
 
     p_apply = sub.add_parser("apply", help="Write one complete batch (service must be stopped)")
     p_apply.add_argument("--manifest", required=True, help="Reviewed manifest path")
@@ -775,7 +730,7 @@ def main(argv=None) -> int:
     p_apply.add_argument("--dry-run", action="store_true",
                          help="Validate and check staleness without writing (no writer lock)")
     p_apply.add_argument("--db", default=None,
-                         help="SQLite path override (default: from env or data/memories.db)")
+                         help="SQLite path override (default: MEMORY_STORAGE_PATH or the configured data directory)")
 
     args = parser.parse_args(argv)
     from .configuration import output_path

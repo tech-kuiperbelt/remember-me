@@ -1,6 +1,7 @@
 """Offline anchor backfill v2: candidate pairing, batch manifest, single-transaction apply."""
 import argparse
 import json
+from pathlib import Path
 
 import pytest
 
@@ -49,6 +50,20 @@ def test_extract_json_array_tolerates_fences_and_prose():
     out = "noise ```json\n[{\"id\": \"X\", \"anchors\": []}]\n``` tail"
     assert am._extract_json_array(out)[0]["id"] == "X"
     assert am._extract_json_array("no array") is None
+
+
+def test_extract_json_array_keeps_multi_object_array_in_prose():
+    out = 'noise [{"id": "m1", "anchors": ["a"]}, {"id": "m2", "anchors": ["b"]}] tail'
+    assert [item["id"] for item in am._extract_json_array(out)] == ["m1", "m2"]
+
+
+def test_write_outcome_stays_under_data_root(tmp_path, monkeypatch):
+    root = tmp_path / "data"
+    root.mkdir()
+    monkeypatch.setenv("MEMORY_DATA_DIR", str(root))
+    result = am._write_outcome("outcome.jsonl", {"stage": "apply"})
+    assert Path(result).parent == root / "anchor-backfill"
+    assert Path(result).exists()
 
 
 # --------------------------------------------------------------------------

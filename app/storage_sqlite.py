@@ -1486,6 +1486,14 @@ class SQLiteStorage(SQLitePrimaryStorage):
             ).fetchall()
         return [r["namespace"] for r in rows]
 
+    def live_memory_ids(self):
+        """Ids of live records only; never loads text, metadata or vectors."""
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT id FROM memories WHERE deleted = 0"
+            ).fetchall()
+        return [r["id"] for r in rows]
+
     def get(self, memory_id):
         row = self.conn.execute(
             "SELECT * FROM memories WHERE id = ? AND deleted = 0", (memory_id,)

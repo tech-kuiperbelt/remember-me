@@ -1,6 +1,6 @@
 # [48] 后端重构 Coding Plan
 
-日期：2026-09-30。状态：阶段 1–4 已实现，阶段 5 待实现。基线：`d16be35`。
+日期：2026-09-30。状态：阶段 1–5 已实现。基线：`d16be35`。
 
 ## 实施进度
 
@@ -8,13 +8,15 @@
 - 阶段 2（收回任务与恢复协调职责）：已完成。新增 `app/import_coordinator.py`（每个导入一个完成 Event，最外层 finally 统一收尾，`wait_import` 返回终态且保证清理完成）；`Runtime.start_maintenance_import()` 拥有导入维护动作的启动与收尾（单个等待线程），`maintenance_import_status()` 供 Admin 查询；`Runtime.maintenance_sync()` 集中 force_sync、恢复标记核验/删除与 sticky error 清除；恢复 job 读写加锁并提供 `recover_status()` 快照；`Runtime._close_business()` 统一业务资源释放（任一步失败也继续释放并保留首个错误）。Admin 删除 100ms 轮询、额外维护等待线程及对 `service._workers` / `runtime._verify_recovered_replica()` 的访问。
 - 阶段 3（补齐存储契约与 provider 边界）：已完成。`MemoryStorage` 补全 `stop` 与索引/关键词/分类业务接口，并把 `force_sync`/`export_full_snapshot` 变为默认抛 `StorageCapabilityError` 的具体能力方法；新增窄接口 `SQLitePrimaryStorage`（outbox、连接替换、embedding profile 维护，方法公开化）与 `ReplicaStorage` 的 `acquire/release_writer_lock`；Service 删除 `_primary_storage`/`hasattr`/`isinstance(DualStorage)` 能力探测，导入准备与导出直接走 `self.storage`，并用 `active_embedding_profile()` 避免 dual 全量 `get_stats` 扫描；provider 门面统一委托 `embed_document/embed_query/embed_documents`，删除 Ollama 名称分支，异常转换集中到 `SerializedProvider`。新增 `tests/test_storage_contract.py`（sqlite/dual 同契约、能力异常、不完整替身构造失败、provider 委托与异常）。
 - 阶段 4（声明工具与路由策略，合并响应公共逻辑）：已完成。新增 `app/tool_definitions.py`（11 个工具 schema/描述逐字迁出）与 `app/tools.py`（`ToolSpec` 表关联 definition/handler/write/search/namespace_mode，审计策略登记在 `app/audit.py` 注册表，`list_tools` 与分发同源，共享 `execute_tool` 统一准入、计时、异常、检索回执与审计；参数适配仍是普通函数）；`server.py` 变薄只留传输生命周期。`audit.py` 裁剪改为显式 `AUDIT_EVENTS` + `PARAM_POLICIES`/`RESULT_POLICIES` 注册表，去掉隐式兜底。`admin.py` 用声明式 `ROUTE_TABLE`（static/read/write/action/control/exempt）替换 actions/exempt/deferred_writes 与 `next(iter(methods))`，共享 JSON/错误响应映射并用 `_maps_domain_errors` 统一标准 handler，import/export/recover/keywords/config 保留自有清理与审计，lexical/anchor 共用 `_terms_search`。新增 `tests/test_tool_specs.py`、`tests/test_audit_policies.py`、`tests/test_admin_routes.py` 与 golden fixtures。
-- 阶段 5：待实现（离线 CLI 去重、完整健康核验只读 ID 查询）。
+- 阶段 5（离线 CLI 去重及 Stats 读取优化）：已完成。新增 `app/deepseek_cli.py`（共用存储装配、`opencode run` 调用、ANSI/fence/JSON 数组解析、候选块渲染、资源关闭），keyword/category/anchor 三个回填 CLI 保留原有函数门面并委托到它；离线路径解析统一到配置快照（删除三处 `"data/memories.db"` 与 anchor `"data/anchor-backfill"` 硬编码，dry-run 仍只读、无写锁、无副本线程）；`MemoryStorage` 新增 `live_memory_ids()`（`SELECT id ... WHERE deleted = 0`），`DualStorage` 健康检查改用它，不再导出全部正文/metadata。新增 `tests/test_deepseek_cli.py` 及健康检查 ID 轻读/零 pending 漂移回归。
 
-实测：阶段 1 完成时 610 pytest；阶段 2 完成后 630；阶段 3 完成后 643；阶段 4 完成后 658（review 修复后 659）pytest 通过，浏览器回归均通过。无 schema/数据迁移，未改工具/schema/hint、HTTP 状态与字段、配置/目录、embedding profile 格式、SQLite/JSONL 格式。
+实测：阶段 1 完成时 610 pytest；阶段 2 完成后 630；阶段 3 完成后 643；阶段 4 完成后 658（review 修复后 659）；阶段 5 完成后 677（review 修复后 683）pytest 通过，浏览器回归均通过。无 schema/数据迁移，未改工具/schema/hint、HTTP 状态与字段、配置/目录、embedding profile 格式、SQLite/JSONL 格式。
 
 生产冒烟（2026-09-30 21:03）：在加载未提交阶段 3 代码并重启的服务（dual 模式，端口 1314）上通过。`GET /read-me` 200、`POST /mcp` tools/list 正常、`GET /api/storage-paths` 返回 dual 的 primary/secondary 路径（验证新 `storage_paths()` 契约）、`GET /api/stats` total=1140 backend=dual in_sync=true pending=0 且副本 missing/extra/corrupt=0；MCP 走通 `add → get_details → search_lexical → search_anchor → update → delete` 闭环并清理，`list_keywords`（browse/semantic）、`search_semantic`/`search_meta`、`report` 均正常。
 
 生产冒烟（2026-09-30 21:49）：重启（execv，PID 6059）加载未提交阶段 4 代码后通过。`GET /read-me` 200、`POST /mcp` tools/list 返回 11 个工具、`GET /api/storage-paths` 返回 dual 路径、`GET /api/stats` total=1141 in_sync=true pending=0；分别经 `/mcp` HTTP 端点与重连后的 MCP 客户端走通 `add → get_details → search_lexical → search_anchor → update → delete` 并清理，计数回到写入前（delta 0）。重启会令旧 MCP 客户端会话失效（-32602），客户端重连后恢复，服务端不受影响。
+
+生产冒烟（2026-09-30 23:49）：用户重启服务与 opencode 后，加载未提交阶段 5 代码通过。`GET /read-me` 200、`POST /mcp` tools/list 返回 11 个工具、`GET /api/stats` total=1143 in_sync=true pending=0 且副本 missing/extra/corrupt=0；MCP 客户端走通 `add → get_details → search_lexical → search_anchor → update → delete` 并清理（计数回原值）。离线侧：`bin/manage status` 嵌入索引 complete 2056/2056，`bin/manage migrate keywords --dry-run` 只读运行（candidates=33/skipped=1110/total=1143，未取写锁），`MEMORY_DATA_DIR` 下 `default_primary_path()` 返回 `<root>/memories.db`（阶段 5 路径修复）。
 
 
 
@@ -128,3 +130,18 @@
 - 移除无效的 `ToolSpec.audit_policy` 字段（裁剪按工具名/事件名键控）；`test_tool_specs` 改为校验 `spec.name` 同时登记在 `AUDIT_EVENTS` 与裁剪策略注册表，避免"声明了却不生效"。
 - `_maps_domain_errors` 增加 `domain=False`；`/api/namespaces/migrate` 保持原有 `{"detail": ...}` 错误形状，不套用统一领域 envelope，避免客户端契约漂移（新增回归 `test_migrate_namespace_keeps_plain_error_envelope`）。
 - 全量 659 pytest + 浏览器回归通过；未提交。
+
+## 阶段 5 实现记录（2026-09-30）
+
+- 新增 `app/deepseek_cli.py`：共用存储装配（`build_cli_storage`）、`opencode run` 调用（`run_opencode`）、ANSI/fence/JSON 数组解析（`extract_json_array`）、候选块渲染（`format_candidates_block`）与资源关闭（`stop_storage`）。keyword/category/anchor 三个 CLI 保留 `build_storage`/`format_candidates_block`/`extract_*`/`_extract_json_array` 门面并委托到它；提示词、候选集合、限量与逐条容错不变。
+- 离线路径解析统一到配置快照：删除三处 `"data/memories.db"` 与 anchor `"data/anchor-backfill"` 硬编码，兜底走 `default_data_dir()`（纯计算，不创建目录或配置）；dry-run 与只读仍用 `sqlite(read_only=True)`，不取写锁、不启动副本线程，写入仍由主库 flock 保护。
+- `MemoryStorage` 新增 `live_memory_ids()`（`SELECT id FROM memories WHERE deleted = 0`），`SQLiteStorage` 实现、`DualStorage` 委托；`_inspect_replica_locked()` 改用它，实时 Stats/健康检查不再导出全部正文与 metadata。副本侧 `inspect_jsonl` 的损坏行与 ID 校验保持不变。
+- 新增 `tests/test_deepseek_cli.py`（解析样本、opencode 调用、路径装配）与 `tests/test_ndjson_replica.py` 的健康检查 ID 轻读、零 pending 漂移回归；`test_storage_contract.py` 增加 `live_memory_ids` 契约断言。
+- 全量 677 pytest + 浏览器回归通过；无 schema/数据迁移，未改 MCP/HTTP/格式。尚未提交。
+
+## 阶段 5 Review 修复记录（2026-09-30）
+
+- `deepseek_cli.extract_json_array` 恢复按模式选择正则：`strings_only`（keyword/category）用非贪婪 `\[.*?\]`，raw（anchor）用贪婪 `\[.*\]`；此前统一按非贪婪优先会导致多对象数组被 prose 包裹时只解析出内层数组，anchor 批次被误记为 `error`。新增多对象 + prose 回归（`test_deepseek_cli.py`、`test_anchor_migrate.py`）。
+- anchor `_write_outcome` 恢复 `MEMORY_DATA_DIR` 下的 `rooted_path` 包含（相对/空目录），修正 `--manifest` 默认帮助文案。
+- `deepseek_cli.default_primary_path()` 复用新增的无副作用 `configuration.resolve_data_dir()`：未设 `MEMORY_STORAGE_PATH` 时尊重 `MEMORY_DATA_DIR`（相对路径相对仓库根）并 root 默认主库，纯计算不创建目录或配置；新增自定义/相对数据根与"不创建文件"回归。
+- 全量 683 pytest + 浏览器回归通过；未提交。

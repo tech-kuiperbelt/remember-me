@@ -150,6 +150,15 @@ class MemoryStorage(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def live_memory_ids(self) -> list[str]:
+        """Return the ids of live records only.
+
+        Cheap existence set for replica health checks — unlike
+        ``export_records`` it never loads text, metadata or vectors.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
     def get_stats(self) -> dict[str, Any]: ...
 
     # -- business index and lifecycle surface used by Service/IndexValueResolver --

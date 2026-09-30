@@ -267,6 +267,43 @@ def test_stats_detects_id_drift_and_corrupt_lines(tmp_path, fake_emb):
         dual.stop()
 
 
+def test_health_check_uses_id_query_not_full_export(tmp_path, fake_emb, monkeypatch):
+    """Live health must not load full text/metadata from the primary."""
+    primary = SQLiteStorage(":memory:")
+    primary.add("only", fake_emb)
+    dual = DualStorage(primary, NDJSONReplica(str(tmp_path / "r.jsonl")),
+                       start_background=False)
+    try:
+        dual.force_sync()
+        calls = []
+        real = primary.export_records
+        monkeypatch.setattr(primary, "export_records",
+                            lambda *a, **k: calls.append(1) or real(*a, **k))
+        stats = dual.get_stats()
+        assert stats["in_sync"] is True
+        assert stats["pending"] == 0
+        assert calls == []
+    finally:
+        dual.stop()
+
+
+def test_health_check_detects_drift_with_zero_pending(tmp_path, fake_emb):
+    primary = SQLiteStorage(":memory:")
+    primary.add("primary-only", fake_emb)
+    secondary = NDJSONReplica(str(tmp_path / "r.jsonl"))
+    dual = DualStorage(primary, secondary, start_background=False)
+    try:
+        dual.force_sync()
+        assert primary.count_unsynced() == 0
+        secondary.upsert(_record("extra", "replica-only"))
+        stats = dual.get_stats()
+        assert stats["pending"] == 0
+        assert stats["in_sync"] is False
+        assert stats["replica_integrity"]["extra"] == 1
+    finally:
+        dual.stop()
+
+
 def test_background_startup_syncs_pending_before_health_check(
         tmp_path, fake_emb, monkeypatch):
     audit_record = MagicMock()

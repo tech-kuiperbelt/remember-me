@@ -30,21 +30,20 @@ Design:
 import argparse
 import json
 import logging
-import os
-import re
 import subprocess
 import sys
 import time
 from datetime import datetime, timezone
 
+from . import deepseek_cli
 from .storage import create_storage, resolve_replica_path
 from .index_value_resolver import resolver_for_configured_profile
 
 logger = logging.getLogger("keyword_migrate_deepseek")
 
 # Default model id as configured in ~/.config/opencode/opencode.jsonc
-DEFAULT_MODEL = "opencode-go/deepseek-v4-flash"
-DEFAULT_CLI = "opencode"
+DEFAULT_MODEL = deepseek_cli.DEFAULT_MODEL
+DEFAULT_CLI = deepseek_cli.DEFAULT_CLI
 KEYWORD_PROMPT_TEMPLATE = (
     "You are a precise keyword extractor for Chinese/English technical text.\n"
     "Rules:\n"
@@ -69,24 +68,11 @@ KEYWORD_PROMPT_TEMPLATE = (
 # Vocabulary sent to the model is capped to this many entries (sliding window
 # over the most recently added words).
 MAX_CANDIDATES = 500
-_CANDIDATES_BLOCK_HEADER = "---- candidate keywords ----"
-_CANDIDATES_BLOCK_FOOTER = "---- end candidates ----"
 
 
 def format_candidates_block(keywords: list[str]) -> str:
-    """Render the candidate vocabulary as a delimited block.
-
-    The delimiters make it unambiguous for the model where the candidate list
-    ends and the real text begins, and survive texts that contain JSON arrays.
-    """
-    if not keywords:
-        return "(empty candidate list)"
-    body = "\n".join(f"- {kw}" for kw in keywords)
-    return f"{_CANDIDATES_BLOCK_HEADER}\n{body}\n{_CANDIDATES_BLOCK_FOOTER}"
-
-# opencode prints a small banner ("> build · model") to stderr and the final
-# answer to stdout; some output may carry ANSI codes.
-_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+    """Render the candidate vocabulary as a delimited block for the prompt."""
+    return deepseek_cli.format_candidates_block(keywords, label="keywords")
 
 
 def _now() -> str:
@@ -108,23 +94,8 @@ def _normalize_keywords(keywords) -> list[str]:
 
 
 def _extract_json_array(output: str) -> list[str] | None:
-    """Parse the first JSON array found in ``output``.
-
-    deepseek returns a bare JSON array on stdout, but tolerate extra text /
-    ANSI codes / markdown fences. Returns None when nothing parseable appears.
-    """
-    text = _ANSI_RE.sub("", output)
-    # Strip markdown code fences if the model wrapped the answer.
-    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip())
-    for match in re.finditer(r"\[.*?\]", text, re.DOTALL):
-        candidate = match.group(0)
-        try:
-            parsed = json.loads(candidate)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(parsed, list):
-            return [str(x) for x in parsed if not isinstance(x, (dict, list))]
-    return None
+    """Parse the first JSON array found in ``output`` (string items only)."""
+    return deepseek_cli.extract_json_array(output, strings_only=True)
 
 
 def extract_keywords_deepseek(text: str, candidates: list[str] | None = None,
@@ -142,19 +113,12 @@ def extract_keywords_deepseek(text: str, candidates: list[str] | None = None,
         candidates=format_candidates_block(candidates or []),
         text=text,
     )
-    proc = subprocess.run(
-        [cli, "run", "--model", model, "Extract keywords. Output ONLY the JSON array."],
-        input=prompt,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(f"opencode exited {proc.returncode}: "
-                           f"{proc.stderr.strip()[:200]}")
-    keywords = _extract_json_array(proc.stdout)
+    stdout = deepseek_cli.run_opencode(
+        prompt, instruction="Extract keywords. Output ONLY the JSON array.",
+        model=model, cli=cli, timeout=timeout)
+    keywords = _extract_json_array(stdout)
     if not keywords:
-        raise ValueError(f"no keywords in output: {proc.stdout.strip()[:200]}")
+        raise ValueError(f"no keywords in output: {stdout.strip()[:200]}")
     return _normalize_keywords(keywords)
 
 
@@ -192,32 +156,10 @@ class KeywordVocabulary:
 
 
 def build_storage(db_path: str | None = None, read_only: bool = False):
-    """Reuse the same env-based backend resolution as service.py (dual default).
-
-    ``db_path`` (CLI ``--db``) overrides the primary storage path; the backend
-    itself still comes from ``MEMORY_STORAGE``.
-    """
-    # A dry run is a diagnostic read and must not claim either writer lock.
-    # It also deliberately bypasses dual mode: no replica worker is needed to
-    # inspect the primary database.
-    if read_only:
-        path = db_path or os.environ.get("MEMORY_STORAGE_PATH") or "data/memories.db"
-        return create_storage("sqlite", path=path, read_only=True)
-
-    backend = os.environ.get("MEMORY_STORAGE", "sqlite")
-    if backend == "dual":
-        primary = db_path or os.environ.get("MEMORY_STORAGE_PATH", "data/memories.db")
-        secondary = resolve_replica_path(
-            primary, os.environ.get("MEMORY_REPLICA_PATH"),
-            os.environ.get("MEMORY_STORAGE_PATH_DUAL")
-        )
-        return create_storage("dual", primary_path=primary,
-                              secondary_path=secondary,
-                              sync_interval=int(os.environ.get("MEMORY_SYNC_INTERVAL", "300")))
-    if backend != "sqlite":
-        raise RuntimeError("keyword migration supports only MEMORY_STORAGE=sqlite or dual")
-    path = db_path or os.environ.get("MEMORY_STORAGE_PATH") or "data/memories.db"
-    return create_storage("sqlite", path=path)
+    """Resolve the offline backend for the keyword backfill."""
+    return deepseek_cli.build_cli_storage(
+        db_path, read_only, role="keyword",
+        create_storage=create_storage, resolve_replica_path=resolve_replica_path)
 
 
 def main(argv=None) -> int:
@@ -237,7 +179,7 @@ def main(argv=None) -> int:
     parser.add_argument("--dry-run", action="store_true",
                         help="Count what would be processed without calling the model")
     parser.add_argument("--db", default=None,
-                        help="Storage file path override (default: from env or data/memories.db)")
+                        help="Storage file path override (default: MEMORY_STORAGE_PATH or the configured data directory)")
     args = parser.parse_args(argv)
     from .configuration import output_path
     if args.db:
@@ -249,9 +191,7 @@ def main(argv=None) -> int:
     storage = build_storage(args.db, read_only=args.dry_run)
 
     def close_storage():
-        stop = getattr(storage, "stop", None)
-        if callable(stop):
-            stop()
+        deepseek_cli.stop_storage(storage)
     logger.info("keyword migration (deepseek, serial): namespace=%s mode=%s limit=%s model=%s db=%s",
                 args.namespace, args.mode, args.limit, args.model, args.db)
 

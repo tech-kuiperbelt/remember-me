@@ -64,6 +64,7 @@ def test_business_contract_is_shared_by_sqlite_and_dual(backend, tmp_path):
         assert store.search([1.0, 0.0], k=5, namespace="ns")[0]["text"] == "hello"
         assert [row["text"] for row in store.list_memories(namespace="ns")] == ["hello"]
         assert store.get(memory_id)["text"] == "hello"
+        assert set(store.live_memory_ids()) == {memory_id}
         assert store.get_stats()["total"] == 1
 
         assert store.update(memory_id, text="changed", embedding=[0.0, 1.0]) is True
@@ -77,6 +78,7 @@ def test_business_contract_is_shared_by_sqlite_and_dual(backend, tmp_path):
 
         assert store.delete(memory_id) is True
         assert store.get(memory_id) is None
+        assert memory_id not in set(store.live_memory_ids())
 
         paths = store.storage_paths()
         assert paths["backend"] == ("sqlite" if backend == "sqlite" else "dual")
