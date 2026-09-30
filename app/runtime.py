@@ -38,6 +38,7 @@ class Runtime:
         self.maintenance = MaintenanceGate()
         self.calls = AsyncCallAdapter()
         self.recover_jobs = {}
+        self._recover_lock = threading.RLock()
         self.model_progress = ModelProgress()
         self._model_worker = None
         self._model_cancel = threading.Event()
@@ -193,14 +194,36 @@ class Runtime:
                 return
 
     def _release_model_business(self):
-        if self.service is not None:
-            self.service.close()
-        if self.storage is not None:
-            self.storage.stop()
+        try:
+            self._close_business()
+        except BaseException:
+            logger.exception("model business cleanup failed")
+
+    def _close_provider(self):
         close = getattr(self.provider, "close", None)
         if callable(close):
             close()
+
+    def _close_business(self):
+        """Release business resources; every closer runs even if one fails.
+
+        Raises the first failure after attempting all of them, so callers keep
+        the original error while nothing is leaked.
+        """
+        failures = []
+        for name, closer in (
+            ("service", lambda: self.service.close() if self.service is not None else None),
+            ("storage", lambda: self.storage.stop() if self.storage is not None else None),
+            ("provider", self._close_provider),
+        ):
+            try:
+                closer()
+            except BaseException as exc:
+                logger.exception("failed to close %s", name)
+                failures.append(exc)
         self.service = self.storage = self.provider = None
+        if failures:
+            raise failures[0]
 
     def _finish_interrupted_recovery(self):
         """An atomic primary restore may have finished before its replica sync."""
@@ -225,6 +248,84 @@ class Runtime:
         if isinstance(self.storage, DualStorage):
             self.storage.resume_background()
 
+    def maintenance_import_status(self, import_id):
+        """Snapshot of one import job (None when unknown)."""
+        return self.service.memory_import_status(import_id)
+
+    def start_maintenance_import(self, file_path, original_name, namespace_prefix="", *, reserved=False):
+        """Reserve the import maintenance action and start its background job.
+
+        Completion is owned here: one waiter thread blocks on the job's
+        completion event and releases the action afterwards, so the action stays
+        occupied until the worker has finished its status, audit and cleanup.
+        """
+        if not reserved:
+            self.maintenance.start_action("import")
+        try:
+            result = self.service.memory_import_start(file_path, original_name, namespace_prefix)
+        except BaseException as exc:
+            self.maintenance.finish_action(error=exc)
+            raise
+        import_id = result["import_id"]
+        try:
+            threading.Thread(target=self._finish_import, args=(import_id,),
+                             daemon=True, name=f"maintenance-import-{import_id}").start()
+        except BaseException as exc:
+            # The import already owns its input file and can still write. If a
+            # waiter cannot be started, this calling worker must drain the job
+            # before releasing maintenance or returning to HTTP cleanup.
+            logger.exception("cannot start import completion waiter; waiting in caller")
+            self._finish_import(import_id)
+            if not isinstance(exc, Exception):
+                raise
+        return result
+
+    def _finish_import(self, import_id):
+        try:
+            self.service.wait_import(import_id)
+        finally:
+            self.maintenance.finish_action(result={"import_id": import_id})
+
+    def maintenance_sync(self):
+        """Full sync plus recovery-marker reconciliation, owned by the runtime.
+
+        A pending recovery marker is only removed (and its sticky error only
+        cleared) after the replica passes the exact health check, preserving the
+        old admin behavior.
+        """
+        result = self.service.memory_sync()
+        marker = Path(f"{self.settings.STORAGE_PATH}.online-recover")
+        if marker.exists():
+            try:
+                self._verify_recovered_replica()
+            except RuntimeError:
+                pass
+            else:
+                marker.unlink()
+                self.maintenance.clear_error()
+        return result
+
+    def _new_recover_job(self, job_id, filename):
+        with self._recover_lock:
+            self.recover_jobs[job_id] = {
+                "id": job_id, "filename": filename, "status": "queued",
+                "phase": "queued", "completed": 0, "total": 0, "result": None,
+                "error": None}
+            while len(self.recover_jobs) > 20:
+                self.recover_jobs.pop(next(iter(self.recover_jobs)))
+
+    def _update_recover_job(self, job_id, **changes):
+        with self._recover_lock:
+            job = self.recover_jobs.get(job_id)
+            if job is not None:
+                job.update(changes)
+
+    def recover_status(self, job_id):
+        """Consistent snapshot for HTTP polling; never the shared mutable dict."""
+        with self._recover_lock:
+            job = self.recover_jobs.get(job_id)
+            return dict(job) if job else None
+
     def start_recover(self, upload_path, filename, *, reserved=False):
         """Run uploaded JSONL recovery inside this runtime's writer-lock lifetime."""
         if self.settings.STORAGE_PATH == ":memory:":
@@ -232,12 +333,7 @@ class Runtime:
         if not reserved:
             self.maintenance.start_action("recover")
         job_id = "rc_" + os.urandom(8).hex()
-        job = {"id": job_id, "filename": filename, "status": "queued",
-               "phase": "queued", "completed": 0, "total": 0, "result": None,
-               "error": None}
-        self.recover_jobs[job_id] = job
-        while len(self.recover_jobs) > 20:
-            self.recover_jobs.pop(next(iter(self.recover_jobs)))
+        self._new_recover_job(job_id, filename)
 
         def run():
             from .recovery import build_recovery_database, install_recovery_database
@@ -252,11 +348,11 @@ class Runtime:
                 fd, temp_path = tempfile.mkstemp(prefix=".recover-", suffix=".db",
                                                   dir=str(Path(target).resolve().parent))
                 os.close(fd)
-                job.update(status="running", phase="building")
+                self._update_recover_job(job_id, status="running", phase="building")
                 spec = self.provider.spec.as_dict()
 
                 def progress(done, total):
-                    job.update(completed=done, total=total)
+                    self._update_recover_job(job_id, completed=done, total=total)
 
                 count = build_recovery_database(
                     upload_path, temp_path, self.provider.embed_document,
@@ -266,13 +362,13 @@ class Runtime:
                 primary = self.storage.primary if isinstance(self.storage, DualStorage) else self.storage
                 if not isinstance(primary, SQLiteStorage):
                     raise RuntimeError("online recover requires SQLite primary")
-                job["phase"] = "switching"
+                self._update_recover_job(job_id, phase="switching")
                 with self.maintenance.switching():
                     marker = install_recovery_database(temp_path, target, primary)
                     if primary.get_stats()["embedding_profile"]["active"] != spec["profile_id"]:
                         raise RuntimeError("recovered database profile does not match provider")
                 if isinstance(self.storage, DualStorage):
-                    job["phase"] = "syncing_replica"
+                    self._update_recover_job(job_id, phase="syncing_replica")
                     self.storage.force_sync()
                     self._verify_recovered_replica()
                 if marker:
@@ -292,10 +388,10 @@ class Runtime:
                     unlink_quietly(temp_path + "-shm")
                     unlink_quietly(temp_path + ".writer.lock")
                 if failure is None:
-                    job.update(status="completed", phase="completed", result=result)
+                    self._update_recover_job(job_id, status="completed", phase="completed", result=result)
                     self.maintenance.finish_action(result=result)
                 else:
-                    job.update(status="failed", phase="failed", error=str(failure))
+                    self._update_recover_job(job_id, status="failed", phase="failed", error=str(failure))
                     self.maintenance.finish_action(
                         error=failure, sticky=Path(f"{target}.online-recover").exists())
 
@@ -334,29 +430,16 @@ class Runtime:
                 return
             self.state = "closing"
             try:
-                if self.service is not None:
-                    self.service.close()
+                self._close_business()
             finally:
                 try:
-                    if self.storage is not None:
-                        self.storage.stop()
+                    if self.audit is not None:
+                        self.audit.close()
+                        self.audit = None
                 finally:
-                    try:
-                        close = getattr(self.provider, "close", None)
-                        if callable(close):
-                            close()
-                        self.provider = None
-                        if self.service is not None:
-                            self.service.embedding_provider = None
-                    finally:
-                        try:
-                            if self.audit is not None:
-                                self.audit.close()
-                                self.audit = None
-                        finally:
-                            log_config.close(self._handlers)
-                            self._handlers = []
-                            self.state = "closed"
+                    log_config.close(self._handlers)
+                    self._handlers = []
+                    self.state = "closed"
 
 
 def create_runtime(settings, **kwargs):

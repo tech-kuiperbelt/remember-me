@@ -1,14 +1,17 @@
 # [48] 后端重构 Coding Plan
 
-日期：2026-09-30。状态：阶段 1 已实现，阶段 2–5 待实现。基线：`d16be35`，602 项 pytest 通过。
+日期：2026-09-30。状态：阶段 1、2 已实现，阶段 3–5 待实现。基线：`d16be35`。
 
 ## 实施进度
 
-- 阶段 1（隔离阻塞业务，明确取消与停服）：已完成。新增 `app/calls.py`（Runtime 拥有的 `AsyncCallAdapter`：4 业务 worker + 1 控制 worker、延迟创建、worker 内准入、`asyncio.shield` 取消语义、关闭时取消排队并等待运行中任务）与 `app/provider_adapter.py`（`SerializedProvider` 单把可重入锁串行 query/document/batch/warmup/close）。MCP 工具/resource 与 Admin 阻塞业务全部经适配器执行，配置读写走控制池；Admin 变更类记忆路由把准入推迟到 worker，排队写入会在维护进入后被重新拒绝。`Runtime.close()` 先关闭适配器再释放存储/provider/audit。实测：全量 pytest 610 通过（新增 `tests/test_calls.py` 7 项与 1 项维护写入契约，共 8 项新增），浏览器回归通过。未改变工具/schema/hint、HTTP 状态与字段、配置/目录、embedding profile、SQLite/JSONL 格式，无数据迁移。
-- 阶段 2：待实现（导入/恢复协调收回 Service/Runtime，删除 Admin 私有成员访问与轮询）。
+- 阶段 1（隔离阻塞业务，明确取消与停服）：已完成。新增 `app/calls.py`（Runtime 拥有的 `AsyncCallAdapter`：4 业务 worker + 1 控制 worker、延迟创建、worker 内准入、`asyncio.shield` 取消语义、关闭时取消排队并等待运行中任务）与 `app/provider_adapter.py`（`SerializedProvider` 单把可重入锁串行 query/document/batch/warmup/close）。MCP 工具/resource 与 Admin 阻塞业务全部经适配器执行，配置读写走控制池；Admin 变更类记忆路由把准入推迟到 worker，排队写入会在维护进入后被重新拒绝。`Runtime.close()` 先关闭适配器再释放存储/provider/audit。
+- 阶段 2（收回任务与恢复协调职责）：已完成。新增 `app/import_coordinator.py`（每个导入一个完成 Event，最外层 finally 统一收尾，`wait_import` 返回终态且保证清理完成）；`Runtime.start_maintenance_import()` 拥有导入维护动作的启动与收尾（单个等待线程），`maintenance_import_status()` 供 Admin 查询；`Runtime.maintenance_sync()` 集中 force_sync、恢复标记核验/删除与 sticky error 清除；恢复 job 读写加锁并提供 `recover_status()` 快照；`Runtime._close_business()` 统一业务资源释放（任一步失败也继续释放并保留首个错误）。Admin 删除 100ms 轮询、额外维护等待线程及对 `service._workers` / `runtime._verify_recovered_replica()` 的访问。
 - 阶段 3：待实现（补齐 `MemoryStorage`/`ReplicaStorage` 契约，移除 Ollama 名称分支）。
 - 阶段 4：待实现（静态 ToolSpec 表、路由策略声明、响应公共逻辑）。
 - 阶段 5：待实现（离线 CLI 去重、完整健康核验只读 ID 查询）。
+
+实测：阶段 1 完成时 610 pytest；阶段 2 完成后全量 630 pytest 通过，浏览器回归通过。无 schema/数据迁移，未改工具/schema/hint、HTTP 状态与字段、配置/目录、embedding profile、SQLite/JSONL 格式。
+
 
 
 ## 目标与约束
@@ -95,3 +98,9 @@
 - `stop_accepting()` 与等待关闭分离；Runtime 进入 closing 时立即停止提交并取消业务/控制两条队列，worker 开始执行时再次检查状态。
 - 新增真实 Admin handler 的取消回归；修正原排队取消测试先释放线程再等待取消的竞争。全量 620 项 pytest 与浏览器回归通过。
 - 本次修复未提交、未重启生产服务；阶段 2–5 仍待实施。
+
+## 阶段 2 Review 修复记录（2026-09-30）
+
+- 维护等待线程启动失败时，由当前调用 worker 等待已启动导入的完成事件；清理完成后才释放 action 并返回任务 ID，避免 HTTP 错误路径提前删除输入文件。请求取消仍等待该收尾路径结束。
+- `wait_import(timeout)` / `ImportCoordinator.wait()` 在完成事件未触发且超时后抛出 `TimeoutError`；未知任务仍返回 None，只有完成事件触发后才返回已清理的任务状态。
+- 新增超时、等待线程启动失败、失败收尾期间 HTTP 取消的三项回归；相关导入、取消、维护和 Runtime 共 46 项测试通过。本轮未重跑全量与浏览器，未提交、未重启。

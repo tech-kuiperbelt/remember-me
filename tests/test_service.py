@@ -205,7 +205,7 @@ def test_memory_import_background_job_preserves_missing_summary_without_worker(
 def test_memory_import_rejects_concurrent_job(service, monkeypatch, tmp_path):
     path = tmp_path / "backup.jsonl"
     path.write_text("", encoding="utf-8")
-    monkeypatch.setattr(service, "_active_import_id", "im_running")
+    monkeypatch.setattr(service._imports, "_active_id", "im_running")
 
     with pytest.raises(RuntimeError, match="already running"):
         service.memory_import_start(str(path), "backup.jsonl")

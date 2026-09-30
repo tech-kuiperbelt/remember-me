@@ -71,6 +71,14 @@ def test_maintenance_write_is_rejected_before_body_validation(tmp_path):
         assert client.post('/api/memories', json={}).status_code == 400
 
 
+def test_import_requires_maintenance_with_standard_envelope(tmp_path):
+    rt = runtime(tmp_path)
+    with TestClient(create_http_app(rt)) as client:
+        response = client.post('/api/import', files={'file': ('in.jsonl', b'')})
+        assert response.status_code == 409
+        assert response.json()['response_code'] == 'maintenance_required'
+
+
 def test_mcp_write_is_rejected_but_search_remains_available(tmp_path):
     rt = runtime(tmp_path).start()
     try:

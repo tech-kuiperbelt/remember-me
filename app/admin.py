@@ -3,7 +3,6 @@ import asyncio
 import sys
 import os
 import logging
-import threading
 import time
 import tempfile
 import secrets
@@ -282,29 +281,11 @@ class AdminAPI:
         if self.runtime is None:
             return Response(json.dumps({"detail": "recover requires a runtime"}),
                             status_code=503, media_type="application/json")
-        job = self.runtime.recover_jobs.get(request.path_params["recover_id"])
+        job = self.runtime.recover_status(request.path_params["recover_id"])
         if job is None:
             return Response(json.dumps({"detail": "Recover job not found"}), status_code=404,
                             media_type="application/json")
         return Response(json.dumps(dict(job)), media_type="application/json")
-
-    def _watch_import(self, import_id):
-        # A started import owns the maintenance action even if its HTTP request
-        # was cancelled before receiving the job ID.
-        def await_import():
-            try:
-                while True:
-                    status = self.service.memory_import_status(import_id)
-                    if status is None or status["status"] in ("completed", "failed"):
-                        break
-                    threading.Event().wait(0.1)
-                for worker in list(self.service._workers):
-                    if worker.name == f"memory-import-{import_id}":
-                        worker.join()
-            finally:
-                self.runtime.maintenance.finish_action(result={"import_id": import_id})
-        threading.Thread(target=await_import, daemon=True,
-                         name=f"maintenance-import-{import_id}").start()
 
     def _guard(self, endpoint, *, action=None, defer=False):
         async def guarded(request):
@@ -329,27 +310,11 @@ class AdminAPI:
                                 gate.finish_action()
 
                         response.background = BackgroundTask(finish_process_control)
-                    elif action == "import" and response.status_code == 202:
-                        self._watch_import(json.loads(response.body)["import_id"])
                     else:
-                        if action == "sync" and response.status_code < 400:
-                            marker = Path(f"{self.runtime.settings.STORAGE_PATH}.online-recover")
-                            if marker.exists():
-                                try:
-                                    self.runtime._verify_recovered_replica()
-                                except RuntimeError:
-                                    pass
-                                else:
-                                    marker.unlink()
-                                    gate.clear_error()
                         gate.finish_action()
                     return response
                 except BaseException as exc:
-                    import_id = request.scope.get("_started_import_id") if action == "import" else None
-                    if import_id:
-                        self._watch_import(import_id)
-                    else:
-                        gate.finish_action(error=exc)
+                    gate.finish_action(error=exc)
                     raise
             if defer:
                 # Reject early (before parsing) while the work still re-checks
@@ -548,6 +513,19 @@ class AdminAPI:
         original_name = "upload.jsonl"
         prefix = ""
         total = 0
+        runtime = self.runtime
+
+        def release_action(error):
+            # The reservation owner releases; once Runtime has started the job its
+            # completion waiter owns the action instead.
+            if runtime is not None and not request.scope.get("_import_owner"):
+                runtime.maintenance.finish_action(error=error)
+
+        if runtime is not None:
+            try:
+                runtime.maintenance.start_action("import")
+            except MaintenanceRejected as exc:
+                return _maintenance_response(exc)
         try:
             form = await request.form()
             upload = form.get("file")
@@ -573,18 +551,31 @@ class AdminAPI:
             logger.info("POST /api/import file=%s bytes=%d prefix=%s",
                         os.path.basename(original_name), total, prefix)
             def start_import():
-                result = self.service.memory_import_start(temp_path, original_name, prefix)
+                # From here the runtime owns the action and the input file, even
+                # if this HTTP request is cancelled.
+                request.scope["_import_owner"] = "runtime" if runtime is not None else "service"
+                if runtime is not None:
+                    result = runtime.start_maintenance_import(
+                        temp_path, original_name, prefix, reserved=True)
+                else:
+                    result = self.service.memory_import_start(temp_path, original_name, prefix)
                 request.scope["_started_import_id"] = result["import_id"]
                 return result
             result = await self._run(start_import)
             temp_path = None  # background job owns cleanup
             return Response(json.dumps(result), status_code=202, media_type="application/json")
-        except asyncio.CancelledError:
+        except asyncio.CancelledError as exc:
             if not request.scope.get("_started_import_id"):
                 unlink_quietly(temp_path)
+            release_action(exc)
             raise
+        except MaintenanceRejected as exc:
+            unlink_quietly(temp_path)
+            release_action(exc)
+            return _maintenance_response(exc)
         except RuntimeError as e:
             unlink_quietly(temp_path)
+            release_action(e)
             self.audit.record(
                 "memory_import",
                 {"filename": os.path.basename(original_name), "bytes": total,
@@ -596,6 +587,7 @@ class AdminAPI:
                             media_type="application/json")
         except (ValueError, TypeError) as e:
             unlink_quietly(temp_path)
+            release_action(e)
             logger.warning("POST /api/import rejected: %s", e)
             self.audit.record(
                 "memory_import",
@@ -609,6 +601,7 @@ class AdminAPI:
                             media_type="application/json")
         except Exception as e:
             unlink_quietly(temp_path)
+            release_action(e)
             logger.error("POST /api/import failed: %s", e, exc_info=True)
             self.audit.record(
                 "memory_import",
@@ -620,7 +613,10 @@ class AdminAPI:
             return Response(json.dumps({"detail": "Internal error"}), status_code=500, media_type="application/json")
 
     async def handle_import_status(self, request: Request):
-        result = self.service.memory_import_status(request.path_params["import_id"])
+        if self.runtime is not None:
+            result = self.runtime.maintenance_import_status(request.path_params["import_id"])
+        else:
+            result = self.service.memory_import_status(request.path_params["import_id"])
         if result is None:
             return Response(json.dumps({"detail": "Import job not found"}), status_code=404,
                             media_type="application/json")
@@ -832,7 +828,10 @@ class AdminAPI:
     async def handle_sync(self, request: Request):
         try:
             logger.info("POST /api/sync")
-            result = await self._run(lambda: self.service.memory_sync())
+            if self.runtime is not None:
+                result = await self._run(lambda: self.runtime.maintenance_sync())
+            else:
+                result = await self._run(lambda: self.service.memory_sync())
             return Response(json.dumps(result, ensure_ascii=False), media_type="application/json")
         except Exception as e:
             logger.error("POST /api/sync failed: %s", e, exc_info=True)
@@ -946,7 +945,6 @@ class AdminAPI:
         ]
         actions = {
             ("/api/memories", "DELETE"): "clear",
-            ("/api/import", "POST"): "import",
             ("/api/export/full", "POST"): "export_full",
             ("/api/export/namespace", "POST"): "export_namespace",
             ("/api/sync", "POST"): "sync",
@@ -958,6 +956,7 @@ class AdminAPI:
                   "/api/model", "/api/model/retry", "/api/config/model", "/api/config",
                   "/api/maintenance",
                   "/api/maintenance/enter", "/api/maintenance/exit",
+                  "/api/import",
                   "/api/recover", "/api/recover/{recover_id}"}
         # Mutating memory routes defer admission into the worker so a call queued
         # behind slow inference is re-checked after maintenance entered.

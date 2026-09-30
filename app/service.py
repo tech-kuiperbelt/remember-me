@@ -1,18 +1,17 @@
 import os
 import logging
-import threading
 import time
 from pathlib import Path
-from collections import OrderedDict
 from datetime import datetime, timezone
 
 from .index_value_resolver import IndexValueResolver, MAX_FILTER_VALUES
 from .embed import EmbeddingError
+from .import_coordinator import ImportCoordinator
 from .lexical import LexicalQueryError
 from .anchors import normalize_anchors, InvalidAnchors
 from . import audit
 from .summary_policy import derive_summary, normalize_summary
-from .jsonl_transfer import load_jsonl, write_clean_jsonl, sha256_file, unlink_quietly
+from .jsonl_transfer import load_jsonl, write_clean_jsonl, sha256_file
 from .categories import (
     normalize_categories,
     normalize_categories_filter,
@@ -170,34 +169,22 @@ def _normalize_rating(rating) -> int | None:
 
 
 class MemoryService:
-    """Business operations over explicitly supplied resources; owns import workers only."""
+    """Business operations over explicitly supplied resources; owns an import coordinator."""
 
     def __init__(self, settings, storage, embedding_provider, audit_journal=None):
         self.settings = settings
         self.storage = storage
         self.embedding_provider = embedding_provider
         self.audit = audit_journal or audit
-        self._import_jobs_lock = threading.RLock()
-        self._import_jobs = OrderedDict()
-        self._active_import_id = None
-        self._workers = []
-        self._closing = False
+        # Resolve the job method at call time so tests can patch the seam.
+        self._imports = ImportCoordinator(lambda *args: self._run_import_job(*args))
 
     def close(self):
         """Reject new imports and drain every worker before the runtime closes storage."""
-        with self._import_jobs_lock:
-            self._closing = True
-            workers = list(self._workers)
-        for worker in workers:
-            if worker.is_alive():
-                logger.info("waiting for import worker %s", worker.name)
-                worker.join()
+        self._imports.close()
 
     def memory_import_start(self, file_path, original_name, namespace_prefix=""):
-        with self._import_jobs_lock:
-            if self._closing:
-                raise RuntimeError("service is closing; no new imports accepted")
-            return self._start_import(file_path, original_name, namespace_prefix)
+        return self._start_import(file_path, original_name, namespace_prefix)
 
     def embed(self, text: str) -> list[float]:
         try:
@@ -604,13 +591,14 @@ class MemoryService:
                 "namespace": namespace}
 
     def _set_import_job(self, import_id, **changes):
-        with self._import_jobs_lock:
-            self._import_jobs[import_id].update(changes)
+        self._imports.update(import_id, **changes)
 
     def memory_import_status(self, import_id: str) -> dict | None:
-        with self._import_jobs_lock:
-            job = self._import_jobs.get(import_id)
-            return dict(job) if job else None
+        return self._imports.status(import_id)
+
+    def wait_import(self, import_id: str, timeout: float | None = None) -> dict | None:
+        """Wait for final cleanup and snapshot; raise TimeoutError if not done."""
+        return self._imports.wait(import_id, timeout)
 
     def _run_import_job(self, import_id, file_path, original_name, namespace_prefix):
         started = time.perf_counter()
@@ -698,11 +686,6 @@ class MemoryService:
                             completed_at=_now_utc_iso())
             self.audit.record("memory_import", audit_args, None,
                          (time.perf_counter() - started) * 1000, error=error)
-        finally:
-            unlink_quietly(file_path)
-            with self._import_jobs_lock:
-                if self._active_import_id == import_id:
-                    self._active_import_id = None
 
     def _start_import(self, file_path: str, original_name: str,
                             namespace_prefix: str = "") -> dict:
@@ -712,36 +695,10 @@ class MemoryService:
         if file_bytes > self.settings.IMPORT_MAX_BYTES:
             raise ValueError(f"import file exceeds {self.settings.IMPORT_MAX_BYTES} bytes")
         file_sha256 = sha256_file(file_path)
-        import_id = "im_" + os.urandom(8).hex()
-        with self._import_jobs_lock:
-            if self._active_import_id is not None:
-                raise RuntimeError("another import is already running")
-            self._active_import_id = import_id
-            self._import_jobs[import_id] = {
-                "import_id": import_id, "status": "queued", "phase": "queued",
-                "filename": os.path.basename(original_name), "bytes": file_bytes,
-                "sha256": file_sha256, "namespace_prefix": namespace_prefix,
-                "created_at": _now_utc_iso(), "progress": {"completed": 0, "total": 0},
-                "result": None, "error": None,
-            }
-            while len(self._import_jobs) > 20:
-                self._import_jobs.popitem(last=False)
-        worker = threading.Thread(
-            target=self._run_import_job,
-            args=(import_id, file_path, os.path.basename(original_name), namespace_prefix),
-            daemon=True, name=f"memory-import-{import_id}",
+        return self._imports.start(
+            file_path, original_name, namespace_prefix,
+            job_fields={"bytes": file_bytes, "sha256": file_sha256},
         )
-        try:
-            self._workers = [w for w in self._workers if w.is_alive()]
-            worker.start()
-            self._workers.append(worker)
-        except Exception:
-            with self._import_jobs_lock:
-                self._import_jobs.pop(import_id, None)
-                if self._active_import_id == import_id:
-                    self._active_import_id = None
-            raise
-        return {"import_id": import_id, "status": "queued"}
 
     def memory_get_details(self, memory_ids: list[str]) -> dict:
         """Fetch full content for a list of memory IDs (partial success).

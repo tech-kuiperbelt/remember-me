@@ -241,7 +241,7 @@ def test_cancelled_import_start_transfers_action_to_background_job(tmp_path, mon
             return {"file": UploadFile(BytesIO(b'{}\n'), filename="input.jsonl")}
         monkeypatch.setattr(req, "form", form)
         api = AdminAPI(runtime=rt)
-        task = asyncio.create_task(api._guard(api.handle_import_memories, action="import")(req))
+        task = asyncio.create_task(api.handle_import_memories(req))
         try:
             await entered(starting)
             task.cancel()
