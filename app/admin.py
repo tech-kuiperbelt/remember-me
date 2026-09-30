@@ -118,6 +118,11 @@ def _maintenance_response(exc):
 
 
 class AdminAPI:
+    def _temp_dir(self):
+        directory = Path(self.service.settings.TEMP_DIR)
+        directory.mkdir(parents=True, exist_ok=True)
+        return str(directory)
+
     def __init__(self, service=None, *, runtime=None):
         if service is None and runtime is None:
             raise ValueError("service or runtime is required")
@@ -188,7 +193,7 @@ class AdminAPI:
             filename = getattr(upload, "filename", "") or ""
             if not filename.lower().endswith((".jsonl", ".ndjson")):
                 raise ValueError("file must end with .jsonl or .ndjson")
-            fd, path = tempfile.mkstemp(prefix="remember-me-recover-", suffix=".jsonl")
+            fd, path = tempfile.mkstemp(prefix="remember-me-recover-", suffix=".jsonl", dir=self._temp_dir())
             total = 0
             with os.fdopen(fd, "wb") as dest:
                 while True:
@@ -468,7 +473,7 @@ class AdminAPI:
                 raise ValueError("multipart field 'file' is required")
             prefix = str(form.get("namespace_prefix") or "")
             handle = tempfile.NamedTemporaryFile(
-                prefix="remember-me-import-", suffix=".jsonl", delete=False
+                prefix="remember-me-import-", suffix=".jsonl", delete=False, dir=self._temp_dir()
             )
             temp_path = handle.name
             try:
@@ -533,7 +538,7 @@ class AdminAPI:
 
     async def handle_export_full(self, request: Request):
         started = time.perf_counter()
-        fd, path = tempfile.mkstemp(prefix="remember-me-export-full-", suffix=".jsonl")
+        fd, path = tempfile.mkstemp(prefix="remember-me-export-full-", suffix=".jsonl", dir=self._temp_dir())
         os.close(fd)
         try:
             result = self.service.memory_export_full(path)
@@ -564,7 +569,7 @@ class AdminAPI:
         try:
             body = await request.json()
             namespace = body.get("namespace", "")
-            fd, path = tempfile.mkstemp(prefix="remember-me-export-ns-", suffix=".jsonl")
+            fd, path = tempfile.mkstemp(prefix="remember-me-export-ns-", suffix=".jsonl", dir=self._temp_dir())
             os.close(fd)
             result = self.service.memory_export_namespace(namespace, path)
             self.audit.record("memory_export", {"type": "namespace", "namespace": namespace}, result,

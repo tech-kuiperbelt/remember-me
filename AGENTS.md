@@ -5,8 +5,9 @@
 ```bash
 cd /path/to/remember-me
 source .venv/bin/activate
-python -m app.server              # stdio mode (default)
-python -m app.server --port 1314  # HTTP mode (legacy SSE + Streamable HTTP)
+python -m app.server              # HTTP mode (default, config port or 1314)
+python -m app.server --stdio       # subprocess stdin/stdout
+python -m app.server --data-dir /path/to/data  # config is <DIR>/config.json
 ```
 
 `bin/start.sh` is the recommended launcher: it sets `MEMORY_STORAGE=dual` and
@@ -15,12 +16,25 @@ cache) if present. The configured provider must match the active embedding
 profile in `data/memories.db`, otherwise startup fails and requires an offline
 `app.embedding_cli reindex`/`activate`.
 
-Two transport modes, distinguished by the `--port` flag:
+Data directory selection: `--data-dir` > `MEMORY_DATA_DIR` > project `data`; relative
+directories are resolved against the project root. `<data-dir>/config.json` contains
+`{"port":1314,"language":"zh-CN"}` and is created only on normal startup. Language
+is stored but not yet applied to translations. `--port` temporarily overrides the
+configured port; `--stdio` explicitly selects subprocess transport. Runtime paths,
+logs, temporary files and local model caches are contained in the selected root.
+Path environment variables and CLI output paths are root-relative; external paths
+are rejected. Use `bin/manage config migrate --dry-run` then stop the service and
+run without `--dry-run` to copy and verify legacy paths, retaining sources. For a
+new root: `bin/manage --data-dir NEW config migrate --source-data-dir OLD`. A pending
+migration journal blocks startup; rerun migration to recover before proceeding.
+See `docs/project-management/plans/43-config-and-data-root.md`.
+
+Two transport modes:
 
 | Mode | Command | Description |
 |------|---------|-------------|
-| **stdio** | `python -m app.server` | Subprocess stdin/stdout (default, backward compatible) |
-| **HTTP** | `python -m app.server --port 1314` | Starlette + Uvicorn on `0.0.0.0:<port>`; serves legacy SSE **and** Streamable HTTP from one instance |
+| **stdio** | `python -m app.server --stdio` | Subprocess stdin/stdout (explicit) |
+| **HTTP** | `python -m app.server` | Starlette + Uvicorn on `0.0.0.0:<port>`; serves legacy SSE **and** Streamable HTTP from one instance |
 
 HTTP endpoints (all share the same service/runtime/provider/storage):
 
@@ -37,7 +51,8 @@ HTTP endpoints (all share the same service/runtime/provider/storage):
 | Variable | Default | Notes |
 |---|---|---|
 | `MEMORY_STORAGE` | `sqlite` | `sqlite` or `dual`; all other values fail startup |
-| `MEMORY_STORAGE_PATH` | `data/memories.db` | SQLite primary path |
+| `MEMORY_DATA_DIR` | project `data` | Runtime data root; `--data-dir` takes precedence |
+| `MEMORY_STORAGE_PATH` | `memories.db` | SQLite primary path relative to data root |
 | `MEMORY_REPLICA_PATH` | derived from primary | NDJSON replica path in dual mode (`.jsonl` or `.ndjson`) |
 | `MEMORY_STORAGE_PATH_DUAL` | unset | Deprecated compatibility alias for `MEMORY_REPLICA_PATH` |
 | `EMBED_PROVIDER` | `ollama` | `ollama`, optional local `fastembed`, or `sentence_transformers` |
@@ -52,17 +67,17 @@ HTTP endpoints (all share the same service/runtime/provider/storage):
 | `EMBED_TIMEOUT` | `120` | Ollama request timeout in seconds |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server used in `ollama` mode |
 | `FASTEMBED_MODEL` | `intfloat/multilingual-e5-large` | FastEmbed model; must occur in the installed runtime's supported list |
-| `FASTEMBED_CACHE_DIR` | FastEmbed default | Model cache or copied offline model cache |
+| `FASTEMBED_CACHE_DIR` | `models/fastembed` | Model cache or copied offline model cache |
 | `FASTEMBED_OFFLINE` | `false` | Disable model downloads and require a populated cache |
 | `FASTEMBED_MAX_INPUT_TOKENS` | `512` | Token guard for the default FastEmbed model |
 | `SENTENCE_TRANSFORMERS_MODEL` | `BAAI/bge-m3` | Python/PyTorch in-process model |
-| `SENTENCE_TRANSFORMERS_CACHE_DIR` | library default | Model cache directory |
+| `SENTENCE_TRANSFORMERS_CACHE_DIR` | `models/sentence-transformers` | Model cache directory |
 | `SENTENCE_TRANSFORMERS_OFFLINE` | `false` | Require the model to exist in the local cache |
 | `SENTENCE_TRANSFORMERS_DEVICE` | auto | Optional `cpu`, `cuda`, or other PyTorch device |
 | `SENTENCE_TRANSFORMERS_MAX_INPUT_TOKENS` | `8192` | Explicit token guard; inputs are never silently truncated |
 | `SENTENCE_TRANSFORMERS_BATCH_SIZE` | `8` | Reindex batch inference size |
 | `MEMORY_DEFAULT_NAMESPACE` | `default` | Fallback namespace when `add` tool is called without `namespace`. Set to the project name so all LLM-written memories are scoped per project. This configured namespace is always treated as known, so a fresh database can be bootstrapped. |
-| `MEMORY_AUDIT_PATH` | `data/audit.jsonl` | Active tool-call/background-task audit journal |
+| `MEMORY_AUDIT_PATH` | `audit.jsonl` | Active tool-call/background-task audit journal |
 | `MEMORY_AUDIT_MAX_BYTES` | `10485760` | Max bytes per audit file before rotation (10MB) |
 | `MEMORY_AUDIT_MAX_FILES` | `10` | Total audit files retained, including the active file |
 | `MEMORY_AUDIT_MAX_EVENTS` | `0` | Optional per-file event limit; `0` disables count-based rotation |
@@ -77,7 +92,7 @@ Ollama **must be running locally** in `EMBED_PROVIDER=ollama` mode. FastEmbed an
 
 ## Key architecture facts
 
-- **`app/settings.py` / `app/runtime.py`** — Immutable `Settings.from_env()` snapshot and explicit runtime ownership. `create_runtime(settings)` acquires nothing; `start()` configures logging/audit, creates provider/storage, validates and warms up, then starts dual sync/health/background work. `close()` waits for imports and periodic sync, attempts final outbox sync, then releases stores/locks, provider, audit and owned logging handlers. Startup failure cleans up acquired resources. Imports and `python -m app.server --help` have no runtime side effects. One active runtime/audit configuration per process.
+- **`app/settings.py` / `app/runtime.py`** — Configuration-backed immutable `Settings.from_config()` snapshot (`from_env` remains a side-effect-free low-level helper) and explicit runtime ownership. `create_runtime(settings)` acquires nothing; `start()` configures logging/audit, creates provider/storage, validates and warms up, then starts dual sync/health/background work. `close()` waits for imports and periodic sync, attempts final outbox sync, then releases stores/locks, provider, audit and owned logging handlers. Startup failure cleans up acquired resources. Imports and `python -m app.server --help` have no runtime side effects. One active runtime/audit configuration per process.
 - **`bin/manage` / `README.md`** — Operator entry point for offline embedding/profile maintenance, historical backfills, and CLI JSONL recovery. Read-only status can run while the service is active; independent write CLIs require graceful shutdown. The Ops UI supports online maintenance and uploaded JSONL recovery inside the active runtime.
 - **Shutdown/restart** — Ops offers Restart Server and Shut Down Server after entering maintenance mode. `/api/restart` and `/api/shutdown` respond before rejecting new work and asking Uvicorn to exit; active SSE sessions end, HTTP work drains, and imports finish without a timeout. Restart execs only after cleanup; shutdown requires a terminal start. stdio EOF/SIGTERM also clean up; piped stdin uses cancellable asynchronous reads. See `docs/project-management/plans/38-runtime-lifecycle.md`.
 

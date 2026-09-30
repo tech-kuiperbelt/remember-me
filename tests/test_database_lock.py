@@ -117,7 +117,11 @@ def test_recovery_refuses_to_replace_an_owned_primary(tmp_path):
     assert target.read_bytes() == b"original database bytes"
 
 
-def test_dual_service_rejects_all_writer_contenders_but_allows_diagnostics(tmp_path):
+def test_dual_service_rejects_all_writer_contenders_but_allows_diagnostics(tmp_path, monkeypatch):
+    config = tmp_path / "config.json"
+    config.write_text('{}')
+    monkeypatch.setenv("MEMORY_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("MEMORY_AUDIT_PATH", str(tmp_path / "audit.jsonl"))
     database = str(tmp_path / "memory.db")
     replica = str(tmp_path / "memory.jsonl")
     alternate_replica = str(tmp_path / "alternate.jsonl")

@@ -53,9 +53,12 @@ url = "{base}/mcp"
 ```toml
 [mcp_servers.memory-server]
 command = "<REPO>/bin/start.sh"
+args = ["--stdio"]
 ```
 
   将 `<REPO>` 替换为本仓库的绝对路径；`bin/start.sh` 会加载 `.env` 与 `.venv`。
+  无参数启动默认 HTTP，端口取自数据目录中的 `config.json`（默认 1314）；stdio 必须显式传 `--stdio`。
+  数据目录默认 `<REPO>/data`，可传 `--data-dir <DIR>`；配置文件固定为该目录下的 `config.json`。
 - 限制：**无法支持多个客户端同时连接**；且当同一主库已有 HTTP 服务在运行时，
   不能再启动 stdio 写入进程（单主库写锁）。
 

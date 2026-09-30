@@ -39,7 +39,10 @@ def exec_probe(executable, argv):
 os.execv = exec_probe
 asyncio.run(main())
 ''')
+    config = tmp_path / 'config.json'
+    config.write_text(json.dumps({'port': 1314, 'language': 'zh-CN'}))
     env = {**os.environ, 'PYTHONPATH': str(root), 'MEMORY_STORAGE': 'dual',
+           'MEMORY_DATA_DIR': str(tmp_path),
            'MEMORY_STORAGE_PATH': str(tmp_path / 'memories.db'),
            'MEMORY_REPLICA_PATH': str(tmp_path / 'memories.jsonl'),
            'MEMORY_AUDIT_PATH': str(tmp_path / 'audit.jsonl'),
@@ -60,7 +63,7 @@ async def check_protocol(streams):
 def test_stdio_protocol_and_eof(process_config):
     runner, env = process_config
     async def exercise():
-        params = StdioServerParameters(command=sys.executable, args=[str(runner)], env=env)
+        params = StdioServerParameters(command=sys.executable, args=[str(runner), '--stdio'], env=env)
         async with stdio_client(params) as streams:
             await check_protocol(streams)
     asyncio.run(exercise())
@@ -145,13 +148,21 @@ def test_sse_protocol_and_process_exit_with_open_connection(process_config, acti
                 proc.wait(5)
 
 
-def test_streamable_http_protocol_and_process_exit(process_config):
+@pytest.mark.parametrize('launch', ['override', 'config', 'data-dir'])
+def test_streamable_http_protocol_and_process_exit(process_config, launch):
     """The new /mcp transport must coexist with SSE and still let the process exit."""
     runner, env = process_config
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
-    args = [sys.executable, str(runner), '--port', str(port)]
+    if launch == 'override':
+        args = [sys.executable, str(runner), '--port', str(port)]
+    else:
+        (runner.parent / 'config.json').write_text(json.dumps({'port': port, 'language': 'en'}))
+        args = [sys.executable, str(runner)]
+        if launch == 'data-dir':
+            env['MEMORY_DATA_DIR'] = str(runner.parent / 'unused')
+            args.extend(['--data-dir', str(runner.parent)])
     log_path = runner.parent / 'server-mcp.log'
     with log_path.open('w+') as log:
         proc = subprocess.Popen(args, env=env, stdout=log, stderr=log)
@@ -210,7 +221,7 @@ def test_streamable_http_protocol_and_process_exit(process_config):
 def test_stdio_sigterm_cleans_up(process_config):
     import select
     runner, env = process_config
-    proc = subprocess.Popen([sys.executable, str(runner)], env=env,
+    proc = subprocess.Popen([sys.executable, str(runner), '--stdio'], env=env,
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
         request = {'jsonrpc': '2.0', 'id': 1, 'method': 'initialize',

@@ -39,6 +39,9 @@ def _database_maintenance_lock(path: str):
 
 
 def main() -> None:
+    if any(arg in ("--help", "-h") for arg in sys.argv[1:]):
+        _main(None)
+        return
     journal = audit.AuditJournal()
     try:
         _main(journal)
@@ -76,6 +79,9 @@ def _main(journal) -> None:
     activate.add_argument("profile_id")
 
     args = parser.parse_args()
+    from .configuration import output_path
+    if hasattr(args, "database"):
+        args.database = output_path(args.database)
 
     if args.command == "download-model":
         provider = create_embedder()
@@ -178,4 +184,7 @@ def _main(journal) -> None:
 
 
 if __name__ == "__main__":
+    from .configuration import cli_environment
+    if not any(arg in ("--help", "-h") for arg in sys.argv[1:]):
+        cli_environment()
     main()

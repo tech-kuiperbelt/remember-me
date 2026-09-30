@@ -25,7 +25,8 @@ def main():
         sys.exit(1)
 
     src_path = sys.argv[1]
-    tgt_path = sys.argv[2]
+    from .configuration import output_path
+    tgt_path = output_path(sys.argv[2])
 
     if not src_path.endswith((".jsonl", ".ndjson")) or not tgt_path.endswith(".db"):
         print("Recovery requires a .jsonl/.ndjson source and .db target.", file=sys.stderr)
@@ -45,4 +46,7 @@ def main():
 
 
 if __name__ == "__main__":
+    from .configuration import cli_environment
+    if not any(arg in ("--help", "-h") for arg in sys.argv[1:]):
+        cli_environment()
     main()

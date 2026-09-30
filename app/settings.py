@@ -1,11 +1,13 @@
 """Explicit, immutable configuration snapshot shared by one service runtime."""
 import os
+from pathlib import Path
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Mapping
 
 from .storage import resolve_replica_path
 from .namespace_policy import normalize_namespace, validate_namespace_name
+from .configuration import Configuration, PROJECT_ROOT
 
 
 @dataclass(frozen=True)
@@ -32,6 +34,17 @@ class Settings:
     AUDIT_MAX_BYTES: int
     AUDIT_MAX_FILES: int
     AUDIT_MAX_EVENTS: int
+    DATA_DIR: str
+    TEMP_DIR: str
+    LOG_DIR: str
+    PORT: int
+    LANGUAGE: str
+    CONFIG_PATH: str | None
+
+    @classmethod
+    def from_config(cls, data_dir=None, *, create=False, environment=None):
+        config = Configuration.load(data_dir, create=create, environment=environment)
+        return cls.from_env(config.runtime_environment(environment))
 
     @classmethod
     def from_env(cls, environment=None):
@@ -47,6 +60,7 @@ class Settings:
             raise ValueError("EMBED_DTYPE must be float16 or float32")
         namespace = normalize_namespace(env.get("MEMORY_DEFAULT_NAMESPACE", "default")) or "default"
         validate_namespace_name(namespace)
+        root = env.get("MEMORY_DATA_DIR", str(PROJECT_ROOT / "data"))
         return cls(
             environment=MappingProxyType(env), STORAGE_BACKEND=backend, STORAGE_PATH=path,
             REPLICA_PATH=replica, EMBED_DTYPE=dtype, DEFAULT_NAMESPACE=namespace,
@@ -66,4 +80,8 @@ class Settings:
             AUDIT_MAX_BYTES=int(env.get("MEMORY_AUDIT_MAX_BYTES", "10485760")),
             AUDIT_MAX_FILES=max(1, int(env.get("MEMORY_AUDIT_MAX_FILES", "10"))),
             AUDIT_MAX_EVENTS=int(env.get("MEMORY_AUDIT_MAX_EVENTS", "0")),
+            DATA_DIR=root, TEMP_DIR=env.get("MEMORY_TEMP_DIR", str(Path(root) / "tmp")),
+            LOG_DIR=env.get("MEMORY_LOG_DIR", str(Path(root) / "logs")),
+            PORT=int(env.get("MEMORY_PORT", "1314")),
+            LANGUAGE=env.get("MEMORY_LANGUAGE", "zh-CN"), CONFIG_PATH=str(Path(root) / "config.json"),
         )

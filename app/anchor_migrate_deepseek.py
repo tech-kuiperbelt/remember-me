@@ -259,7 +259,9 @@ def build_storage(db_path: str | None = None, read_only: bool = False):
 
 def _default_manifest_path() -> str:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    return os.path.join(DEFAULT_MANIFEST_DIR, f"draft-{stamp}.jsonl")
+    from .configuration import output_path
+    directory = "anchor-backfill" if os.environ.get("MEMORY_DATA_DIR") else DEFAULT_MANIFEST_DIR
+    return output_path(os.path.join(directory, f"draft-{stamp}.jsonl"))
 
 
 def _write_manifest(path: str, entries: list[dict]) -> None:
@@ -370,7 +372,8 @@ def run_draft(args) -> int:
                               "dry_run": True}, ensure_ascii=False))
             return 0
 
-        manifest_path = args.manifest or _default_manifest_path()
+        from .configuration import output_path
+        manifest_path = output_path(args.manifest) if args.manifest else _default_manifest_path()
         os.makedirs(os.path.dirname(manifest_path) or ".", exist_ok=True)
 
         header = None
@@ -588,6 +591,13 @@ def _validate_manifest(path: str) -> _Manifest:
 
 def _write_outcome(manifest_path: str, outcome: dict) -> str:
     out_dir = os.path.dirname(manifest_path) or DEFAULT_MANIFEST_DIR
+    if os.environ.get("MEMORY_DATA_DIR"):
+        from .configuration import rooted_path
+        root = os.environ["MEMORY_DATA_DIR"]
+        try:
+            out_dir = str(rooted_path(root, out_dir))
+        except ValueError:
+            out_dir = str(rooted_path(root, "anchor-backfill"))
     os.makedirs(out_dir, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     result_path = os.path.join(out_dir, f"apply-{stamp}.jsonl")
@@ -768,6 +778,9 @@ def main(argv=None) -> int:
                          help="SQLite path override (default: from env or data/memories.db)")
 
     args = parser.parse_args(argv)
+    from .configuration import output_path
+    if args.db:
+        args.db = output_path(args.db)
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     if args.stage == "draft":
@@ -776,4 +789,7 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
+    from .configuration import cli_environment
+    if not any(arg in ("--help", "-h") for arg in sys.argv[1:]):
+        cli_environment()
     sys.exit(main())

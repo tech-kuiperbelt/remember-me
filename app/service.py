@@ -2,6 +2,7 @@ import os
 import logging
 import threading
 import time
+from pathlib import Path
 from collections import OrderedDict
 from datetime import datetime, timezone
 
@@ -571,6 +572,8 @@ class MemoryService:
             stats["embed_dtype"] = self.settings.EMBED_DTYPE
             stats["ollama_base_url"] = self.settings.OLLAMA_BASE_URL
             stats["server_time"] = _now_utc_iso()
+            if self.settings.environment.get("MEMORY_PATHS_ACTIVE") == "1":
+                stats = self._relative_paths(stats)
             return stats
         except Exception as e:
             logger.error("stats failed: %s", e, exc_info=True)
@@ -786,7 +789,20 @@ class MemoryService:
         if hasattr(self.storage, "primary"):
             result["primary_path"] = getattr(self.storage.primary, "path", "?")
             result["secondary_path"] = getattr(self.storage.secondary, "path", "?")
-        return result
+        return self._relative_paths(result) if self.settings.environment.get("MEMORY_PATHS_ACTIVE") == "1" else result
+
+    def _relative_paths(self, value):
+        if isinstance(value, dict):
+            result = {}
+            for key, item in value.items():
+                if key in ("path", "primary_path", "secondary_path") and isinstance(item, str) and item not in (":memory:", "?"):
+                    result[key] = str(Path(item).resolve().relative_to(Path(self.settings.DATA_DIR).resolve()))
+                else:
+                    result[key] = self._relative_paths(item)
+            return result
+        if isinstance(value, list):
+            return [self._relative_paths(item) for item in value]
+        return value
 
     def memory_migrate_namespace(self, source: str, target: str) -> dict:
         """Move all memories from source namespace to target namespace.

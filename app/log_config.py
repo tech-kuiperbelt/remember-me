@@ -6,7 +6,7 @@ from logging.handlers import RotatingFileHandler
 
 
 def configure(log_dir=None):
-    directory = Path(log_dir) if log_dir is not None else Path(__file__).resolve().parent.parent / "logs"
+    directory = Path(log_dir) if log_dir is not None else Path(__file__).resolve().parent.parent / "data" / "logs"
     directory.mkdir(parents=True, exist_ok=True)
     handlers = []
     try:

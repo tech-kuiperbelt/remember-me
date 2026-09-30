@@ -218,6 +218,9 @@ def main(argv=None) -> int:
     parser.add_argument("--db", default=None,
                         help="Storage file path override (default: from env or data/memories.db)")
     args = parser.parse_args(argv)
+    from .configuration import output_path
+    if args.db:
+        args.db = output_path(args.db)
 
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -341,4 +344,7 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
+    from .configuration import cli_environment
+    if not any(arg in ("--help", "-h") for arg in sys.argv[1:]):
+        cli_environment()
     sys.exit(main())

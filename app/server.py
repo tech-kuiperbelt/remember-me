@@ -1131,16 +1131,28 @@ async def main(argv=None):
     import os
     from .settings import Settings
     from .runtime import create_runtime
+    from .configuration import activate_environment
     parser = argparse.ArgumentParser(description="Memory MCP Server")
-    parser.add_argument("--port", type=int, default=None,
+    parser.add_argument("--data-dir", help="Data directory (default: project data); contains config.json")
+    transport = parser.add_mutually_exclusive_group()
+    transport.add_argument("--stdio", action="store_true", help="Use subprocess stdin/stdout instead of HTTP")
+    transport.add_argument("--port", type=int, default=None,
                         help="Port for HTTP mode (legacy SSE + Streamable HTTP)")
     args = parser.parse_args(argv)
-    runtime = create_runtime(Settings.from_env())
-    if args.port is None:
+    if args.port is not None and not 0 <= args.port <= 65535:
+        parser.error("--port must be between 0 and 65535")
+    try:
+        settings = Settings.from_config(args.data_dir, create=True)
+    except (ValueError, OSError) as exc:
+        parser.error(str(exc))
+    activate_environment(settings.environment)
+    runtime = create_runtime(settings)
+    if args.stdio:
         await serve_stdio(runtime)
     else:
-        app = create_http_app(runtime, port=args.port)
-        config = uvicorn.Config(app, host="0.0.0.0", port=args.port, log_level="info")
+        port = settings.PORT if args.port is None else args.port
+        app = create_http_app(runtime, port=port)
+        config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="info")
         class GracefulServer(uvicorn.Server):
             async def shutdown(self, sockets=None):
                 runtime.request_shutdown(restart=runtime.restart_requested)

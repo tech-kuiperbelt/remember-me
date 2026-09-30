@@ -10,12 +10,12 @@ Restart Server 和 Shut Down Server 也要求先进入维护状态。需要执�
 关闭后也可以从终端执行：
 
 ```bash
-bin/start.sh --port 1314
+bin/start.sh
 ```
 
 ## MCP 客户端接入
 
-`--port` 模式下同时提供旧版 HTTP+SSE 与新版 Streamable HTTP，两者共用同一实例。
+默认 HTTP 模式同时提供旧版 HTTP+SSE 与新版 Streamable HTTP，两者共用同一实例。
 让 LLM agent 自行读取接入说明：`GET http://127.0.0.1:<port>/read-me`（只读、无鉴权，
 端口跟随启动参数）。
 
@@ -34,8 +34,48 @@ url = "http://127.0.0.1:1314/mcp"
 ## 维护入口
 
 `bin/manage` 会定位仓库、加载 `.env`、激活 `.venv`，然后调用已有的维护 CLI。默认
-主库是 `data/memories.db`，副本是同目录下的 `memories.jsonl`；路径可以在 `.env` 或
-命令参数中覆盖。
+主库是数据目录下的 `memories.db`，副本是同目录下的 `memories.jsonl`；路径可以在 `.env` 或
+命令参数中覆盖，但输出必须位于数据目录内。
+
+## 配置与数据目录
+
+默认数据目录是仓库的 `data`，与启动时的工作目录无关。可通过 `--data-dir DIR` 或
+`MEMORY_DATA_DIR` 指定；相对目录按仓库根目录解析，命令参数优先。配置固定在选中目录的
+`config.json`，首次正常启动会创建：
+
+```json
+{"port": 1314, "language": "zh-CN"}
+```
+
+端口允许 1–65535，语言允许 `zh-CN` 和 `en`；本版只保存语言选择，尚未进行界面翻译。
+修改配置后重启生效。`--port PORT` 临时覆盖端口（0 表示随机可用端口），`--stdio` 显式
+启动标准输入输出模式，两者互斥。模块导入和 `--help` 不会创建配置或其他文件。
+
+```bash
+bin/start.sh --data-dir /path/to/runtime-data
+bin/start.sh --stdio
+bin/manage --data-dir /path/to/runtime-data config status
+```
+
+数据库、副本、audit 及轮转文件、`logs/`、`tmp/`、`anchor-backfill/`、模型缓存都归数据目录。
+本地模型缓存默认在 `models/fastembed/` 和 `models/sentence-transformers/`；其他依赖缓存也
+归该目录。路径环境变量和维护命令的输出参数以数据目录为根解析，越界路径（包括符号链接）
+被拒绝；安装资源、`.env`、外部只读导入源和独立 Ollama 服务的模型目录不受此规则约束。
+管理界面显示数据目录内的相对路径，内部执行使用绝对路径。
+
+旧配置先预览，再停服迁移。迁移保留源文件，复制校验成功后更新 `.env` 路径和配置：
+
+```bash
+bin/manage config migrate --dry-run
+# 在配置页面进入 Maintenance 并 Shut Down Server，等待退出
+bin/manage config migrate
+bin/start.sh
+```
+
+更换数据目录：`bin/manage --data-dir NEW config migrate --source-data-dir OLD --dry-run`，
+确认后去掉 `--dry-run`。迁移会拒绝覆盖冲突文件和正在使用的数据库。异常时回退；进程
+崩溃留下迁移日志时，服务拒绝启动，重新运行相同迁移命令先恢复，再预览和执行迁移。
+验收模型加载及主副本健康后，可自行清理保留的旧日志和缓存；不要删除仍在使用的共享缓存。
 
 先看帮助：
 
@@ -103,7 +143,7 @@ Full Sync。若副本同步失败，保持维护状态，使用 Ops 的 Sync 重
 
 ```bash
 bin/manage recover
-bin/manage recover backup/memories.jsonl data/recovered.db
+bin/manage recover /path/to/backup/memories.jsonl recovered.db
 ```
 
 恢复前确认服务已关闭，并确认 source 是可信的 JSONL。恢复后启动服务，检查 active

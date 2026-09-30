@@ -42,7 +42,7 @@ class Runtime:
             self.state = "starting"
             try:
                 if self.configure_logging:
-                    self._handlers = log_config.configure(self.log_dir)
+                    self._handlers = log_config.configure(self.log_dir or self.settings.LOG_DIR)
                 self.audit = audit.AuditJournal(self.settings.environment)
                 self.provider = self.provider_factory(environment=self.settings.environment)
                 s = self.settings

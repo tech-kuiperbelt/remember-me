@@ -7,6 +7,8 @@ The environment override remains a guard for CLI and subprocess tests.
 import os
 import sys
 import tempfile
+import json
+from pathlib import Path
 import pytest
 
 
@@ -14,6 +16,8 @@ def pytest_configure(config):
     """Runs before any test module import — pin storage to in-memory SQLite."""
     config._test_environment = dict(os.environ)
     config._test_directory = tempfile.TemporaryDirectory(prefix="remember-me-tests-")
+    config_path = Path(config._test_directory.name) / "config.json"
+    config_path.write_text(json.dumps({"port": 1314, "language": "zh-CN"}))
     for key in list(os.environ):
         if key.startswith(("MEMORY_", "EMBED_", "FASTEMBED_", "SENTENCE_TRANSFORMERS_", "OLLAMA_")):
             os.environ.pop(key)
@@ -21,6 +25,8 @@ def pytest_configure(config):
         "MEMORY_STORAGE": "sqlite", "MEMORY_STORAGE_PATH": ":memory:",
         "MEMORY_DEFAULT_NAMESPACE": "default",
         "MEMORY_AUDIT_PATH": os.path.join(config._test_directory.name, "audit.jsonl"),
+        "MEMORY_DATA_DIR": config._test_directory.name,
+        "MEMORY_TEMP_DIR": os.path.join(config._test_directory.name, "tmp"),
         "EMBED_PROVIDER": "ollama", "EMBED_MODEL": "bge-m3", "EMBED_DIM": "1024",
         "EMBED_PRELOAD": "false", "OLLAMA_BASE_URL": "http://127.0.0.1:1",
     })
