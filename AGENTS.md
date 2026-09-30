@@ -13,10 +13,12 @@ python -m app.server --data-dir /path/to/data  # config is <DIR>/config.jsonc
 `bin/start.sh` is the recommended launcher: it sets `MEMORY_STORAGE=dual` and
 sources the gitignored, host-specific `.env` (embedding provider and model
 cache) if present. The configured provider must match the active embedding
-profile in `data/memories.db`, otherwise startup fails and requires an offline
+profile in the data directory's `memories.db`, otherwise startup fails and requires an offline
 `app.embedding_cli reindex`/`activate`.
 
-Data directory selection: `--data-dir` > `MEMORY_DATA_DIR` > project `data`; relative
+Data directory selection: `--data-dir` > `MEMORY_DATA_DIR` > the OS per-user default
+(Linux `~/.remember-me/`, Windows `%LOCALAPPDATA%\remember-me\` with a `~/AppData/Local`
+fallback, macOS `~/Library/Application Support/remember-me/`); relative
 directories are resolved against the project root. `<data-dir>/config.jsonc` contains
 `{"port":1314,"language":"zh-CN","auto_download_model":true,"proxy":{"enabled":false,"url":""}}`
 and is created only on normal startup. Missing fields use these defaults.
@@ -76,7 +78,7 @@ HTTP endpoints (all share the same service/runtime/provider/storage):
 | Variable | Default | Notes |
 |---|---|---|
 | `MEMORY_STORAGE` | `sqlite` | `sqlite` or `dual`; all other values fail startup |
-| `MEMORY_DATA_DIR` | project `data` | Runtime data root; `--data-dir` takes precedence |
+| `MEMORY_DATA_DIR` | OS per-user default | Runtime data root; `--data-dir` takes precedence |
 | `MEMORY_STORAGE_PATH` | `memories.db` | SQLite primary path relative to data root |
 | `MEMORY_REPLICA_PATH` | derived from primary | NDJSON replica path in dual mode (`.jsonl` or `.ndjson`) |
 | `MEMORY_STORAGE_PATH_DUAL` | unset | Deprecated compatibility alias for `MEMORY_REPLICA_PATH` |

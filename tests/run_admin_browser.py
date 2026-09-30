@@ -17,6 +17,7 @@ for key in list(os.environ):
         os.environ.pop(key)
 work = tempfile.TemporaryDirectory(prefix="remember-ui-test-")
 os.environ.update({"MEMORY_STORAGE":"sqlite", "MEMORY_STORAGE_PATH":":memory:",
+                   "MEMORY_DATA_DIR": work.name,
                    "MEMORY_AUDIT_PATH":str(Path(work.name) / "audit.jsonl"),
                    "EMBED_PROVIDER":"ollama", "EMBED_PRELOAD":"false",
                    "OLLAMA_BASE_URL":"http://127.0.0.1:1"})

@@ -12,7 +12,7 @@ from .config_migrate import migrate
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="remember-me offline maintenance")
-    parser.add_argument("--data-dir", help="Data directory (default: project data)")
+    parser.add_argument("--data-dir", help="Data directory; defaults to the per-user OS data directory")
     parser.add_argument("command")
     parser.add_argument("arguments", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
@@ -36,7 +36,7 @@ def main(argv=None):
             print("Usage: bin/manage recover [SOURCE.jsonl] [TARGET.db]")
             return 0
         if args.command == "config":
-            print("Usage: bin/manage [--data-dir PATH] config {status|migrate}")
+            print("Usage: bin/manage [--data-dir PATH] config {status|migrate [--source-data-dir PATH]}")
             return 0
     # Help is delegated before activating file-producing runtime dependencies.
     if "--help" in tail or "-h" in tail:

@@ -26,7 +26,7 @@ def resolve_replica_path(primary_path: str, configured: str | None = None,
         logger.warning("MEMORY_STORAGE_PATH_DUAL is deprecated; use MEMORY_REPLICA_PATH")
         return legacy
     if primary_path == ":memory:":
-        return "data/memories.jsonl"
+        return "memories.jsonl"
     return os.path.splitext(primary_path)[0] + ".jsonl"
 
 

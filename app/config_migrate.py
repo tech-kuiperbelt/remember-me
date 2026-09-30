@@ -11,7 +11,8 @@ import sqlite3
 import tempfile
 
 from .configuration import (Configuration, DEFAULTS, PATH_DEFAULTS,
-                            PROJECT_ROOT, atomic_json, atomic_config, rooted_path)
+                            PROJECT_ROOT, atomic_json, atomic_config, rooted_path,
+                            default_data_dir)
 from .database_lock import DatabaseWriterLock
 
 
@@ -102,8 +103,9 @@ def migrate(data_dir=None, source_data_dir=None, *, dry_run=False, environment=N
     def directory(value):
         path = Path(value).expanduser()
         return (path if path.is_absolute() else project_root / path).resolve()
-    source_root = directory(source_data_dir or env.get("MEMORY_DATA_DIR") or project_root / "data")
-    target_root = directory(data_dir or env.get("MEMORY_DATA_DIR") or project_root / "data")
+    default_root = directory(default_data_dir(env))
+    source_root = directory(source_data_dir or env.get("MEMORY_DATA_DIR") or default_root)
+    target_root = directory(data_dir or env.get("MEMORY_DATA_DIR") or default_root)
     journal = rooted_path(target_root, ".config-migration.json")
     if journal.exists():
         return _recover(journal, project_root, target_root, dry_run)
@@ -242,7 +244,10 @@ def migrate(data_dir=None, source_data_dir=None, *, dry_run=False, environment=N
             lines = [line for line in (old_env or "").splitlines()
                      if not any(re.match(r"^\s*(?:export\s+)?" + re.escape(key) + r"=", line) for key in keys)]
             lines.extend(f"{key}={shlex.quote(value)}" for key, value in path_updates.items())
-            lines.append(f"MEMORY_DATA_DIR={shlex.quote(os.path.relpath(target_root, project_root))}")
+            if target_root != default_root:
+                # A custom target stays explicit; the platform default needs no
+                # override so future starts follow the shared resolution rule.
+                lines.append(f"MEMORY_DATA_DIR={shlex.quote(os.path.relpath(target_root, project_root))}")
             _atomic_text(project_root / ".env", "\n".join(lines) + "\n")
             atomic_config(location, config.as_dict(), source_text=config.source_text)
             state["phase"] = "committed"

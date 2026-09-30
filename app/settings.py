@@ -7,7 +7,7 @@ from typing import Mapping
 
 from .storage import resolve_replica_path
 from .namespace_policy import normalize_namespace, validate_namespace_name
-from .configuration import Configuration, PROJECT_ROOT
+from .configuration import Configuration, PROJECT_ROOT, default_data_dir, rooted_path
 
 
 @dataclass(frozen=True)
@@ -52,15 +52,36 @@ class Settings:
         backend = env.get("MEMORY_STORAGE", "sqlite")
         if backend not in ("sqlite", "dual"):
             raise RuntimeError(f"unknown MEMORY_STORAGE={backend}; use 'sqlite' or 'dual'")
-        path = env.get("MEMORY_STORAGE_PATH") or "data/memories.db"
-        replica = resolve_replica_path(path, env.get("MEMORY_REPLICA_PATH"),
-                                       env.get("MEMORY_STORAGE_PATH_DUAL"))
+        # Low-level construction has no side effects but must root relative
+        # paths under the same data directory the service entrypoints use, so
+        # defaults never fall back into the repository's data/ directory.
+        selected = env.get("MEMORY_DATA_DIR")
+        if selected:
+            root = Path(selected).expanduser()
+            if not root.is_absolute():
+                root = PROJECT_ROOT / root
+        else:
+            root = default_data_dir(env)
+        root = root.resolve()
+
+        def rooted(value):
+            return str(rooted_path(root, value))
+
+        primary = env.get("MEMORY_STORAGE_PATH") or "memories.db"
+        path = primary if primary == ":memory:" else rooted(primary)
+        replica = rooted(resolve_replica_path(path, env.get("MEMORY_REPLICA_PATH"),
+                                               env.get("MEMORY_STORAGE_PATH_DUAL")))
+        audit_path = rooted(env.get("MEMORY_AUDIT_PATH", "audit.jsonl"))
+        temp_dir = rooted(env.get("MEMORY_TEMP_DIR") or "tmp")
+        log_dir = rooted(env.get("MEMORY_LOG_DIR") or "logs")
+        env.update(MEMORY_DATA_DIR=str(root), MEMORY_STORAGE_PATH=path,
+                   MEMORY_REPLICA_PATH=replica, MEMORY_AUDIT_PATH=audit_path,
+                   MEMORY_TEMP_DIR=temp_dir, MEMORY_LOG_DIR=log_dir)
         dtype = env.get("EMBED_DTYPE", "float16")
         if dtype not in ("float16", "float32"):
             raise ValueError("EMBED_DTYPE must be float16 or float32")
         namespace = normalize_namespace(env.get("MEMORY_DEFAULT_NAMESPACE", "default")) or "default"
         validate_namespace_name(namespace)
-        root = env.get("MEMORY_DATA_DIR", str(PROJECT_ROOT / "data"))
         return cls(
             environment=MappingProxyType(env), STORAGE_BACKEND=backend, STORAGE_PATH=path,
             REPLICA_PATH=replica, EMBED_DTYPE=dtype, DEFAULT_NAMESPACE=namespace,
@@ -76,12 +97,11 @@ class Settings:
             IMPORT_MAX_BYTES=int(env.get("MEMORY_IMPORT_MAX_BYTES", "67108864")),
             IMPORT_MAX_RECORDS=int(env.get("MEMORY_IMPORT_MAX_RECORDS", "10000")),
             OLLAMA_BASE_URL=env.get("OLLAMA_BASE_URL", "http://localhost:11434"),
-            AUDIT_PATH=env.get("MEMORY_AUDIT_PATH", "data/audit.jsonl"),
+            AUDIT_PATH=audit_path,
             AUDIT_MAX_BYTES=int(env.get("MEMORY_AUDIT_MAX_BYTES", "10485760")),
             AUDIT_MAX_FILES=max(1, int(env.get("MEMORY_AUDIT_MAX_FILES", "10"))),
             AUDIT_MAX_EVENTS=int(env.get("MEMORY_AUDIT_MAX_EVENTS", "0")),
-            DATA_DIR=root, TEMP_DIR=env.get("MEMORY_TEMP_DIR", str(Path(root) / "tmp")),
-            LOG_DIR=env.get("MEMORY_LOG_DIR", str(Path(root) / "logs")),
+            DATA_DIR=str(root), TEMP_DIR=temp_dir, LOG_DIR=log_dir,
             PORT=int(env.get("MEMORY_PORT", "1314")),
-            LANGUAGE=env.get("MEMORY_LANGUAGE", "zh-CN"), CONFIG_PATH=str(Path(root) / "config.jsonc"),
+            LANGUAGE=env.get("MEMORY_LANGUAGE", "zh-CN"), CONFIG_PATH=str(root / "config.jsonc"),
         )

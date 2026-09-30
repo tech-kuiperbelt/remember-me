@@ -1,6 +1,7 @@
 """Bootstrap configuration and paths for application-owned runtime files."""
 import json
 import os
+import sys
 from pathlib import Path
 import tempfile
 from dataclasses import dataclass, field, replace
@@ -9,6 +10,7 @@ from . import jsonc
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_DIR_NAME = "remember-me"
 DEFAULTS = {"port": 1314, "language": "zh-CN", "auto_download_model": True,
             "proxy": {"enabled": False, "url": ""}}
 PROXY_VARIABLES = tuple(name for key in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY")
@@ -19,6 +21,26 @@ PATH_DEFAULTS = {
     "FASTEMBED_CACHE_DIR": "models/fastembed",
     "SENTENCE_TRANSFORMERS_CACHE_DIR": "models/sentence-transformers",
 }
+
+
+def default_data_dir(environment=None, *, system=None, home=None):
+    """Per-user default data directory for the current platform.
+
+    Pure path computation: importing, help and read-only commands must never
+    create the directory. Callers still resolve relative explicit overrides
+    against PROJECT_ROOT; only this OS default is derived from the user home.
+    """
+    env = os.environ if environment is None else environment
+    system = sys.platform if system is None else system
+    if home is None:
+        home = env.get("HOME") or env.get("USERPROFILE")
+    home = Path(home).expanduser() if home else Path.home()
+    if system == "win32":
+        base = env.get("LOCALAPPDATA") or str(home / "AppData" / "Local")
+        return Path(base).expanduser() / DEFAULT_DIR_NAME
+    if system == "darwin":
+        return home / "Library" / "Application Support" / DEFAULT_DIR_NAME
+    return home / f".{DEFAULT_DIR_NAME}"
 
 
 def atomic_text(path, text, *, exclusive=False):
@@ -105,9 +127,12 @@ class Configuration:
     def load(cls, data_dir=None, *, create=False, environment=None):
         env = os.environ if environment is None else environment
         selected = data_dir or env.get("MEMORY_DATA_DIR")
-        root = Path(selected).expanduser() if selected else PROJECT_ROOT / "data"
-        if not root.is_absolute():
-            root = PROJECT_ROOT / root
+        if selected:
+            root = Path(selected).expanduser()
+            if not root.is_absolute():
+                root = PROJECT_ROOT / root
+        else:
+            root = default_data_dir(env)
         root = root.resolve()
         location = rooted_path(root, "config.jsonc")
         legacy = rooted_path(root, "config.json") if not location.exists() else None

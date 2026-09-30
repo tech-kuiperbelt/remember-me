@@ -23,6 +23,7 @@ from tests.conftest import FakeProvider
 
 def settings(tmp_path, **overrides):
     return Settings.from_env({"MEMORY_STORAGE": "dual",
+        "MEMORY_DATA_DIR": str(tmp_path),
         "MEMORY_STORAGE_PATH": str(tmp_path / "test.db"),
         "MEMORY_AUDIT_PATH": str(tmp_path / "audit.jsonl"),
         "EMBED_PRELOAD": "false", **overrides})
@@ -34,7 +35,7 @@ def runtime(tmp_path, **kwargs):
 
 
 def test_settings_are_a_snapshot(monkeypatch, tmp_path):
-    env = {"MEMORY_STORAGE_PATH": str(tmp_path / "one.db"), "MEMORY_DEFAULT_NAMESPACE": "one"}
+    env = {"MEMORY_DATA_DIR": str(tmp_path), "MEMORY_STORAGE_PATH": str(tmp_path / "one.db"), "MEMORY_DEFAULT_NAMESPACE": "one"}
     snapshot = Settings.from_env(env)
     env["MEMORY_DEFAULT_NAMESPACE"] = "two"
     monkeypatch.setenv("MEMORY_DEFAULT_NAMESPACE", "three")

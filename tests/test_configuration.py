@@ -8,7 +8,7 @@ import sys
 
 import pytest
 
-from app.configuration import Configuration, rooted_path
+from app.configuration import Configuration, rooted_path, default_data_dir
 from app.jsonc import loads
 from app.config_migrate import migrate
 from app.database_lock import DatabaseWriterLock
@@ -114,10 +114,10 @@ def legacy_layout(tmp_path):
 def test_migration_preview_is_read_only_then_copies_and_switches(tmp_path):
     project, source, env = legacy_layout(tmp_path)
     target = tmp_path / "new-data"
-    preview = migrate(target, environment=env, project_root=project, dry_run=True)
+    preview = migrate(target, source, environment=env, project_root=project, dry_run=True)
     assert not target.exists() and not (source / "config.jsonc").exists()
     assert not preview["conflicts"]
-    result = migrate(target, environment=env, project_root=project)
+    result = migrate(target, source, environment=env, project_root=project)
     assert result["migrated"] and result["source_files_retained"]
     assert (target / "memories.db").read_bytes() == (source / "memories.db").read_bytes()
     assert (target / "logs/server.log").read_text() == "old logs"
@@ -132,7 +132,7 @@ def test_migration_preview_is_read_only_then_copies_and_switches(tmp_path):
 
 def test_in_place_migration_does_not_copy_existing_database(tmp_path):
     project, source, env = legacy_layout(tmp_path)
-    result = migrate(environment=env, project_root=project)
+    result = migrate(source, source, environment=env, project_root=project)
     assert result["migrated"]
     assert (source / "logs/server.log").exists()
     assert (source / "config.jsonc").exists()
@@ -143,11 +143,11 @@ def test_migration_rejects_conflicts_and_live_writer(tmp_path):
     target = tmp_path / "new-data"
     with DatabaseWriterLock(str(source / "memories.db")):
         with pytest.raises(RuntimeError, match="active remember-me writer"):
-            migrate(target, environment=env, project_root=project)
+            migrate(target, source, environment=env, project_root=project)
     target.mkdir(exist_ok=True)
     (target / "audit.jsonl").write_text("keep")
     with pytest.raises(ValueError, match="already exist"):
-        migrate(target, environment=env, project_root=project)
+        migrate(target, source, environment=env, project_root=project)
     assert (target / "audit.jsonl").read_text() == "keep"
 
 
@@ -162,7 +162,7 @@ def test_failed_migration_keeps_original_configuration_and_files(tmp_path, monke
         return atomic_config(path, *args, **kwargs)
     monkeypatch.setattr("app.config_migrate.atomic_config", failed_publish)
     with pytest.raises(OSError, match="simulated"):
-        migrate(target, environment=env, project_root=project)
+        migrate(target, source, environment=env, project_root=project)
     assert (project / ".env").read_text() == original_env
     assert not (target / "memories.db").exists()
     assert not (target / "config.jsonc").exists()
@@ -179,7 +179,7 @@ def test_migration_preserves_language_and_port_for_new_data_root(tmp_path):
 
 def test_second_migration_uses_active_logs_instead_of_retained_legacy_logs(tmp_path):
     project, source, env = legacy_layout(tmp_path)
-    first = migrate(environment=env, project_root=project)
+    first = migrate(source, source, environment=env, project_root=project)
     (source / "logs/server.log").write_text("new active logs")
     second = migrate(tmp_path / "new-data", source,
                      environment={**first["path_settings"], "MEMORY_DATA_DIR": str(source)},
@@ -200,18 +200,120 @@ def crash(path, text):
     original(path, text)
     os._exit(19)
 migration._atomic_text = crash
-migration.migrate(sys.argv[1], environment=json.loads(sys.argv[3]), project_root=sys.argv[2])
+migration.migrate(sys.argv[1], sys.argv[4], environment=json.loads(sys.argv[3]), project_root=sys.argv[2])
 '''
-    result = subprocess.run([sys.executable, "-c", script, str(target), str(project), json.dumps(env)],
+    result = subprocess.run([sys.executable, "-c", script, str(target), str(project), json.dumps(env), str(source)],
                             capture_output=True, text=True, timeout=10)
     assert result.returncode == 19, result.stderr
     with pytest.raises(ValueError, match="Interrupted data migration"):
         Configuration.load(target, environment={})
-    preview = migrate(target, project_root=project, environment={}, dry_run=True)
+    preview = migrate(target, source, project_root=project, environment={}, dry_run=True)
     assert preview["interrupted_migration"]
-    recovered = migrate(target, project_root=project, environment={})
+    recovered = migrate(target, source, project_root=project, environment={})
     assert recovered["recovered"] and not recovered["committed"]
     assert (project / ".env").read_text() == original_env
     assert not (target / "memories.db").exists()
     assert not (target / ".config-migration.json").exists()
-    assert migrate(target, project_root=project, environment=env)["migrated"]
+    assert migrate(target, source, project_root=project, environment=env)["migrated"]
+
+
+@pytest.mark.parametrize("system,expected", [
+    ("linux", "/custom/home/.remember-me"),
+    ("freebsd12", "/custom/home/.remember-me"),
+    ("darwin", "/custom/home/Library/Application Support/remember-me"),
+])
+def test_default_data_dir_posix_rules(system, expected):
+    assert default_data_dir({"HOME": "/custom/home"}, system=system) == Path(expected)
+
+
+def test_default_data_dir_windows_uses_localappdata_and_falls_back_to_home():
+    assert default_data_dir({"LOCALAPPDATA": "C:/Users/u/AppData/Local"}, system="win32",
+                            home="C:/Users/u") == Path("C:/Users/u/AppData/Local/remember-me")
+    assert default_data_dir({"USERPROFILE": "C:/Users/u"}, system="win32") == \
+        Path("C:/Users/u/AppData/Local/remember-me")
+
+
+def test_config_load_defaults_to_platform_directory(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.configuration.default_data_dir",
+                        lambda env: tmp_path / "home" / ".remember-me")
+    result = Configuration.load(environment={})
+    assert result.data_dir == (tmp_path / "home" / ".remember-me").resolve()
+    assert result.path == result.data_dir / "config.jsonc"
+    assert not result.path.exists()
+
+
+def test_config_load_priority_and_relative_override(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.configuration.PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr("app.configuration.default_data_dir", lambda env: tmp_path / "default")
+    env = {"MEMORY_DATA_DIR": str(tmp_path / "env")}
+    assert Configuration.load(tmp_path / "cli", environment=env).data_dir == (tmp_path / "cli").resolve()
+    assert Configuration.load(environment=env).data_dir == (tmp_path / "env").resolve()
+    assert Configuration.load(environment={}).data_dir == (tmp_path / "default").resolve()
+    assert Configuration.load(environment={"MEMORY_DATA_DIR": "relative"}).data_dir == \
+        (tmp_path / "relative").resolve()
+
+
+def test_settings_defaults_root_under_platform_directory(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.settings.default_data_dir", lambda env: tmp_path / "os-default")
+    settings = Settings.from_env({"MEMORY_STORAGE": "dual"})
+    assert settings.DATA_DIR == str(tmp_path / "os-default")
+    assert settings.STORAGE_PATH == str(tmp_path / "os-default" / "memories.db")
+    assert settings.AUDIT_PATH == str(tmp_path / "os-default" / "audit.jsonl")
+    assert settings.REPLICA_PATH == str(tmp_path / "os-default" / "memories.jsonl")
+    assert settings.environment["MEMORY_AUDIT_PATH"] == settings.AUDIT_PATH
+
+
+@pytest.mark.parametrize("key", ["MEMORY_STORAGE_PATH", "MEMORY_REPLICA_PATH",
+                                 "MEMORY_STORAGE_PATH_DUAL", "MEMORY_AUDIT_PATH",
+                                 "MEMORY_TEMP_DIR", "MEMORY_LOG_DIR"])
+@pytest.mark.parametrize("escape", ["relative", "absolute", "symlink"])
+def test_settings_from_env_rejects_path_escape(tmp_path, key, escape):
+    root = tmp_path / "data"
+    root.mkdir()
+    (root / "escape").symlink_to(tmp_path, target_is_directory=True)
+    value = {"relative": "../outside", "absolute": str(tmp_path / "outside"),
+             "symlink": "escape/outside"}[escape]
+    with pytest.raises(ValueError, match="outside data_dir"):
+        Settings.from_env({"MEMORY_DATA_DIR": str(root), key: value})
+
+
+def test_settings_from_env_roots_directories_and_preserves_memory_primary(tmp_path):
+    settings = Settings.from_env({"MEMORY_DATA_DIR": str(tmp_path),
+                                 "MEMORY_STORAGE_PATH": ":memory:",
+                                 "MEMORY_TEMP_DIR": "work/tmp", "MEMORY_LOG_DIR": "work/logs"})
+    assert settings.STORAGE_PATH == ":memory:"
+    assert settings.REPLICA_PATH == str(tmp_path / "memories.jsonl")
+    assert settings.TEMP_DIR == settings.environment["MEMORY_TEMP_DIR"] == str(tmp_path / "work/tmp")
+    assert settings.LOG_DIR == settings.environment["MEMORY_LOG_DIR"] == str(tmp_path / "work/logs")
+    assert not (tmp_path / "work").exists()
+
+
+def test_platform_default_directory_roots_runtime_paths_and_rejects_escape(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.configuration.default_data_dir", lambda env: tmp_path / "os-default")
+    settings = Settings.from_config(create=True, environment={"MEMORY_STORAGE_PATH": "db/main.db"})
+    assert settings.STORAGE_PATH == str(tmp_path / "os-default" / "db/main.db")
+    assert settings.AUDIT_PATH == str(tmp_path / "os-default" / "audit.jsonl")
+    assert (tmp_path / "os-default" / "config.jsonc").exists()
+    with pytest.raises(ValueError, match="outside data_dir"):
+        Settings.from_config(environment={"MEMORY_STORAGE_PATH": str(tmp_path / "outside.db")})
+
+
+def test_migration_to_platform_default_drops_data_dir_override(tmp_path, monkeypatch):
+    project, source, env = legacy_layout(tmp_path)
+    home = tmp_path / "home"
+    monkeypatch.setattr("app.config_migrate.default_data_dir", lambda environment: home / ".remember-me")
+    env = {**env, "MEMORY_DATA_DIR": str(source)}
+    target = home / ".remember-me"
+    result = migrate(target, source, environment=env, project_root=project)
+    assert result["migrated"]
+    assert (target / "memories.db").read_bytes() == (source / "memories.db").read_bytes()
+    assert "MEMORY_DATA_DIR" not in (project / ".env").read_text()
+
+
+def test_migration_to_custom_target_keeps_data_dir_override(tmp_path, monkeypatch):
+    project, source, env = legacy_layout(tmp_path)
+    monkeypatch.setattr("app.config_migrate.default_data_dir", lambda environment: tmp_path / "home")
+    target = tmp_path / "new-data"
+    result = migrate(target, source, environment=env, project_root=project)
+    assert result["migrated"]
+    assert f"MEMORY_DATA_DIR={os.path.relpath(target, project)}" in (project / ".env").read_text()

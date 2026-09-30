@@ -14,7 +14,8 @@ Usage: bin/manage <command> [options]
 Read-only:
   status                         Show configured paths and embedding status
   config status                  Show effective bootstrap configuration
-  config migrate [--dry-run]     Offline migration of runtime files and caches
+  config migrate [--source-data-dir PATH] [--dry-run]
+                                 Offline migration of runtime files and caches
   embedding status [DB]          Show embedding profiles and codec status
 
 Offline writes (stop the service first):
@@ -24,8 +25,9 @@ Offline writes (stop the service first):
   migrate anchors <draft|apply>  Offline anchor backfill (draft is read-only)
   recover [SOURCE] [TARGET]      Rebuild SQLite from vector-free JSONL
 
-Defaults come from data/config.jsonc and .env. Use --data-dir PATH before the command. Use the underlying command's
---help for all provider, profile, namespace, and batch-size options.
+Defaults come from the per-user OS data directory's config.jsonc and .env. Use --data-dir PATH before
+the command. Migrating the legacy repository data/ directory requires --source-data-dir data. Use the
+underlying command's --help for all provider, profile, namespace, and batch-size options.
 EOF
 }
 

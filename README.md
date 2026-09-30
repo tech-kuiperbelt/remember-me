@@ -39,9 +39,17 @@ url = "http://127.0.0.1:1314/mcp"
 
 ## 配置与数据目录
 
-默认数据目录是仓库的 `data`，与启动时的工作目录无关。可通过 `--data-dir DIR` 或
-`MEMORY_DATA_DIR` 指定；相对目录按仓库根目录解析，命令参数优先。配置固定在选中目录的
-`config.jsonc`，首次正常启动会创建：
+默认数据目录是当前用户的持久目录，与启动时的工作目录无关：
+
+| 操作系统 | 默认数据目录 |
+|---|---|
+| Linux | `~/.remember-me/` |
+| Windows | `%LOCALAPPDATA%\remember-me\`（未设置时回退到 `%USERPROFILE%\AppData\Local\remember-me`） |
+| macOS | `~/Library/Application Support/remember-me/` |
+
+可通过 `--data-dir DIR` 或 `MEMORY_DATA_DIR` 覆盖；相对目录按仓库根目录解析，优先级
+`--data-dir` > `MEMORY_DATA_DIR` > 系统默认。配置固定在选中目录的 `config.jsonc`，
+首次正常启动会创建：
 
 ```jsonc
 {
@@ -99,12 +107,17 @@ bin/manage --data-dir /path/to/runtime-data config status
 被拒绝；安装资源、`.env`、外部只读导入源和独立 Ollama 服务的模型目录不受此规则约束。
 管理界面显示数据目录内的相对路径，内部执行使用绝对路径。
 
-旧配置先预览，再停服迁移。迁移保留源文件，复制校验成功后更新 `.env` 路径和配置：
+旧配置先预览，再停服迁移。迁移保留源文件，复制校验成功后更新 `.env` 路径和配置。
+迁移源、目标的缺省值都按上面的优先级选择；迁移仓库旧 `data/` 时显式传源目录，
+`bin/manage` 会加载 `.env`，因此还需显式指定目标（或先移除 `MEMORY_DATA_DIR`）。
+迁移到系统默认目录时，成功后从 `.env` 删除 `MEMORY_DATA_DIR`，让后续启动采用默认规则；
+迁移到自定义目录时保留显式覆盖项：
 
 ```bash
-bin/manage config migrate --dry-run
+# 迁移仓库 data/ 到当前系统默认目录
+bin/manage --data-dir ~/.remember-me config migrate --source-data-dir data --dry-run
 # 在配置页面进入 Maintenance 并 Shut Down Server，等待退出
-bin/manage config migrate
+bin/manage --data-dir ~/.remember-me config migrate --source-data-dir data
 bin/start.sh
 ```
 

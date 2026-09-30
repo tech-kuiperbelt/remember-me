@@ -22,6 +22,7 @@ BASE = "http://" + HOST
 def _settings(tmp_path):
     return Settings.from_env({
         "MEMORY_STORAGE": "dual",
+        "MEMORY_DATA_DIR": str(tmp_path),
         "MEMORY_STORAGE_PATH": str(tmp_path / "test.db"),
         "MEMORY_AUDIT_PATH": str(tmp_path / "audit.jsonl"),
         "EMBED_PRELOAD": "false",

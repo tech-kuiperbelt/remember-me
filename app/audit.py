@@ -32,7 +32,7 @@ request_audit_context = contextvars.ContextVar("request_audit_context", default=
 # `request_audit_context`, which the admin/SSE admission middleware owns.
 http_transport_context = contextvars.ContextVar("http_transport_context", default=None)
 
-AUDIT_PATH = "data/audit.jsonl"
+AUDIT_PATH = "audit.jsonl"
 AUDIT_MAX_BYTES = 10 * 1024 * 1024
 AUDIT_MAX_FILES = 10
 AUDIT_MAX_EVENTS = 0
@@ -226,7 +226,7 @@ class AuditJournal:
 
     def __init__(self, environment=None):
         env = os.environ if environment is None else environment
-        self.path = Path(env.get("MEMORY_AUDIT_PATH", "data/audit.jsonl"))
+        self.path = Path(env.get("MEMORY_AUDIT_PATH", "audit.jsonl"))
         self.max_bytes = int(env.get("MEMORY_AUDIT_MAX_BYTES", "10485760"))
         self.max_files = max(1, int(env.get("MEMORY_AUDIT_MAX_FILES", "10")))
         self.max_events = int(env.get("MEMORY_AUDIT_MAX_EVENTS", "0"))

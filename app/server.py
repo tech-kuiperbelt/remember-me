@@ -1135,7 +1135,8 @@ async def main(argv=None):
     from .runtime import create_runtime
     from .configuration import activate_environment
     parser = argparse.ArgumentParser(description="Memory MCP Server")
-    parser.add_argument("--data-dir", help="Data directory (default: project data); contains config.jsonc")
+    parser.add_argument("--data-dir", help="Data directory; defaults to the per-user OS data directory "
+                                          "and contains config.jsonc")
     transport = parser.add_mutually_exclusive_group()
     transport.add_argument("--stdio", action="store_true", help="Use subprocess stdin/stdout instead of HTTP")
     transport.add_argument("--port", type=int, default=None,
