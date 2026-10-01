@@ -51,7 +51,11 @@ BODY_SCRIPT = '<script type="module">' + checks + '</script>'
 
 
 class InjectHarness:
-    """Inject the test-only harness into the real console HTML response."""
+    """Inject the test-only harness into the real console HTML response.
+
+    A ``?theme=...`` query seeds the theme environment *before* the synchronous
+    bootstrap runs, without adding test hooks to production code.
+    """
 
     def __init__(self, app):
         self.app = app
@@ -61,6 +65,35 @@ class InjectHarness:
                 and scope.get("method") == "GET"):
             await self.app(scope, receive, send)
             return
+        from urllib.parse import parse_qs
+        theme = (parse_qs(scope.get("query_string", b"").decode()).get("theme") or [""])[0]
+        seed = ""
+        if theme in ("light", "dark", "system"):
+            seed = ("<script>try{localStorage.setItem('remember-me.theme.v1','"
+                    + theme + "')}catch(e){}</script>")
+        if theme == "invalid":
+            seed = "<script>localStorage.setItem('remember-me.theme.v1','bogus')</script>"
+        if theme == "default":
+            seed = "<script>localStorage.removeItem('remember-me.theme.v1')</script>"
+        if theme == "system":
+            seed += """<script>
+            (() => {
+              const original = window.matchMedia.bind(window);
+              const listeners = new Set();
+              const query = '(prefers-color-scheme: dark)';
+              const media = {matches:false,
+                addEventListener:(type, fn) => {if(type==='change') listeners.add(fn)},
+                addListener:fn => listeners.add(fn)};
+              window.matchMedia = q => q === query ? media : original(q);
+              window.__themeMedia = {set(value) {
+                media.matches = value;
+                listeners.forEach(fn => fn({matches:value}));
+              }};
+            })();
+            </script>"""
+        if theme == "blocked":
+            seed = ("<script>Object.defineProperty(window,'localStorage',"
+                    "{get(){throw new Error('storage disabled')}})</script>")
         messages = []
 
         async def capture(message):
@@ -69,9 +102,15 @@ class InjectHarness:
         await self.app(scope, receive, capture)
         start = next(m for m in messages if m["type"] == "http.response.start")
         raw = b"".join(m.get("body", b"") for m in messages if m["type"] == "http.response.body")
-        text = (raw.decode("utf-8")
-                .replace("</head>", HEAD_SCRIPT + "</head>")
-                .replace("</body>", BODY_SCRIPT + "</body>"))
+        text = raw.decode("utf-8")
+        # Seed must run before the synchronous theme bootstrap.
+        if seed:
+            marker = '<script>'
+            idx = text.find(marker)
+            if idx == -1:
+                raise AssertionError("theme bootstrap script missing from console HTML")
+            text = text[:idx] + seed + text[idx:]
+        text = text.replace("</head>", HEAD_SCRIPT + "</head>").replace("</body>", BODY_SCRIPT + "</body>")
         payload = text.encode("utf-8")
         headers = [(k, v) for k, v in start.get("headers", []) if k.lower() != b"content-length"]
         headers.append((b"content-length", str(len(payload)).encode()))
@@ -90,41 +129,100 @@ t = threading.Thread(target=server.run, kwargs={'sockets':[sock]}, daemon=True);
 VIEWPORTS = ["1024,768", "1280,720", "1366,768", "1920,1080", "2560,1440"]
 SCALES = ["1", "1.25", "1.5"]
 
+# Theme checks run at a couple of viewports in both color schemes instead of
+# doubling the whole matrix. The URL carries the scenario so the regression
+# module can branch (see admin_regression.js).
+THEME_VIEWPORTS = ["1440,900", "768,800"]
+THEME_SCHEMES = ["light", "dark"]
+THEME_EDGE_CASES = ["system", "blocked", "default", "invalid"]
 
-def run_case(profile, label, window_size, scale, shot_dir):
+
+def run_case(profile, label, window_size, scale, shot_dir, query, theme=None):
     """Run the browser regression at one viewport/scale, saving a screenshot."""
     shot = Path(shot_dir) / (label + ".png")
+    url = f'http://127.0.0.1:{port}/admin/console?smoke=' + query
+    if theme:
+        url += '&theme=' + theme
     cmd = ['google-chrome', '--headless', '--no-sandbox', '--disable-gpu',
            '--disable-dev-shm-usage', '--no-first-run', '--no-default-browser-check',
            '--user-data-dir=' + profile, '--window-size=' + window_size,
            '--force-device-scale-factor=' + scale,
            '--screenshot=' + str(shot), '--dump-dom',
-           '--virtual-time-budget=40000',
-           f'http://127.0.0.1:{port}/admin/console?smoke=' + label]
+           '--virtual-time-budget=40000', url]
     return subprocess.run(cmd, capture_output=True, text=True, timeout=90), shot
 
 
-try:
+def check(proc):
     import re
     import html
-    with tempfile.TemporaryDirectory(prefix='keyword-chrome-') as profile, \
-         tempfile.TemporaryDirectory(prefix='remember-ui-shots-') as shots:
+    found = re.search(r'<pre id="smoke-result">(.*?)</pre>', proc.stdout, re.S)
+    text = html.unescape(found.group(1)) if found else ''
+    return text.startswith('PASS:'), text
+
+
+try:
+    # Screenshots are temporary by default. Set UI_SHOT_DIR to keep them for
+    # manual review (e.g. UI_SHOT_DIR=/tmp/ui-shots); they are never committed.
+    import contextlib
+    keep_dir = os.environ.get("UI_SHOT_DIR")
+    if keep_dir:
+        os.makedirs(keep_dir, exist_ok=True)
+    _shots_ctx = contextlib.nullcontext(keep_dir) if keep_dir \
+        else tempfile.TemporaryDirectory(prefix='remember-ui-shots-')
+    with tempfile.TemporaryDirectory(prefix='keyword-chrome-') as profile, _shots_ctx as shots:
         failures = []
         for window_size in VIEWPORTS:
             for scale in SCALES:
                 label = window_size.replace(',', 'x') + '@' + scale
-                proc, shot = run_case(profile, label, window_size, scale, shots)
-                found = re.search(r'<pre id="smoke-result">(.*?)</pre>', proc.stdout, re.S)
-                text = html.unescape(found.group(1)) if found else ''
-                ok = text.startswith('PASS:')
+                proc, shot = run_case(profile, label, window_size, scale, shots, label)
+                ok, text = check(proc)
                 print(('PASS ' if ok else 'FAIL ') + label + ' -> ' + str(shot) +
                       ('' if ok else ' :: ' + (text or proc.stderr[-400:])))
                 if not ok:
                     failures.append(label)
+        # Theme foundation scenarios: light/dark at desktop and narrow widths.
+        for window_size in THEME_VIEWPORTS:
+            for scheme in THEME_SCHEMES:
+                label = 'theme-' + window_size.replace(',', 'x') + '-' + scheme
+                proc, shot = run_case(profile, label, window_size, '1', shots,
+                                      label, theme=scheme)
+                ok, text = check(proc)
+                print(('PASS ' if ok else 'FAIL ') + label + ' -> ' + str(shot) +
+                      ('' if ok else ' :: ' + (text or proc.stderr[-400:])))
+                if not ok:
+                    failures.append(label)
+        for scheme in THEME_EDGE_CASES:
+            label = 'theme-1280x800-' + scheme
+            proc, shot = run_case(profile, label, '1280,800', '1', shots,
+                                  label, theme=scheme)
+            ok, text = check(proc)
+            print(('PASS ' if ok else 'FAIL ') + label + ' -> ' + str(shot) +
+                  ('' if ok else ' :: ' + (text or proc.stderr[-400:])))
+            if not ok:
+                failures.append(label)
+        for subject, scheme in (('memories', 'light'), ('memories', 'dark'),
+                                ('modal', 'dark'), ('collapsed', 'dark')):
+            label = 'theme-1440x900-' + subject + '-' + scheme
+            proc, shot = run_case(profile, label, '1440,900', '1', shots,
+                                  label, theme=scheme)
+            ok, text = check(proc)
+            print(('PASS ' if ok else 'FAIL ') + label + ' -> ' + str(shot) +
+                  ('' if ok else ' :: ' + (text or proc.stderr[-400:])))
+            if not ok:
+                failures.append(label)
+        label = 'theme-1280x800-refresh-dark'
+        proc, shot = run_case(profile, label, '1280,800', '1', shots,
+                              label, theme='dark')
+        ok, text = check(proc)
+        print(('PASS ' if ok else 'FAIL ') + label + ' -> ' + str(shot) +
+              ('' if ok else ' :: ' + (text or proc.stderr[-400:])))
+        if not ok:
+            failures.append(label)
         if failures:
-            print('FAIL: viewports failed: ' + ', '.join(failures))
+            print('FAIL: scenarios failed: ' + ', '.join(failures))
             sys.exit(1)
-        print('Screenshots (not committed): ' + shots + ' (temporary; removed on exit)')
+        print('Screenshots (not committed): ' + shots +
+              (' (retained for review)' if keep_dir else ' (temporary; removed on exit)'))
 finally:
     server.should_exit = True; t.join(timeout=5); sock.close(); service.storage.close()
     audit.close()

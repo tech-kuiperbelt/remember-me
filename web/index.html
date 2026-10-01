@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Memory Admin</title>
+<script>!function(){var p='system';try{p=localStorage.getItem('remember-me.theme.v1')||p}catch(e){}if(p!=='light'&&p!=='dark')p='system';document.documentElement.dataset.theme=p==='dark'||p==='system'&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.dataset.themePreference=p}();</script>
+<link rel="stylesheet" href="/admin/console/static/theme.css">
 <link rel="stylesheet" href="/admin/console/static/app.css">
 </head>
 <body>
@@ -218,11 +220,26 @@
 
 <!-- Ops (运维) -->
 <div class="page" id="page-ops">
+  <h2 style="margin-bottom:12px">外观</h2>
+  <div class="card" id="appearance-card">
+    <div class="card-header">主题</div>
+    <div class="card-body">
+      <div class="form-group" style="max-width:320px">
+        <label for="theme-select">主题</label>
+        <select id="theme-select">
+          <option value="system">跟随系统</option>
+          <option value="light">浅色</option>
+          <option value="dark">深色</option>
+        </select>
+      </div>
+      <p class="text-muted">仅影响当前浏览器；立即生效，无需保存。</p>
+    </div>
+  </div>
   <h2 style="margin-bottom:12px">服务配置</h2>
   <div class="card" id="model-card">
     <div class="card-header">配置文件</div>
     <div class="card-body">
-      <p style="font-size:13px;color:#666">保存配置无需进入维护模式。端口与语言重启后生效，启动参数 --port 优先；语言目前仅保存选择。</p>
+      <p class="text-muted">保存配置无需进入维护模式。端口与语言重启后生效，启动参数 --port 优先；语言目前仅保存选择。</p>
       <div class="form-row">
         <div class="form-group">
           <label for="config-port">HTTP 端口</label>
@@ -240,22 +257,22 @@
       <div class="form-group" style="margin-top:12px">
         <label for="model-proxy-url">代理地址（留空保留已保存地址）</label>
         <input id="model-proxy-url" type="password" autocomplete="off" placeholder="http://127.0.0.1:7890">
-        <span id="model-proxy-saved" style="font-size:13px;color:#666"></span>
+        <span id="model-proxy-saved" class="text-muted"></span>
       </div>
       <button id="btn-model-save" class="btn btn-primary" disabled>保存配置</button>
       <p id="model-config-result" role="status"></p>
-      <p style="font-size:13px;color:#666">代理与自动下载设置用于下次模型准备。模型未就绪时保存会重试当前任务，无需重启。</p>
+      <p class="text-muted">代理与自动下载设置用于下次模型准备。模型未就绪时保存会重试当前任务，无需重启。</p>
     </div>
   </div>
   <h2 style="margin:24px 0 12px">维护操作</h2>
-  <p style="font-size:13px;color:#666;margin-bottom:12px">以下操作需进入维护模式。模型未就绪时自动进入维护，准备完成后才可退出。</p>
+  <p class="text-muted" style="margin-bottom:12px">以下操作需进入维护模式。模型未就绪时自动进入维护，准备完成后才可退出。</p>
   <div class="card" id="model-preparation-card">
     <div class="card-header">模型准备</div>
     <div class="card-body">
       <p id="model-status" role="status">正在读取模型状态…</p>
       <progress id="model-progress" max="100" style="width:100%;height:20px" aria-label="模型下载进度"></progress>
-      <p id="model-progress-detail" style="font-size:13px;color:#666"></p>
-      <p id="model-error" style="color:#c62828" role="alert"></p>
+      <p id="model-progress-detail" class="text-muted"></p>
+      <p id="model-error" class="text-danger" role="alert"></p>
       <button id="btn-model-retry" class="btn btn-outline">重试准备模型</button>
     </div>
   </div>
@@ -272,7 +289,7 @@
   <div class="card">
     <div class="card-header">Server</div>
     <div class="card-body">
-      <p style="font-size:13px;color:#888;margin-bottom:12px">Restart or shut down after active work finishes. Shutdown requires starting the server again from the terminal.</p>
+      <p class="text-muted" style="margin-bottom:12px">Restart or shut down after active work finishes. Shutdown requires starting the server again from the terminal.</p>
       <button id="btn-restart" class="btn btn-primary">Restart Server</button>
       <button id="btn-shutdown" class="btn btn-danger">Shut Down Server</button>
       <span id="restart-result" style="margin-left:12px;font-size:13px"></span>
@@ -283,7 +300,7 @@
   <div class="card">
     <div class="card-header">JSONL Recover</div>
     <div class="card-body">
-      <p style="color:#c62828">Replaces all memories in the current database from an uploaded JSONL backup.</p>
+      <p class="text-danger">Replaces all memories in the current database from an uploaded JSONL backup.</p>
       <input id="recover-file" type="file" accept=".jsonl,.ndjson,application/x-ndjson">
       <button id="btn-recover" class="btn btn-danger">Recover</button>
       <span id="recover-result" style="margin-left:12px;font-size:13px"></span>
@@ -315,7 +332,7 @@
   <div class="card">
     <div class="card-header">JSONL Export</div>
     <div class="card-body">
-      <p style="font-size:13px;color:#888;margin-bottom:12px">Full Export refreshes and verifies the disaster-recovery JSONL before download. Namespace Export creates an independent partial snapshot.</p>
+      <p class="text-muted" style="margin-bottom:12px">Full Export refreshes and verifies the disaster-recovery JSONL before download. Namespace Export creates an independent partial snapshot.</p>
       <div class="form-row">
         <div class="form-group">
           <label>Namespace</label>
@@ -334,7 +351,7 @@
   <div class="card">
     <div class="card-header">Sync（手动备份）</div>
     <div class="card-body">
-      <p style="font-size:13px;color:#888;margin-bottom:12px">手动将主库（SQLite）完整同步到灾备副本（JSONL）。<span id="sync-paths" style="color:#666"></span></p>
+      <p class="text-muted" style="margin-bottom:12px">手动将主库（SQLite）完整同步到灾备副本（JSONL）。<span id="sync-paths" class="text-muted"></span></p>
       <button id="btn-sync" class="btn btn-primary">Sync Now（SQLite → JSONL）</button>
       <span id="sync-result" style="margin-left:12px;font-size:13px"></span>
     </div>
@@ -344,7 +361,7 @@
   <div class="card">
     <div class="card-header">Clear</div>
     <div class="card-body">
-      <p style="font-size:13px;color:#e53935;margin-bottom:12px">⚠️ Danger: this deletes memories. There is no undo.</p>
+      <p class="text-danger" style="margin-bottom:12px">⚠️ Danger: this deletes memories. There is no undo.</p>
       <div class="form-group">
         <label>Namespace (optional)</label>
         <select id="clear-ns">
@@ -367,12 +384,12 @@
         <select id="migrate-source" class="ns-select"></select>
       </div>
       <div class="form-row">
-        <div style="text-align:center;padding:8px 0;font-size:18px;color:#888">↓</div>
+        <div class="text-muted" style="text-align:center;padding:8px 0;font-size:18px">↓</div>
       </div>
       <div class="form-group">
         <label>Target namespace</label>
         <div class="ns-wrapper">
-          <input id="migrate-target" list="migrate-target-suggestions" placeholder="Enter or select namespace..." style="padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;width:100%">
+          <input id="migrate-target" list="migrate-target-suggestions" placeholder="Enter or select namespace..." style="padding:8px 10px;border:1px solid var(--border-control);border-radius:6px;font-size:13px;width:100%;background:var(--bg-surface);color:var(--text-primary)">
           <datalist id="migrate-target-suggestions"></datalist>
         </div>
       </div>
@@ -409,11 +426,11 @@
         </div>
         <div class="form-group">
           <label>Namespace</label>
-          <input id="audit-namespace" placeholder="全部" style="padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px">
+          <input id="audit-namespace" placeholder="全部" style="padding:8px 10px;border:1px solid var(--border-control);border-radius:6px;font-size:13px;background:var(--bg-surface);color:var(--text-primary)">
         </div>
         <div class="form-group">
           <label>条数</label>
-          <input id="audit-limit" type="number" value="200" min="1" max="5000" style="padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;width:90px">
+          <input id="audit-limit" type="number" value="200" min="1" max="5000" style="padding:8px 10px;border:1px solid var(--border-control);border-radius:6px;font-size:13px;width:90px;background:var(--bg-surface);color:var(--text-primary)">
         </div>
       </div>
       <div class="table-scroll" style="padding:0;max-height:70vh;overflow:auto">
@@ -439,9 +456,9 @@
 </div>
 
 <!-- Detail modal (outside the shell; fixed overlay) -->
-<div id="detail-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);z-index:100;align-items:center;justify-content:center">
-  <div style="background:#fff;border-radius:12px;width:700px;max-width:95vw;height:90vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.2)">
-    <div style="padding:18px 20px;border-bottom:1px solid #f0f0f0;display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
+<div id="detail-modal" class="modal-overlay" style="display:none">
+  <div class="modal-panel" style="width:700px;max-width:95vw;height:90vh;display:flex;flex-direction:column">
+    <div style="padding:18px 20px;border-bottom:1px solid var(--border-subtle);display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
       <strong id="detail-title" style="font-size:16px">Memory Detail</strong>
       <button id="btn-detail-close" class="btn btn-sm btn-outline">✕</button>
     </div>
@@ -450,14 +467,14 @@
 </div>
 
 <!-- Clear confirmation modal (outside the shell; fixed overlay) -->
-<div id="clear-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:200;align-items:center;justify-content:center">
-  <div style="background:#fff;border-radius:12px;width:480px;max-width:92vw;padding:24px;box-shadow:0 8px 32px rgba(0,0,0,.25)">
-    <div style="font-size:16px;font-weight:700;color:#e53935;margin-bottom:8px">⚠️ Confirm Clear</div>
-    <div style="font-size:13px;color:#666;margin-bottom:16px">
+<div id="clear-modal" class="modal-overlay" style="display:none;z-index:200">
+  <div class="modal-panel" style="width:480px;max-width:92vw;padding:24px">
+    <div class="text-danger" style="font-size:16px;font-weight:700;margin-bottom:8px">⚠️ Confirm Clear</div>
+    <div class="text-muted" style="margin-bottom:16px">
       This will permanently delete <strong id="clear-confirm-scope"></strong>. This cannot be undone.<br>
       To confirm, type the code below exactly:
     </div>
-    <div style="text-align:center;font-size:28px;font-weight:700;letter-spacing:6px;font-family:monospace;background:#f8f9fa;padding:12px;border-radius:8px;margin-bottom:16px;user-select:text" id="clear-confirm-code">ABCDef12</div>
+    <div style="text-align:center;font-size:28px;font-weight:700;letter-spacing:6px;font-family:monospace;background:var(--bg-code);padding:12px;border-radius:8px;margin-bottom:16px;user-select:text" id="clear-confirm-code">ABCDef12</div>
     <div class="form-group">
       <input id="clear-confirm-input" placeholder="Enter the code above" style="text-align:center;font-size:18px;font-family:monospace;letter-spacing:4px;text-transform:none">
     </div>

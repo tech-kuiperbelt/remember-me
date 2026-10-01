@@ -78,7 +78,7 @@ function renderListResults(data, sortBy) {
     html += `<tr>
       <td><div class="memory-text">${esc(displayText)}</div></td>
       <td><span class="badge ns">${esc(m.namespace)}</span></td>
-      <td style="font-size:12px;color:#888">${formatTime(ts)}</td>
+      <td class="text-muted" style="font-size:12px">${formatTime(ts)}</td>
       <td><button class="btn btn-sm btn-outline" data-memory-action="viewDetail">View</button></td>
     </tr>`;
   });

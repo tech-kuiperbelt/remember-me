@@ -2,7 +2,8 @@
 
 2026-10-01 用户认可路线。基线提交：`0c7bd46`。第一阶段已完成，
 见 [50.1 实施记录](50.1-frontend-module-split.md)；第二阶段第一项桌面布局已实施并验证，
-见 [50.2 实施记录](50.2-admin-desktop-layout.md)。
+见 [50.2 实施记录](50.2-admin-desktop-layout.md)。下一项
+[50.3 主题基础](50.3-ui-theme-foundation.md) 已实施并通过隔离验证，待 review。
 
 ## 目标与顺序
 
@@ -46,8 +47,12 @@
 - 新布局改变职责边界时同步调整模块；根据实际复用需求提取公共组件。
 - 每次变更记录行为变化及验证结果，保持改动可独立 review。
 
-已确定的第一项为桌面布局调整，详见 [50.2 计划](50.2-admin-desktop-layout.md)。
-后续布局与功能组织意见继续逐项明确。
+桌面布局调整已完成，详见 [50.2 实施记录](50.2-admin-desktop-layout.md)。
+后续依据 [UI 设计规范](../../design/UI_DESIGN.md)、
+[UI 实施规则](../../design/UI_IMPLEMENTATION_RULES.md) 和
+[风格示意图](../../design/UI.png)，按“主题基础 → Shell 视觉 → Memories”推进。
+第一步见 [50.3 主题基础实施记录](50.3-ui-theme-foundation.md)；后两步分别规划。
+主题切换入口已确定放在配置页的独立“外观”区域。
 
 ## 第三阶段：布局稳定后的结构复核
 

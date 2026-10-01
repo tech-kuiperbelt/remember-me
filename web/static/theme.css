@@ -1,0 +1,120 @@
+/* theme.css — semantic design tokens for Light / Dark, consumed by app.css.
+ *
+ * Only variable definitions and the base color-scheme live here. The actual
+ * theme is selected by [data-theme="light|dark"] on <html>, set by the
+ * first-paint boot script in index.html and updated by theme.js.
+ */
+
+:root {
+  color-scheme: light;
+
+  --bg-canvas: #f7f9fc;
+  --bg-shell: #f2f5f9;
+  --bg-surface: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-hover: #edf2f7;
+  --bg-selected: #e7f1fc;
+  --bg-code: #f8f9fa;
+
+  --border-subtle: #e1e7ef;
+  --border-control: #8795a6;
+
+  --text-primary: #182332;
+  --text-secondary: #556579;
+  --text-muted: #64748b;
+
+  --accent: #0969b7;
+  --accent-solid: #0969b7;
+  --accent-solid-hover: #075a9d;
+  --on-accent: #ffffff;
+  --accent-subtle: #e7f1fc;
+
+  --success: #18794e;
+  --success-solid: #18794e;
+  --success-subtle: #e8f5e9;
+  --warning: #8a5a0a;
+  --warning-subtle: #fff3cd;
+  --danger: #b42332;
+  --danger-solid: #b42332;
+  --danger-subtle: #ffebee;
+
+  --overlay: rgba(0, 0, 0, .45);
+  --focus-ring: rgba(9, 105, 183, .35);
+  --shadow-floating: 0 4px 12px rgba(0, 0, 0, .12);
+  --shadow-modal: 0 8px 32px rgba(0, 0, 0, .2);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg-canvas: #0e161e;
+  --bg-shell: #111c25;
+  --bg-surface: #16212b;
+  --bg-elevated: #1d2b37;
+  --bg-hover: #1b2c39;
+  --bg-selected: #17364a;
+  --bg-code: #111c25;
+
+  --border-subtle: #293b49;
+  --border-control: #718597;
+
+  --text-primary: #e8eef4;
+  --text-secondary: #b0bfcc;
+  --text-muted: #93a7b7;
+
+  --accent: #66bbff;
+  --accent-solid: #1379bc;
+  --accent-solid-hover: #0e68a3;
+  --on-accent: #ffffff;
+  --accent-subtle: #17364a;
+
+  --success: #55d49a;
+  --success-solid: #18794e;
+  --success-subtle: #123225;
+  --warning: #eabd64;
+  --warning-subtle: #3a2f14;
+  --danger: #ff8791;
+  --danger-solid: #c53243;
+  --danger-subtle: #3a1b20;
+
+  --overlay: rgba(0, 0, 0, .6);
+  --focus-ring: rgba(102, 187, 255, .4);
+  --shadow-floating: 0 4px 12px rgba(0, 0, 0, .5);
+  --shadow-modal: 0 8px 32px rgba(0, 0, 0, .6);
+}
+
+/* A browser without the theme bootstrap still follows its OS preference. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --bg-canvas: #0e161e;
+    --bg-shell: #111c25;
+    --bg-surface: #16212b;
+    --bg-elevated: #1d2b37;
+    --bg-hover: #1b2c39;
+    --bg-selected: #17364a;
+    --bg-code: #111c25;
+    --border-subtle: #293b49;
+    --border-control: #718597;
+    --text-primary: #e8eef4;
+    --text-secondary: #b0bfcc;
+    --text-muted: #93a7b7;
+    --accent: #66bbff;
+    --accent-solid: #1379bc;
+    --accent-solid-hover: #0e68a3;
+    --on-accent: #ffffff;
+    --accent-subtle: #17364a;
+    --success: #55d49a;
+    --success-solid: #18794e;
+    --success-subtle: #123225;
+    --warning: #eabd64;
+    --warning-subtle: #3a2f14;
+    --danger: #ff8791;
+    --danger-solid: #c53243;
+    --danger-subtle: #3a1b20;
+    --overlay: rgba(0, 0, 0, .6);
+    --focus-ring: rgba(102, 187, 255, .4);
+    --shadow-floating: 0 4px 12px rgba(0, 0, 0, .5);
+    --shadow-modal: 0 8px 32px rgba(0, 0, 0, .6);
+  }
+}

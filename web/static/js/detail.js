@@ -32,11 +32,11 @@ function showDetail(m, editable) {
   const metaStr = JSON.stringify(m.metadata || {}, null, 2);
 
   const textHtml = editable
-    ? `<div style="flex:1;display:flex;flex-direction:column"><textarea id="edit-text" style="flex:1;min-height:0;width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;font-family:inherit;resize:none">${esc(m.text)}</textarea></div>`
+    ? `<div style="flex:1;display:flex;flex-direction:column"><textarea id="edit-text" style="flex:1;min-height:0;width:100%;padding:8px 10px;border:1px solid var(--border-control);border-radius:6px;font-size:13px;font-family:inherit;resize:none;background:var(--bg-surface);color:var(--text-primary)">${esc(m.text)}</textarea></div>`
     : `<div class="value" style="white-space:pre-wrap">${esc(m.text)}</div>`;
 
   const nsHtml = editable
-    ? '<div class="ns-wrapper"><input id="edit-namespace" autocomplete="off" style="padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;width:100%"><div id="ns-dropdown" class="ns-dropdown"></div></div>'
+    ? '<div class="ns-wrapper"><input id="edit-namespace" autocomplete="off" style="padding:8px 10px;border:1px solid var(--border-control);border-radius:6px;font-size:13px;width:100%;background:var(--bg-surface);color:var(--text-primary)"><div id="ns-dropdown" class="ns-dropdown"></div></div>'
     : `<span class="badge ns">${esc(m.namespace)}</span>`;
 
   const textFieldStyle = editable ? ' style="flex:1;display:flex;flex-direction:column;min-height:0"' : '';
@@ -46,7 +46,7 @@ function showDetail(m, editable) {
   $('detail-body').setAttribute('style', 'padding:20px;overflow-y:auto;flex:1' + (editable ? ';display:flex;flex-direction:column' : ''));
   const summaryHtml = m.summary
     ? `<div class="value" style="white-space:pre-wrap">${esc(m.summary)}</div>`
-    : `<div class="value" style="color:#999">(none)</div>`;
+    : `<div class="value text-muted">(none)</div>`;
   $('detail-body').innerHTML = `
     <div class="detail-field"><div class="label">ID</div><div class="value">${esc(m.id)}</div></div>
     <div class="detail-field"><div class="label">Summary</div>${summaryHtml}</div>
@@ -55,7 +55,7 @@ function showDetail(m, editable) {
     <div class="detail-field"><div class="label">Created</div><div class="value">${formatTime(m.created_at) || '-'}</div></div>
     <div class="detail-field"><div class="label">Updated</div><div class="value">${formatTime(m.updated_at) || '-'}</div></div>
     <div class="detail-field"><div class="label">Score</div><div class="value">${m.score != null ? m.score.toFixed(6) : '-'}</div></div>
-    <div class="detail-field"><div class="label">Metadata</div><div class="metadata-view">${metaStr === '{}' ? '<span style="color:#999">(empty)</span>' : esc(metaStr)}</div></div>
+    <div class="detail-field"><div class="label">Metadata</div><div class="metadata-view">${metaStr === '{}' ? '<span class="text-muted">(empty)</span>' : esc(metaStr)}</div></div>
     <div style="margin-top:16px;display:flex;gap:8px;flex-shrink:0">${actionsHtml}</div>
   `;
   if (editable) {
@@ -123,8 +123,8 @@ function copyDetailText(btn) {
   navigator.clipboard.writeText(text).then(() => {
     clearTimeout(_copyBtnTimer);
     btn.textContent = 'Copied!';
-    btn.style.borderColor = '#4caf50';
-    btn.style.color = '#4caf50';
+    btn.style.borderColor = 'var(--success)';
+    btn.style.color = 'var(--success)';
     _copyBtnTimer = setTimeout(() => {
       btn.textContent = 'Copy';
       btn.style.borderColor = '';

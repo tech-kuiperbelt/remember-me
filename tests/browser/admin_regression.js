@@ -24,7 +24,118 @@ async function waitFor(check, label, timeout = 8000) {
   }
 }
 
+async function runThemeScenario(scenario) {
+  if (!scenario.startsWith('theme-')) return false;
+    const memoriesOnly = scenario.endsWith('memories-dark') || scenario.endsWith('memories-light');
+    const modalOnly = scenario.endsWith('modal-dark');
+    const collapsedOnly = scenario.endsWith('collapsed-dark');
+    const refreshOnly = scenario.endsWith('refresh-dark');
+    const blocked = scenario.endsWith('blocked');
+    const system = scenario.endsWith('system');
+    const unseeded = scenario.endsWith('default') || scenario.endsWith('invalid');
+    const scheme = scenario.endsWith('dark') ? 'dark' : 'light';
+    // The test seeds the stored preference before first paint; the boot script
+    // must apply it without waiting for the app entry.
+    assert(document.documentElement.dataset.theme === ((blocked || unseeded) ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : scheme), 'first-paint theme');
+    assert(document.documentElement.dataset.themePreference === (blocked || system || unseeded ? 'system' : scheme), 'seeded preference applied');
+
+    if (refreshOnly) {
+      if (sessionStorage.getItem('theme-refresh-stage') !== 'verify') {
+        sessionStorage.setItem('theme-refresh-stage', 'verify');
+        history.replaceState({}, '', location.pathname + '?smoke=' + scenario);
+        location.reload();
+        return true;
+      }
+      sessionStorage.removeItem('theme-refresh-stage');
+      assert(document.documentElement.dataset.theme === 'dark', 'stored theme survives reload');
+      result.textContent = 'PASS: dark theme survives reload without seed';
+      return true;
+    }
+
+    if (memoriesOnly || modalOnly || collapsedOnly) {
+      await waitFor(() => $('memories-list') && !$('memories-list').textContent.includes('Loading...'), 'memories');
+      assert($('page-memories').classList.contains('active'), 'memories page visible');
+      if (modalOnly) {
+        $('memories-list').querySelector('[data-memory-action="viewDetail"]').click();
+        await waitFor(() => $('detail-modal').style.display === 'flex', 'dark detail modal');
+        const themeSelect = $('theme-select');
+        themeSelect.value = 'light'; themeSelect.dispatchEvent(new Event('change', {bubbles:true}));
+        assert($('detail-modal').style.display === 'flex', 'theme switch keeps modal open');
+        themeSelect.value = 'dark'; themeSelect.dispatchEvent(new Event('change', {bubbles:true}));
+      }
+      if (collapsedOnly) {
+        $('btn-sidebar-toggle').click();
+        assert($('app-shell').classList.contains('sidebar-collapsed'), 'dark sidebar collapsed');
+      }
+      result.textContent = 'PASS: ' + scheme + ' ' + (modalOnly ? 'detail modal' : collapsedOnly ? 'collapsed sidebar' : 'Memories') + ' screenshot';
+      return true;
+    }
+
+    document.querySelector('.nav button[data-page="ops"]').click(); await settle();
+    const select = $('theme-select');
+    assert(select && select.value === (blocked || system || unseeded ? 'system' : scheme), 'appearance select reflects preference');
+
+    if (system) {
+      window.__themeMedia.set(true);
+      assert(document.documentElement.dataset.theme === 'dark', 'system change applies dark');
+      select.value = 'light'; select.dispatchEvent(new Event('change', {bubbles:true}));
+      window.__themeMedia.set(false);
+      window.__themeMedia.set(true);
+      assert(document.documentElement.dataset.theme === 'light', 'manual choice ignores system changes');
+      select.value = 'system'; select.dispatchEvent(new Event('change', {bubbles:true}));
+      assert(document.documentElement.dataset.theme === 'dark', 'system choice resumes following OS');
+      result.textContent = 'PASS: system theme, live changes, manual override';
+      return true;
+    }
+    if (blocked || unseeded) {
+      select.value = 'dark'; select.dispatchEvent(new Event('change', {bubbles:true}));
+      assert(document.documentElement.dataset.theme === 'dark', 'theme switch applies dark');
+      select.value = 'light'; select.dispatchEvent(new Event('change', {bubbles:true}));
+      assert(document.documentElement.dataset.theme === 'light', 'theme switch applies light');
+      result.textContent = 'PASS: ' + (blocked ? 'storage unavailable' : 'default or invalid preference') + '; theme stays interactive';
+      return true;
+    }
+
+    // Manual override applies immediately without saving or reloading.
+    $('add-text').value = 'theme-kept';
+    const workArea = document.querySelector('.content');
+    workArea.scrollTop = 120;
+    const priorScroll = workArea.scrollTop;
+    select.value = 'dark'; select.dispatchEvent(new Event('change', {bubbles: true}));
+    await settle();
+    assert(document.documentElement.dataset.theme === 'dark', 'manual dark applies');
+    assert(document.documentElement.dataset.themePreference === 'dark', 'preference recorded');
+    assert(localStorage.getItem('remember-me.theme.v1') === 'dark', 'preference persisted');
+    select.value = 'light'; select.dispatchEvent(new Event('change', {bubbles: true}));
+    await settle();
+    assert(document.documentElement.dataset.theme === 'light', 'manual light applies');
+    assert($('add-text').value === 'theme-kept', 'theme switch preserves form content');
+    assert(workArea.scrollTop === priorScroll, 'theme switch preserves scroll position');
+    const bodyBg = getComputedStyle(document.body).backgroundColor;
+    const panel = getComputedStyle(document.querySelector('.card')).backgroundColor;
+    assert(bodyBg && panel && bodyBg !== panel, 'canvas and surface tokens resolve distinctly');
+
+    // Appearance control stays usable while the service is unavailable.
+    S.setOverride(url => url === '/api/maintenance' ? Promise.reject(new Error('down')) : undefined);
+    document.querySelector('.nav button[data-page="ops"]').click();
+    await waitFor(() => $('btn-status').textContent === '状态不可用', 'status unavailable');
+    assert(!$('theme-select').disabled, 'appearance control usable when status unavailable');
+    select.value = 'system'; select.dispatchEvent(new Event('change', {bubbles: true}));
+    await settle();
+    assert(document.documentElement.dataset.themePreference === 'system', 'system restored');
+    S.reset();
+    select.value = scheme; select.dispatchEvent(new Event('change', {bubbles: true}));
+    assert(document.documentElement.dataset.theme === scheme, 'screenshot retains requested theme');
+
+  result.textContent = 'PASS: theme ' + scheme + '; first-paint, manual override, persistence, form preserved, token colors, control under failure';
+  return true;
+}
+
 try {
+  const scenario = new URLSearchParams(location.search).get('smoke') || '';
+  if (await runThemeScenario(scenario)) { /* theme scenario finished */ }
+  else {
+
   // The real page bootstraps from the real backend; wait for the first load.
   await waitFor(() => $('stats-content') && !$('stats-content').textContent.includes('Loading...'), 'initial stats');
   await waitFor(() => $('ns-tabs').children.length > 1, 'namespace tabs');
@@ -350,4 +461,5 @@ try {
   assert($('page-memories').classList.contains('active'), 'keyboard/nav activation switches page');
 
   result.textContent = 'PASS: real /admin/console entry; nav switch; browse, pagination, literal, semantic, exact jump, selection retention, low-frequency, stale response; special characters, safe actions and errors; shutdown controls; model bootstrap/progress/proxy/retry; desktop shell status/layout/collapse/scroll';
+  }
 } catch (e) { result.textContent = 'FAIL: ' + e.stack; }

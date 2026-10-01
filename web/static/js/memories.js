@@ -76,7 +76,7 @@ function renderMemories(data) {
     html += `<tr>
       <td><div class="memory-text">${esc(displayText)}</div></td>
       <td><span class="badge ns">${esc(m.namespace)}</span></td>
-      <td style="font-size:12px;color:#888">${formatTime(m.created_at)}</td>
+      <td class="text-muted" style="font-size:12px">${formatTime(m.created_at)}</td>
       <td><div class="actions">
         <button class="btn btn-sm btn-outline" data-memory-action="viewDetail">View</button>
         <button class="btn btn-sm btn-outline" data-memory-action="editMemory">Edit</button>
@@ -96,7 +96,7 @@ function renderMemories(data) {
   $('memories-pagination').innerHTML = `
     <button class="btn btn-sm btn-outline" data-nav="first" ${memoriesOffset <= 0 ? 'disabled' : ''}>First</button>
     <button class="btn btn-sm btn-outline" data-nav="prev" ${memoriesOffset <= 0 ? 'disabled' : ''}>Prev</button>
-    <span style="color:#888">offset ${memoriesOffset}</span>
+    <span class="text-muted">offset ${memoriesOffset}</span>
     <button class="btn btn-sm btn-outline" data-nav="next" ${hasMore ? '' : 'disabled'}>Next</button>
   `;
   const pagination = $('memories-pagination');

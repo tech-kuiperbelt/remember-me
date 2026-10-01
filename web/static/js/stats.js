@@ -35,16 +35,16 @@ export async function loadStats() {
       ${compact.last_error ? `<div class="detail-field"><div class="label">Compact Error</div><div class="value">${escapeHtml(compact.last_error)}</div></div>` : ''}
     ` : '';
     const replicaHealthHtml = s.backend === 'dual' ? `
-      <div class="detail-field"><div class="label">Replica Health</div><div class="value"><span class="badge" style="background:${s.in_sync ? '#e8f5e9' : '#ffebee'};color:${s.in_sync ? '#388e3c' : '#c62828'}">${s.in_sync ? 'IN SYNC' : 'OUT OF SYNC'}</span></div></div>
-      ${!s.in_sync ? '<div class="detail-field"><div class="label">Recovery Action</div><div class="value" style="color:#c62828">Run Full Export below to perform a verified Full Sync. The service will not repair replica drift automatically.</div></div>' : ''}
+      <div class="detail-field"><div class="label">Replica Health</div><div class="value"><span class="badge ${s.in_sync ? 'badge-success' : 'badge-danger'}">${s.in_sync ? 'IN SYNC' : 'OUT OF SYNC'}</span></div></div>
+      ${!s.in_sync ? '<div class="detail-field"><div class="label">Recovery Action</div><div class="value text-danger">Run Full Export below to perform a verified Full Sync. The service will not repair replica drift automatically.</div></div>' : ''}
       <div class="detail-field"><div class="label">Pending</div><div class="value">${escapeHtml(s.pending ?? '-')}</div></div>
       <div class="detail-field"><div class="label">Replica Integrity</div><div class="value">Missing ${escapeHtml(integrity.missing ?? '-')} · Extra ${escapeHtml(integrity.extra ?? '-')} · Corrupt Lines ${escapeHtml(integrity.corrupt_lines ?? '-')}</div></div>
       <div class="detail-field"><div class="label">Live Check</div><div class="value">${escapeHtml(integrity.checked_at || '-')}</div></div>
-      ${integrity.error ? `<div class="detail-field"><div class="label">Health Error</div><div class="value" style="color:#c62828">${escapeHtml(integrity.error)}</div></div>` : ''}
+      ${integrity.error ? `<div class="detail-field"><div class="label">Health Error</div><div class="value text-danger">${escapeHtml(integrity.error)}</div></div>` : ''}
       ${automaticHealth ? `
         <div class="detail-field"><div class="label">Last Automatic Check</div><div class="value">${escapeHtml(automaticHealth.last_result || '-')} · ${escapeHtml(automaticHealth.last_check_at || '-')} · trigger ${escapeHtml(automaticHealth.last_trigger || '-')}</div></div>
         <div class="detail-field"><div class="label">Next Automatic Check</div><div class="value">${escapeHtml(automaticHealth.next_due_at || '-')}</div></div>
-        ${automaticHealth.last_error ? `<div class="detail-field"><div class="label">Automatic Check Error</div><div class="value" style="color:#c62828">${escapeHtml(automaticHealth.last_error)}</div></div>` : ''}
+        ${automaticHealth.last_error ? `<div class="detail-field"><div class="label">Automatic Check Error</div><div class="value text-danger">${escapeHtml(automaticHealth.last_error)}</div></div>` : ''}
       ` : '<div class="detail-field"><div class="label">Automatic Check</div><div class="value">Not run yet</div></div>'}
     ` : '';
     $('stats-content').innerHTML = `
@@ -77,11 +77,11 @@ export async function loadStats() {
 }
 
 function renderNamespaceCounts(counts) {
-  if (!counts || !Object.keys(counts).length) return '<span style="color:#999">(none)</span>';
+  if (!counts || !Object.keys(counts).length) return '<span class="text-muted">(none)</span>';
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   return Object.entries(counts).map(([ns, n]) =>
     '<span class="badge ns" style="margin:2px">' + escapeHtml(ns) + ' · ' + n + '</span>'
-  ).join(' ') + `<span style="color:#999;font-size:12px;margin-left:8px">total ${total}</span>`;
+  ).join(' ') + `<span class="text-muted" style="font-size:12px;margin-left:8px">total ${total}</span>`;
 }
 
 export function mount() {

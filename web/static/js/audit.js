@@ -30,18 +30,18 @@ function renderAudit(events) {
   }
   tbody.innerHTML = events.map(ev => {
     const status = ev.status === 'error'
-      ? '<span style="color:#d33;font-weight:600">error</span>'
-      : '<span style="color:#2a7d3f">ok</span>';
-    const err = ev.error ? ' <span style="color:#d33;font-size:12px">' + esc(ev.error.type) + ': ' + esc(ev.error.message) + '</span>' : '';
+      ? '<span class="text-danger" style="font-weight:600">error</span>'
+      : '<span class="text-success">ok</span>';
+    const err = ev.error ? ' <span class="text-danger" style="font-size:12px">' + esc(ev.error.type) + ': ' + esc(ev.error.message) + '</span>' : '';
     const params = truncateJson(ev.params);
     const result = truncateJson(ev.result);
-    return '<tr style="border-bottom:1px solid #f0f0f0;vertical-align:top">' +
-      '<td style="white-space:nowrap;color:#666;font-size:12px">' + esc(formatTime(ev.ts)) + '</td>' +
+    return '<tr style="border-bottom:1px solid var(--border-subtle);vertical-align:top">' +
+      '<td class="text-muted" style="white-space:nowrap;font-size:12px">' + esc(formatTime(ev.ts)) + '</td>' +
       '<td>' + esc(ev.tool) + '</td>' +
       '<td>' + status + '</td>' +
-      '<td style="color:#666">' + esc(ev.duration_ms) + '</td>' +
+      '<td class="text-muted">' + esc(ev.duration_ms) + '</td>' +
       '<td style="word-break:break-all;font-size:12px">' + esc(ev.namespace || '') + '</td>' +
-      '<td style="font-size:12px;color:#444;word-break:break-all"><div>params: ' + esc(params) + '</div>' +
+      '<td style="font-size:12px;color:var(--text-secondary);word-break:break-all"><div>params: ' + esc(params) + '</div>' +
       '<div style="margin-top:2px">result: ' + esc(result) + '</div>' + err + '</td>' +
       '</tr>';
   }).join('');
