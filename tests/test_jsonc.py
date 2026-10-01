@@ -93,6 +93,7 @@ def test_defaults_create_documented_jsonc_and_save_preserves_it(tmp_path):
     config = Configuration.load(tmp_path, create=True, environment={})
     original = config.path.read_text()
     assert '// HTTP 端口' in original and '// 代理关闭' in original
+    assert '// true=仅监听' in original
     config.save()
     assert config.path.read_text() == original
 
@@ -113,7 +114,8 @@ def test_admin_proxy_save_preserves_user_comments(tmp_path, preserve_process_env
     with TestClient(create_http_app(rt)) as client:
         assert client.get('/api/maintenance').json()['state'] == 'normal'
         result = client.post('/api/config', json={'port': 2314, 'language': 'en',
-                            'auto_download_model': False, 'proxy': {'enabled': True}})
+                            'auto_download_model': False, 'local_only': False,
+                            'proxy': {'enabled': True}})
         assert result.status_code == 200
         saved = path.read_text()
         for comment in ('// operator note', '// keep port', '/* keep flag */', '// keep URL note'):
@@ -121,14 +123,17 @@ def test_admin_proxy_save_preserves_user_comments(tmp_path, preserve_process_env
         values = jsonc.loads(saved)
         assert values['proxy'] == {'enabled': True, 'url': 'http://127.0.0.1:7890'}
         assert values['auto_download_model'] is False
+        assert values['local_only'] is False
         assert values['port'] == 2314 and values['language'] == 'en'
         assert rt.settings.PORT == 1314 and rt.settings.LANGUAGE == 'zh-CN'
+        assert rt.settings.LOCAL_ONLY is True
         assert client.get('/api/maintenance').json()['state'] == 'normal'
         assert client.get('/api/stats').status_code == 200
         assert client.post('/api/memories', json={'text': 'configuration save did not pause writes'}).status_code == 201
         before = path.read_text()
         assert client.post('/api/config', json={'port': True}).status_code == 400
         assert client.post('/api/config', json={'language': 'fr'}).status_code == 400
+        assert client.post('/api/config', json={'local_only': 'false'}).status_code == 400
         assert path.read_text() == before
         assert client.post('/api/maintenance/enter').status_code == 200
         rt.maintenance.start_action('sync')

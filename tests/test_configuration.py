@@ -36,13 +36,35 @@ def test_data_directory_selects_config_and_defaults_without_cwd(tmp_path, monkey
 
 @pytest.mark.parametrize("values", [
     {"port": 0}, {"port": 65536}, {"port": True}, {"port": "1314"},
-    {"language": "fr"}, {"data_dir": "."}, [],
+    {"language": "fr"}, {"data_dir": "."}, {"local_only": "true"}, [],
 ])
 def test_invalid_configuration_fails_before_runtime(tmp_path, values):
     path = tmp_path / "config.jsonc"
     path.write_text(json.dumps(values))
     with pytest.raises(ValueError):
         Configuration.load(tmp_path, environment={})
+
+
+def test_local_only_defaults_legacy_and_settings(tmp_path):
+    # Default is loopback-only.
+    assert Configuration.load(tmp_path, environment={}).local_only is True
+    # A legacy file without the field adopts the default.
+    (tmp_path / "config.jsonc").write_text('{"port": 2345}')
+    config = Configuration.load(tmp_path, environment={})
+    assert config.local_only is True and config.as_dict()["local_only"] is True
+    # An explicit false round-trips into the immutable Settings snapshot.
+    (tmp_path / "config.jsonc").write_text('{"port": 2345, "local_only": false}')
+    assert Configuration.load(tmp_path, environment={}).local_only is False
+    settings = Settings.from_config(tmp_path, environment={})
+    assert settings.LOCAL_ONLY is False
+    # Missing field falls back to loopback-only in Settings too.
+    (tmp_path / "config.jsonc").write_text('{"port": 2345}')
+    assert Settings.from_config(tmp_path, environment={}).LOCAL_ONLY is True
+    # Direct env parsing fails safe: only explicit falsey values disable local-only.
+    for value, expected in (("false", False), ("0", False), ("no", False), ("off", False),
+                            ("true", True), ("1", True), ("", True), ("garbage", True)):
+        parsed = Settings.from_env({"MEMORY_DATA_DIR": str(tmp_path), "MEMORY_LOCAL_ONLY": value})
+        assert parsed.LOCAL_ONLY is expected, value
 
 
 def test_malformed_configuration_is_not_overwritten(tmp_path):

@@ -159,6 +159,17 @@ STREAMABLE_HTTP_SECURITY = TransportSecuritySettings(
     allowed_origins=["http://127.0.0.1:*", "http://localhost:*"],
 )
 
+# LAN mode (local_only=false) explicitly disables the SDK DNS-rebinding
+# Host/Origin protection so any LAN host may reach /mcp. The service has no
+# authentication, so this is only safe on a fully trusted network; the config
+# UI and docs warn about the exposure.
+LAN_HTTP_SECURITY = TransportSecuritySettings(enable_dns_rebinding_protection=False)
+
+
+def resolve_bind_host(settings) -> str:
+    """HTTP bind address for the snapshot: loopback unless local_only is off."""
+    return "127.0.0.1" if getattr(settings, "LOCAL_ONLY", True) else "0.0.0.0"
+
 _READ_ME_TEMPLATE_PATH = Path(__file__).with_name("read_me.md")
 
 
@@ -179,18 +190,21 @@ def _read_me_base(port, scope):
     return f"http://127.0.0.1:{resolved}"
 
 
-def create_http_app(runtime, *, port=None):
+def create_http_app(runtime, *, port=None, local_only=None):
     """Own runtime lifespan; all transports bind the same explicit service."""
     from contextlib import asynccontextmanager
     from app.transport.admin import create_admin_routes
     import anyio
+    if local_only is None:
+        local_only = getattr(getattr(runtime, "settings", None), "LOCAL_ONLY", True)
+    security_settings = STREAMABLE_HTTP_SECURITY if local_only else LAN_HTTP_SECURITY
     connections = set()
     mcp = create_mcp_server(runtime=runtime)
     sse = SseServerTransport("/messages/")
-    security = TransportSecurityMiddleware(STREAMABLE_HTTP_SECURITY)
+    security = TransportSecurityMiddleware(security_settings)
     session_manager = StreamableHTTPSessionManager(
         app=mcp.server, stateless=True, json_response=True,
-        security_settings=STREAMABLE_HTTP_SECURITY,
+        security_settings=security_settings,
     )
 
     @asynccontextmanager
@@ -409,8 +423,11 @@ async def main(argv=None):
         await serve_stdio(runtime)
     else:
         port = settings.PORT if args.port is None else args.port
-        app = create_http_app(runtime, port=port)
-        config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="info")
+        host = resolve_bind_host(settings)
+        app = create_http_app(runtime, port=port, local_only=settings.LOCAL_ONLY)
+        logger.info("HTTP listening on %s:%s (%s)", host, port,
+                    "local-only" if settings.LOCAL_ONLY else "LAN-accessible")
+        config = uvicorn.Config(app, host=host, port=port, log_level="info")
         class GracefulServer(uvicorn.Server):
             async def shutdown(self, sockets=None):
                 runtime.request_shutdown(restart=runtime.restart_requested)

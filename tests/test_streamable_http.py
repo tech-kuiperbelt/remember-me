@@ -12,7 +12,7 @@ from mcp.client.streamable_http import streamablehttp_client
 
 from app.runtime import Runtime
 from app.config.settings import Settings
-from app.server import _read_me_base, create_http_app
+from app.server import _read_me_base, create_http_app, resolve_bind_host
 from tests.conftest import FakeProvider
 
 HOST = "127.0.0.1:1314"
@@ -35,9 +35,9 @@ def _runtime(tmp_path):
 
 
 @contextlib.asynccontextmanager
-async def _running_app(tmp_path, port=1314):
+async def _running_app(tmp_path, port=1314, local_only=None):
     rt = _runtime(tmp_path)
-    app = create_http_app(rt, port=port)
+    app = create_http_app(rt, port=port, local_only=local_only)
     async with app.router.lifespan_context(app):
         yield rt, app
 
@@ -138,6 +138,32 @@ def test_streamable_http_methods_and_security(tmp_path):
                                          base_url="http://10.0.0.5:1314") as client:
                 response = await client.post("/mcp", json={})
                 assert response.status_code == 421
+    asyncio.run(exercise())
+
+
+def test_resolve_bind_host_defaults_and_lan():
+    from types import SimpleNamespace
+    assert resolve_bind_host(SimpleNamespace(LOCAL_ONLY=True)) == "127.0.0.1"
+    assert resolve_bind_host(SimpleNamespace(LOCAL_ONLY=False)) == "0.0.0.0"
+    assert resolve_bind_host(SimpleNamespace()) == "127.0.0.1"
+    assert resolve_bind_host(None) == "127.0.0.1"
+
+
+def test_lan_mode_disables_host_and_origin_checks(tmp_path):
+    async def exercise():
+        async with _running_app(tmp_path, local_only=False) as (rt, app):
+            transport = httpx.ASGITransport(app=app)
+            # LAN mode no longer rejects remote Host/Origin (421/403).
+            async with httpx.AsyncClient(transport=transport,
+                                         base_url="http://10.0.0.5:1314") as client:
+                response = await client.post("/mcp", json={},
+                                             headers={"Origin": "http://evil.example"})
+                assert response.status_code not in (421, 403)
+            # POST-only method restriction is preserved.
+            async with httpx.AsyncClient(transport=transport, base_url=BASE) as client:
+                response = await client.get("/mcp")
+                assert response.status_code == 405
+                assert response.headers["allow"] == "POST"
     asyncio.run(exercise())
 
 

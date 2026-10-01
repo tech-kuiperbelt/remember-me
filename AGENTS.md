@@ -20,7 +20,7 @@ Data directory selection: `--data-dir` > `MEMORY_DATA_DIR` > the OS per-user def
 (Linux `~/.remember-me/`, Windows `%LOCALAPPDATA%\remember-me\` with a `~/AppData/Local`
 fallback, macOS `~/Library/Application Support/remember-me/`); relative
 directories are resolved against the project root. `<data-dir>/config.jsonc` contains
-`{"port":1314,"language":"zh-CN","auto_download_model":true,"proxy":{"enabled":false,"url":""}}`
+`{"port":1314,"language":"zh-CN","auto_download_model":true,"local_only":true,"proxy":{"enabled":false,"url":""}}`
 and is created only on normal startup. Missing fields use these defaults.
 JSONC supports line/block comments and trailing commas; config saves preserve
 existing comments. Legacy config.json is read only when config.jsonc is absent;
@@ -61,15 +61,15 @@ Two transport modes:
 | Mode | Command | Description |
 |------|---------|-------------|
 | **stdio** | `python -m app.server --stdio` | Subprocess stdin/stdout (explicit) |
-| **HTTP** | `python -m app.server` | Starlette + Uvicorn on `0.0.0.0:<port>`; serves legacy SSE **and** Streamable HTTP from one instance |
+| **HTTP** | `python -m app.server` | Starlette + Uvicorn; binds `127.0.0.1:<port>` by default (`local_only: true` in `config.jsonc`), or `0.0.0.0:<port>` when `local_only: false` (LAN-accessible, restart to apply); serves legacy SSE **and** Streamable HTTP from one instance |
 
 HTTP endpoints (all share the same service/runtime/provider/storage):
 
 | Endpoint | Transport | Notes |
 |---|---|---|
 | `GET /sse` + `POST /messages/?session_id=...` | legacy HTTP+SSE | retained for existing clients (e.g. opencode); Codex treats it as legacy |
-| `POST /mcp` | MCP Streamable HTTP | `stateless=True` + `json_response=True`; no `Mcp-Session-Id`; `GET`/`HEAD`/`DELETE`/other methods return `405` with `Allow: POST` (security is checked first); Host/Origin restricted to loopback (`127.0.0.1`/`localhost`) — illegal Host `421`, illegal Origin `403` |
-| `GET /read-me` | static page | LLM-facing config guide; self-references `http://127.0.0.1:<port>` (port follows `--port`); read-only, no auth; `503` while closing |
+| `POST /mcp` | MCP Streamable HTTP | `stateless=True` + `json_response=True`; no `Mcp-Session-Id`; `GET`/`HEAD`/`DELETE`/other methods return `405` with `Allow: POST` (security is checked first); Host/Origin restricted to loopback (`127.0.0.1`/`localhost`) — illegal Host `421`, illegal Origin `403`; with `local_only: false` this DNS-rebinding protection is disabled entirely (no auth, trusted LAN only) |
+| `GET /read-me` | static page | LLM-facing config guide; self-references `http://127.0.0.1:<port>` (port follows `--port`; stays loopback even in LAN mode); read-only, no auth; `503` while closing |
 
 `/mcp` is the protocol endpoint; `/read-me` only documents how to connect. See `docs/project-management/plans/29-streamable-http-and-read-me.md`.
 

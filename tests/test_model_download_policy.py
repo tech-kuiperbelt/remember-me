@@ -170,6 +170,7 @@ def test_loopback_ollama_bypasses_all_proxy_and_missing_model_help(monkeypatch):
 def test_migration_keeps_proxy_and_download_policy(tmp_path):
     project, source, env = legacy_layout(tmp_path)
     values = {"port": 1314, "language": "en", "auto_download_model": False,
+              "local_only": True,
               "proxy": {"enabled": True, "url": "https://proxy.example:8443"}}
     (source / "config.jsonc").write_text(json.dumps(values))
     target = tmp_path / "new-data"

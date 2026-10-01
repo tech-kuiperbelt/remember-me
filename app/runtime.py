@@ -114,15 +114,15 @@ class Runtime:
         with self._lock:
             if self.state != "running":
                 raise MaintenanceRejected("maintenance_busy", "Service is closing; configuration cannot be saved")
-            if not isinstance(changes, dict) or set(changes) - {"port", "language", "proxy", "auto_download_model"}:
-                raise ValueError("Only port, language, proxy and auto_download_model may be changed here")
+            if not isinstance(changes, dict) or set(changes) - {"port", "language", "proxy", "auto_download_model", "local_only"}:
+                raise ValueError("Only port, language, proxy, auto_download_model and local_only may be changed here")
             config = Configuration.load(self.settings.DATA_DIR)
             values = config.as_dict()
             if "proxy" in changes:
                 if not isinstance(changes["proxy"], dict):
                     raise ValueError("proxy must be an object")
                 values["proxy"] = {**values["proxy"], **changes["proxy"]}
-            for key in ("port", "language", "auto_download_model"):
+            for key in ("port", "language", "auto_download_model", "local_only"):
                 if key in changes:
                     values[key] = changes[key]
             validated = Configuration.from_values(config.path, config.data_dir, values)

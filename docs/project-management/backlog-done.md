@@ -2,6 +2,8 @@
 
 本文件归档已完成的项目待办。详细实现记录保留在 git 提交和项目变更日志中。
 
+- [51] 仅本机服务配置与局域网访问（2026-10-01 实现并验证）：新增布尔配置 `local_only`（默认 `true`；旧配置缺字段同默认）接入 Configuration/Settings/JSONC，`true` 仅监听 `127.0.0.1`、`false` 监听 `0.0.0.0` 并对局域网开放全部 HTTP 入口；局域网模式关闭 `/mcp` 的 Host/Origin 校验（无鉴权，仅限可信网络）。配置页新增“仅本机服务”复选框，取消时显示醒目局域网暴露警告，保存无需维护、重启生效。全量 720 项 pytest 与浏览器回归通过，`resolve_bind_host`、本机/局域网 Host/Origin 行为均有测试覆盖。详见 [`plans/51-local-only-service.md`](plans/51-local-only-service.md)。
+
 - [52] list_keywords 按 categories 过滤（2026-10-01 实现并验证）：`list_keywords` 与 `POST /api/keywords/query` 新增可选 `categories`，按精确匹配的 categories（维度内 OR、与 namespace 用 AND）返回范围内存活记忆实际使用的关键词及计数；向后兼容（不传时行为与 SQL 不变），`keyword_counts` 增加可选参数，结果回显 `categories`，工具 schema/描述、审计裁剪与 Admin 允许集同步，网页 Keywords 页新增分类多选。无 DB schema 变更与数据迁移。全量 716 项 pytest、干净 HEAD 上的隔离浏览器回归、重启后实况 smoke（含与独立记忆路径 13=13 交叉验证）通过。详见 [`plans/52-list-keywords-category-filter.md`](plans/52-list-keywords-category-filter.md)。
 
 - [49] app 按职责分包（已实现并验证，未部署）：整理为 config/domain/storage/embedding/transport/operations/cli 七个包，保留顶层启动/装配/业务入口及六个 CLI 兼容启动模块；Storage 契约与延迟工厂分离，修正资源定位，同步内部导入和测试。新增 20 项兼容回归；全量 703 项 pytest 与浏览器回归通过，无数据迁移。详见 [`plans/49-app-package-layout.md`](plans/49-app-package-layout.md)。

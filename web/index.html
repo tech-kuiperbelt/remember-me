@@ -260,7 +260,7 @@
       <div class="form-row">
         <label><input id="config-local-only" type="checkbox" checked> 仅本机服务（推荐）</label>
       </div>
-      <p class="text-muted" id="config-local-only-help">勾选：仅监听 127.0.0.1，只有本机能访问。取消：监听 0.0.0.0，局域网内其他设备可访问全部 HTTP 接口（管理页面、SSE、MCP 与 /api）。修改后需重启服务生效，--port 仍优先。</p>
+      <p class="text-muted" id="config-local-only-help">勾选：仅监听 127.0.0.1，只有本机能访问。取消：监听 0.0.0.0，局域网内其他设备可访问全部 HTTP 接口（管理页面、SSE、MCP 与 /api）。修改访问范围需重启服务生效；端口仍由 --port 临时覆盖。</p>
       <p class="text-danger" id="config-local-only-warning" role="alert" hidden>警告：取消“仅本机服务”会关闭 /mcp 的 Host/Origin 防护，并把管理页面、SSE、MCP 及全部 /api 接口暴露到局域网。本服务没有任何账号或密码，同一网络内的任何设备都能读取、写入、删除全部记忆、导入/导出数据，甚至关闭或重启服务。请仅在完全可信的网络中启用。</p>
       <div class="form-row">
         <label><input id="model-auto-download" type="checkbox"> 缓存缺失时自动下载</label>

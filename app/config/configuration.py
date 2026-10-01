@@ -12,7 +12,7 @@ from app.config import jsonc
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DIR_NAME = "remember-me"
 DEFAULTS = {"port": 1314, "language": "zh-CN", "auto_download_model": True,
-            "proxy": {"enabled": False, "url": ""}}
+            "local_only": True, "proxy": {"enabled": False, "url": ""}}
 PROXY_VARIABLES = tuple(name for key in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY")
                         for name in (key, key.lower()))
 PATH_DEFAULTS = {
@@ -94,6 +94,7 @@ def default_document(values):
         '  "port":': '  // HTTP 端口（1–65535），修改后重启生效。\n',
         '  "language":': '  // 语言：zh-CN 或 en；目前仅保存选择。\n',
         '  "auto_download_model":': '  // 模型缓存缺失时自动下载；也可在配置页手动重试。\n',
+        '  "local_only":': '  // true=仅监听 127.0.0.1；false=监听 0.0.0.0 并对局域网开放全部 HTTP 接口（修改后重启生效）。\n',
         '  "proxy":': '  // 代理关闭时直连；只支持 HTTP/HTTPS。\n',
         '    "url":': '    // 可包含端口及用户名/密码，例如 http://127.0.0.1:7890。\n',
     }
@@ -126,6 +127,7 @@ class Configuration:
     port: int
     language: str
     auto_download_model: bool = True
+    local_only: bool = True
     proxy_enabled: bool = False
     proxy_url: str = ""
     source_text: str | None = field(default=None, repr=False, compare=False)
@@ -140,6 +142,7 @@ class Configuration:
             url = f"{parts.scheme}://***@{parts.netloc.rsplit('@', 1)[1]}"
         return {"port": self.port, "language": self.language,
                 "auto_download_model": self.auto_download_model,
+                "local_only": self.local_only,
                 "proxy": {"enabled": self.proxy_enabled, "url": url}}
 
     @classmethod
@@ -181,6 +184,8 @@ class Configuration:
             raise ValueError("Config language must be zh-CN or en")
         if type(values["auto_download_model"]) is not bool:
             raise ValueError("auto_download_model must be a boolean")
+        if type(values["local_only"]) is not bool:
+            raise ValueError("local_only must be a boolean")
         proxy = values["proxy"]
         if not isinstance(proxy, dict) or set(proxy) - {"enabled", "url"}:
             raise ValueError("proxy must contain only enabled and url")
@@ -203,7 +208,7 @@ class Configuration:
             if not valid:
                 raise ValueError("proxy.url must be a HTTP/HTTPS proxy address")
         return cls(location, root.resolve(), values["port"], values["language"],
-                   values["auto_download_model"], proxy["enabled"], url)
+                   values["auto_download_model"], values["local_only"], proxy["enabled"], url)
 
     def runtime_environment(self, environment=None):
         env = dict(os.environ if environment is None else environment)
@@ -213,6 +218,7 @@ class Configuration:
             env.update(HTTP_PROXY=self.proxy_url, HTTPS_PROXY=self.proxy_url)
         env["NO_PROXY"] = "localhost,127.0.0.1,::1"
         env["MEMORY_AUTO_DOWNLOAD_MODEL"] = str(self.auto_download_model).lower()
+        env["MEMORY_LOCAL_ONLY"] = str(self.local_only).lower()
         # Explicit local_files_only controls each load; stale offline globals must
         # not prevent the subsequent permitted download. Disable the separate Xet
         # transport so all downloads follow the configured HTTP proxy policy.

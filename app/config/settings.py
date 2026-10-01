@@ -39,6 +39,7 @@ class Settings:
     LOG_DIR: str
     PORT: int
     LANGUAGE: str
+    LOCAL_ONLY: bool
     CONFIG_PATH: str | None
 
     @classmethod
@@ -103,5 +104,8 @@ class Settings:
             AUDIT_MAX_EVENTS=int(env.get("MEMORY_AUDIT_MAX_EVENTS", "0")),
             DATA_DIR=str(root), TEMP_DIR=temp_dir, LOG_DIR=log_dir,
             PORT=int(env.get("MEMORY_PORT", "1314")),
-            LANGUAGE=env.get("MEMORY_LANGUAGE", "zh-CN"), CONFIG_PATH=str(root / "config.jsonc"),
+            LANGUAGE=env.get("MEMORY_LANGUAGE", "zh-CN"),
+            LOCAL_ONLY=env.get("MEMORY_LOCAL_ONLY", "true").strip().lower() not in
+            ("false", "0", "no", "off"),
+            CONFIG_PATH=str(root / "config.jsonc"),
         )
