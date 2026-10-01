@@ -6,9 +6,9 @@ import threading
 
 import pytest
 
-from app.calls import AsyncCallAdapter
-from app.maintenance import MaintenanceGate, MaintenanceRejected
-from app.provider_adapter import wrap_provider
+from app.operations.calls import AsyncCallAdapter
+from app.operations.maintenance import MaintenanceGate, MaintenanceRejected
+from app.embedding.provider_adapter import wrap_provider
 from tests.conftest import FakeProvider
 from tests.test_runtime import runtime
 

@@ -2,9 +2,9 @@
 
 import pytest
 
-from app.embed import EmbeddingSpec
-from app.index_value_resolver import IndexValueResolver
-from app.storage_sqlite import SQLiteStorage
+from app.embedding.embed import EmbeddingSpec
+from app.embedding.index_value_resolver import IndexValueResolver
+from app.storage.sqlite import SQLiteStorage
 
 
 SPEC = EmbeddingSpec("test", "tiny", 2, normalized=True).as_dict()

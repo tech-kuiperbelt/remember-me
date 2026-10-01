@@ -17,9 +17,9 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 
-from .storage import create_storage, SQLitePrimaryStorage
-from .jsonl_transfer import load_jsonl
-from .database_lock import DatabaseWriterLock
+from app.storage import create_storage, SQLitePrimaryStorage
+from app.storage.jsonl_transfer import load_jsonl
+from app.storage.database_lock import DatabaseWriterLock
 
 logger = logging.getLogger("recovery")
 

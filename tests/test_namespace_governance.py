@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.namespace_policy import (
+from app.domain.namespace_policy import (
     NamespaceNotFound,
     NAMESPACE_NOT_FOUND,
     normalize_namespace,
@@ -29,7 +29,7 @@ from app.namespace_policy import (
 def service(monkeypatch, service_factory):
     """app.service backed by a real in-memory SQLite store, no provider calls."""
     service = service_factory()
-    from app.storage_sqlite import SQLiteStorage
+    from app.storage.sqlite import SQLiteStorage
 
     storage = SQLiteStorage(":memory:")
     monkeypatch.setattr(service, "storage", storage)

@@ -11,7 +11,7 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
 from app.runtime import Runtime
-from app.settings import Settings
+from app.config.settings import Settings
 from app.server import _read_me_base, create_http_app
 from tests.conftest import FakeProvider
 

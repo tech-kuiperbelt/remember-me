@@ -40,7 +40,7 @@ Coding plan 应安排：固定一份脱敏的 query → positive memory 评测�
 ## 4. 实施入口核对
 
 - `SQLiteStorage` 的 `add`、`update`、`update_metadata`、`delete`、`clear`、`import_records` 以及恢复使用的 `_add_with_id` 均可能改变 FTS 来源数据；对应事务必须同步 FTS。`update` 的空白等价判断只决定是否清空 Anchors，实际正文变化仍需更新正文 FTS。
-- 导入由 `MemoryService._run_import` 准备向量后调用存储层 `import_records`；离线恢复在 `app/recovery.py` 逐条调用 `_add_with_id`，随后重建 metadata 关系和索引。两条路径都要覆盖 Anchor 严格输入、FTS 重建及版本标记。
+- 导入由 `MemoryService._run_import` 准备向量后调用存储层 `import_records`；离线恢复在 `app/storage/recovery.py` 逐条调用 `_add_with_id`，随后重建 metadata 关系和索引。两条路径都要覆盖 Anchor 严格输入、FTS 重建及版本标记。
 - 当前 `_queryable_index_values`、`index_embedding_completeness`、`reindex_index_values`、`missing_index_value_embeddings`、`missing_queryable_index_value_embeddings`、`_store_index_value_embeddings`、Runtime 启动完整性检查和 `IndexValueResolver` 会触及通用索引值。加入 anchors 后必须在 Python 与 SQL 两层过滤 `requires_embedding=False`，并拒绝 Anchor semantic resolution。
 - `DualStorage` 的搜索方法需委托 SQLite primary。MCP 新工具须同步注册、分发、hint、审计裁剪和 `/read-me` 工具列表；Admin 新增两个独立搜索端点。本轮无 UI 搜索模式改动。
 

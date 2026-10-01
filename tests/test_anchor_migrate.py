@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from app import anchor_migrate_deepseek as am
-from app.storage_sqlite import SQLiteStorage
+from app.cli import anchor_migrate_deepseek as am
+from app.storage.sqlite import SQLiteStorage
 
 EMB = [0.1, 0.2, 0.3]
 

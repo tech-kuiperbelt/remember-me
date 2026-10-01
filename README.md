@@ -1,5 +1,28 @@
 # remember-me 运维手册
 
+## 代码结构
+
+`app/` 按职责组织；`server.py` 是传输启动入口，`runtime.py` 负责资源装配与生命周期，
+`service.py` 是业务入口，`audit.py` 和 `log_config.py` 保留在根目录。
+
+| 包 | 职责 |
+|---|---|
+| `config/` | 配置、Settings 快照、JSONC 与数据根目录解析 |
+| `domain/` | anchors、categories、namespace、summary 与词法查询规则 |
+| `storage/` | 存储契约、工厂、SQLite/dual/NDJSON、锁、JSONL 与恢复 |
+| `embedding/` | provider、串行适配器、向量 codec 与索引值语义解析 |
+| `transport/` | MCP 工具定义和分发、反馈回执、Admin HTTP 接口 |
+| `operations/` | 调用线程池、维护状态、导入协调与模型准备 |
+| `cli/` | 离线管理、embedding、恢复、配置迁移及 DeepSeek 回填 |
+
+内部代码与测试直接导入新模块；Storage 对外通过 `app.storage` 导出契约和工厂，
+工厂延迟加载具体后端。Domain 不依赖服务或传输层，在线业务不依赖 CLI。
+
+现有 `bin/start.sh`、`bin/manage`、`bin/recover.sh` 及 `python -m app.server` 不变。
+根目录保留 `manage_cli`、`embedding_cli`、`recover_cli` 和三种 `*_migrate_deepseek`
+的薄入口，原来的 `python -m app.<命令>` 继续可用；实现位于 `app.cli.<命令>`。
+其他旧的内部模块导入路径不保留兼容层。分包不改变数据格式或数据目录，无需迁移数据。
+
 ## 启动和关闭
 
 从仓库根目录运行 `bin/start.sh`。Ops 页面执行任何运维动作前，先点 **Enter

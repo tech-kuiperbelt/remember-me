@@ -3,9 +3,9 @@
 import pytest
 
 from app.storage import MemoryStorage, ReplicaStorage, create_storage
-from app.storage_dual import DualStorage
-from app.storage_ndjson import NDJSONReplica
-from app.storage_sqlite import SQLiteStorage
+from app.storage.dual import DualStorage
+from app.storage.ndjson import NDJSONReplica
+from app.storage.sqlite import SQLiteStorage
 
 
 def test_factory_exposes_only_sqlite_and_dual(tmp_path):

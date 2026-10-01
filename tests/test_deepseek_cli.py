@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app import deepseek_cli
+from app.cli import deepseek_cli
 
 
 # -- output extraction (existing samples) --
@@ -106,7 +106,7 @@ def test_default_primary_path_honours_data_dir(monkeypatch, tmp_path):
 
 
 def test_default_primary_path_resolves_relative_data_dir(monkeypatch):
-    from app.configuration import PROJECT_ROOT
+    from app.config.configuration import PROJECT_ROOT
     monkeypatch.delenv("MEMORY_STORAGE_PATH", raising=False)
     monkeypatch.setenv("MEMORY_DATA_DIR", "phase5-relative-root")
     expected = PROJECT_ROOT / "phase5-relative-root" / "memories.db"

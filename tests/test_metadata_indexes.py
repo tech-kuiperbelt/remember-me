@@ -4,7 +4,7 @@ import json
 import pickle
 import sqlite3
 
-from app.storage_sqlite import SQLiteStorage
+from app.storage.sqlite import SQLiteStorage
 
 
 FAKE_EMB = [0.1, 0.2, 0.3, 0.4]

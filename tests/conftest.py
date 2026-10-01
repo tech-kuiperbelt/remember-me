@@ -60,7 +60,7 @@ def make_storage(tmp_path):
     """Factory that creates a fresh SQLite business store."""
 
     def _make(tag: str):
-        from app.storage_sqlite import SQLiteStorage
+        from app.storage.sqlite import SQLiteStorage
         return SQLiteStorage(":memory:")
 
     return _make
@@ -80,7 +80,7 @@ def fake_emb():
 
 class FakeProvider:
     def __init__(self):
-        from app.embed import EmbeddingSpec
+        from app.embedding.embed import EmbeddingSpec
         self.spec = EmbeddingSpec("ollama", "test", 3)
 
     def embed_document(self, text):
@@ -99,8 +99,8 @@ class FakeProvider:
 @pytest.fixture
 def service_factory():
     from app.service import MemoryService
-    from app.settings import Settings
-    from app.storage_sqlite import SQLiteStorage
+    from app.config.settings import Settings
+    from app.storage.sqlite import SQLiteStorage
     services = []
     stores = []
     def make(storage=None, provider=None, settings=None):
@@ -124,13 +124,14 @@ def service(service_factory):
 
 @pytest.fixture
 def admin(service):
-    from app.admin import AdminAPI
+    from app.transport.admin import AdminAPI
     return AdminAPI(service)
 
 
 def server_namespace(service=None):
-    from app import server, tools
-    # Tool schemas/helpers live in app.tools; expose both namespaces so tests can
+    from app import server
+    from app.transport import tools
+    # Tool schemas/helpers live in app.transport.tools; expose both namespaces so tests can
     # reach either the transport adapter or the tool helpers.
     result = {**vars(tools), **vars(server)}
     # Tool schemas/helpers do not access resources; constructing a fake service

@@ -223,7 +223,7 @@ def test_removed_backends_are_rejected(backend):
     code = (
         f"import os; os.environ['MEMORY_STORAGE']='{backend}'; "
         "os.environ['MEMORY_STORAGE_PATH']='/tmp/never-created'; "
-        "from app.settings import Settings; Settings.from_env()"
+        "from app.config.settings import Settings; Settings.from_env()"
     )
     proc = subprocess.run(
         [sys.executable, "-c", code],

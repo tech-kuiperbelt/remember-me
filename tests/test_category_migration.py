@@ -9,8 +9,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.storage_sqlite import SQLiteStorage
-from app.categories import CATEGORY_VOCABULARY
+from app.storage.sqlite import SQLiteStorage
+from app.domain.categories import CATEGORY_VOCABULARY
 
 FAKE_EMB = [0.1, 0.2, 0.3, 0.4]
 
@@ -23,7 +23,7 @@ def db():
 # -- candidate rendering --
 
 def test_format_candidates_block_includes_seeds():
-    from app.category_migrate_deepseek import format_candidates_block
+    from app.cli.category_migrate_deepseek import format_candidates_block
 
     block = format_candidates_block(list(CATEGORY_VOCABULARY))
     assert "---- candidate categories ----" in block
@@ -32,7 +32,7 @@ def test_format_candidates_block_includes_seeds():
 
 
 def test_format_candidates_block_empty():
-    from app.category_migrate_deepseek import format_candidates_block
+    from app.cli.category_migrate_deepseek import format_candidates_block
 
     assert format_candidates_block([]) == "(empty candidate list)"
 
@@ -40,13 +40,13 @@ def test_format_candidates_block_empty():
 # -- extraction (mocked subprocess) --
 
 def test_extract_categories_parses_and_caps():
-    from app import category_migrate_deepseek as cm
+    from app.cli import category_migrate_deepseek as cm
 
     fake_proc = MagicMock()
     fake_proc.returncode = 0
     fake_proc.stdout = '["Bugfix", "design", "design", "ops", "extra"]'
     fake_proc.stderr = ""
-    with patch("app.category_migrate_deepseek.subprocess.run", return_value=fake_proc):
+    with patch("app.cli.category_migrate_deepseek.subprocess.run", return_value=fake_proc):
         result = cm.extract_categories_deepseek("some text")
 
     # normalized lowercase + dedup AND capped at 3 (order preserved)
@@ -54,36 +54,36 @@ def test_extract_categories_parses_and_caps():
 
 
 def test_extract_categories_tolerates_fences_and_noise():
-    from app import category_migrate_deepseek as cm
+    from app.cli import category_migrate_deepseek as cm
 
     fake_proc = MagicMock()
     fake_proc.returncode = 0
     fake_proc.stdout = '```json\n["requirement", "api"]\n```'
     fake_proc.stderr = ""
-    with patch("app.category_migrate_deepseek.subprocess.run", return_value=fake_proc):
+    with patch("app.cli.category_migrate_deepseek.subprocess.run", return_value=fake_proc):
         result = cm.extract_categories_deepseek("some text")
     assert result == ["requirement", "api"]
 
 
 def test_extract_categories_raises_on_empty_output():
-    from app import category_migrate_deepseek as cm
+    from app.cli import category_migrate_deepseek as cm
 
     fake_proc = MagicMock()
     fake_proc.returncode = 0
     fake_proc.stdout = "no array here"
     fake_proc.stderr = ""
-    with patch("app.category_migrate_deepseek.subprocess.run", return_value=fake_proc):
+    with patch("app.cli.category_migrate_deepseek.subprocess.run", return_value=fake_proc):
         with pytest.raises(ValueError):
             cm.extract_categories_deepseek("some text")
 
 
 def test_extract_categories_raises_on_cli_failure():
-    from app import category_migrate_deepseek as cm
+    from app.cli import category_migrate_deepseek as cm
 
     fake_proc = MagicMock()
     fake_proc.returncode = 1
     fake_proc.stderr = "boom"
-    with patch("app.category_migrate_deepseek.subprocess.run", return_value=fake_proc):
+    with patch("app.cli.category_migrate_deepseek.subprocess.run", return_value=fake_proc):
         with pytest.raises(RuntimeError):
             cm.extract_categories_deepseek("some text")
 
@@ -91,7 +91,7 @@ def test_extract_categories_raises_on_cli_failure():
 # -- candidate vocabulary convergence --
 
 def test_category_candidates_seed_and_growth():
-    from app.category_migrate_deepseek import CategoryCandidates
+    from app.cli.category_migrate_deepseek import CategoryCandidates
 
     candidates = CategoryCandidates(observed=["gossip", "config"])
     lst = candidates.as_candidates()
@@ -136,7 +136,7 @@ def test_update_metadata_missing_memory(db):
 # -- storage path override (--db) --
 
 def test_build_storage_uses_db_override(monkeypatch, tmp_path):
-    from app import category_migrate_deepseek as cm
+    from app.cli import category_migrate_deepseek as cm
 
     captured = {}
     monkeypatch.setattr(cm, "create_storage",
@@ -152,7 +152,7 @@ def test_build_storage_uses_db_override(monkeypatch, tmp_path):
 
 
 def test_build_storage_falls_back_to_env_path(monkeypatch, tmp_path):
-    from app import category_migrate_deepseek as cm
+    from app.cli import category_migrate_deepseek as cm
 
     captured = {}
     monkeypatch.setattr(cm, "create_storage",
@@ -166,7 +166,7 @@ def test_build_storage_falls_back_to_env_path(monkeypatch, tmp_path):
 
 
 def test_main_passes_db_to_build_storage(monkeypatch, tmp_path):
-    from app import category_migrate_deepseek as cm
+    from app.cli import category_migrate_deepseek as cm
 
     seen = {}
 

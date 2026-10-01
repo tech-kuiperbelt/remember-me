@@ -6,7 +6,7 @@ import json
 import pytest
 
 from app.audit import AuditJournal, _trim_params
-from app.report_feedback import SearchReceiptRegistry, InvalidReport
+from app.transport.report_feedback import SearchReceiptRegistry, InvalidReport
 from app.server import create_mcp_server
 
 

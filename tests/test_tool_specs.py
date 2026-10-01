@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 from app import audit
-from app.tools import (TOOL_SPECS, _TOOL_HINTS, _wrap_search_anchor,
+from app.transport.tools import (TOOL_SPECS, _TOOL_HINTS, _wrap_search_anchor,
                        _wrap_search_lexical, _wrap_search_meta, _wrap_search_semantic,
                        list_tool_definitions, tool_spec_for)
 

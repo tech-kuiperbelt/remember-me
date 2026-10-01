@@ -10,10 +10,10 @@ import shutil
 import sqlite3
 import tempfile
 
-from .configuration import (Configuration, DEFAULTS, PATH_DEFAULTS,
+from app.config.configuration import (Configuration, DEFAULTS, PATH_DEFAULTS,
                             PROJECT_ROOT, atomic_json, atomic_config, rooted_path,
                             default_data_dir)
-from .database_lock import DatabaseWriterLock
+from app.storage.database_lock import DatabaseWriterLock
 
 
 def _digest(path):

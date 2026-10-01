@@ -8,8 +8,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.embed import EmbeddingInputTooLong
-from app.summary_policy import derive_summary, normalize_summary
+from app.embedding.embed import EmbeddingInputTooLong
+from app.domain.summary_policy import derive_summary, normalize_summary
 
 
 def test_derive_summary_prefers_complete_first_sentence():

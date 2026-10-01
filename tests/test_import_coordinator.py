@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from app.import_coordinator import ImportCoordinator
-from app.maintenance import MaintenanceRejected
+from app.operations.import_coordinator import ImportCoordinator
+from app.operations.maintenance import MaintenanceRejected
 from app.runtime import Runtime
 from tests.conftest import FakeProvider
 from tests.test_runtime import runtime, settings
@@ -193,7 +193,7 @@ def test_waiter_start_failure_drains_import_before_http_returns(tmp_path, monkey
     import asyncio
     from io import BytesIO
     from starlette.datastructures import UploadFile
-    from app.admin import AdminAPI
+    from app.transport.admin import AdminAPI
     from tests.test_admin_cancellation import request, entered
 
     rt = runtime(tmp_path).start()

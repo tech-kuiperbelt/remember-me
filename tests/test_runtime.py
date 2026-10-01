@@ -14,9 +14,9 @@ from starlette.testclient import TestClient
 
 from app import audit
 from app.runtime import Runtime
-from app.settings import Settings
+from app.config.settings import Settings
 from app.storage import create_storage
-from app.storage_dual import DualStorage
+from app.storage.dual import DualStorage
 from app.server import create_http_app
 from tests.conftest import FakeProvider
 
@@ -52,7 +52,7 @@ def test_import_and_help_have_no_resource_side_effects(tmp_path):
     script = '''import logging, threading, sys
 before = tuple(logging.getLogger().handlers), tuple(threading.enumerate())
 sys.argv = ['anything', '--invalid-argument']
-import app.service, app.admin, app.server, app.runtime, app.log_config
+import app.service, app.transport.admin, app.server, app.runtime, app.log_config
 assert before == (tuple(logging.getLogger().handlers), tuple(threading.enumerate()))
 assert not hasattr(app.service, 'storage')
 '''
@@ -111,7 +111,7 @@ def test_start_close_once_and_final_sync(tmp_path, monkeypatch):
     rt.close()
     rt.close()
     assert not job.is_alive()
-    from app.jsonl_transfer import load_jsonl
+    from app.storage.jsonl_transfer import load_jsonl
     assert load_jsonl(tmp_path / "test.jsonl")["records"][0]["id"] == memory["id"]
 
 
@@ -140,7 +140,7 @@ def test_close_waits_for_import_before_storage(tmp_path, monkeypatch):
         release.set()
         thread.join(10)
     assert closed.is_set()
-    from app.jsonl_transfer import load_jsonl
+    from app.storage.jsonl_transfer import load_jsonl
     assert load_jsonl(tmp_path / "test.jsonl")["records"][0]["text"] == "imported"
 
 
@@ -177,7 +177,7 @@ def test_control_responds_before_shutdown_and_blocks_new_work(tmp_path, restart)
     with TestClient(app) as client:
         rt.shutdown_callback = Mock()
         # Exercise ASGI response ordering independently of TestClient's buffering.
-        from app.admin import AdminAPI
+        from app.transport.admin import AdminAPI
         response = AdminAPI(runtime=rt)._shutdown_response(restart)
         assert rt.state == "running"
         events = []
@@ -198,7 +198,7 @@ def test_failed_final_sync_keeps_durable_outbox(tmp_path, monkeypatch):
     rt.service.memory_add("still durable")
     monkeypatch.setattr(rt.storage.secondary, 'append_batch', Mock(side_effect=OSError('disk error')))
     rt.close()
-    from app.storage_sqlite import SQLiteStorage
+    from app.storage.sqlite import SQLiteStorage
     store = SQLiteStorage(str(tmp_path / 'test.db'))
     try:
         assert store.count_unsynced() == 1
@@ -207,7 +207,7 @@ def test_failed_final_sync_keeps_durable_outbox(tmp_path, monkeypatch):
 
 
 def test_service_uses_native_provider_query_and_batch_paths(service_factory):
-    from app.embed import EmbeddingSpec
+    from app.embedding.embed import EmbeddingSpec
     provider = FakeProvider()
     provider.spec = EmbeddingSpec('sentence_transformers', 'fake', 3)
     provider.embed_query = Mock(return_value=[1., 0., 0.])

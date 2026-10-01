@@ -4,9 +4,9 @@ import json
 import pytest
 from starlette.testclient import TestClient
 
-from app import jsonc
-from app.configuration import Configuration
-from app.config_migrate import migrate
+from app.config import jsonc
+from app.config.configuration import Configuration
+from app.cli.config_migrate import migrate
 from app.server import create_http_app
 from tests.test_configuration import legacy_layout
 from tests.test_model_bootstrap import make_runtime, preserve_process_environment

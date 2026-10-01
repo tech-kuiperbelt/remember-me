@@ -2,7 +2,9 @@
 
 本文件归档已完成的项目待办。详细实现记录保留在 git 提交和项目变更日志中。
 
-- [48] 后端重构（2026-09-30 阶段 1–5 实现，阶段 5 随本次提交归档）：消除同步业务对事件循环的阻塞（`AsyncCallAdapter` + `SerializedProvider`）、交回导入/恢复协调（`ImportCoordinator` + Runtime 维护入口）、补齐存储/provider 契约（`MemoryStorage`/`SQLitePrimaryStorage`/`ReplicaStorage` + `StorageCapabilityError`）、声明工具与路由策略（`app/tools.py` `ToolSpec` 表、audit 裁剪注册表、`AdminAPI.ROUTE_TABLE`）、离线 CLI 去重与健康检查 ID 轻读（`app/deepseek_cli.py`、`MemoryStorage.live_memory_ids`）。阶段 1–4 提交 `e1eb7a8`/`4f06b6a`/`b0ca23f`/`a5c0769`，阶段 5 随本次提交；683 项 pytest 与浏览器回归通过，无 schema/数据迁移。详见 [`plans/48-backend-refactoring.md`](plans/48-backend-refactoring.md)。
+- [49] app 按职责分包（已实现并验证，未部署）：整理为 config/domain/storage/embedding/transport/operations/cli 七个包，保留顶层启动/装配/业务入口及六个 CLI 兼容启动模块；Storage 契约与延迟工厂分离，修正资源定位，同步内部导入和测试。新增 20 项兼容回归；全量 703 项 pytest 与浏览器回归通过，无数据迁移。详见 [`plans/49-app-package-layout.md`](plans/49-app-package-layout.md)。
+
+- [48] 后端重构（2026-09-30 阶段 1–5 实现）：消除同步业务对事件循环的阻塞（`AsyncCallAdapter` + `SerializedProvider`）、交回导入/恢复协调（`ImportCoordinator` + Runtime 维护入口）、补齐存储/provider 契约（`MemoryStorage`/`SQLitePrimaryStorage`/`ReplicaStorage` + `StorageCapabilityError`）、声明工具与路由策略（`app/transport/tools.py` `ToolSpec` 表、audit 裁剪注册表、`AdminAPI.ROUTE_TABLE`）、离线 CLI 去重与健康检查 ID 轻读（`app/cli/deepseek_cli.py`、`MemoryStorage.live_memory_ids`）。阶段 1–4 提交 `e1eb7a8`/`4f06b6a`/`b0ca23f`/`a5c0769`，阶段 5 提交 `ba28ed5`；683 项 pytest 与浏览器回归通过，无 schema/数据迁移。详见 [`plans/48-backend-refactoring.md`](plans/48-backend-refactoring.md)。
 
 - [47] 完整配置表单与维护操作分区（2026-09-30 实现，随本次提交归档、生产未重启）：配置页上方可编辑所有 JSONC 配置，保存无需维护且不暂停业务；下方集中维护动作。新增 `/api/config`，端口/语言重启生效，保持注释及凭据脱敏。573 项 pytest 和浏览器回归通过。详见 [`plans/47-config-page-and-maintenance-actions.md`](plans/47-config-page-and-maintenance-actions.md)。
 

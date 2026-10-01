@@ -2,8 +2,8 @@
 
 import pytest
 
-from app.embed import EmbeddingSpec
-from app.storage_sqlite import SQLiteStorage
+from app.embedding.embed import EmbeddingSpec
+from app.storage.sqlite import SQLiteStorage
 
 
 SPEC = EmbeddingSpec("test", "import", 4, normalized=True).as_dict()

@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from app.jsonl_transfer import inspect_jsonl, load_jsonl, write_clean_jsonl
+from app.storage.jsonl_transfer import inspect_jsonl, load_jsonl, write_clean_jsonl
 
 
 def _record(memory_id="one", text="body", updated="2026-01-02T00:00:00+00:00"):

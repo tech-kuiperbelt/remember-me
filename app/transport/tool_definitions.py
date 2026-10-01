@@ -2,14 +2,14 @@
 
 Tool schema and description data live here, apart from the transport lifecycle
 in :mod:`app.server`. ``build_tools`` is the single source of truth for
-``tools/list``; :mod:`app.tools` binds each definition to a handler and policy.
+``tools/list``; :mod:`app.transport.tools` binds each definition to a handler and policy.
 """
 
 import mcp.types as types
 
-from .anchors import MAX_ANCHORS
-from .categories import CATEGORY_VOCABULARY, MAX_CATEGORIES
-from .report_feedback import (FEEDBACK_PURPOSES, FEEDBACK_SOURCES,
+from app.domain.anchors import MAX_ANCHORS
+from app.domain.categories import CATEGORY_VOCABULARY, MAX_CATEGORIES
+from app.transport.report_feedback import (FEEDBACK_PURPOSES, FEEDBACK_SOURCES,
                               MAX_REPORT_RATINGS)
 
 

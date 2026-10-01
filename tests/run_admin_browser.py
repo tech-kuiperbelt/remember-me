@@ -22,12 +22,12 @@ os.environ.update({"MEMORY_STORAGE":"sqlite", "MEMORY_STORAGE_PATH":":memory:",
                    "EMBED_PROVIDER":"ollama", "EMBED_PRELOAD":"false",
                    "OLLAMA_BASE_URL":"http://127.0.0.1:1"})
 from app.service import MemoryService
-from app.admin import AdminAPI
-from app.settings import Settings
+from app.transport.admin import AdminAPI
+from app.config.settings import Settings
 from app import audit
 from tests.conftest import FakeProvider
-from app.embed import EmbeddingSpec
-from app.storage_sqlite import SQLiteStorage
+from app.embedding.embed import EmbeddingSpec
+from app.storage.sqlite import SQLiteStorage
 from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.responses import HTMLResponse

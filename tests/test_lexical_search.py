@@ -6,10 +6,10 @@ import pytest
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
-from app.lexical import (LEXICAL_INDEX_VERSION, MAX_QUERY_CHARS, MAX_QUERY_TOKENS,
+from app.domain.lexical import (LEXICAL_INDEX_VERSION, MAX_QUERY_CHARS, MAX_QUERY_TOKENS,
                          LexicalQueryError, build_match, normalize_k)
-from app.namespace_policy import NamespaceNotFound
-from app.storage_sqlite import SQLiteStorage
+from app.domain.namespace_policy import NamespaceNotFound
+from app.storage.sqlite import SQLiteStorage
 
 EMB = [0.1, 0.2, 0.3]
 
@@ -261,7 +261,7 @@ def test_mcp_tool_registration_dispatch_and_envelopes(service):
 
 
 def test_admin_lexical_endpoint(service):
-    from app.admin import create_admin_routes
+    from app.transport.admin import create_admin_routes
     service.memory_add("AdminLexicalToken body")
     app = Starlette(routes=create_admin_routes(service=service))
     with TestClient(app) as client:

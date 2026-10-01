@@ -19,7 +19,7 @@ import threading
 from collections import OrderedDict
 from datetime import datetime, timezone
 
-from .jsonl_transfer import unlink_quietly
+from app.storage.jsonl_transfer import unlink_quietly
 
 logger = logging.getLogger("imports")
 

@@ -15,19 +15,19 @@ from starlette.background import BackgroundTask
 from starlette.routing import Route
 from starlette.requests import Request
 
-from .service import InvalidSearchFilter
-from .calls import INLINE_RUNNER, ServiceClosing
-from .embed import EmbeddingInputTooLong
-from .lexical import LexicalQueryError
-from .anchors import InvalidAnchors
-from .namespace_policy import NamespaceNotFound, InvalidNamespace
-from .jsonl_transfer import safe_filename_part, unlink_quietly
-from .maintenance import MaintenanceRejected
+from app.service import InvalidSearchFilter
+from app.operations.calls import INLINE_RUNNER, ServiceClosing
+from app.embedding.embed import EmbeddingInputTooLong
+from app.domain.lexical import LexicalQueryError
+from app.domain.anchors import InvalidAnchors
+from app.domain.namespace_policy import NamespaceNotFound, InvalidNamespace
+from app.storage.jsonl_transfer import safe_filename_part, unlink_quietly
+from app.operations.maintenance import MaintenanceRejected
+from app.config.configuration import PROJECT_ROOT
 
 logger = logging.getLogger("admin")
 
-THIS_DIR = Path(__file__).resolve().parent
-ADMIN_HTML_PATH = THIS_DIR.parent / "web" / "index.html"
+ADMIN_HTML_PATH = PROJECT_ROOT / "web" / "index.html"
 
 
 def json_response(data, status=200):

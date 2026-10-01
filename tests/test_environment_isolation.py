@@ -16,8 +16,8 @@ from pathlib import Path
 
 def test_probe():
     from app import audit
-    from app.settings import Settings
-    from app.embed import create_embedder
+    from app.config.settings import Settings
+    from app.embedding.embed import create_embedder
     settings = Settings.from_env()
     provider = create_embedder(environment=settings.environment)
     assert settings.STORAGE_BACKEND == 'sqlite'

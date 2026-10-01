@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 from starlette.requests import Request
 
-from app.admin import AdminAPI
-from app.calls import AsyncCallAdapter, ServiceClosing
-from app.maintenance import MaintenanceRejected
+from app.transport.admin import AdminAPI
+from app.operations.calls import AsyncCallAdapter, ServiceClosing
+from app.operations.maintenance import MaintenanceRejected
 from tests.test_runtime import runtime
 
 

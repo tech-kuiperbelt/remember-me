@@ -4,8 +4,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from app.storage_sqlite import SQLiteStorage
-from app.keyword_migrate_deepseek import (
+from app.storage.sqlite import SQLiteStorage
+from app.cli.keyword_migrate_deepseek import (
     extract_keywords_deepseek,
     format_candidates_block,
 )
@@ -31,7 +31,7 @@ def test_update_metadata_missing_memory_returns_false():
 
 
 def test_deepseek_cli_remains_explicit_offline_keyword_backfill(monkeypatch):
-    from app import keyword_migrate_deepseek as migration
+    from app.cli import keyword_migrate_deepseek as migration
     run = MagicMock(return_value=SimpleNamespace(returncode=0, stdout='[" RTG ", "装船", "RTG"]', stderr=""))
     monkeypatch.setattr(migration.subprocess, "run", run)
 

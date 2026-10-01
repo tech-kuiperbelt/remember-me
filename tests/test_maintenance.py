@@ -7,8 +7,8 @@ import time
 
 from starlette.testclient import TestClient
 
-from app.jsonl_transfer import write_clean_jsonl, load_jsonl
-from app.maintenance import MaintenanceGate, MaintenanceRejected
+from app.storage.jsonl_transfer import write_clean_jsonl, load_jsonl
+from app.operations.maintenance import MaintenanceGate, MaintenanceRejected
 from app.server import create_http_app, create_mcp_server
 from app.runtime import Runtime
 from tests.conftest import FakeProvider

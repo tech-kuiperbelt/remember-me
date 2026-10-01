@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from app.database_lock import DatabaseWriterLock
-from app.recovery import recover_ndjson_to_sqlite
+from app.storage.database_lock import DatabaseWriterLock
+from app.storage.recovery import recover_ndjson_to_sqlite
 from app.storage import create_storage
-from app.storage_ndjson import NDJSONReplica
+from app.storage.ndjson import NDJSONReplica
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -145,21 +145,21 @@ def test_dual_service_rejects_all_writer_contenders_but_allows_diagnostics(tmp_p
             ),
             (
                 "embedding maintenance",
-                ("-m", "app.embedding_cli", "migrate-codec", database),
+                ("-m", "app.cli.embedding_cli", "migrate-codec", database),
             ),
             (
                 "category migration",
-                ("-m", "app.category_migrate_deepseek", "--db", database,
+                ("-m", "app.cli.category_migrate_deepseek", "--db", database,
                  "--limit", "0"),
             ),
             (
                 "keyword migration",
-                ("-m", "app.keyword_migrate_deepseek", "--db", database,
+                ("-m", "app.cli.keyword_migrate_deepseek", "--db", database,
                  "--limit", "0"),
             ),
             (
                 "offline recovery",
-                ("-c", "import sys; from app.recovery import recover_ndjson_to_sqlite; "
+                ("-c", "import sys; from app.storage.recovery import recover_ndjson_to_sqlite; "
                  "recover_ndjson_to_sqlite(sys.argv[1], sys.argv[2], lambda _text: [1.0])",
                  recovery_source, database),
             ),
@@ -179,10 +179,10 @@ def test_dual_service_rejects_all_writer_contenders_but_allows_diagnostics(tmp_p
         assert "NDJSON replica already has an active writer" in replica_conflict.stderr
 
         read_only_commands = [
-            ("-m", "app.embedding_cli", "status", database),
-            ("-m", "app.category_migrate_deepseek", "--db", database,
+            ("-m", "app.cli.embedding_cli", "status", database),
+            ("-m", "app.cli.category_migrate_deepseek", "--db", database,
              "--limit", "0", "--dry-run"),
-            ("-m", "app.keyword_migrate_deepseek", "--db", database,
+            ("-m", "app.cli.keyword_migrate_deepseek", "--db", database,
              "--limit", "0", "--dry-run"),
         ]
         for command in read_only_commands:

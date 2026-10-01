@@ -7,11 +7,11 @@ import pytest
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
-from app.anchors import (MAX_ANCHORS, MAX_ANCHOR_CHARS, InvalidAnchors,
+from app.domain.anchors import (MAX_ANCHORS, MAX_ANCHOR_CHARS, InvalidAnchors,
                          clean_anchors, normalize_anchors)
-from app.lexical import LEXICAL_INDEX_VERSION, LexicalQueryError
-from app.namespace_policy import NamespaceNotFound
-from app.storage_sqlite import SQLiteStorage
+from app.domain.lexical import LEXICAL_INDEX_VERSION, LexicalQueryError
+from app.domain.namespace_policy import NamespaceNotFound
+from app.storage.sqlite import SQLiteStorage
 
 EMB = [0.1, 0.2, 0.3]
 
@@ -339,7 +339,7 @@ def test_mcp_tools_and_anchor_envelopes(service):
 
 
 def test_admin_anchor_endpoint_and_invalid_anchors(service):
-    from app.admin import create_admin_routes
+    from app.transport.admin import create_admin_routes
     service.memory_add("AdminAnchorToken body", metadata={"anchors": ["AdminAnchorToken"]}, namespace="default")
     app = Starlette(routes=create_admin_routes(service=service))
     with TestClient(app) as client:

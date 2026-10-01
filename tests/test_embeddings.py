@@ -7,23 +7,23 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from app.embed import (
+from app.embedding.embed import (
     EmbeddingInputTooLong,
     EmbeddingSpec,
     FastEmbedEmbedder,
     OllamaEmbedder,
     SentenceTransformersEmbedder,
 )
-from app.embedding_codec import (
+from app.embedding.embedding_codec import (
     EmbeddingCodecError,
     decode_embedding,
     encode_embedding,
     inspect_embedding_blob,
 )
-from app.embedding_cli import _database_maintenance_lock
-from app.storage_sqlite import SQLiteStorage
-from app.storage_dual import DualStorage
-from app.storage_ndjson import NDJSONReplica
+from app.cli.embedding_cli import _database_maintenance_lock
+from app.storage.sqlite import SQLiteStorage
+from app.storage.dual import DualStorage
+from app.storage.ndjson import NDJSONReplica
 
 
 def _spec(provider="ollama", model="bge-test", dimension=4):
@@ -61,7 +61,7 @@ def test_provider_rejects_long_input_before_http_call(monkeypatch):
         nonlocal called
         called = True
 
-    monkeypatch.setattr("app.embed.requests.post", fail_if_called)
+    monkeypatch.setattr("app.embedding.embed.requests.post", fail_if_called)
     with pytest.raises(EmbeddingInputTooLong, match="project document"):
         provider.embed_document("123456")
     assert called is False

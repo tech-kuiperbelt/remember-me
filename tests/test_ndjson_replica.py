@@ -8,11 +8,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.recovery import quick_sync, recover_ndjson_to_sqlite
-from app.storage_ndjson import NDJSONReplica
-from app.storage_sqlite import SQLiteStorage
-from app.storage_dual import DualStorage
-import app.storage_dual as storage_dual_module
+from app.storage.recovery import quick_sync, recover_ndjson_to_sqlite
+from app.storage.ndjson import NDJSONReplica
+from app.storage.sqlite import SQLiteStorage
+from app.storage.dual import DualStorage
+import app.storage.dual as storage_dual_module
 
 
 def _lines(path):
@@ -59,7 +59,7 @@ def test_ndjson_batch_and_snapshot_fsync_before_publish(tmp_path, monkeypatch):
         calls.append(fd)
         real_fsync(fd)
 
-    monkeypatch.setattr("app.storage_ndjson.os.fsync", track_fsync)
+    monkeypatch.setattr("app.storage.ndjson.os.fsync", track_fsync)
     replica.append_batch([_record("one", "body")])
     replica.replace_all(replica.list_records(limit=10))
 

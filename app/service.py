@@ -4,22 +4,22 @@ import time
 from pathlib import Path
 from datetime import datetime, timezone
 
-from .index_value_resolver import IndexValueResolver, MAX_FILTER_VALUES
-from .import_coordinator import ImportCoordinator
-from .provider_adapter import wrap_provider
-from .storage import StorageCapabilityError
-from .lexical import LexicalQueryError
-from .anchors import normalize_anchors, InvalidAnchors
-from . import audit
-from .summary_policy import derive_summary, normalize_summary
-from .jsonl_transfer import load_jsonl, write_clean_jsonl, sha256_file
-from .categories import (
+from app.embedding.index_value_resolver import IndexValueResolver, MAX_FILTER_VALUES
+from app.operations.import_coordinator import ImportCoordinator
+from app.embedding.provider_adapter import wrap_provider
+from app.storage import StorageCapabilityError
+from app.domain.lexical import LexicalQueryError
+from app.domain.anchors import normalize_anchors, InvalidAnchors
+from app import audit
+from app.domain.summary_policy import derive_summary, normalize_summary
+from app.storage.jsonl_transfer import load_jsonl, write_clean_jsonl, sha256_file
+from app.domain.categories import (
     normalize_categories,
     normalize_categories_filter,
     categories_dropped,
     category_counts_with_seeds,
 )
-from .namespace_policy import (
+from app.domain.namespace_policy import (
     NamespaceNotFound,
     InvalidNamespace,
     NAMESPACE_NOT_FOUND,

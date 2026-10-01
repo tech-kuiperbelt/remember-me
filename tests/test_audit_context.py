@@ -3,9 +3,9 @@ import asyncio
 import json
 
 from app.audit import AuditJournal
-from app.embed import EmbeddingError
+from app.embedding.embed import EmbeddingError
 from app.server import create_mcp_server
-from app.admin import AdminAPI
+from app.transport.admin import AdminAPI
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 

@@ -8,9 +8,9 @@ from types import SimpleNamespace
 import pytest
 import requests
 
-from app.configuration import Configuration, PROXY_VARIABLES
-from app.embed import EmbeddingError, OllamaEmbedder, create_embedder
-from app.config_migrate import migrate
+from app.config.configuration import Configuration, PROXY_VARIABLES
+from app.embedding.embed import EmbeddingError, OllamaEmbedder, create_embedder
+from app.cli.config_migrate import migrate
 from tests.test_configuration import legacy_layout
 
 
@@ -50,7 +50,7 @@ def test_proxy_activation_removes_stale_process_values_and_redacts(tmp_path):
     # A new entrypoint process, including already-set lowercase/ALL_PROXY values.
     script = """
 import os, sys, requests, httpx
-from app.configuration import Configuration, activate_environment
+from app.config.configuration import Configuration, activate_environment
 config = Configuration.load(sys.argv[1])
 env = config.runtime_environment({key: value for key, value in os.environ.items()
                                   if key.lower().endswith('_proxy')})
@@ -161,7 +161,7 @@ def test_loopback_ollama_bypasses_all_proxy_and_missing_model_help(monkeypatch):
         seen.update(requests.Session().merge_environment_settings(url, kwargs["proxies"], False, None, None))
         return SimpleNamespace(ok=False, status_code=404, json=lambda: {"error": "model missing"})
 
-    monkeypatch.setattr("app.embed.requests.post", post)
+    monkeypatch.setattr("app.embedding.embed.requests.post", post)
     with pytest.raises(EmbeddingError, match="ollama pull bge-m3"):
         OllamaEmbedder().embed_query("hello")
     assert not any(seen["proxies"].get(key) for key in ("http", "https", "all"))
@@ -178,7 +178,7 @@ def test_migration_keeps_proxy_and_download_policy(tmp_path):
 
 
 def test_download_cli_explicitly_allows_download(monkeypatch, capsys):
-    from app import embedding_cli
+    from app.cli import embedding_cli
     calls = []
     provider = SimpleNamespace(spec=SimpleNamespace(as_dict=lambda: {"model": "test/model"}),
                                warmup=lambda: calls.append("warmup"))

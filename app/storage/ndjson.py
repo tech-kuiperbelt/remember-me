@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger("storage_ndjson")
 
-from .storage import ReplicaStorage, _now
+from app.storage.base import ReplicaStorage, _now
 
 
 class NDJSONReplica(ReplicaStorage):
@@ -245,7 +245,7 @@ class NDJSONReplica(ReplicaStorage):
             self._tombstones = 0
 
     def get_stats(self):
-        from .jsonl_transfer import inspect_jsonl
+        from app.storage.jsonl_transfer import inspect_jsonl
         try:
             integrity = inspect_jsonl(self.path)
         except FileNotFoundError:

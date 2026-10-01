@@ -5,17 +5,18 @@ import tempfile
 import threading
 from pathlib import Path
 
-from . import audit, log_config
-from .calls import AsyncCallAdapter
-from .embed import create_embedder, ModelCacheMissing
-from .configuration import Configuration, activate_environment
-from .settings import Settings
-from .model_preparation import ModelProgress, PreparationCancelled, download_progress
-from .provider_adapter import wrap_provider
-from .service import MemoryService
-from .storage import create_storage, SQLitePrimaryStorage
-from .storage_dual import DualStorage
-from .maintenance import MaintenanceGate
+from app import audit
+from app import log_config
+from app.operations.calls import AsyncCallAdapter
+from app.embedding.embed import create_embedder, ModelCacheMissing
+from app.config.configuration import Configuration, activate_environment
+from app.config.settings import Settings
+from app.operations.model_preparation import ModelProgress, PreparationCancelled, download_progress
+from app.embedding.provider_adapter import wrap_provider
+from app.service import MemoryService
+from app.storage import create_storage, SQLitePrimaryStorage
+from app.storage.dual import DualStorage
+from app.operations.maintenance import MaintenanceGate
 
 logger = logging.getLogger("runtime")
 
@@ -109,7 +110,7 @@ class Runtime:
         return Configuration.load(self.settings.DATA_DIR).as_dict(redact=True)
 
     def save_model_config(self, changes):
-        from .maintenance import MaintenanceRejected
+        from app.operations.maintenance import MaintenanceRejected
         with self._lock:
             if self.state != "running":
                 raise MaintenanceRejected("maintenance_busy", "Service is closing; configuration cannot be saved")
@@ -133,7 +134,7 @@ class Runtime:
             return validated.as_dict(redact=True)
 
     def retry_model(self):
-        from .maintenance import MaintenanceRejected
+        from app.operations.maintenance import MaintenanceRejected
         with self._lock:
             if self.state != "running" or not self.maintenance.required_reason:
                 raise MaintenanceRejected("maintenance_busy", "Model preparation is not required")
@@ -336,8 +337,8 @@ class Runtime:
         self._new_recover_job(job_id, filename)
 
         def run():
-            from .recovery import build_recovery_database, install_recovery_database
-            from .jsonl_transfer import unlink_quietly
+            from app.storage.recovery import build_recovery_database, install_recovery_database
+            from app.storage.jsonl_transfer import unlink_quietly
             target = self.settings.STORAGE_PATH
             temp_path = None
             marker = None

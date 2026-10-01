@@ -8,11 +8,11 @@ import sys
 
 import pytest
 
-from app.configuration import Configuration, rooted_path, default_data_dir
-from app.jsonc import loads
-from app.config_migrate import migrate
-from app.database_lock import DatabaseWriterLock
-from app.settings import Settings
+from app.config.configuration import Configuration, rooted_path, default_data_dir
+from app.config.jsonc import loads
+from app.cli.config_migrate import migrate
+from app.storage.database_lock import DatabaseWriterLock
+from app.config.settings import Settings
 
 
 def config(directory, **values):
@@ -23,7 +23,7 @@ def config(directory, **values):
 
 
 def test_data_directory_selects_config_and_defaults_without_cwd(tmp_path, monkeypatch):
-    monkeypatch.setattr("app.configuration.PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr("app.config.configuration.PROJECT_ROOT", tmp_path)
     monkeypatch.chdir(tmp_path.parent)
     result = Configuration.load("custom", environment={})
     assert result.path == tmp_path / "custom/config.jsonc"
@@ -155,12 +155,12 @@ def test_failed_migration_keeps_original_configuration_and_files(tmp_path, monke
     project, source, env = legacy_layout(tmp_path)
     original_env = (project / ".env").read_text()
     target = tmp_path / "new-data"
-    from app.config_migrate import atomic_config
+    from app.cli.config_migrate import atomic_config
     def failed_publish(path, *args, **kwargs):
         if Path(path).name == "config.jsonc":
             raise OSError("simulated publish failure")
         return atomic_config(path, *args, **kwargs)
-    monkeypatch.setattr("app.config_migrate.atomic_config", failed_publish)
+    monkeypatch.setattr("app.cli.config_migrate.atomic_config", failed_publish)
     with pytest.raises(OSError, match="simulated"):
         migrate(target, source, environment=env, project_root=project)
     assert (project / ".env").read_text() == original_env
@@ -194,7 +194,7 @@ def test_migration_crash_is_detected_and_can_be_rolled_back(tmp_path):
     original_env = (project / ".env").read_text()
     target = tmp_path / "new-data"
     script = '''import json, os, sys
-import app.config_migrate as migration
+import app.cli.config_migrate as migration
 original = migration._atomic_text
 def crash(path, text):
     original(path, text)
@@ -234,7 +234,7 @@ def test_default_data_dir_windows_uses_localappdata_and_falls_back_to_home():
 
 
 def test_config_load_defaults_to_platform_directory(tmp_path, monkeypatch):
-    monkeypatch.setattr("app.configuration.default_data_dir",
+    monkeypatch.setattr("app.config.configuration.default_data_dir",
                         lambda env: tmp_path / "home" / ".remember-me")
     result = Configuration.load(environment={})
     assert result.data_dir == (tmp_path / "home" / ".remember-me").resolve()
@@ -243,8 +243,8 @@ def test_config_load_defaults_to_platform_directory(tmp_path, monkeypatch):
 
 
 def test_config_load_priority_and_relative_override(tmp_path, monkeypatch):
-    monkeypatch.setattr("app.configuration.PROJECT_ROOT", tmp_path)
-    monkeypatch.setattr("app.configuration.default_data_dir", lambda env: tmp_path / "default")
+    monkeypatch.setattr("app.config.configuration.PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr("app.config.configuration.default_data_dir", lambda env: tmp_path / "default")
     env = {"MEMORY_DATA_DIR": str(tmp_path / "env")}
     assert Configuration.load(tmp_path / "cli", environment=env).data_dir == (tmp_path / "cli").resolve()
     assert Configuration.load(environment=env).data_dir == (tmp_path / "env").resolve()
@@ -254,7 +254,7 @@ def test_config_load_priority_and_relative_override(tmp_path, monkeypatch):
 
 
 def test_settings_defaults_root_under_platform_directory(tmp_path, monkeypatch):
-    monkeypatch.setattr("app.settings.default_data_dir", lambda env: tmp_path / "os-default")
+    monkeypatch.setattr("app.config.settings.default_data_dir", lambda env: tmp_path / "os-default")
     settings = Settings.from_env({"MEMORY_STORAGE": "dual"})
     assert settings.DATA_DIR == str(tmp_path / "os-default")
     assert settings.STORAGE_PATH == str(tmp_path / "os-default" / "memories.db")
@@ -289,7 +289,7 @@ def test_settings_from_env_roots_directories_and_preserves_memory_primary(tmp_pa
 
 
 def test_platform_default_directory_roots_runtime_paths_and_rejects_escape(tmp_path, monkeypatch):
-    monkeypatch.setattr("app.configuration.default_data_dir", lambda env: tmp_path / "os-default")
+    monkeypatch.setattr("app.config.configuration.default_data_dir", lambda env: tmp_path / "os-default")
     settings = Settings.from_config(create=True, environment={"MEMORY_STORAGE_PATH": "db/main.db"})
     assert settings.STORAGE_PATH == str(tmp_path / "os-default" / "db/main.db")
     assert settings.AUDIT_PATH == str(tmp_path / "os-default" / "audit.jsonl")
@@ -301,7 +301,7 @@ def test_platform_default_directory_roots_runtime_paths_and_rejects_escape(tmp_p
 def test_migration_to_platform_default_drops_data_dir_override(tmp_path, monkeypatch):
     project, source, env = legacy_layout(tmp_path)
     home = tmp_path / "home"
-    monkeypatch.setattr("app.config_migrate.default_data_dir", lambda environment: home / ".remember-me")
+    monkeypatch.setattr("app.cli.config_migrate.default_data_dir", lambda environment: home / ".remember-me")
     env = {**env, "MEMORY_DATA_DIR": str(source)}
     target = home / ".remember-me"
     result = migrate(target, source, environment=env, project_root=project)
@@ -312,7 +312,7 @@ def test_migration_to_platform_default_drops_data_dir_override(tmp_path, monkeyp
 
 def test_migration_to_custom_target_keeps_data_dir_override(tmp_path, monkeypatch):
     project, source, env = legacy_layout(tmp_path)
-    monkeypatch.setattr("app.config_migrate.default_data_dir", lambda environment: tmp_path / "home")
+    monkeypatch.setattr("app.cli.config_migrate.default_data_dir", lambda environment: tmp_path / "home")
     target = tmp_path / "new-data"
     result = migrate(target, source, environment=env, project_root=project)
     assert result["migrated"]

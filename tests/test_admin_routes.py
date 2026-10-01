@@ -5,11 +5,11 @@ import json
 import pytest
 from starlette.requests import Request
 
-from app.admin import AdminAPI, domain_error_response
-from app.anchors import InvalidAnchors
-from app.embed import EmbeddingInputTooLong
-from app.lexical import LexicalQueryError
-from app.namespace_policy import InvalidNamespace, NamespaceNotFound
+from app.transport.admin import AdminAPI, domain_error_response
+from app.domain.anchors import InvalidAnchors
+from app.embedding.embed import EmbeddingInputTooLong
+from app.domain.lexical import LexicalQueryError
+from app.domain.namespace_policy import InvalidNamespace, NamespaceNotFound
 from app.service import InvalidSearchFilter
 
 ALLOWED_POLICIES = {"static", "read", "write", "action", "control", "exempt"}

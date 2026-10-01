@@ -4,7 +4,7 @@ import json
 
 import pytest
 from starlette.datastructures import QueryParams
-from app.namespace_policy import InvalidNamespace, validate_namespace_name
+from app.domain.namespace_policy import InvalidNamespace, validate_namespace_name
 
 
 class Request:
@@ -82,7 +82,7 @@ def test_namespace_exception_compatible(name):
     ('handle_search_memories', 'memory_search', {'query':'hello'}),
 ])
 def test_embedding_length_response_unchanged(monkeypatch, handler, business, body, admin):
-    from app.embed import EmbeddingInputTooLong
+    from app.embedding.embed import EmbeddingInputTooLong
     def fail(*args, **kwargs):
         raise EmbeddingInputTooLong(8001, 8000)
     monkeypatch.setattr(admin.service, business, fail)
@@ -91,7 +91,7 @@ def test_embedding_length_response_unchanged(monkeypatch, handler, business, bod
 
 
 def test_normal_crud_with_fake_embeddings(monkeypatch, service, admin):
-    from app.storage_sqlite import SQLiteStorage
+    from app.storage.sqlite import SQLiteStorage
     db = SQLiteStorage(':memory:')
     monkeypatch.setattr(service, 'storage', db)
     monkeypatch.setattr(service, 'embed', lambda _: [1., 0.])

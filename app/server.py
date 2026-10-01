@@ -22,12 +22,12 @@ from starlette.requests import Request
 from starlette.responses import Response
 import uvicorn
 
-from .service import _prepare_for_llm
-from . import audit
-from .calls import INLINE_RUNNER
-from .maintenance import MaintenanceRejected
-from .report_feedback import SearchReceiptRegistry
-from .tools import ToolContext, _ok, execute_tool, list_tool_definitions, tool_spec_for
+from app.service import _prepare_for_llm
+from app import audit
+from app.operations.calls import INLINE_RUNNER
+from app.operations.maintenance import MaintenanceRejected
+from app.transport.report_feedback import SearchReceiptRegistry
+from app.transport.tools import ToolContext, _ok, execute_tool, list_tool_definitions, tool_spec_for
 
 logger = logging.getLogger("server")
 
@@ -182,7 +182,7 @@ def _read_me_base(port, scope):
 def create_http_app(runtime, *, port=None):
     """Own runtime lifespan; all transports bind the same explicit service."""
     from contextlib import asynccontextmanager
-    from .admin import create_admin_routes
+    from app.transport.admin import create_admin_routes
     import anyio
     connections = set()
     mcp = create_mcp_server(runtime=runtime)
@@ -386,9 +386,9 @@ async def serve_stdio(runtime):
 
 async def main(argv=None):
     import os
-    from .settings import Settings
-    from .runtime import create_runtime
-    from .configuration import activate_environment
+    from app.config.settings import Settings
+    from app.runtime import create_runtime
+    from app.config.configuration import activate_environment
     parser = argparse.ArgumentParser(description="Memory MCP Server")
     parser.add_argument("--data-dir", help="Data directory; defaults to the per-user OS data directory "
                                           "and contains config.jsonc")

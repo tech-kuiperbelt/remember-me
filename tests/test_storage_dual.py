@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.storage_dual import DualStorage
+from app.storage.dual import DualStorage
 
 
 @pytest.fixture

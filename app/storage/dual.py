@@ -9,8 +9,8 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger("storage_dual")
 
-from .storage import MemoryStorage, ReplicaStorage, DEFAULT_NAMESPACE
-from . import audit
+from app.storage.base import MemoryStorage, ReplicaStorage, DEFAULT_NAMESPACE
+from app import audit
 
 
 _COMPACT_STATE_KEY = "ndjson_compact"
@@ -494,7 +494,7 @@ class DualStorage(MemoryStorage):
         only for the records that were actually copied.
         """
         with self._lock, self._sync_mutex:
-            from .recovery import quick_sync
+            from app.storage.recovery import quick_sync
             before_bytes = self.secondary.get_stats().get("file_bytes", 0)
             result = quick_sync(self)
             after_bytes = self.secondary.get_stats().get("file_bytes", 0)
@@ -508,8 +508,8 @@ class DualStorage(MemoryStorage):
     def export_full_snapshot(self, destination: str) -> dict:
         """Full-sync, verify, then copy an immutable download snapshot."""
         with self._lock, self._sync_mutex:
-            from .recovery import quick_sync
-            from .jsonl_transfer import load_jsonl, sha256_file
+            from app.storage.recovery import quick_sync
+            from app.storage.jsonl_transfer import load_jsonl, sha256_file
             before_bytes = self.secondary.get_stats().get("file_bytes", 0)
             result = quick_sync(self)
             primary_records = self.primary.export_records()

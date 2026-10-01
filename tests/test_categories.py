@@ -12,8 +12,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.storage_sqlite import SQLiteStorage
-from app.categories import (
+from app.storage.sqlite import SQLiteStorage
+from app.domain.categories import (
     CATEGORY_VOCABULARY,
     MAX_CATEGORIES,
     normalize_categories,

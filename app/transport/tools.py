@@ -1,7 +1,7 @@
 """MCP tool orchestration: one table for definitions, handlers and policies.
 
 ``TOOL_SPECS`` is the single source of truth for ``tools/list`` and for tool
-dispatch. Tool schema/description data lives in :mod:`app.tool_definitions`; the
+dispatch. Tool schema/description data lives in :mod:`app.transport.tool_definitions`; the
 transport lifecycle (SSE / Streamable HTTP / stdio) and admission stay in
 :mod:`app.server`. Each handler is a plain function that adapts arguments and
 calls the synchronous service; response shaping, timing, exception mapping,
@@ -17,14 +17,14 @@ from typing import Callable
 
 import mcp.types as types
 
-from .anchors import InvalidAnchors
-from .categories import MAX_CATEGORIES
-from .embed import EmbeddingError, EmbeddingInputTooLong
-from .lexical import LexicalQueryError
-from .namespace_policy import NamespaceNotFound, NAMESPACE_NOT_FOUND
-from .report_feedback import InvalidReport, analysis_group
-from .service import _prepare_for_llm
-from .tool_definitions import build_tools
+from app.domain.anchors import InvalidAnchors
+from app.domain.categories import MAX_CATEGORIES
+from app.embedding.embed import EmbeddingError, EmbeddingInputTooLong
+from app.domain.lexical import LexicalQueryError
+from app.domain.namespace_policy import NamespaceNotFound, NAMESPACE_NOT_FOUND
+from app.transport.report_feedback import InvalidReport, analysis_group
+from app.service import _prepare_for_llm
+from app.transport.tool_definitions import build_tools
 
 logger = logging.getLogger("server")
 

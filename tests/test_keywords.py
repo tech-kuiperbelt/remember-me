@@ -10,7 +10,7 @@ import sys
 
 import pytest
 
-from app.storage_sqlite import SQLiteStorage
+from app.storage.sqlite import SQLiteStorage
 from app import service as service_policy
 
 

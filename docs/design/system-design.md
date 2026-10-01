@@ -1,6 +1,6 @@
 # remember-me 系统设计
 
-2026-09-24 整理。基于当前代码（`app/`）与 `AGENTS.md`，描述架构、主要类职责、MCP 工具读写流程与数据结构。
+2026-10-01 更新包结构说明。本文基于当前代码（`app/`）与 `AGENTS.md`，描述架构、主要类职责、MCP 工具读写流程与数据结构。
 
 待实现的默认数据目录与现有服务迁移方案见 [按操作系统选择默认数据目录](platform-data-directory.md)。
 
@@ -9,7 +9,7 @@
 ### 1.1 部署形态
 
 单进程、单写者。同一份 SQLite 主库在任一时刻只允许一个写入进程：可写进程在启动时对
-`<db>.writer.lock` 取进程生命周期内的 `flock` 独占锁（`app/database_lock.py`），第二个写者
+`<db>.writer.lock` 取进程生命周期内的 `flock` 独占锁（`app/storage/database_lock.py`），第二个写者
 立即失败。多客户端通过**同一个 HTTP 服务实例**共享访问；不要为每个客户端各起一个 stdio 进程。
 
 ```
@@ -25,7 +25,7 @@
                           ┌──────────────────────────┴───────────────────────────┐               │
                           ▼                                                       ▼               │
                    MCPApplication                                          AdminAPI              │
-                   (9 tools / 2 resources)                                 (/api/*)              │
+                   (11 tools / 2 resources)                                (/api/*)              │
                           └──────────────────────────┬───────────────────────────┘               │
                                                      ▼                                           │
                                               MemoryService  (业务/命名空间/导入/导出)           │
@@ -46,21 +46,26 @@
 
 | 层 | 模块 | 职责 |
 |---|---|---|
-| 配置 | `settings.py` | `Settings.from_env()` 生成不可变快照（`MappingProxyType`），含路径、embedding dtype、各类间隔与上限 |
+| 配置 | `config/configuration.py`, `config/settings.py`, `config/jsonc.py` | 配置解析、JSONC 保真读写及不可变 Settings 快照 |
+| 领域规则 | `domain/` | anchors、categories、namespace、summary 和 lexical 查询规则 |
 | 生命周期 | `runtime.py` | `Runtime.start()` 配置日志/审计、创建 provider 与 storage、校验 active profile/index 向量、预热、启动后台线程；`close()` 幂等释放 |
-| 传输 | `server.py`, `admin.py` | MCP 工具/资源注册与 HTTP 路由；不承载业务逻辑 |
+| 传输 | `server.py`, `transport/` | MCP 生命周期、工具定义与分发、HTTP 管理路由和检索反馈；不承载业务逻辑 |
 | 业务 | `service.py` | 记忆 CRUD/检索、命名空间治理、摘要策略、JSONL 导入导出、关键词查询 |
-| 存储 | `storage*.py` | 主库（SQLite + 版本化向量）、灾备副本（NDJSON，无向量）、双写协调 |
-| 检索辅助 | `index_value_resolver.py`, `categories.py`, `namespace_policy.py`, `summary_policy.py` | 索引值语义解析、分类词表、命名空间规则、摘要回退 |
-| 向量 | `embed.py`, `embedding_codec.py` | provider 抽象（document/query 双路径）、维度与长度校验、RMEV 向量编解码 |
+| 存储 | `storage/` | 契约与延迟工厂、SQLite 主库、NDJSON 灾备副本、dual 协调、锁及 JSONL 恢复 |
+| 向量 | `embedding/` | provider 抽象（document/query 双路径）、维度与长度校验、RMEV 编解码、索引值语义解析 |
 | 审计 | `audit.py` | 滚动 JSONL 工具调用/后台任务日志，永不抛错、永不阻塞 |
-| 迁移/运维 | `embedding_cli.py`, `recover_cli.py`, `recovery.py`, `*_migrate_deepseek.py`, `bin/manage` | 离线维护，写操作依赖主库 writer lock |
+| 运维协调 | `operations/` | 异步调用池、维护状态、导入协调和模型准备 |
+| 迁移/运维 | `cli/`, `bin/manage` | 离线维护，写操作依赖主库 writer lock；根目录 CLI 模块保留兼容入口 |
+
+现有 `python -m app.server` 与 `bin/` 命令保持不变。原有六个 Python CLI 命令仍由根目录
+薄入口提供；实现位于 `app.cli`。内部模块统一从职责包导入；`app.storage` 导出公共契约和
+工厂，工厂延迟加载具体后端。Domain 不依赖 Service、Runtime 或传输层，在线业务不依赖 CLI。
 
 ### 1.3 传输端点
 
 | 端点 | 传输 | 说明 |
 |---|---|---|
-| stdio | MCP stdio | 默认模式；单客户端；同一主库已有 HTTP 写者时不能再起 |
+| stdio | MCP stdio | 显式选择；单客户端；同一主库已有 HTTP 写者时不能再起 |
 | `GET /sse` + `POST /messages/?session_id=…` | 旧版 HTTP+SSE | 保留兼容（opencode） |
 | `POST /mcp` | MCP Streamable HTTP | `stateless=True` + `json_response=True`；无 `Mcp-Session-Id`；非 POST 经 loopback Host/Origin 校验后 405 `Allow: POST` |
 | `GET /read-me` | 静态页 | LLM 配置说明；自引用 `http://127.0.0.1:<port>` |
@@ -77,16 +82,16 @@
 - **`Runtime`**：显式资源所有权。`start()` 依次配置日志→审计→provider→storage→profile 完整性
   校验→service→预热→（dual）启动后台；任一步失败即回滚已获资源并抛原始异常。`close()` 幂等，
   顺序：等待导入→等待同步→最后一次 outbox 同步→释放存储/写锁→provider→审计→日志 handler。
-- **`DatabaseWriterLock`**：`<db>.writer.lock` 上的非阻塞 `flock`；锁文件存在 ≠ 锁被占用。
+- **`DatabaseWriterLock`**（`storage/database_lock.py`）：`<db>.writer.lock` 上的非阻塞 `flock`；锁文件存在 ≠ 锁被占用。
 
 ### 2.2 传输层
 
 - **`MCPApplication`**（`server.py`）：持有 `mcp.server.Server`，注册
-  `list_tools` / `call_tool` / `list_resources` / `read_resource`。`handle_call_tool` 用
-  if/elif 分派 9 个工具，并在每次调用后写入审计。`_audit_context()` 组装
+  `list_tools` / `call_tool` / `list_resources` / `read_resource`。工具定义与分发由
+  `transport.tools` 的 `ToolSpec` 表驱动，11 个工具调用均写入审计。`_audit_context()` 组装
   `source/request_id/session_id/client_name/client_version`，并在 Streamable HTTP 下合并
   `transport=streamable_http` 与每请求 `http_request_id`。
-- **`AdminAPI`**（`admin.py`）：管理台与 `/api/*` 路由；与 MCP 共用 `MemoryService`，
+- **`AdminAPI`**（`transport/admin.py`）：管理台与 `/api/*` 路由；与 MCP 共用 `MemoryService`，
   未知命名空间映射为 HTTP 400 + 同一 `response_code` 信封。
 - **`AdmissionMiddleware`**：`runtime.state != "running"` 时对所有 HTTP 返回 503；为每个 HTTP
   请求生成 `audit_request_id` 写入 `scope["state"]`。
@@ -107,30 +112,30 @@
 
 ### 2.4 存储层
 
-- **`MemoryStorage` / `ReplicaStorage`**（`storage.py`，Protocol）：业务存储与副本的窄接口。
+- **`MemoryStorage` / `ReplicaStorage`**（`storage/base.py`）：业务存储与副本的窄接口。
   `create_storage(backend, **kwargs)` 工厂；`sqlite` 或 `dual`。
-- **`SQLiteStorage`**（`storage_sqlite.py`）：主库实现。WAL 模式；持有写锁；记忆 CRUD（软删除）、
+- **`SQLiteStorage`**（`storage/sqlite.py`）：主库实现。WAL 模式；持有写锁；记忆 CRUD（软删除）、
   余弦检索、`index_values` 通用索引维度、版本化向量表、embedding profile 生命周期
   （`configure/reindex/activate/reencode`）、outbox（`synced`/`version`）、JSONL 导出/原子导入。
-- **`NDJSONReplica`**（`storage_ndjson.py`）：灾备副本。只实现 `ReplicaStorage`：向量无关的
+- **`NDJSONReplica`**（`storage/ndjson.py`）：灾备副本。只实现 `ReplicaStorage`：向量无关的
   durable 批追加、tombstone、原子快照替换、compact/stats、恢复读取。**不存向量**，也不存
   `synced`/`version`。
-- **`DualStorage`**（`storage_dual.py`）：组合主库 + 副本。写只落主库；后台线程增量同步 outbox
+- **`DualStorage`**（`storage/dual.py`）：组合主库 + 副本。写只落主库；后台线程增量同步 outbox
   （先 `append_batch` 并 `fsync`，再按 `(id, version)` 条件确认），并负责 compact 与精确健康核验。
-- **`embedding_codec.py`**：`RMEV` 版本化 dense-vector BLOB 编解码（默认 float16，兼容 float32
+- **`embedding/embedding_codec.py`**：`RMEV` 版本化 dense-vector BLOB 编解码（默认 float16，兼容 float32
   与历史 pickle 只读）。
 
 ### 2.5 检索与向量
 
-- **`Embedder`**（Protocol）+ `EmbeddingSpec`：`embed_document` / `embed_query` / `embed_documents`
+- **`Embedder`**（`embedding/embed.py` Protocol）+ `EmbeddingSpec`：`embed_document` / `embed_query` / `embed_documents`
   / `warmup`。实现：`OllamaEmbedder`（默认）、`FastEmbedEmbedder`、`SentenceTransformersEmbedder`。
   `create_embedder(provider, environment=...)` 工厂。document/query 走不同前缀路径。
-- **`IndexValueResolver`**：精确优先的索引值解析。未命中的值用 query 向量对同维度、同命名空间的
+- **`IndexValueResolver`**（`embedding/index_value_resolver.py`）：精确优先的索引值解析。未命中的值用 query 向量对同维度、同命名空间的
   文档向量打分，按绝对下限 `MIN_SCORE` 与最大间隔 `MAX_GAP` 自适应取 Top-K；解析结果只用于
   候选过滤，不改变记忆文本余弦分。
-- **`categories.py`**：20 个种子分类词表、归一化与上限（每记忆 ≤3）。
-- **`namespace_policy.py`**：命名空间格式/保留字/存在性规则与异常类型。
-- **`summary_policy.py`**：无模型摘要回退（调用方摘要优先；缺失时取首句/首行；空白等价更新保留旧摘要）。
+- **`domain/categories.py`**：20 个种子分类词表、归一化与上限（每记忆 ≤3）。
+- **`domain/namespace_policy.py`**：命名空间格式/保留字/存在性规则与异常类型。
+- **`domain/summary_policy.py`**：无模型摘要回退（调用方摘要优先；缺失时取首句/首行；空白等价更新保留旧摘要）。
 
 ### 2.6 审计与运维
 
@@ -139,9 +144,9 @@
   `confirm_codes`、`response_code`、裁剪后的 params/result、`context`、`memory_refs`。
   两个 ContextVar：`request_audit_context`（admin/SSE admission）与
   `http_transport_context`（Streamable HTTP 每请求）。
-- **`jsonl_transfer.py` / `recovery.py` / `recover_cli.py`**：严格 JSONL 校验、干净快照写出、
+- **`storage/jsonl_transfer.py` / `storage/recovery.py` / `cli/recover_cli.py`**：严格 JSONL 校验、干净快照写出、
   离线 JSONL→SQLite 重建（成功后原子替换目标库）。
-- **`embedding_cli.py`**：`status`（只读）/ `migrate-codec` / `download-model` / `reindex` /
+- **`cli/embedding_cli.py`**：`status`（只读）/ `migrate-codec` / `download-model` / `reindex` /
   `reindex-index-values` / `activate`。
 
 ## 3. 主要 MCP 工具读写流程

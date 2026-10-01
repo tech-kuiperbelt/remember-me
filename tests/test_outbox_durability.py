@@ -5,10 +5,10 @@ import sys
 import threading
 from pathlib import Path
 
-from app.storage_dual import DualStorage
-from app.storage_ndjson import NDJSONReplica
-from app.storage_sqlite import SQLiteStorage
-import app.storage_ndjson as storage_ndjson_module
+from app.storage.dual import DualStorage
+from app.storage.ndjson import NDJSONReplica
+from app.storage.sqlite import SQLiteStorage
+import app.storage.ndjson as storage_ndjson_module
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -97,9 +97,9 @@ def test_process_crash_after_fsync_retries_without_data_loss(tmp_path, fake_emb)
     crash_script = """
 import os
 import sys
-from app.storage_dual import DualStorage
-from app.storage_ndjson import NDJSONReplica
-from app.storage_sqlite import SQLiteStorage
+from app.storage.dual import DualStorage
+from app.storage.ndjson import NDJSONReplica
+from app.storage.sqlite import SQLiteStorage
 
 class CrashAfterDurableAppend(NDJSONReplica):
     def append_batch(self, records):

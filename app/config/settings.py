@@ -5,9 +5,9 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Mapping
 
-from .storage import resolve_replica_path
-from .namespace_policy import normalize_namespace, validate_namespace_name
-from .configuration import Configuration, PROJECT_ROOT, default_data_dir, rooted_path
+from app.storage import resolve_replica_path
+from app.domain.namespace_policy import normalize_namespace, validate_namespace_name
+from app.config.configuration import Configuration, PROJECT_ROOT, default_data_dir, rooted_path
 
 
 @dataclass(frozen=True)

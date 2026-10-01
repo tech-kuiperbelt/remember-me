@@ -19,8 +19,8 @@ import os
 import re
 import subprocess
 
-from .configuration import PATH_DEFAULTS, resolve_data_dir, rooted_path
-from .storage import create_storage, resolve_replica_path
+from app.config.configuration import PATH_DEFAULTS, resolve_data_dir, rooted_path
+from app.storage import create_storage, resolve_replica_path
 
 # Default model id as configured in ~/.config/opencode/opencode.jsonc
 DEFAULT_MODEL = "opencode-go/deepseek-v4-flash"

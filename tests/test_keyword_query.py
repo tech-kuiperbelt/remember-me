@@ -7,8 +7,8 @@ import pytest
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
-from app.embed import EmbeddingSpec
-from app.storage_sqlite import SQLiteStorage
+from app.embedding.embed import EmbeddingSpec
+from app.storage.sqlite import SQLiteStorage
 
 
 @pytest.fixture(params=['sqlite', 'dual'])
@@ -28,8 +28,8 @@ def service(request, monkeypatch, tmp_path, service_factory):
     db.delete(removed['id'])
     store = db
     if request.param == 'dual':
-        from app.storage_dual import DualStorage
-        from app.storage_ndjson import NDJSONReplica
+        from app.storage.dual import DualStorage
+        from app.storage.ndjson import NDJSONReplica
         store = DualStorage(db, NDJSONReplica(str(tmp_path / 'replica.jsonl')), start_background=False)
     monkeypatch.setattr(svc, 'storage', store)
     monkeypatch.setattr(svc, 'embed_query', lambda q: [0., 1.] if q == 'transaction' else [1., 0.])

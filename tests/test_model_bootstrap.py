@@ -10,12 +10,12 @@ from unittest.mock import Mock, patch
 import pytest
 from starlette.testclient import TestClient
 
-from app.configuration import Configuration
-from app.embed import ModelCacheMissing
-from app.model_preparation import ModelProgress, PreparationCancelled, download_progress
+from app.config.configuration import Configuration
+from app.embedding.embed import ModelCacheMissing
+from app.operations.model_preparation import ModelProgress, PreparationCancelled, download_progress
 from app.runtime import Runtime
 from app.server import create_http_app, create_mcp_server
-from app.settings import Settings
+from app.config.settings import Settings
 from tests.conftest import FakeProvider
 
 
@@ -199,14 +199,14 @@ def test_background_validation_failure_releases_db_and_keeps_ui(tmp_path, progre
         assert rt.provider is None and rt.storage is None and rt.service is None
         assert client.get('/admin/console').status_code == 200
         assert client.post('/api/maintenance/exit').status_code == 503
-        from app.database_lock import DatabaseWriterLock
+        from app.storage.database_lock import DatabaseWriterLock
         with DatabaseWriterLock(str(tmp_path / 'memories.db')):
             pass
     provider.close.assert_called_once()
 
 
 def test_real_hf_progress_adapter_and_cancellation_restore_patches(monkeypatch):
-    from app.configuration import PROXY_VARIABLES
+    from app.config.configuration import PROXY_VARIABLES
     for key in PROXY_VARIABLES:
         monkeypatch.delenv(key, raising=False)
     import importlib
@@ -242,7 +242,7 @@ def test_hf_stream_download_reports_real_bytes_without_external_network(monkeypa
     import io
     import httpx
     from huggingface_hub import file_download
-    from app.configuration import PROXY_VARIABLES
+    from app.config.configuration import PROXY_VARIABLES
     for key in PROXY_VARIABLES:
         monkeypatch.delenv(key, raising=False)
     content = b'weights' * 1000

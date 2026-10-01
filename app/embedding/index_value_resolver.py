@@ -95,7 +95,7 @@ def resolver_for_configured_profile(storage):
     if not active:
         return None
 
-    from .embed import create_embedder
+    from app.embedding.embed import create_embedder
 
     provider = create_embedder()
     if provider.spec.profile_id != active:

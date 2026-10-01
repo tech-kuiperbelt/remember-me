@@ -9,13 +9,13 @@ from pathlib import Path
 
 logger = logging.getLogger("storage_sqlite")
 
-from .storage import SQLitePrimaryStorage, _now, _new_id, _cosine_similarity, DEFAULT_NAMESPACE
-from .categories import MAX_CATEGORIES
-from .embedding_codec import decode_embedding, encode_embedding, inspect_embedding_blob
-from .summary_policy import summary_for_add, summary_for_update, normalize_whitespace
-from .database_lock import DatabaseWriterLock
-from .lexical import LEXICAL_INDEX_VERSION, build_match, normalize_k, DEFAULT_K
-from .anchors import MAX_ANCHORS, clean_anchors, anchor_fts_text
+from app.storage.base import SQLitePrimaryStorage, _now, _new_id, _cosine_similarity, DEFAULT_NAMESPACE
+from app.domain.categories import MAX_CATEGORIES
+from app.embedding.embedding_codec import decode_embedding, encode_embedding, inspect_embedding_blob
+from app.domain.summary_policy import summary_for_add, summary_for_update, normalize_whitespace
+from app.storage.database_lock import DatabaseWriterLock
+from app.domain.lexical import LEXICAL_INDEX_VERSION, build_match, normalize_k, DEFAULT_K
+from app.domain.anchors import MAX_ANCHORS, clean_anchors, anchor_fts_text
 
 
 # storage_state key holding the single derived lexical-index version.

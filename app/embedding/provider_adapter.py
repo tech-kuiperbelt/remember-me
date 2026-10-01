@@ -16,7 +16,7 @@ storage transaction lock.
 import logging
 import threading
 
-from .embed import EmbeddingError
+from app.embedding.embed import EmbeddingError
 
 logger = logging.getLogger("provider")
 

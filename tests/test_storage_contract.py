@@ -5,11 +5,11 @@ from unittest.mock import Mock
 
 import pytest
 
-from app.embed import EmbeddingError, EmbeddingSpec
-from app.index_value_resolver import IndexValueResolver
-from app.provider_adapter import wrap_provider
+from app.embedding.embed import EmbeddingError, EmbeddingSpec
+from app.embedding.index_value_resolver import IndexValueResolver
+from app.embedding.provider_adapter import wrap_provider
 from app.service import MemoryService
-from app.settings import Settings
+from app.config.settings import Settings
 from app.storage import (
     MemoryStorage,
     ReplicaStorage,
@@ -17,8 +17,8 @@ from app.storage import (
     StorageCapabilityError,
     create_storage,
 )
-from app.storage_ndjson import NDJSONReplica
-from app.storage_sqlite import SQLiteStorage
+from app.storage.ndjson import NDJSONReplica
+from app.storage.sqlite import SQLiteStorage
 from tests.conftest import FakeProvider
 
 
@@ -181,7 +181,7 @@ def test_service_delegates_query_and_batch_paths_once(service_factory):
 
 
 def test_memory_service_wraps_injected_provider_for_serialization():
-    from app.provider_adapter import SerializedProvider
+    from app.embedding.provider_adapter import SerializedProvider
 
     storage = SQLiteStorage(":memory:")
     provider = FakeProvider()

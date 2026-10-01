@@ -6,10 +6,10 @@ from pathlib import Path
 import tempfile
 from dataclasses import dataclass, field, replace
 from urllib.parse import urlsplit
-from . import jsonc
+from app.config import jsonc
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DIR_NAME = "remember-me"
 DEFAULTS = {"port": 1314, "language": "zh-CN", "auto_download_model": True,
             "proxy": {"enabled": False, "url": ""}}
