@@ -14,6 +14,7 @@ import * as stats from './stats.js';
 import * as ops from './ops.js';
 import * as audit from './audit.js';
 import * as clear from './clear.js';
+import * as layout from './layout.js';
 
 function refreshStats() {
   stats.loadStats();
@@ -22,6 +23,7 @@ function refreshStats() {
 
 function mountAll() {
   bindNav();
+  layout.mount();
   detail.mount();
   memories.mount({ preselectClearNamespace: ops.preselectClearNamespace });
   search.mount();

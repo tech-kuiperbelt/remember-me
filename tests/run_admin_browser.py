@@ -83,17 +83,48 @@ app = InjectHarness(Starlette(routes=admin.routes))
 sock = socket.socket(); sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
 server = uvicorn.Server(uvicorn.Config(app, log_level='error'))
 t = threading.Thread(target=server.run, kwargs={'sockets':[sock]}, daemon=True); t.start()
+
+# Desktop viewports (CSS px) and browser zoom factors. Width is measured by the
+# page as window.innerWidth; combinations below 1024 CSS px are informational
+# only, not part of the acceptance range.
+VIEWPORTS = ["1024,768", "1280,720", "1366,768", "1920,1080", "2560,1440"]
+SCALES = ["1", "1.25", "1.5"]
+
+
+def run_case(profile, label, window_size, scale, shot_dir):
+    """Run the browser regression at one viewport/scale, saving a screenshot."""
+    shot = Path(shot_dir) / (label + ".png")
+    cmd = ['google-chrome', '--headless', '--no-sandbox', '--disable-gpu',
+           '--disable-dev-shm-usage', '--no-first-run', '--no-default-browser-check',
+           '--user-data-dir=' + profile, '--window-size=' + window_size,
+           '--force-device-scale-factor=' + scale,
+           '--screenshot=' + str(shot), '--dump-dom',
+           '--virtual-time-budget=40000',
+           f'http://127.0.0.1:{port}/admin/console?smoke=' + label]
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=90), shot
+
+
 try:
-    with tempfile.TemporaryDirectory(prefix='keyword-chrome-') as profile:
-        proc = subprocess.run(['google-chrome','--headless','--no-sandbox','--disable-gpu','--disable-dev-shm-usage',
-            '--no-first-run','--no-default-browser-check','--user-data-dir='+profile,'--dump-dom',
-            '--virtual-time-budget=40000',f'http://127.0.0.1:{port}/admin/console'], capture_output=True, text=True, timeout=90)
-        import re
-        import html
-        found = re.search(r'<pre id="smoke-result">(.*?)</pre>', proc.stdout, re.S)
-        print(html.unescape(found.group(1)) if found else 'FAIL: browser did not finish: ' + proc.stderr[-1200:])
-        if not found or not found.group(1).startswith('PASS:'):
+    import re
+    import html
+    with tempfile.TemporaryDirectory(prefix='keyword-chrome-') as profile, \
+         tempfile.TemporaryDirectory(prefix='remember-ui-shots-') as shots:
+        failures = []
+        for window_size in VIEWPORTS:
+            for scale in SCALES:
+                label = window_size.replace(',', 'x') + '@' + scale
+                proc, shot = run_case(profile, label, window_size, scale, shots)
+                found = re.search(r'<pre id="smoke-result">(.*?)</pre>', proc.stdout, re.S)
+                text = html.unescape(found.group(1)) if found else ''
+                ok = text.startswith('PASS:')
+                print(('PASS ' if ok else 'FAIL ') + label + ' -> ' + str(shot) +
+                      ('' if ok else ' :: ' + (text or proc.stderr[-400:])))
+                if not ok:
+                    failures.append(label)
+        if failures:
+            print('FAIL: viewports failed: ' + ', '.join(failures))
             sys.exit(1)
+        print('Screenshots (not committed): ' + shots + ' (temporary; removed on exit)')
 finally:
     server.should_exit = True; t.join(timeout=5); sock.close(); service.storage.close()
     audit.close()

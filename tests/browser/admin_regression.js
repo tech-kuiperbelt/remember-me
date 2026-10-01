@@ -32,7 +32,7 @@ try {
   assert(!$('stats-content').textContent.includes('cache clear'), 'Stats leaked vocabulary');
 
   // Real nav click exercises router.bindNav + switchPage.
-  document.querySelector('.nav a[data-page="keywords"]').click();
+  document.querySelector('.nav button[data-page="keywords"]').click();
   await settle();
   assert($('page-keywords').classList.contains('active'), 'nav click switches page');
   assert(!$('page-memories').classList.contains('active'), 'nav click hides old page');
@@ -83,7 +83,7 @@ try {
   const specialStats = {total: 64, backend: 'sqlite', path: 'x', namespaces: ['a', special],
                         namespace_counts: {a: 63, [special]: 1}, keyword_total: 63};
   S.setOverride(url => url === '/api/stats' ? json(specialStats) : undefined);
-  document.querySelector('.nav a[data-page="stats"]').click();
+  document.querySelector('.nav button[data-page="stats"]').click();
   await waitFor(() => Array.from($('search-ns').options).some(o => o.value === special), 'special namespace option');
   S.setOverride(url => {
     if (url === '/api/stats') return json(specialStats);
@@ -104,7 +104,7 @@ try {
     if (url.startsWith('/api/memories/')) return method === 'PUT' || method === 'DELETE' ? json({id: specialId}) : json(record);
     return undefined;
   });
-  document.querySelector('.nav a[data-page="memories"]').click();
+  document.querySelector('.nav button[data-page="memories"]').click();
   await waitFor(() => $('memories-list').querySelector('.memory-text') && $('memories-list').querySelector('.memory-text').title === special, 'list record');
 
   S.resetCalls();
@@ -143,7 +143,7 @@ try {
     if (url.startsWith('/api/memories/')) return method === 'PUT' || method === 'DELETE' ? json({id: specialId}) : json(record);
     return undefined;
   });
-  document.querySelector('.nav a[data-page="search"]').click();
+  document.querySelector('.nav button[data-page="search"]').click();
   document.querySelector('#search-mode-tabs .ns-tab[data-mode="list"]').click();
   submit($('form-search'));
   await waitFor(() => $('search-results').querySelector('[data-memory-action]'), 'list results');
@@ -161,7 +161,7 @@ try {
 
   // Literal error rendering in every container.
   S.setOverride(url => (url === '/api/memories' || url.startsWith('/api/memories?')) ? json({detail: special}, 500) : undefined);
-  document.querySelector('.nav a[data-page="memories"]').click();
+  document.querySelector('.nav button[data-page="memories"]').click();
   await waitFor(() => $('memories-list').textContent === 'Error: ' + special, 'literal error memories-list');
   assert(!$('memories-list').querySelector('img'), 'literal error memories-list safe');
 
@@ -172,7 +172,7 @@ try {
   assert(!$('search-results').querySelector('img'), 'literal error search-results safe');
 
   S.setOverride(url => url === '/api/stats' ? json({detail: special}, 500) : undefined);
-  document.querySelector('.nav a[data-page="stats"]').click();
+  document.querySelector('.nav button[data-page="stats"]').click();
   await waitFor(() => $('stats-content').textContent === 'Error: ' + special, 'literal error stats-content');
   assert(!$('stats-content').querySelector('img'), 'literal error stats-content safe');
   S.reset();
@@ -183,7 +183,7 @@ try {
   // Shutdown controls need a maintenance-ready state.
   const maintReady = {state: 'maintenance', action: null, required_reason: null, model: {status: 'ready', ready: true}};
   S.setOverride(url => url === '/api/maintenance' ? json(maintReady) : undefined);
-  document.querySelector('.nav a[data-page="ops"]').click();
+  document.querySelector('.nav button[data-page="ops"]').click();
   await waitFor(() => !$('btn-shutdown').disabled, 'shutdown enabled');
   S.freezeMaintenance();
 
@@ -222,8 +222,10 @@ try {
     if (url === '/api/model/retry') { retried = true; return json({}); }
     return undefined;
   });
-  document.querySelector('.nav a[data-page="ops"]').click();
-  await waitFor(() => !$('btn-model-save').disabled && $('model-progress').value === 40, 'bootstrap progress');
+  document.querySelector('.nav button[data-page="ops"]').click();
+  await waitFor(() => $('btn-status').textContent === '模型未就绪' && !$('btn-model-save').disabled && $('model-progress').value === 40, 'bootstrap progress');
+  console.debug = (...a) => { result.dataset.dbg = JSON.stringify(a); };
+  assert('DIAG status=' + $('btn-status').textContent + ' exit=' + $('btn-maintenance-exit').disabled + ' sync=' + $('btn-sync').disabled + ' bulk=' + $('btn-import').disabled, 'DIAG');
   assert($('btn-maintenance-exit').disabled && $('btn-sync').disabled, 'forced maintenance locks actions');
   assert(!$('btn-shutdown').disabled, 'bootstrap shutdown available');
   assert($('model-progress-detail').textContent.includes('40.0%'), 'actual byte progress');
@@ -235,18 +237,18 @@ try {
   assert($('model-proxy-url').value === '', 'proxy credential input cleared');
 
   preparing.model = {status: 'failed', ready: false, percent: null, error: '<img src=x onerror=window.injected=1>'};
-  document.querySelector('.nav a[data-page="ops"]').click();
+  document.querySelector('.nav button[data-page="ops"]').click();
   await waitFor(() => $('model-error').textContent.includes('<img'), 'model error rendered');
   assert(!$('model-progress').hasAttribute('value'), 'indeterminate progress');
   assert(!$('model-error').querySelector('img'), 'model error safely rendered');
 
   preparing.required_reason = null; preparing.model = {status: 'ready', ready: true};
-  document.querySelector('.nav a[data-page="ops"]').click();
+  document.querySelector('.nav button[data-page="ops"]').click();
   await waitFor(() => !$('btn-maintenance-exit').disabled, 'ready permits manual exit');
   assert($('model-progress').value === 100, 'ready progress');
 
   preparing.state = 'normal';
-  document.querySelector('.nav a[data-page="ops"]').click();
+  document.querySelector('.nav button[data-page="ops"]').click();
   await waitFor(() => $('maintenance-status').textContent.includes('State: normal'), 'normal state');
   assert(!$('btn-model-save').disabled, 'normal mode permits config');
   assert($('btn-sync').disabled && $('btn-restart').disabled, 'normal mode blocks maintenance actions');
@@ -260,5 +262,92 @@ try {
   assert($('model-card').compareDocumentPosition($('model-preparation-card')) & Node.DOCUMENT_POSITION_FOLLOWING, 'configuration above maintenance');
   S.reset();
 
-  result.textContent = 'PASS: real /admin/console entry; nav switch; browse, pagination, literal, semantic, exact jump, selection retention, low-frequency, stale response; special characters, safe actions and errors; shutdown controls; model bootstrap/progress/proxy/retry';
+  // --- Desktop shell: status states, layout, collapse, scroll ownership ---
+
+  // Status chip states + control gating (aligned with maintenance.py).
+  const statusCases = [
+    {snap: {state: 'normal', action: null, required_reason: null, model: {status: 'ready', ready: true}},
+     label: '运行中', enter: false, exit: true, sync: true, bulk: true},
+    {snap: {state: 'maintenance', action: null, required_reason: null, model: {status: 'ready', ready: true}},
+     label: '维护中', enter: true, exit: false, sync: false, bulk: false},
+    {snap: {state: 'maintenance', action: null, required_reason: 'model_not_ready', model: {status: 'downloading', ready: false}},
+     label: '模型未就绪', enter: true, exit: true, sync: true, bulk: true},
+    {snap: {state: 'maintenance', action: null, required_reason: null, error: 'boom', model: {status: 'ready', ready: true}},
+     label: '维护异常', enter: true, exit: true, sync: false, bulk: true},
+  ];
+  for (const c of statusCases) {
+    S.setOverride(url => url === '/api/maintenance' ? json(c.snap) : undefined);
+    document.querySelector('.nav button[data-page="ops"]').click();
+    await waitFor(() => $('btn-status').textContent === c.label, 'status ' + c.label);
+    assert($('btn-maintenance-enter').disabled === c.enter, 'enter gate ' + c.label);
+    assert($('btn-maintenance-exit').disabled === c.exit, 'exit gate ' + c.label);
+    assert($('btn-sync').disabled === c.sync, 'sync gate ' + c.label);
+    assert($('btn-import').disabled === c.bulk, 'bulk gate ' + c.label);
+  }
+  // Sticky error still allows sync/restart/shutdown (maintenance.py:113).
+  S.setOverride(url => url === '/api/maintenance' ? json({state: 'maintenance', action: null, required_reason: null, error: 'boom', model: {status: 'ready', ready: true}}) : undefined);
+  document.querySelector('.nav button[data-page="ops"]').click();
+  await waitFor(() => $('btn-status').textContent === '维护异常', 'error state');
+  assert(!$('btn-sync').disabled && !$('btn-restart').disabled && !$('btn-shutdown').disabled, 'error allows sync/restart/shutdown');
+
+  // Failed poll => 状态不可用 and all writers disabled until recovery.
+  S.setOverride(url => url === '/api/maintenance' ? Promise.reject(new Error('down')) : undefined);
+  document.querySelector('.nav button[data-page="ops"]').click();
+  await waitFor(() => $('btn-status').textContent === '状态不可用', 'unavailable status');
+  assert($('btn-sync').disabled && $('btn-import').disabled, 'unavailable disables writes');
+  assert($('btn-refresh') && !$('btn-refresh').disabled && !$('btn-debug').disabled, 'global controls stay enabled');
+
+  // Recovery restores normal gating (writers enabled, bulk actions off).
+  S.setOverride(url => {
+    if (url === '/api/maintenance') return json({state: 'normal', action: null, required_reason: null, model: {status: 'ready', ready: true}});
+    if (url === '/api/config') return json({port: 1314, language: 'zh-CN', auto_download_model: true, proxy: {enabled: false, url: ''}});
+    if (url === '/api/stats') return json({total: 0, backend: 'sqlite', path: 'x', namespaces: [], namespace_counts: {}});
+    return undefined;
+  });
+  document.querySelector('.nav button[data-page="ops"]').click();
+  await waitFor(() => $('btn-status').textContent === '运行中' && $('btn-sync').disabled, 'status recovers');
+  assert($('btn-maintenance-enter').disabled === false, 'enter re-enabled after recovery');
+  S.reset();
+
+  // Shell layout: header + sidebar fixed, work area scrolls, no page-level h-scroll.
+  assert($('app-shell').contains($('nav')), 'sidebar inside shell');
+  assert($('app-shell').contains($('content')), 'work area inside shell');
+  assert(!$('content').contains($('detail-modal')), 'detail modal outside the shell content');
+  assert(!$('content').contains($('clear-modal')), 'clear modal outside the shell content');
+  assert(document.documentElement.scrollWidth <= window.innerWidth, 'no page horizontal scroll');
+  assert($('content').scrollHeight >= $('content').clientHeight, 'work area is the scroll owner');
+
+  // Active page gets aria-current and Content scrolls back to top on switch.
+  const scroller = $('content');
+  scroller.scrollTop = 9999;
+  document.querySelector('.nav button[data-page="audit"]').click();
+  await settle();
+  assert(scroller.scrollTop === 0, 'switch page scrolls work area to top');
+  assert(document.querySelector('.nav button[data-page="audit"]').getAttribute('aria-current') === 'page', 'aria-current set');
+  assert(!document.querySelector('.nav button[data-page="keywords"]').hasAttribute('aria-current'), 'aria-current cleared');
+
+  // Sidebar collapse: aria-expanded, class, persistence, form content preserved.
+  $('add-text').value = 'draft-kept';
+  const toggleBtn = document.querySelector('#btn-sidebar-toggle');
+  assert(toggleBtn.getAttribute('aria-expanded') === 'true', 'sidebar starts expanded');
+  toggleBtn.click();
+  await settle();
+  assert($('app-shell').classList.contains('sidebar-collapsed'), 'collapse toggles class');
+  assert(toggleBtn.getAttribute('aria-expanded') === 'false', 'collapse updates aria-expanded');
+  assert($('add-text').value === 'draft-kept', 'collapse preserves form content');
+  assert(localStorage.getItem('remember-me.sidebar.collapsed.v1') === 'true', 'collapse persisted');
+  toggleBtn.click();
+  await settle();
+  assert(!$('app-shell').classList.contains('sidebar-collapsed'), 'expand restores');
+  assert(localStorage.getItem('remember-me.sidebar.collapsed.v1') === 'false', 'expand persisted');
+
+  // Keyboard activation of the collapsed nav button.
+  const memBtn = document.querySelector('.nav button[data-page="memories"]');
+  memBtn.focus();
+  memBtn.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}));
+  memBtn.click();
+  await settle();
+  assert($('page-memories').classList.contains('active'), 'keyboard/nav activation switches page');
+
+  result.textContent = 'PASS: real /admin/console entry; nav switch; browse, pagination, literal, semantic, exact jump, selection retention, low-frequency, stale response; special characters, safe actions and errors; shutdown controls; model bootstrap/progress/proxy/retry; desktop shell status/layout/collapse/scroll';
 } catch (e) { result.textContent = 'FAIL: ' + e.stack; }

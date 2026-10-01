@@ -66,7 +66,7 @@ function renderMemories(data) {
     return;
   }
   const sorted = sortMemories(data);
-  let html = '<table id="memories-table"><thead><tr>' +
+  let html = '<div class="table-scroll"><table id="memories-table"><thead><tr>' +
     `<th class="sortable" data-field="text">Text${sortArrow('text')}</th>` +
     `<th class="sortable" data-field="namespace">Namespace${sortArrow('namespace')}</th>` +
     `<th class="sortable" data-field="created_at">Created${sortArrow('created_at')}</th>` +
@@ -84,7 +84,7 @@ function renderMemories(data) {
       </div></td>
     </tr>`;
   });
-  html += '</tbody></table>';
+  html += '</tbody></table></div>';
   $('memories-list').innerHTML = html;
   $('memories-list').querySelectorAll('th.sortable').forEach(th => {
     th.onclick = () => toggleSort(th.dataset.field);

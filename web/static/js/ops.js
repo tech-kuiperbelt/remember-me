@@ -5,10 +5,6 @@ import { $, formatBytes } from './core.js';
 import { api } from './api.js';
 import { setMaintenance, emitMemoriesChanged, emitStatsChanged } from './store.js';
 
-const MAINTENANCE_ACTION_IDS = [
-  'btn-restart', 'btn-shutdown', 'btn-recover', 'btn-import',
-  'btn-export-full', 'btn-export-ns', 'btn-sync', 'btn-clear', 'btn-migrate'
-];
 let serviceConfigLoaded = false;
 let configSaving = false;
 
@@ -65,33 +61,107 @@ export function preselectClearNamespace(ns) {
   $('clear-ns').value = ns;
 }
 
+// Derive the display status and control availability from a /api/maintenance
+// snapshot. Priority: request failure/unparseable -> sticky action error ->
+// model_not_ready -> maintenance -> normal. Gating mirrors the server authority
+// in app/operations/maintenance.py (start_action / exit).
+function deriveStatus(snapshot) {
+  const s = snapshot || {};
+  const idle = !s.action;
+  const hasError = !!s.error;
+  const modelPending = s.required_reason === 'model_not_ready' && !hasError;
+  const isMaintenance = s.state === 'maintenance';
+  let kind;
+  if (hasError) kind = 'error';
+  else if (modelPending) kind = 'model_not_ready';
+  else if (isMaintenance) kind = 'maintenance';
+  else if (s.state === 'normal') kind = 'normal';
+  else kind = 'unavailable';
+
+  const normal = kind === 'normal';
+  const maintenanceReady = isMaintenance && idle && !hasError && !modelPending;
+  // Mirrors maintenance.py start_action: required_reason allows only
+  // restart/shutdown; a sticky error additionally allows sync; only a plain,
+  // idle maintenance state allows the ordinary bulk actions.
+  const processControl = (isMaintenance || modelPending) && idle;
+  // sync is an ordinary maintenance action (and the repair path for a sticky
+  // error); it is blocked while a model requirement is pending.
+  const sync = isMaintenance && idle && !modelPending;
+
+  return {
+    kind, snapshot: s, modelPending, idle, hasError,
+    enter: normal,
+    exit: maintenanceReady,
+    retryModel: modelPending && !['downloading', 'validating', 'cancelling'].includes(s.model?.status),
+    restartShutdown: processControl,
+    sync,
+    bulkActions: maintenanceReady,
+    normalWrites: normal,
+  };
+}
+
+const STATUS_TEXT = {
+  normal: '运行中',
+  maintenance: '维护中',
+  model_not_ready: '模型未就绪',
+  error: '维护异常',
+  unavailable: '状态不可用',
+};
+
+function statusDetail(status) {
+  const s = status.snapshot || {};
+  if (status.kind === 'unavailable') return status.message || '无法读取服务状态；请在下次轮询前保持谨慎。';
+  const action = s.action ? ` · 当前动作：${s.action}` : '';
+  if (status.kind === 'normal') return '服务正常运行。';
+  if (status.kind === 'maintenance') return `写入暂停、查询可用${action}。`;
+  if (status.kind === 'model_not_ready') {
+    const model = s.model || {};
+    const info = model.error || model.status || '准备中';
+    return `记忆读写与搜索不可用；模型：${info}${action}。`;
+  }
+  return `维护操作失败：${s.error || '未知错误'} · state=${s.state || '-'}${action}。`;
+}
+
+function applyStatusChip(status) {
+  const chip = $('btn-status');
+  chip.dataset.state = status.kind;
+  chip.textContent = STATUS_TEXT[status.kind];
+  $('status-tooltip').textContent = statusDetail(status);
+}
+
+function applyControls(status) {
+  $('btn-maintenance-enter').disabled = !status.enter;
+  $('btn-maintenance-exit').disabled = !status.exit;
+  $('btn-model-retry').disabled = !status.retryModel;
+  $('btn-model-save').disabled = !serviceConfigLoaded || configSaving;
+  $('btn-restart').disabled = !status.restartShutdown;
+  $('btn-shutdown').disabled = !status.restartShutdown;
+  $('btn-sync').disabled = !status.sync;
+  for (const id of ['btn-recover', 'btn-import', 'btn-export-full', 'btn-export-ns', 'btn-clear', 'btn-migrate']) {
+    $(id).disabled = !status.bulkActions;
+  }
+  $('maintenance-status').textContent = `State: ${status.snapshot.state || '-'}` +
+    (status.snapshot.action ? ` · Running: ${status.snapshot.action}` : '') +
+    (status.snapshot.error ? ` · Error: ${status.snapshot.error}` : '');
+}
+
 export async function refreshMaintenance() {
   try {
     const state = await api('/maintenance');
-    const modelPending = state.required_reason === 'model_not_ready';
-    const ready = state.state === 'maintenance' && !state.action && !modelPending;
-    $('maintenance-banner').style.display = state.state === 'normal' ? 'none' : 'block';
-    $('maintenance-banner').textContent = modelPending
-      ? '模型尚未就绪：请在配置页面设置代理并查看准备进度。当前无法退出维护，记忆读写和搜索暂不可用。'
-      : 'Maintenance is active. Memory writes are paused; searches remain available.';
-    $('maintenance-status').textContent = `State: ${state.state}` +
-      (state.action ? ` · Running: ${state.action}` : '') +
-      (state.error ? ` · Error: ${state.error}` : '');
-    $('btn-maintenance-enter').disabled = state.state !== 'normal';
-    $('btn-maintenance-exit').disabled = !ready || !!state.error;
-    MAINTENANCE_ACTION_IDS.forEach(id => {
-      const processControl = ['btn-restart', 'btn-shutdown'].includes(id);
-      $(id).disabled = !(ready || modelPending && processControl && !state.action)
-        || !!state.error && !['btn-sync', 'btn-restart', 'btn-shutdown'].includes(id);
-    });
+    const status = deriveStatus(state);
+    applyStatusChip(status);
+    applyControls(status);
     renderModelStatus(state.model);
-    $('btn-model-save').disabled = !serviceConfigLoaded || configSaving;
-    $('btn-model-retry').disabled = !modelPending || ['downloading', 'validating', 'cancelling'].includes(state.model?.status);
     setMaintenance(state);
     return state;
-  } catch(e) {
-    $('maintenance-status').textContent = 'Maintenance status unavailable: ' + e.message;
-    MAINTENANCE_ACTION_IDS.forEach(id => { $(id).disabled = true; });
+  } catch (e) {
+    // Safe snapshot: treat the service as unavailable so writers stay disabled
+    // until a later successful poll replaces it.
+    const status = deriveStatus({ state: 'unavailable' });
+    status.message = 'Maintenance status unavailable: ' + e.message;
+    applyStatusChip(status);
+    applyControls(status);
+    setMaintenance({ state: 'unavailable', error: String(e.message) });
   }
 }
 

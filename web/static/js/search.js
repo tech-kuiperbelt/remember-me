@@ -69,7 +69,7 @@ function renderListResults(data, sortBy) {
     return;
   }
   const sortLabel = sortBy === 'updated_at' ? 'Updated' : 'Created';
-  let html = '<table><thead><tr><th>Text</th><th>Namespace</th>' +
+  let html = '<div class="table-scroll"><table><thead><tr><th>Text</th><th>Namespace</th>' +
     `<th>${sortLabel}</th>` +
     '<th style="width:100px">Actions</th></tr></thead><tbody>';
   data.forEach(m => {
@@ -82,7 +82,7 @@ function renderListResults(data, sortBy) {
       <td><button class="btn btn-sm btn-outline" data-memory-action="viewDetail">View</button></td>
     </tr>`;
   });
-  html += '</tbody></table>';
+  html += '</tbody></table></div>';
   $('search-results').innerHTML = html;
   bindMemoryRows($('search-results'), data);
 }
@@ -92,7 +92,7 @@ function renderSearchResults(data) {
     $('search-results').innerHTML = '<div class="empty-state">No results found</div>';
     return;
   }
-  let html = '<table><thead><tr><th>Score</th><th>Text</th><th>Namespace</th><th style="width:100px">Actions</th></tr></thead><tbody>';
+  let html = '<div class="table-scroll"><table><thead><tr><th>Score</th><th>Text</th><th>Namespace</th><th style="width:100px">Actions</th></tr></thead><tbody>';
   data.forEach(m => {
     const displayText = m.summary || deriveSummary(m.text);
     html += `<tr>
@@ -102,7 +102,7 @@ function renderSearchResults(data) {
       <td><button class="btn btn-sm btn-outline" data-memory-action="viewDetail">View</button></td>
     </tr>`;
   });
-  html += '</tbody></table>';
+  html += '</tbody></table></div>';
   $('search-results').innerHTML = html;
   bindMemoryRows($('search-results'), data);
 }

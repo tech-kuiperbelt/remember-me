@@ -1,13 +1,34 @@
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f5f5;color:#333;min-height:100vh}
-.header{background:#4a90d9;color:#fff;padding:16px 24px;display:flex;align-items:center;justify-content:space-between}
-.header h1{font-size:20px;font-weight:600}
-.header .sub{font-size:13px;opacity:.85}
-.nav{background:#fff;border-bottom:1px solid #e0e0e0;display:flex;padding:0 24px;position:sticky;top:0;z-index:10}
-.nav a{padding:12px 18px;text-decoration:none;color:#555;font-size:14px;border-bottom:2px solid transparent;transition:.15s;cursor:pointer}
-.nav a:hover{color:#4a90d9}
-.nav a.active{color:#4a90d9;border-bottom-color:#4a90d9}
-.content{padding:24px;max-width:1200px;margin:0 auto}
+html,body{height:100%}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f5f5;color:#333;overflow:hidden}
+/* Desktop shell: fixed header, collapsible sidebar, scrolling work area. */
+.app-shell{display:grid;grid-template-rows:auto 1fr;height:100vh;height:100dvh;min-height:100vh;min-height:100dvh}
+.app-header{background:#4a90d9;color:#fff;padding:12px 20px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.app-header .brand{display:flex;flex-direction:column;min-width:0}
+.app-header h1{font-size:20px;font-weight:600}
+.app-header .sub{font-size:13px;opacity:.85}
+.header-status{display:flex;align-items:center;gap:8px;flex-wrap:wrap;position:relative}
+.header-status .btn-outline{color:#fff;border-color:rgba(255,255,255,.4)}
+/* Status chip: focusable, non-action, tooltip driven purely by CSS. */
+.status-chip{background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.4);border-radius:12px;padding:4px 12px;font-size:12px;cursor:help;display:inline-flex;align-items:center;gap:6px}
+.status-chip:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.status-chip[data-state="maintenance"],.status-chip[data-state="model_not_ready"]{background:#f9a825;border-color:#f9a825;color:#3b2f00}
+.status-chip[data-state="error"],.status-chip[data-state="unavailable"]{background:#e53935;border-color:#e53935}
+.status-tooltip{position:absolute;top:calc(100% + 6px);right:0;z-index:50;background:#263238;color:#fff;font-size:12px;line-height:1.4;padding:8px 10px;border-radius:6px;max-width:360px;width:max-content;box-shadow:0 4px 12px rgba(0,0,0,.25);display:none}
+.header-status:has(.status-chip:hover) .status-tooltip,.header-status:has(.status-chip:focus-visible) .status-tooltip{display:block}
+.app-main{display:grid;grid-template-columns:180px 1fr;min-height:0}
+.app-shell.sidebar-collapsed .app-main{grid-template-columns:64px 1fr}
+.sidebar-toggle{width:100%;border:none;background:transparent;color:#555;padding:12px;font-size:16px;cursor:pointer;text-align:left;border-bottom:1px solid #f0f0f0}
+.sidebar-toggle:hover{background:#f0f4ff;color:#4a90d9}
+.nav{background:#fff;border-right:1px solid #e0e0e0;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+.nav-items{overflow-y:auto;min-height:0;flex:1}
+.nav button{display:flex;align-items:center;gap:10px;width:100%;padding:11px 16px;text-align:left;background:transparent;border:none;border-left:3px solid transparent;color:#555;font-size:14px;cursor:pointer;transition:.15s;white-space:nowrap}
+.nav button svg{flex:0 0 18px}
+.nav button:hover{background:#f5f8ff;color:#4a90d9}
+.nav button.active{background:#e8f4fd;color:#4a90d9;border-left-color:#4a90d9;font-weight:600}
+.app-shell.sidebar-collapsed .nav button .nav-label{display:none}
+.app-shell.sidebar-collapsed .nav button{justify-content:center;padding:11px 0}
+.content{padding:20px;min-width:0;min-height:0;overflow-y:auto}
 .page{display:none}
 .page.active{display:block}
 .card{background:#fff;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.08);margin-bottom:16px;overflow:hidden}
@@ -59,10 +80,11 @@ tr.selected{background:#e8f4fd}
 .ns-dropdown div:hover{background:#f0f4ff;color:#4a90d9}
 .metadata-view{background:#f8f9fa;padding:10px;border-radius:6px;font-family:monospace;font-size:12px;white-space:pre-wrap;max-height:200px;overflow:auto}
 pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overflow:auto;max-height:300px}
+.table-scroll{overflow-x:auto;max-width:100%}
 .actions{display:flex;gap:6px;flex-wrap:wrap}
 .flex-between{display:flex;justify-content:space-between;align-items:center}
 .search-highlight{background:#fff3cd;padding:0 2px}
 .debug-ids [id]{outline:1px dashed #e53935;outline-offset:1px;position:relative}
 .debug-ids [id]::before{content:attr(id);position:absolute;top:-1px;left:-1px;font-size:10px;background:#e53935;color:#fff;padding:1px 4px;border-radius:0 0 4px 0;z-index:999;font-family:monospace;line-height:1.2;white-space:nowrap;cursor:pointer}
 .debug-focus{outline:3px solid #4caf50!important;outline-offset:3px;box-shadow:0 0 0 5px rgba(76,175,80,.25),0 4px 16px rgba(76,175,80,.15);background:rgba(76,175,80,.06);transition:all .2s}
-@media(max-width:768px){.form-row{flex-direction:column}.content{padding:12px}.nav{overflow-x:auto}.nav a{white-space:nowrap}}
+@media(max-width:768px){.form-row{flex-direction:column}.content{padding:12px}}
