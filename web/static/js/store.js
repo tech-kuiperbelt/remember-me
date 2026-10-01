@@ -3,9 +3,11 @@
 
 let namespaces = [];
 let namespaceCounts = {};
+let categories = {};
 let maintenance = null;
 
 const namespaceListeners = new Set();
+const categoryListeners = new Set();
 const maintenanceListeners = new Set();
 const memoriesListeners = new Set();
 const statsListeners = new Set();
@@ -19,6 +21,13 @@ export function setNamespaces(list, counts) {
   namespaceListeners.forEach(fn => fn());
 }
 export function onNamespacesChanged(fn) { namespaceListeners.add(fn); }
+
+export function getCategories() { return categories; }
+export function setCategories(map) {
+  categories = map || {};
+  categoryListeners.forEach(fn => fn());
+}
+export function onCategoriesChanged(fn) { categoryListeners.add(fn); }
 
 export function getMaintenance() { return maintenance; }
 export function setMaintenance(state) {

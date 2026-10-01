@@ -1,12 +1,20 @@
 [
   {
     "annotations": null,
-    "description": "Browse the complete in-use keyword vocabulary or find existing words by meaning. Before setting keywords in add/update, use semantic mode with 1–20 concepts in queries and the target namespace (omit namespace when creating a new one); reuse candidates only when their meaning fits, otherwise new words are allowed. Similarity is not synonym equivalence. Metadata updates without keywords need no lookup. Literal mode matches one substring; browse takes no queries. Counts are scoped to live memories in namespace (omit for all). Semantic results include score and count, sorted by score; exact hits do not suppress related candidates. No search_id/report feedback is required. Pass the returned keyword_query_id to a later add/update/search when it informed your keyword choice. Unknown namespace returns namespace_not_found.",
+    "description": "Browse the complete in-use keyword vocabulary or find existing words by meaning. Before setting keywords in add/update, use semantic mode with 1–20 concepts in queries and the target namespace (omit namespace when creating a new one); reuse candidates only when their meaning fits, otherwise new words are allowed. Similarity is not synonym equivalence. Metadata updates without keywords need no lookup. Literal mode matches one substring; browse takes no queries. Counts are scoped to live memories in namespace (omit for all). Semantic results include score and count, sorted by score; exact hits do not suppress related candidates. An optional categories filter (exact, OR) restricts results to keywords used by memories carrying any of those categories; it combines with namespace using AND. No search_id/report feedback is required. Pass the returned keyword_query_id to a later add/update/search when it informed your keyword choice. Unknown namespace returns namespace_not_found.",
     "execution": null,
     "icons": null,
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
+        "categories": {
+          "description": "Optional; restrict results to keywords used by live memories carrying any of these categories (exact, OR). Combines with namespace using AND.",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
         "limit": {
           "description": "Browse/literal default 50, max 100; semantic per-query default 5, max 20.",
           "maximum": 100,

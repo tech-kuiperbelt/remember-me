@@ -56,6 +56,8 @@ def test_business_contract_is_shared_by_sqlite_and_dual(backend, tmp_path):
         memory_id = created["id"]
 
         assert store.keyword_counts("ns") == {"cache refresh": 1}
+        assert store.keyword_counts("ns", categories=["bugfix"]) == {"cache refresh": 1}
+        assert store.keyword_counts("ns", categories=["design"]) == {}
         assert store.exact_index_values("keywords", ["cache refresh"], "ns") == {"cache refresh"}
         candidates = store.semantic_index_values("keywords", [1.0, 0.0], "ns")
         assert candidates and candidates[0]["value"] == "cache refresh"
@@ -75,6 +77,7 @@ def test_business_contract_is_shared_by_sqlite_and_dual(backend, tmp_path):
             memory_id, merged,
             index_embeddings=_resolver(store).prepare_embeddings(merged)) is True
         assert store.keyword_counts("ns") == {"cache merge": 1}
+        assert store.keyword_counts("ns", categories=["bugfix"]) == {"cache merge": 1}
 
         assert store.delete(memory_id) is True
         assert store.get(memory_id) is None

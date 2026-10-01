@@ -77,11 +77,16 @@ def _params_default(args, result):
 
 def _params_list_keywords(args, result):
     args = {k: v for k, v in args.items() if k in
-            ("namespace", "mode", "queries", "limit", "offset", "sort_by", "min_score")}
+            ("namespace", "mode", "queries", "limit", "offset", "sort_by", "min_score",
+             "categories")}
     queries = args.get("queries")
     if isinstance(queries, list):
         args["queries"] = [str(q)[:1000] for q in queries[:20]]
         args["queries_truncated"] = len(queries) > 20 or any(len(str(q)) > 1000 for q in queries[:20])
+    categories = args.get("categories")
+    if isinstance(categories, list):
+        args["categories"] = [str(c)[:200] for c in categories[:20]]
+        args["categories_truncated"] = len(categories) > 20
     return args
 
 

@@ -465,11 +465,21 @@ class MemoryService:
             raise
 
     def memory_list_keywords(self, namespace=None, mode="browse", queries=None, limit=None,
-                             offset=0, sort_by=None, min_score=None):
-        """Read the complete live vocabulary, optionally by name or meaning."""
+                             offset=0, sort_by=None, min_score=None, categories=None):
+        """Read the complete live vocabulary, optionally by name or meaning.
+
+        ``categories`` (optional) restricts results to keywords used by live
+        memories carrying any of the listed categories (exact match, OR); it
+        composes with ``namespace`` using AND. Omitted/empty means no filter.
+        """
         import math
         if namespace is not None:
             namespace = self.check_namespace(namespace)
+        if categories is not None and not isinstance(categories, list):
+            raise ValueError("categories must be a list of strings")
+        cats = normalize_categories_filter(categories)
+        if len(cats) > MAX_FILTER_VALUES:
+            raise ValueError(f"categories accepts at most {MAX_FILTER_VALUES} filter values")
         if mode not in ("browse", "literal", "semantic"):
             raise ValueError("mode must be browse, literal or semantic")
         semantic = mode == "semantic"
@@ -495,7 +505,7 @@ class MemoryService:
             if (type(min_score) not in (int, float) or not math.isfinite(min_score)
                     or not 0 <= min_score <= 1):
                 raise ValueError("min_score must be between 0 and 1")
-        counts = self.storage.keyword_counts(namespace)
+        counts = self.storage.keyword_counts(namespace, cats or None)
         groups = []
         # Duplicate concepts share inference but retain their original response positions.
         scored_queries = {}
@@ -515,8 +525,8 @@ class MemoryService:
                 items.sort(key=(lambda r: r["keyword"]) if sort_by == "keyword"
                            else (lambda r: (-r["count"], r["keyword"])))
             groups.append({"query": query, "total": len(items), "items": items[offset:offset + limit]})
-        result = {"namespace": namespace, "mode": mode, "results": groups,
-                  "limit": limit, "offset": offset, "sort_by": sort_by}
+        result = {"namespace": namespace, "mode": mode, "categories": cats or None,
+                  "results": groups, "limit": limit, "offset": offset, "sort_by": sort_by}
         if semantic:
             result["min_score"] = min_score
         return result

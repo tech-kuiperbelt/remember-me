@@ -18,13 +18,17 @@ def service(request, monkeypatch, tmp_path, service_factory):
     vectors = {'cache': [1., 0.], 'cache clear': [0.99, 0.1],
                'transaction': [0., 1.], 'rare_id': [0., 1.], '中文': [0., 1.],
                '100%': [0., 1.]}
-    def add(text, namespace, words):
-        return db.add(text, [1., 0.], metadata={'keywords': words}, namespace=namespace,
+    def add(text, namespace, words, categories=None):
+        metadata = {'keywords': words}
+        if categories:
+            metadata['categories'] = categories
+        return db.add(text, [1., 0.], metadata=metadata, namespace=namespace,
                       index_embeddings={('keywords', w): vectors[w] for w in words})
-    add('one', 'a', ['cache', 'cache clear', 'rare_id', '中文', '100%'])
-    add('two', 'a', ['cache'])
-    add('other', 'b', ['cache clear', 'transaction'])
-    removed = add('deleted', 'a', ['transaction'])
+    add('one', 'a', ['cache', 'cache clear', 'rare_id', '中文', '100%'],
+        categories=['bugfix', 'design'])
+    add('two', 'a', ['cache'], categories=['bugfix'])
+    add('other', 'b', ['cache clear', 'transaction'], categories=['incident'])
+    removed = add('deleted', 'a', ['transaction'], categories=['bugfix'])
     db.delete(removed['id'])
     store = db
     if request.param == 'dual':
@@ -55,6 +59,35 @@ def test_browse_scope_pagination_and_no_embedding(service, monkeypatch):
     assert service.memory_list_keywords(mode='literal', queries=['absent'])['results'][0]['total'] == 0
 
 
+def test_category_filter_scope_or_and_no_double_count(service):
+    # namespace + category (OR within categories, AND with namespace)
+    result = service.memory_list_keywords(namespace='a', categories=['bugfix'])
+    assert result['categories'] == ['bugfix']
+    counts = {i['keyword']: i['count'] for i in result['results'][0]['items']}
+    assert counts == {'cache': 2, 'cache clear': 1, 'rare_id': 1, '中文': 1, '100%': 1}
+    # a memory carrying two matching categories is still counted once
+    both = service.memory_list_keywords(namespace='a', categories=['bugfix', 'design'])
+    assert {i['keyword']: i['count'] for i in both['results'][0]['items']}['cache'] == 2
+    assert both['results'][0]['total'] == 5
+    # category filter without namespace spans all namespaces
+    all_ns = service.memory_list_keywords(categories=['incident'])
+    assert {i['keyword']: i['count'] for i in all_ns['results'][0]['items']} == {
+        'cache clear': 1, 'transaction': 1}
+    # no live memory in scope
+    assert service.memory_list_keywords(
+        namespace='a', categories=['incident'])['results'][0]['total'] == 0
+    # empty/normalized categories behave as no filter
+    assert service.memory_list_keywords(namespace='a', categories=[])['results'][0]['total'] == 5
+    assert service.memory_list_keywords(namespace='a', categories=['  BugFix '])['results'][0]['total'] == 5
+    # semantic mode intersects scored candidates with category-scoped counts
+    semantic = service.memory_list_keywords(
+        namespace='a', mode='semantic', queries=['cache'], categories=['design'])
+    assert [r['keyword'] for r in semantic['results'][0]['items']] == ['cache', 'cache clear']
+    assert service.memory_list_keywords(
+        namespace='a', mode='semantic', queries=['cache'],
+        categories=['incident'])['results'][0]['total'] == 0
+
+
 def test_semantic_batch_exact_expansion_threshold_and_scope(service):
     result = service.memory_list_keywords(namespace='a', mode='semantic', queries=['cache', 'transaction'])
     assert 'search_id' not in result
@@ -74,6 +107,7 @@ def test_semantic_batch_exact_expansion_threshold_and_scope(service):
     {'mode':'semantic','queries':['a'],'offset':1},
     {'mode':'semantic','queries':['a'],'sort_by':'count'},
     {'mode':'semantic','queries':['a'],'min_score':float('nan')},
+    {'categories':'bugfix'}, {'categories':[f'c{i}' for i in range(21)]},
 ])
 def test_validation(service, args):
     with pytest.raises(ValueError):
@@ -101,6 +135,7 @@ def test_public_interfaces_and_audit(service, monkeypatch, admin):
     def call(name, args):
         return json.loads(asyncio.run(server['handle_call_tool'](name, args)).content[0].text)
     assert call('list_keywords', {'namespace':'a'})['results'][0]['total'] == 5
+    assert call('list_keywords', {'namespace':'a', 'categories':['incident']})['results'][0]['total'] == 0
     unknown = call('list_keywords', {'namespace':'missing'})
     assert unknown['response_code'] == 'namespace_not_found' and 'search_id' not in unknown
     stats = call('stats', {})
@@ -110,6 +145,8 @@ def test_public_interfaces_and_audit(service, monkeypatch, admin):
     with TestClient(Starlette(routes=admin.routes)) as client:
         response = client.post('/api/keywords/query', json={'namespace':'a'})
         assert response.status_code == 200 and response.json()['results'][0]['total'] == 5
+        response = client.post('/api/keywords/query', json={'namespace':'a', 'categories':['incident']})
+        assert response.status_code == 200 and response.json()['results'][0]['total'] == 0
         response = client.post('/api/keywords/query', json={'namespace':'missing'})
         assert response.status_code == 400 and response.json()['response_code'] == 'namespace_not_found'
         assert client.post('/api/keywords/query', json={'unexpected':True}).status_code == 400
@@ -122,3 +159,5 @@ def test_public_interfaces_and_audit(service, monkeypatch, admin):
     assert trimmed['results'][0]['items_truncated']
     params = audit._trim_params('list_keywords', {'queries':['a' * 2000] * 25})
     assert params['queries_truncated'] and len(params['queries']) == 20
+    cats = audit._trim_params('list_keywords', {'categories':['c'] * 25})
+    assert cats['categories_truncated'] and len(cats['categories']) == 20

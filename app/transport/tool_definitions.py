@@ -9,6 +9,7 @@ import mcp.types as types
 
 from app.domain.anchors import MAX_ANCHORS
 from app.domain.categories import CATEGORY_VOCABULARY, MAX_CATEGORIES
+from app.embedding.index_value_resolver import MAX_FILTER_VALUES
 from app.transport.report_feedback import (FEEDBACK_PURPOSES, FEEDBACK_SOURCES,
                               MAX_REPORT_RATINGS)
 
@@ -48,6 +49,8 @@ def build_tools() -> list[types.Tool]:
                             "keywords need no lookup. Literal mode matches one substring; browse takes no queries. "
                             "Counts are scoped to live memories in namespace (omit for all). Semantic results include "
                             "score and count, sorted by score; exact hits do not suppress related candidates. "
+                            "An optional categories filter (exact, OR) restricts results to keywords used by memories "
+                            "carrying any of those categories; it combines with namespace using AND. "
                             "No search_id/report feedback is required. Pass the returned keyword_query_id to a later "
                             "add/update/search when it informed your keyword choice. Unknown namespace returns namespace_not_found.",
                 inputSchema={"type": "object", "additionalProperties": False, "properties": {
@@ -55,6 +58,8 @@ def build_tools() -> list[types.Tool]:
                     "mode": {"type": "string", "enum": ["browse", "literal", "semantic"], "default": "browse"},
                     "queries": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 20,
                                 "description": "One nonblank string for literal, 1–20 for semantic; omit for browse."},
+                    "categories": {"type": "array", "items": {"type": "string"}, "maxItems": MAX_FILTER_VALUES,
+                                   "description": "Optional; restrict results to keywords used by live memories carrying any of these categories (exact, OR). Combines with namespace using AND."},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 100,
                               "description": "Browse/literal default 50, max 100; semantic per-query default 5, max 20."},
                     "offset": {"type": "integer", "minimum": 0, "default": 0,

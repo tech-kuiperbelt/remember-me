@@ -2,7 +2,7 @@
 
 import { $ } from './core.js';
 import { api } from './api.js';
-import { getNamespaces, onNamespacesChanged } from './store.js';
+import { getNamespaces, onNamespacesChanged, getCategories, onCategoriesChanged } from './store.js';
 
 let keywordRequest = 0;
 let keywordOffset = 0;
@@ -13,6 +13,14 @@ function updateKeywordNamespaces() {
   const sel = $('kw-ns'), value = sel.value;
   sel.replaceChildren(new Option('(all)', ''), ...getNamespaces().map(ns => new Option(ns, ns)));
   sel.value = value;
+}
+
+function updateKeywordCategories() {
+  const sel = $('kw-categories');
+  const selected = new Set([...sel.selectedOptions].map(o => o.value));
+  const names = Object.keys(getCategories());
+  sel.replaceChildren(...names.map(c => new Option(c, c, false, selected.has(c))));
+  sel.size = Math.min(Math.max(names.length, 1), 6);
 }
 
 function invalidateKeywords() {
@@ -32,6 +40,8 @@ export async function loadKeywords(reset=false) {
   const body = {mode, limit: semantic ? 20 : 50, offset: semantic ? 0 : keywordOffset};
   const namespace = $('kw-ns').value;
   if (namespace) body.namespace = namespace;
+  const categories = [...$('kw-categories').selectedOptions].map(o => o.value);
+  if (categories.length) body.categories = categories;
   if (query) body.queries = [query];
   if (!semantic) body.sort_by = $('kw-sort').value;
   $('kw-results').textContent = 'Loading...';
@@ -68,10 +78,13 @@ export function mount({ showKeyword = () => {} } = {}) {
   openKeyword = showKeyword;
   $('form-keywords').addEventListener('submit', e => { e.preventDefault(); loadKeywords(true); });
   $('kw-ns').addEventListener('change', () => loadKeywords(true));
+  $('kw-categories').addEventListener('change', () => loadKeywords(true));
   $('kw-query').addEventListener('input', invalidateKeywords);
   $('kw-mode').addEventListener('change', () => loadKeywords(true));
   $('kw-sort').addEventListener('change', () => loadKeywords(true));
   $('kw-prev').addEventListener('click', () => keywordPage(-1));
   $('kw-next').addEventListener('click', () => keywordPage(1));
   onNamespacesChanged(updateKeywordNamespaces);
+  onCategoriesChanged(updateKeywordCategories);
+  updateKeywordCategories();
 }

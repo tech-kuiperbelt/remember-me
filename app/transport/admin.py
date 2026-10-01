@@ -782,7 +782,8 @@ class AdminAPI:
         body, result, error = {}, None, None
         try:
             body = await request.json()
-            allowed = {"namespace", "mode", "queries", "limit", "offset", "sort_by", "min_score"}
+            allowed = {"namespace", "mode", "queries", "limit", "offset", "sort_by", "min_score",
+                       "categories"}
             if not isinstance(body, dict) or set(body) - allowed:
                 raise ValueError("expected keyword query object with supported parameters")
             result = await self._run(lambda: self.service.memory_list_keywords(**body))

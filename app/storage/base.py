@@ -177,7 +177,8 @@ class MemoryStorage(ABC):
         ...
 
     @abstractmethod
-    def keyword_counts(self, namespace: Optional[str] = None) -> dict[str, int]: ...
+    def keyword_counts(self, namespace: Optional[str] = None,
+                       categories: Optional[list[str]] = None) -> dict[str, int]: ...
 
     @abstractmethod
     def exact_index_values(self, dimension: str, values: list[str],

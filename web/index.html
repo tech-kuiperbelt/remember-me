@@ -197,13 +197,14 @@
       <form id="form-keywords">
         <div class="form-row">
           <div class="form-group"><label>Namespace</label><select id="kw-ns"><option value="">(all)</option></select></div>
+          <div class="form-group"><label>Categories</label><select id="kw-categories" multiple size="3"></select></div>
           <div class="form-group"><label>Query</label><input id="kw-query" placeholder="Keyword or concept"></div>
           <div class="form-group"><label>Match</label><select id="kw-mode"><option value="literal">Literal</option><option value="semantic">Semantic</option></select></div>
           <div class="form-group"><label>Sort</label><select id="kw-sort"><option value="count">Usage count</option><option value="keyword">Keyword</option></select></div>
         </div>
         <button class="btn btn-primary" type="submit">Search</button>
       </form>
-      <p>Semantic scores indicate similarity, not interchangeable meanings. Counts reflect the selected namespace.</p>
+      <p>Semantic scores indicate similarity, not interchangeable meanings. Counts reflect the selected namespace, and selecting one or more categories narrows results to keywords used by memories with any of them.</p>
       <div id="kw-results"></div>
       <button id="kw-prev" class="btn btn-outline" disabled>Previous</button>
       <button id="kw-next" class="btn btn-outline" disabled>Next</button>

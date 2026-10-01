@@ -1050,8 +1050,13 @@ class SQLiteStorage(SQLitePrimaryStorage):
                 raise
         return len(missing)
 
-    def keyword_counts(self, namespace=None):
-        """All in-use keywords and distinct live memory counts in scope."""
+    def keyword_counts(self, namespace=None, categories=None):
+        """All in-use keywords and distinct live memory counts in scope.
+
+        When ``categories`` is supplied, a keyword is included only if at least
+        one live memory in scope carries that keyword *and* any of the listed
+        categories (OR within the dimension, AND with namespace).
+        """
         sql = ("SELECT iv.value, COUNT(DISTINCT m.id) AS n FROM index_values iv "
                "JOIN memory_index_values link ON link.index_value_id = iv.id "
                "JOIN memories m ON m.id = link.memory_id "
@@ -1060,6 +1065,13 @@ class SQLiteStorage(SQLitePrimaryStorage):
         if namespace is not None:
             sql += " AND m.namespace = ?"
             params.append(namespace)
+        cat_values = self._normalize_index_filter("categories", categories) if categories else []
+        if cat_values:
+            placeholders = ",".join(["?"] * len(cat_values))
+            sql += (" AND m.id IN (SELECT l.memory_id FROM memory_index_values l "
+                    "JOIN index_values c ON c.id = l.index_value_id "
+                    f"WHERE c.dimension = 'categories' AND c.value IN ({placeholders}))")
+            params.extend(cat_values)
         sql += " GROUP BY iv.value"
         with self._lock:
             return {row["value"]: row["n"] for row in self.conn.execute(sql, params)}

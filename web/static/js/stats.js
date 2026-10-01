@@ -3,7 +3,7 @@
 import { $, escapeHtml, formatBytes } from './core.js';
 import { api } from './api.js';
 import { showError } from './ui.js';
-import { setNamespaces, onStatsChanged } from './store.js';
+import { setNamespaces, setCategories, onStatsChanged } from './store.js';
 import { switchPage } from './router.js';
 
 export async function loadStats() {
@@ -69,8 +69,9 @@ export async function loadStats() {
     const browse = $('stats-content').querySelector('[data-goto="keywords"]');
     if (browse) browse.addEventListener('click', () => switchPage('keywords'));
     $('btn-stats-refresh').addEventListener('click', loadStats);
-    // Update the shared namespace registry; pages react through store subscriptions.
+    // Update the shared namespace/category registries; pages react through store subscriptions.
     setNamespaces(s.namespaces || [], s.namespace_counts || {});
+    setCategories(s.category_counts || {});
   } catch(e) {
     showError('stats-content', e);
   }
