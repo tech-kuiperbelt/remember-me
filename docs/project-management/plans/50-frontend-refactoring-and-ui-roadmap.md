@@ -51,7 +51,8 @@
 后续依据 [UI 设计规范](../../design/UI_DESIGN.md)、
 [UI 实施规则](../../design/UI_IMPLEMENTATION_RULES.md) 和
 [风格示意图](../../design/UI.png)，按“主题基础 → Shell 视觉 → Memories”推进。
-主题基础与 Shell 视觉已完成；下一项是 Memories 列表专项设计与实施。
+主题基础与 Shell 视觉已完成；下一项是 Memories 列表专项设计与实施，见
+[50.5 Memories 工作区改版总体计划](50.5-memories-workspace.md)（总体路线已确认，待闭合详细设计，尚未实施）。
 主题切换入口位于配置页的独立“外观”区域。
 
 ## 第三阶段：布局稳定后的结构复核

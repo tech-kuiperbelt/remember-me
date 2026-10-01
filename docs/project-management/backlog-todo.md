@@ -6,7 +6,7 @@
 
 ### 前端工作
 
-- [50] 前端重构与 UI 调整：第一阶段（保持行为的 HTML/CSS/JS 分离、公共能力提取、状态归属梳理、ES modules + 事件绑定）已实施并验证，见 [50.1 实施记录](plans/50.1-frontend-module-split.md)；第二阶段第一项 [50.2 管理台桌面布局](plans/50.2-admin-desktop-layout.md) 已实施并验证，其余布局/功能意见逐项明确；第三阶段布局稳定后复核组件化需求。详见 [路线图](plans/50-frontend-refactoring-and-ui-roadmap.md)。
+- [50] 前端重构与 UI 调整：第一阶段模块拆分、第二阶段桌面布局、主题基础与 Shell 视觉均已实施并验证，记录见 [50.1](plans/50.1-frontend-module-split.md)、[50.2](plans/50.2-admin-desktop-layout.md)、[50.3](plans/50.3-ui-theme-foundation.md) 和 [50.4](plans/50.4-admin-shell-visual.md)。Memories 工作区改版已进入计划阶段，详见 [总体计划](plans/50.5-memories-workspace.md)；第三阶段布局稳定后复核组件化需求。详见[路线图](plans/50-frontend-refactoring-and-ui-roadmap.md)。
 
 ### 其他开放项
 
