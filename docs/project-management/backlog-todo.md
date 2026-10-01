@@ -6,7 +6,7 @@
 
 ### 前端工作
 
-- [50] 前端重构与 UI 调整：先保持行为完成 HTML/CSS/JavaScript 分离、公共能力提取和状态归属梳理，再按用户意见逐项调整布局与功能组织；布局稳定后复核组件化需求。路线已认可，尚未实施。详见 [路线图](plans/50-frontend-refactoring-and-ui-roadmap.md)。
+- [50] 前端重构与 UI 调整：第一阶段（保持行为的 HTML/CSS/JS 分离、公共能力提取、状态归属梳理、ES modules + 事件绑定）已实施并验证，见 [50.1 实施记录](plans/50.1-frontend-module-split.md)；第二阶段按用户逐项提出的布局/功能意见实施；第三阶段布局稳定后复核组件化需求。详见 [路线图](plans/50-frontend-refactoring-and-ui-roadmap.md)。
 
 ### 其他开放项
 

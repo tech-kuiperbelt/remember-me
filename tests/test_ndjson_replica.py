@@ -13,6 +13,7 @@ from app.storage.ndjson import NDJSONReplica
 from app.storage.sqlite import SQLiteStorage
 from app.storage.dual import DualStorage
 import app.storage.dual as storage_dual_module
+from tests.conftest import frontend_source
 
 
 def _lines(path):
@@ -428,7 +429,7 @@ def test_health_check_error_retries_after_one_hour(tmp_path, fake_emb, monkeypat
 
 
 def test_admin_stats_renders_replica_health_fields():
-    ui = Path("web/index.html").read_text(encoding="utf-8")
+    ui = frontend_source()
 
     for label in ("Replica Health", "Recovery Action", "Run Full Export below",
                   "The service will not repair replica drift automatically",

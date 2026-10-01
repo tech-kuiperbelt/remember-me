@@ -9,6 +9,7 @@ from app.cli.keyword_migrate_deepseek import (
     extract_keywords_deepseek,
     format_candidates_block,
 )
+from tests.conftest import frontend_source
 
 
 FAKE_EMB = [0.1, 0.2, 0.3, 0.4]
@@ -47,6 +48,6 @@ def test_local_keyword_extractor_api_and_ui_are_removed(service, admin):
     assert not hasattr(service, "memory_extract_keywords")
     assert all(route.path != "/api/extract-keywords" for route in admin_routes)
     assert not Path("app/keyword_extract.py").exists()
-    ui = Path("web/index.html").read_text(encoding="utf-8")
+    ui = frontend_source()
     assert "doExtractKeywords" not in ui
     assert "btn-kw" not in ui

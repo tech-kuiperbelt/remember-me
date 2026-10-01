@@ -55,6 +55,20 @@ def pytest_unconfigure(config):
 FAKE_EMB = [0.1, 0.2, 0.3, 0.4]
 
 
+def frontend_source():
+    """Concatenated frontend sources (HTML + CSS + ES modules).
+
+    After the module split, a UI string lives in the HTML or in one of the JS
+    modules; UI assertions should not depend on which file holds it.
+    """
+    web = Path(__file__).resolve().parents[1] / "web"
+    parts = [(web / "index.html").read_text(encoding="utf-8"),
+             (web / "static" / "app.css").read_text(encoding="utf-8")]
+    parts.extend(path.read_text(encoding="utf-8")
+                 for path in sorted((web / "static" / "js").glob("*.js")))
+    return "\n".join(parts)
+
+
 @pytest.fixture
 def make_storage(tmp_path):
     """Factory that creates a fresh SQLite business store."""

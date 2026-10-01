@@ -28,6 +28,26 @@ from app.config.configuration import PROJECT_ROOT
 logger = logging.getLogger("admin")
 
 ADMIN_HTML_PATH = PROJECT_ROOT / "web" / "index.html"
+ADMIN_ASSET_ROOT = (PROJECT_ROOT / "web" / "static").resolve()
+
+# Frontend assets may only be served from the static root and with these
+# extensions. The mapping also pins the response media type so a wrong
+# extension cannot smuggle arbitrary content into a script/style context.
+ASSET_MEDIA_TYPES = {
+    ".css": "text/css",
+    ".js": "text/javascript",
+    ".mjs": "text/javascript",
+    ".map": "application/json",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".ico": "image/x-icon",
+    ".woff": "font/woff",
+    ".woff2": "font/woff2",
+    ".ttf": "font/ttf",
+}
 
 
 def json_response(data, status=200):
@@ -189,8 +209,9 @@ def _maintenance_response(exc):
 class _Route:
     """One admin route and its explicitly declared access/error policy.
 
-    policy: ``static`` (asset), ``read`` (reader admission), ``write`` (deferred
-    writer admission), ``action`` (single maintenance action), ``control`` and
+    policy: ``static`` (console HTML), ``asset`` (frontend file under
+    ``web/static``), ``read`` (reader admission), ``write`` (deferred writer
+    admission), ``action`` (single maintenance action), ``control`` and
     ``exempt`` (no admission wrapper). errors: ``boundary`` when the handler maps
     domain exceptions via ``_maps_domain_errors``; ``none`` when it keeps its own
     cleanup/audit handling.
@@ -427,6 +448,25 @@ class AdminAPI:
         # No-store: the UI is edited frequently; always serve the latest HTML
         # instead of letting browsers serve stale cached copies.
         return FileResponse(ADMIN_HTML_PATH, headers={
+            "Cache-Control": "no-store",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        })
+
+    async def handle_asset(self, request: Request):
+        """Serve one frontend asset from the static root.
+
+        The requested path is resolved and must stay inside ``web/static/``; only
+        the whitelisted extensions are served. Anything else is a plain 404 so the
+        endpoint never leaks files or serves attacker-controlled content types.
+        """
+        requested = request.path_params.get("asset", "")
+        target = (ADMIN_ASSET_ROOT / requested).resolve()
+        media_type = ASSET_MEDIA_TYPES.get(target.suffix.lower())
+        if (media_type is None or not target.is_file()
+                or not target.is_relative_to(ADMIN_ASSET_ROOT)):
+            return Response("Not found", status_code=404)
+        return FileResponse(target, media_type=media_type, headers={
             "Cache-Control": "no-store",
             "Pragma": "no-cache",
             "Expires": "0",
@@ -840,6 +880,7 @@ class AdminAPI:
     # error mapping; ``none`` keeps the handler's own cleanup/audit handling.
     ROUTE_TABLE: tuple[_Route, ...] = (
         _Route("/admin/console", ("GET",), "handle_admin", "static", errors="none"),
+        _Route("/admin/console/static/{asset:path}", ("GET",), "handle_asset", "asset", errors="none"),
         _Route("/api/memories", ("GET",), "handle_list_memories", "read"),
         _Route("/api/memories", ("POST",), "handle_add_memory", "write"),
         _Route("/api/memories", ("DELETE",), "handle_clear_memories", "action", action="clear"),

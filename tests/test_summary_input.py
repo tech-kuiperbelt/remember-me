@@ -3,13 +3,13 @@
 import asyncio
 import json
 import sys
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
 from app.embedding.embed import EmbeddingInputTooLong
 from app.domain.summary_policy import derive_summary, normalize_summary
+from tests.conftest import frontend_source
 
 
 def test_derive_summary_prefers_complete_first_sentence():
@@ -135,7 +135,7 @@ def test_http_embedding_input_too_long_returns_413(monkeypatch, handler, body, a
 def test_online_summary_generation_route_and_ui_are_removed(admin):
     admin_routes = admin.routes
     assert all(route.path != "/api/summarize" for route in admin_routes)
-    ui = Path("web/index.html").read_text(encoding="utf-8")
+    ui = frontend_source()
     assert "doSummarize" not in ui
     assert "btn-summarize" not in ui
     assert "summary_fallback" not in ui
@@ -144,6 +144,6 @@ def test_online_summary_generation_route_and_ui_are_removed(admin):
 def test_online_recover_route_and_ui_are_present(admin):
     admin_routes = admin.routes
     assert any(route.path == "/api/recover" for route in admin_routes)
-    ui = Path("web/index.html").read_text(encoding="utf-8")
+    ui = frontend_source()
     assert "doRecover" in ui
     assert "btn-recover" in ui

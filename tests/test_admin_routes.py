@@ -12,9 +12,10 @@ from app.domain.lexical import LexicalQueryError
 from app.domain.namespace_policy import InvalidNamespace, NamespaceNotFound
 from app.service import InvalidSearchFilter
 
-ALLOWED_POLICIES = {"static", "read", "write", "action", "control", "exempt"}
+ALLOWED_POLICIES = {"static", "asset", "read", "write", "action", "control", "exempt"}
 EXPECTED_ORDER = [
     ("/admin/console", ("GET",)),
+    ("/admin/console/static/{asset:path}", ("GET",)),
     ("/api/memories", ("GET",)),
     ("/api/memories", ("POST",)),
     ("/api/memories", ("DELETE",)),

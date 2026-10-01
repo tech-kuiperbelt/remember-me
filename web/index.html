@@ -4,76 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Memory Admin</title>
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f5f5;color:#333;min-height:100vh}
-.header{background:#4a90d9;color:#fff;padding:16px 24px;display:flex;align-items:center;justify-content:space-between}
-.header h1{font-size:20px;font-weight:600}
-.header .sub{font-size:13px;opacity:.85}
-.nav{background:#fff;border-bottom:1px solid #e0e0e0;display:flex;padding:0 24px;position:sticky;top:0;z-index:10}
-.nav a{padding:12px 18px;text-decoration:none;color:#555;font-size:14px;border-bottom:2px solid transparent;transition:.15s;cursor:pointer}
-.nav a:hover{color:#4a90d9}
-.nav a.active{color:#4a90d9;border-bottom-color:#4a90d9}
-.content{padding:24px;max-width:1200px;margin:0 auto}
-.page{display:none}
-.page.active{display:block}
-.card{background:#fff;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.08);margin-bottom:16px;overflow:hidden}
-.card-header{padding:14px 18px;border-bottom:1px solid #f0f0f0;font-weight:600;font-size:15px;display:flex;justify-content:space-between;align-items:center}
-.ns-tabs{padding:0 18px;border-bottom:1px solid #f0f0f0;display:flex;gap:4px;background:#fafafa;flex-wrap:wrap}
-.ns-tab{padding:8px 16px;font-size:13px;cursor:pointer;color:#666;border-bottom:2px solid transparent;transition:.15s;user-select:none}
-.ns-tab:hover{color:#4a90d9}
-.ns-tab.active{color:#4a90d9;border-bottom-color:#4a90d9;font-weight:600}
-.card-body{padding:18px}
-table{width:100%;border-collapse:collapse;font-size:13px}
-th,td{text-align:left;padding:10px 12px;border-bottom:1px solid #f0f0f0}
-th{background:#fafafa;font-weight:600;color:#555;font-size:12px;text-transform:uppercase;letter-spacing:.5px;-webkit-user-select:none;user-select:none}
-th.sortable:hover{background:#f0f4ff;color:#4a90d9}
-tr:hover{background:#f8fbff}
-tr.selected{background:#e8f4fd}
-.memory-text{max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;background:#e8f0fe;color:#4a90d9}
-.badge.ns{background:#e8f5e9;color:#388e3c}
-.btn{display:inline-flex;align-items:center;gap:4px;padding:6px 14px;border:none;border-radius:6px;font-size:13px;cursor:pointer;transition:.15s;text-decoration:none}
-.btn-primary{background:#4a90d9;color:#fff}
-.btn-primary:hover{background:#3a7bc8}
-.btn-danger{background:#e53935;color:#fff}
-.btn-danger:hover{background:#c62828}
-.btn-outline{background:transparent;border:1px solid #ddd;color:#555}
-.btn-outline:hover{background:#f5f5f5}
-.btn-sm{padding:4px 10px;font-size:12px}
-.form-group{margin-bottom:14px}
-.form-group label{display:block;font-size:13px;font-weight:600;margin-bottom:4px;color:#555}
-.form-group input,.form-group textarea,.form-group select{width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;outline:0;transition:.15s}
-.form-group input:focus,.form-group textarea:focus,.form-group select:focus{border-color:#4a90d9;box-shadow:0 0 0 3px rgba(74,144,217,.15)}
-.form-group textarea{min-height:80px;resize:vertical;font-family:inherit}
-.form-row{display:flex;gap:12px}
-.form-row .form-group{flex:1}
-.pagination{display:flex;align-items:center;gap:8px;padding:12px 0;font-size:13px;justify-content:center}
-.pagination button{min-width:32px}
-.empty-state{text-align:center;padding:40px;color:#999;font-size:14px}
-.toast{position:fixed;bottom:24px;right:24px;padding:12px 20px;border-radius:8px;color:#fff;font-size:13px;z-index:999;animation:slideUp .3s;max-width:400px}
-.toast.success{background:#43a047}
-.toast.error{background:#e53935}
-.toast.info{background:#4a90d9}
-@keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
-.loading{text-align:center;padding:30px;color:#999}
-.detail-field{margin-bottom:12px}
-.detail-field .label{font-size:12px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}
-.detail-field .value{font-size:14px;word-break:break-all}
-.ns-wrapper{position:relative;overflow:visible}
-.ns-dropdown{position:absolute;top:100%;left:0;right:0;z-index:999;background:#fff;border:1px solid #ddd;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.12);max-height:160px;overflow-y:auto;display:none}
-.ns-dropdown div{padding:8px 10px;font-size:13px;cursor:pointer;transition:.1s}
-.ns-dropdown div:hover{background:#f0f4ff;color:#4a90d9}
-.metadata-view{background:#f8f9fa;padding:10px;border-radius:6px;font-family:monospace;font-size:12px;white-space:pre-wrap;max-height:200px;overflow:auto}
-pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overflow:auto;max-height:300px}
-.actions{display:flex;gap:6px;flex-wrap:wrap}
-.flex-between{display:flex;justify-content:space-between;align-items:center}
-.search-highlight{background:#fff3cd;padding:0 2px}
-.debug-ids [id]{outline:1px dashed #e53935;outline-offset:1px;position:relative}
-.debug-ids [id]::before{content:attr(id);position:absolute;top:-1px;left:-1px;font-size:10px;background:#e53935;color:#fff;padding:1px 4px;border-radius:0 0 4px 0;z-index:999;font-family:monospace;line-height:1.2;white-space:nowrap;cursor:pointer}
-.debug-focus{outline:3px solid #4caf50!important;outline-offset:3px;box-shadow:0 0 0 5px rgba(76,175,80,.25),0 4px 16px rgba(76,175,80,.15);background:rgba(76,175,80,.06);transition:all .2s}
-@media(max-width:768px){.form-row{flex-direction:column}.content{padding:12px}.nav{overflow-x:auto}.nav a{white-space:nowrap}}
-</style>
+<link rel="stylesheet" href="/admin/console/static/app.css">
 </head>
 <body>
 
@@ -83,19 +14,19 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
     <div class="sub" id="server-info">remember-me MCP Server</div>
   </div>
   <div>
-    <button id="btn-refresh" class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.4)" onclick="refreshStats()">Refresh</button>
-    <button id="btn-debug" class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.4);margin-left:8px" onclick="toggleDebug()">Debug</button>
+    <button id="btn-refresh" class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.4)">Refresh</button>
+    <button id="btn-debug" class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.4);margin-left:8px">Debug</button>
   </div>
 </div>
 
 <div class="nav" id="nav">
-  <a id="nav-memories" class="active" onclick="switchPage('memories')">Memories</a>
-  <a id="nav-search" onclick="switchPage('search')">Search</a>
-  <a id="nav-add" onclick="switchPage('add')">Add Memory</a>
-  <a id="nav-keywords" onclick="switchPage('keywords')">Keywords</a>
-  <a id="nav-stats" onclick="switchPage('stats')">Stats</a>
-  <a id="nav-ops" onclick="switchPage('ops')">配置</a>
-  <a id="nav-audit" onclick="switchPage('audit')">Audit</a>
+  <a id="nav-memories" class="active" data-page="memories">Memories</a>
+  <a id="nav-search" data-page="search">Search</a>
+  <a id="nav-add" data-page="add">Add Memory</a>
+  <a id="nav-keywords" data-page="keywords">Keywords</a>
+  <a id="nav-stats" data-page="stats">Stats</a>
+  <a id="nav-ops" data-page="ops">配置</a>
+  <a id="nav-audit" data-page="audit">Audit</a>
 </div>
 <div id="maintenance-banner" style="display:none;padding:8px 16px;background:#fff3cd;color:#7a5300">Maintenance is active. Memory writes are paused; searches remain available.</div>
 
@@ -106,10 +37,10 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
   <div class="card">
     <div class="card-header">
       <span id="memories-title">Memories</span>
-      <button id="btn-clear-ns" class="btn btn-danger btn-sm" onclick="clearNamespace()">Clear</button>
+      <button id="btn-clear-ns" class="btn btn-danger btn-sm">Clear</button>
     </div>
     <div class="ns-tabs" id="ns-tabs">
-      <span class="ns-tab active" data-ns="" onclick="switchNamespace(this, '')">All Namespaces</span>
+      <span class="ns-tab active" data-ns="">All Namespaces</span>
     </div>
     <div class="card-body" style="padding:0">
       <div id="memories-list"><div class="loading">Loading...</div></div>
@@ -124,13 +55,13 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
     <div class="card-header">
       <span>Search</span>
       <div class="ns-tabs" id="search-mode-tabs" style="padding:0;border-bottom:none;background:none">
-        <span class="ns-tab active" data-mode="semantic" onclick="switchSearchMode('semantic')">语义搜索</span>
-        <span class="ns-tab" data-mode="list" onclick="switchSearchMode('list')">精确查询</span>
+        <span class="ns-tab active" data-mode="semantic">语义搜索</span>
+        <span class="ns-tab" data-mode="list">精确查询</span>
       </div>
     </div>
     <div class="card-body">
       <!-- Semantic mode -->
-      <form id="form-search" onsubmit="doSearch(event)" novalidate>
+      <form id="form-search" novalidate>
         <div id="search-mode-semantic">
           <div class="form-group">
             <label>Query</label>
@@ -158,7 +89,7 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
           <div class="form-row">
             <div class="form-group">
               <label>Namespace</label>
-              <select id="list-ns" onchange="updateKeywordDropdown()">
+              <select id="list-ns">
                 <option value="">(all)</option>
               </select>
             </div>
@@ -189,10 +120,10 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
             </div>
             <div class="form-group" style="flex:2">
               <label>Keywords (OR)</label>
-              <input id="list-keyword-query" placeholder="Find keyword" oninput="updateKeywordDropdown()">
+              <input id="list-keyword-query" placeholder="Find keyword">
               <select id="list-keywords" multiple size="4">
               </select>
-              <button id="list-keyword-more" class="btn btn-sm btn-outline" type="button" onclick="updateKeywordDropdown(true)">Load more keywords</button>
+              <button id="list-keyword-more" class="btn btn-sm btn-outline" type="button">Load more keywords</button>
               <span id="list-keyword-status"></span>
             </div>
           </div>
@@ -209,7 +140,7 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
   <div class="card">
     <div class="card-header">Add New Memory</div>
     <div class="card-body">
-      <form id="form-add" onsubmit="doAdd(event)">
+      <form id="form-add">
         <div class="form-group">
           <label>Text *</label>
           <textarea id="add-text" required></textarea>
@@ -233,19 +164,19 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
   <div class="card">
     <div class="card-header">Keywords</div>
     <div class="card-body">
-      <form onsubmit="event.preventDefault(); loadKeywords(true)">
+      <form id="form-keywords">
         <div class="form-row">
-          <div class="form-group"><label>Namespace</label><select id="kw-ns" onchange="loadKeywords(true)"><option value="">(all)</option></select></div>
-          <div class="form-group"><label>Query</label><input id="kw-query" placeholder="Keyword or concept" oninput="invalidateKeywords()"></div>
-          <div class="form-group"><label>Match</label><select id="kw-mode" onchange="loadKeywords(true)"><option value="literal">Literal</option><option value="semantic">Semantic</option></select></div>
-          <div class="form-group"><label>Sort</label><select id="kw-sort" onchange="loadKeywords(true)"><option value="count">Usage count</option><option value="keyword">Keyword</option></select></div>
+          <div class="form-group"><label>Namespace</label><select id="kw-ns"><option value="">(all)</option></select></div>
+          <div class="form-group"><label>Query</label><input id="kw-query" placeholder="Keyword or concept"></div>
+          <div class="form-group"><label>Match</label><select id="kw-mode"><option value="literal">Literal</option><option value="semantic">Semantic</option></select></div>
+          <div class="form-group"><label>Sort</label><select id="kw-sort"><option value="count">Usage count</option><option value="keyword">Keyword</option></select></div>
         </div>
         <button class="btn btn-primary" type="submit">Search</button>
       </form>
       <p>Semantic scores indicate similarity, not interchangeable meanings. Counts reflect the selected namespace.</p>
       <div id="kw-results"></div>
-      <button id="kw-prev" class="btn btn-outline" onclick="keywordPage(-1)" disabled>Previous</button>
-      <button id="kw-next" class="btn btn-outline" onclick="keywordPage(1)" disabled>Next</button>
+      <button id="kw-prev" class="btn btn-outline" disabled>Previous</button>
+      <button id="kw-next" class="btn btn-outline" disabled>Next</button>
     </div>
   </div>
 </div>
@@ -258,19 +189,19 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
 </div>
 
 <!-- Detail modal -->
-<div id="detail-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);z-index:100;align-items:center;justify-content:center" onclick="closeDetail(event)">
-  <div style="background:#fff;border-radius:12px;width:700px;max-width:95vw;height:90vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.2)" onclick="event.stopPropagation()">
+<div id="detail-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);z-index:100;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:12px;width:700px;max-width:95vw;height:90vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.2)">
     <div style="padding:18px 20px;border-bottom:1px solid #f0f0f0;display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
       <strong id="detail-title" style="font-size:16px">Memory Detail</strong>
-      <button id="btn-detail-close" class="btn btn-sm btn-outline" onclick="closeDetail()">✕</button>
+      <button id="btn-detail-close" class="btn btn-sm btn-outline">✕</button>
     </div>
     <div style="padding:20px;overflow-y:auto;flex:1" id="detail-body"></div>
   </div>
 </div>
 
 <!-- Clear confirmation modal -->
-<div id="clear-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:200;align-items:center;justify-content:center" onclick="closeClearModal(event)">
-  <div style="background:#fff;border-radius:12px;width:480px;max-width:92vw;padding:24px;box-shadow:0 8px 32px rgba(0,0,0,.25)" onclick="event.stopPropagation()">
+<div id="clear-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:200;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:12px;width:480px;max-width:92vw;padding:24px;box-shadow:0 8px 32px rgba(0,0,0,.25)">
     <div style="font-size:16px;font-weight:700;color:#e53935;margin-bottom:8px">⚠️ Confirm Clear</div>
     <div style="font-size:13px;color:#666;margin-bottom:16px">
       This will permanently delete <strong id="clear-confirm-scope"></strong>. This cannot be undone.<br>
@@ -278,11 +209,11 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
     </div>
     <div style="text-align:center;font-size:28px;font-weight:700;letter-spacing:6px;font-family:monospace;background:#f8f9fa;padding:12px;border-radius:8px;margin-bottom:16px;user-select:text" id="clear-confirm-code">ABCDef12</div>
     <div class="form-group">
-      <input id="clear-confirm-input" placeholder="Enter the code above" style="text-align:center;font-size:18px;font-family:monospace;letter-spacing:4px;text-transform:none" oninput="checkClearCode()" onkeydown="if(event.key==='Enter'){checkClearCode(true)}">
+      <input id="clear-confirm-input" placeholder="Enter the code above" style="text-align:center;font-size:18px;font-family:monospace;letter-spacing:4px;text-transform:none">
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button id="btn-clear-cancel" class="btn btn-outline" onclick="closeClearModal()">Cancel</button>
-      <button id="btn-clear-confirm" class="btn btn-danger" disabled onclick="doClearConfirmed()">Confirm Clear</button>
+      <button id="btn-clear-cancel" class="btn btn-outline">Cancel</button>
+      <button id="btn-clear-confirm" class="btn btn-danger" disabled>Confirm Clear</button>
     </div>
   </div>
 </div>
@@ -313,7 +244,7 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
         <input id="model-proxy-url" type="password" autocomplete="off" placeholder="http://127.0.0.1:7890">
         <span id="model-proxy-saved" style="font-size:13px;color:#666"></span>
       </div>
-      <button id="btn-model-save" class="btn btn-primary" disabled onclick="saveModelConfig()">保存配置</button>
+      <button id="btn-model-save" class="btn btn-primary" disabled>保存配置</button>
       <p id="model-config-result" role="status"></p>
       <p style="font-size:13px;color:#666">代理与自动下载设置用于下次模型准备。模型未就绪时保存会重试当前任务，无需重启。</p>
     </div>
@@ -327,15 +258,15 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
       <progress id="model-progress" max="100" style="width:100%;height:20px" aria-label="模型下载进度"></progress>
       <p id="model-progress-detail" style="font-size:13px;color:#666"></p>
       <p id="model-error" style="color:#c62828" role="alert"></p>
-      <button id="btn-model-retry" class="btn btn-outline" onclick="retryModel()">重试准备模型</button>
+      <button id="btn-model-retry" class="btn btn-outline">重试准备模型</button>
     </div>
   </div>
   <div class="card">
     <div class="card-header">Maintenance Mode</div>
     <div class="card-body">
       <p id="maintenance-status">Loading maintenance status...</p>
-      <button id="btn-maintenance-enter" class="btn btn-primary" onclick="enterMaintenance()">Enter Maintenance</button>
-      <button id="btn-maintenance-exit" class="btn btn-outline" onclick="exitMaintenance()">Exit Maintenance</button>
+      <button id="btn-maintenance-enter" class="btn btn-primary">Enter Maintenance</button>
+      <button id="btn-maintenance-exit" class="btn btn-outline">Exit Maintenance</button>
       <span id="maintenance-result" style="margin-left:12px;font-size:13px"></span>
     </div>
   </div>
@@ -344,8 +275,8 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
     <div class="card-header">Server</div>
     <div class="card-body">
       <p style="font-size:13px;color:#888;margin-bottom:12px">Restart or shut down after active work finishes. Shutdown requires starting the server again from the terminal.</p>
-      <button id="btn-restart" class="btn btn-primary" onclick="doRestartServer()">Restart Server</button>
-      <button id="btn-shutdown" class="btn btn-danger" onclick="doShutdownServer()">Shut Down Server</button>
+      <button id="btn-restart" class="btn btn-primary">Restart Server</button>
+      <button id="btn-shutdown" class="btn btn-danger">Shut Down Server</button>
       <span id="restart-result" style="margin-left:12px;font-size:13px"></span>
     </div>
   </div>
@@ -356,7 +287,7 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
     <div class="card-body">
       <p style="color:#c62828">Replaces all memories in the current database from an uploaded JSONL backup.</p>
       <input id="recover-file" type="file" accept=".jsonl,.ndjson,application/x-ndjson">
-      <button id="btn-recover" class="btn btn-danger" onclick="doRecover()">Recover</button>
+      <button id="btn-recover" class="btn btn-danger">Recover</button>
       <span id="recover-result" style="margin-left:12px;font-size:13px"></span>
     </div>
   </div>
@@ -376,7 +307,7 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
         </div>
       </div>
       <div style="margin-top:16px">
-        <button id="btn-import" class="btn btn-primary" onclick="doImport()">Import</button>
+        <button id="btn-import" class="btn btn-primary">Import</button>
         <span id="import-result" style="margin-left:12px;font-size:13px"></span>
       </div>
     </div>
@@ -394,8 +325,8 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
         </div>
       </div>
       <div style="margin-top:16px">
-        <button id="btn-export-full" class="btn btn-primary" onclick="doExportFull()">Full Export</button>
-        <button id="btn-export-ns" class="btn btn-outline" onclick="doExportNamespace()">Export Namespace</button>
+        <button id="btn-export-full" class="btn btn-primary">Full Export</button>
+        <button id="btn-export-ns" class="btn btn-outline">Export Namespace</button>
         <span id="export-result" style="margin-left:12px;font-size:13px"></span>
       </div>
     </div>
@@ -406,7 +337,7 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
     <div class="card-header">Sync（手动备份）</div>
     <div class="card-body">
       <p style="font-size:13px;color:#888;margin-bottom:12px">手动将主库（SQLite）完整同步到灾备副本（JSONL）。<span id="sync-paths" style="color:#666"></span></p>
-      <button id="btn-sync" class="btn btn-primary" onclick="doSync()">Sync Now（SQLite → JSONL）</button>
+      <button id="btn-sync" class="btn btn-primary">Sync Now（SQLite → JSONL）</button>
       <span id="sync-result" style="margin-left:12px;font-size:13px"></span>
     </div>
   </div>
@@ -423,7 +354,7 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
         </select>
       </div>
       <div style="margin-top:16px">
-        <button id="btn-clear" class="btn btn-danger" onclick="doClearAll()">Clear</button>
+        <button id="btn-clear" class="btn btn-danger">Clear</button>
         <span id="clear-result" style="margin-left:12px;font-size:13px"></span>
       </div>
     </div>
@@ -448,7 +379,7 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
         </div>
       </div>
       <div style="margin-top:16px">
-        <button id="btn-migrate" class="btn btn-danger" onclick="doMigrate()">Migrate</button>
+        <button id="btn-migrate" class="btn btn-danger">Migrate</button>
         <span id="migrate-result" style="margin-left:12px;font-size:13px"></span>
       </div>
     </div>
@@ -460,13 +391,13 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
   <div class="card">
     <div class="card-header">
       <span>Audit（工具调用与后台任务日志）</span>
-      <button id="btn-audit-refresh" class="btn btn-outline btn-sm" onclick="loadAudit()">Refresh</button>
+      <button id="btn-audit-refresh" class="btn btn-outline btn-sm">Refresh</button>
     </div>
     <div class="card-body">
       <div class="form-row" style="margin-bottom:12px">
         <div class="form-group">
           <label>工具</label>
-          <select id="audit-tool" onchange="loadAudit()">
+          <select id="audit-tool">
             <option value="">全部</option>
             <option value="add">add</option>
             <option value="search_semantic">search_semantic</option>
@@ -480,7 +411,7 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
         </div>
         <div class="form-group">
           <label>Namespace</label>
-          <input id="audit-namespace" placeholder="全部" style="padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px" onkeydown="if(event.key==='Enter')loadAudit()">
+          <input id="audit-namespace" placeholder="全部" style="padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px">
         </div>
         <div class="form-group">
           <label>条数</label>
@@ -508,1260 +439,6 @@ pre.json{background:#f8f9fa;padding:12px;border-radius:6px;font-size:12px;overfl
 
 </div>
 
-<script>
-// State
-let memoriesOffset = 0;
-const MEMORIES_LIMIT = 20;
-let currentMemories = [];
-let allNamespaces = [];
-let currentNamespace = '';
-let statsData = null;
-let sortField = 'created_at';
-let sortDir = 'desc';
-
-// Helpers
-function $(id) { return document.getElementById(id) }
-
-function formatTime(isoStr) {
-  if (!isoStr) return '';
-  const d = new Date(isoStr);
-  if (isNaN(d.getTime())) return isoStr;
-  return d.toLocaleString();
-}
-
-function toast(msg, type='success') {
-  const t = document.createElement('div');
-  t.className = 'toast ' + type;
-  t.textContent = msg;
-  document.body.appendChild(t);
-  setTimeout(() => t.remove(), 3000);
-}
-
-function api(path, opts={}) {
-  return fetch('/api' + path, {
-    headers: {'Content-Type': 'application/json', ...opts.headers},
-    ...opts,
-  }).then(r => {
-    if (!r.ok) return r.json().then(e => {
-      // Keep the full payload so callers can react to machine-readable codes
-      // (e.g. namespace_not_found) instead of parsing the message.
-      const err = new Error(e.detail || r.statusText);
-      err.status = r.status;
-      err.payload = e;
-      throw err;
-    });
-    return r.json();
-  });
-}
-
-// Namespace governance: an unknown namespace is rejected with
-// response_code="namespace_not_found"; the operator confirms, then we retry with the
-// matching confirmation code. Confirmation only bypasses existence — format
-// and length checks still apply.
-function isNamespaceNotFound(e) {
-  return !!(e && e.payload && e.payload.response_code === 'namespace_not_found');
-}
-
-function confirmNamespaceCreation(e) {
-  const meta = (e.payload && e.payload.response_meta) || {};
-  const requested = meta.requested_namespace || 'this namespace';
-  const known = (meta.known_namespaces || []).join(', ') || '(none)';
-  return confirm(
-    'Namespace "' + requested + '" does not exist.\n\n' +
-    'Existing namespaces: ' + known + '\n\n' +
-    'Create it and continue?'
-  );
-}
-
-// Navigation
-function switchPage(name) {
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.nav a').forEach(a => a.classList.remove('active'));
-  $('page-' + name).classList.add('active');
-  document.querySelector(`.nav a[onclick*="${name}"]`).classList.add('active');
-  if (name === 'memories') loadMemories();
-  if (name === 'stats') loadStats();
-  if (name === 'keywords') loadKeywords(true);
-  if (name === 'ops') loadOpsPage();
-  if (name === 'audit') loadAudit();
-}
-
-// Memories list
-async function loadMemories() {
-  const params = new URLSearchParams({limit: MEMORIES_LIMIT, offset: memoriesOffset});
-  if (currentNamespace) params.set('namespace', currentNamespace);
-  $('memories-list').innerHTML = '<div class="loading">Loading...</div>';
-  try {
-    const data = await api('/memories?' + params.toString());
-    currentMemories = data;
-    renderMemories(data);
-    updateNsTabs();
-  } catch(e) {
-    showError('memories-list', e);
-  }
-}
-
-function toggleSort(field) {
-  if (sortField === field) {
-    sortDir = sortDir === 'asc' ? 'desc' : 'asc';
-  } else {
-    sortField = field;
-    sortDir = 'asc';
-  }
-  renderMemories(currentMemories);
-}
-
-function sortMemories(data) {
-  if (!sortField) return data;
-  const sorted = [...data];
-  sorted.sort((a, b) => {
-    let va = a[sortField] || '';
-    let vb = b[sortField] || '';
-    if (typeof va === 'string') va = va.toLowerCase();
-    if (typeof vb === 'string') vb = vb.toLowerCase();
-    if (va < vb) return sortDir === 'asc' ? -1 : 1;
-    if (va > vb) return sortDir === 'asc' ? 1 : -1;
-    return 0;
-  });
-  return sorted;
-}
-
-function sortArrow(field) {
-  if (sortField !== field) return ' ↕';
-  return sortDir === 'asc' ? ' ↑' : ' ↓';
-}
-
-function showError(id, error) {
-  const message = document.createElement('div');
-  message.className = 'empty-state';
-  message.textContent = 'Error: ' + error.message;
-  $(id).replaceChildren(message);
-}
-
-function bindMemoryRows(root, memories) {
-  root.querySelectorAll('tbody tr').forEach((row, i) => {
-    const memory = memories[i];
-    row.querySelector('.memory-text').title = memory.summary || deriveSummary(memory.text);
-    row.querySelectorAll('[data-memory-action]').forEach(button => {
-      button.onclick = () => {
-        const action = button.dataset.memoryAction;
-        if (action === 'viewDetail') viewDetail(memory.id);
-        else if (action === 'editMemory') editMemory(memory.id);
-        else if (action === 'deleteMemory') deleteMemory(memory.id);
-      };
-    });
-  });
-}
-
-function renderMemories(data) {
-  if (!data.length) {
-    $('memories-list').innerHTML = '<div class="empty-state">No memories found</div>';
-    $('memories-pagination').innerHTML = '';
-    return;
-  }
-  const sorted = sortMemories(data);
-  let html = '<table id="memories-table"><thead><tr>' +
-    `<th class="sortable" onclick="toggleSort('text')">Text${sortArrow('text')}</th>` +
-    `<th class="sortable" onclick="toggleSort('namespace')">Namespace${sortArrow('namespace')}</th>` +
-    `<th class="sortable" onclick="toggleSort('created_at')">Created${sortArrow('created_at')}</th>` +
-    '<th style="width:160px">Actions</th></tr></thead><tbody>';
-  sorted.forEach(m => {
-    const displayText = m.summary || deriveSummary(m.text);
-    html += `<tr>
-      <td><div class="memory-text">${esc(displayText)}</div></td>
-      <td><span class="badge ns">${esc(m.namespace)}</span></td>
-      <td style="font-size:12px;color:#888">${formatTime(m.created_at)}</td>
-      <td><div class="actions">
-        <button class="btn btn-sm btn-outline" data-memory-action="viewDetail">View</button>
-        <button class="btn btn-sm btn-outline" data-memory-action="editMemory">Edit</button>
-        <button class="btn btn-sm btn-danger" data-memory-action="deleteMemory">Del</button>
-      </div></td>
-    </tr>`;
-  });
-  html += '</tbody></table>';
-  $('memories-list').innerHTML = html;
-  bindMemoryRows($('memories-list'), sorted);
-
-  // Pagination
-  const hasMore = data.length >= MEMORIES_LIMIT;
-  $('memories-pagination').innerHTML = `
-    <button class="btn btn-sm btn-outline" onclick="memoriesOffset=0;loadMemories()" ${memoriesOffset <= 0 ? 'disabled' : ''}>First</button>
-    <button class="btn btn-sm btn-outline" onclick="memoriesOffset=Math.max(0,memoriesOffset-${MEMORIES_LIMIT});loadMemories()" ${memoriesOffset <= 0 ? 'disabled' : ''}>Prev</button>
-    <span style="color:#888">offset ${memoriesOffset}</span>
-    <button class="btn btn-sm btn-outline" onclick="memoriesOffset+=${MEMORIES_LIMIT};loadMemories()" ${hasMore ? '' : 'disabled'}>Next</button>
-  `;
-}
-
-// View detail
-async function viewDetail(id) {
-  try {
-    const m = await api('/memories/' + encodeURIComponent(id));
-    showDetail(m, false);
-  } catch(e) {
-    toast(e.message, 'error');
-  }
-}
-
-async function editMemory(id) {
-  try {
-    const m = await api('/memories/' + encodeURIComponent(id));
-    showDetail(m, true);
-  } catch(e) {
-    toast(e.message, 'error');
-  }
-}
-
-let _currentDetailText = '';
-let _copyBtnTimer = null;
-
-function showDetail(m, editable) {
-  $('detail-title').textContent = 'Memory: ' + m.id.slice(0,8) + '…';
-  _currentDetailText = m.text;
-  const metaStr = JSON.stringify(m.metadata || {}, null, 2);
-
-  const textHtml = editable
-    ? `<div style="flex:1;display:flex;flex-direction:column"><textarea id="edit-text" style="flex:1;min-height:0;width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;font-family:inherit;resize:none">${esc(m.text)}</textarea></div>`
-    : `<div class="value" style="white-space:pre-wrap">${esc(m.text)}</div>`;
-
-  const nsHtml = editable
-    ? '<div class="ns-wrapper"><input id="edit-namespace" autocomplete="off" style="padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;width:100%"><div id="ns-dropdown" class="ns-dropdown"></div></div>'
-    : `<span class="badge ns">${esc(m.namespace)}</span>`;
-
-  const textFieldStyle = editable ? ' style="flex:1;display:flex;flex-direction:column;min-height:0"' : '';
-
-  const actionsHtml = '<div id="detail-actions" style="display:flex;gap:8px"></div>';
-
-  $('detail-body').setAttribute('style', 'padding:20px;overflow-y:auto;flex:1' + (editable ? ';display:flex;flex-direction:column' : ''));
-  const summaryHtml = m.summary
-    ? `<div class="value" style="white-space:pre-wrap">${esc(m.summary)}</div>`
-    : `<div class="value" style="color:#999">(none)</div>`;
-  $('detail-body').innerHTML = `
-    <div class="detail-field"><div class="label">ID</div><div class="value">${esc(m.id)}</div></div>
-    <div class="detail-field"><div class="label">Summary</div>${summaryHtml}</div>
-    <div class="detail-field"${textFieldStyle}><div class="label">Text</div>${textHtml}</div>
-    <div class="detail-field"><div class="label">Namespace</div><div class="value">${nsHtml}</div></div>
-    <div class="detail-field"><div class="label">Created</div><div class="value">${formatTime(m.created_at) || '-'}</div></div>
-    <div class="detail-field"><div class="label">Updated</div><div class="value">${formatTime(m.updated_at) || '-'}</div></div>
-    <div class="detail-field"><div class="label">Score</div><div class="value">${m.score != null ? m.score.toFixed(6) : '-'}</div></div>
-    <div class="detail-field"><div class="label">Metadata</div><div class="metadata-view">${metaStr === '{}' ? '<span style="color:#999">(empty)</span>' : esc(metaStr)}</div></div>
-    <div style="margin-top:16px;display:flex;gap:8px;flex-shrink:0">${actionsHtml}</div>
-  `;
-  if (editable) {
-    $('edit-namespace').value = m.namespace;
-    $('edit-namespace').onfocus = showNsDropdown;
-    $('edit-namespace').onblur = () => setTimeout(hideNsDropdown, 150);
-    allNamespaces.forEach(ns => {
-      const option = document.createElement('div');
-      option.textContent = ns;
-      option.onmousedown = () => pickNs(ns);
-      $('ns-dropdown').append(option);
-    });
-  }
-  const actions = $('detail-actions');
-  const button = (label, fn, style='btn-outline') => {
-    const el = document.createElement('button');
-    el.className = 'btn btn-sm ' + style;
-    el.textContent = label;
-    el.onclick = () => fn(el);
-    actions.append(el);
-  };
-  button('Copy', el => copyDetailText(el));
-  if (editable) {
-    button('Save', () => saveEdit(m.id), 'btn-primary');
-    button('Cancel', closeDetail);
-  } else {
-    button('Edit', () => { closeDetail(); editMemory(m.id); });
-    button('Delete', () => { closeDetail(); deleteMemory(m.id); }, 'btn-danger');
-    button('Close', closeDetail);
-  }
-  $('detail-modal').style.display = 'flex';
-}
-
-async function saveEdit(id) {
-  const textEl = $('edit-text');
-  const nsEl = $('edit-namespace');
-  if (!textEl || !nsEl) { toast('Form not ready, reopen the edit dialog', 'error'); return }
-  const text = textEl.value;
-  const namespace = nsEl.value;
-  try {
-    let res;
-    try {
-      res = await api('/memories/' + encodeURIComponent(id), {
-        method: 'PUT',
-        body: JSON.stringify({text, namespace}),
-      });
-    } catch(err) {
-      if (!isNamespaceNotFound(err) || !confirmNamespaceCreation(err)) throw err;
-      res = await api('/memories/' + encodeURIComponent(id), {
-        method: 'PUT',
-        body: JSON.stringify({text, namespace, confirm_codes: ['namespace_not_found']}),
-      });
-    }
-    toast('Memory updated');
-    closeDetail();
-    loadMemories();
-    loadStats();
-  } catch(e) {
-    toast(e.message, 'error');
-  }
-}
-
-function copyDetailText(btn) {
-  const text = $('edit-text') ? $('edit-text').value : _currentDetailText;
-  navigator.clipboard.writeText(text).then(() => {
-    clearTimeout(_copyBtnTimer);
-    btn.textContent = 'Copied!';
-    btn.style.borderColor = '#4caf50';
-    btn.style.color = '#4caf50';
-    _copyBtnTimer = setTimeout(() => {
-      btn.textContent = 'Copy';
-      btn.style.borderColor = '';
-      btn.style.color = '';
-    }, 1200);
-  }).catch(() => {
-    toast('Copy failed (clipboard not available)', 'error');
-  });
-}
-
-function closeDetail(e) {
-  if (e && e.target !== e.currentTarget) return;
-  $('detail-modal').style.display = 'none';
-}
-
-// Delete
-async function deleteMemory(id) {
-  if (!confirm('Delete this memory?')) return;
-  try {
-    await api('/memories/' + encodeURIComponent(id), {method: 'DELETE'});
-    toast('Memory deleted');
-    loadMemories();
-  } catch(e) {
-    toast(e.message, 'error');
-  }
-}
-
-// Clear namespace
-async function clearNamespace() {
-  const ns = currentNamespace;
-  if (!ns) { toast('Select a namespace first', 'error'); return }
-  switchPage('ops');
-  $('clear-ns').value = ns;
-  toast('Enter maintenance mode, then use Clear in Ops.', 'info');
-}
-
-// Search
-function switchSearchMode(mode) {
-  document.querySelectorAll('#search-mode-tabs .ns-tab').forEach(t => t.classList.remove('active'));
-  document.querySelector(`#search-mode-tabs .ns-tab[data-mode="${mode}"]`).classList.add('active');
-  $('search-mode-semantic').style.display = mode === 'semantic' ? 'block' : 'none';
-  $('search-mode-list').style.display = mode === 'list' ? 'block' : 'none';
-  $('search-results').innerHTML = '';
-}
-
-async function doSearch(e) {
-  e.preventDefault();
-  const modeEl = document.querySelector('#search-mode-tabs .ns-tab.active');
-  const mode = modeEl ? modeEl.dataset.mode : 'semantic';
-  if (mode === 'list') return doListQuery();
-  const q = $('search-query').value;
-  if (!q.trim()) { toast('请输入搜索内容', 'error'); return; }
-  const k = parseInt($('search-k').value) || 10;
-  const threshold = parseFloat($('search-threshold').value) || 0;
-  const ns = $('search-ns').value || undefined;
-  $('search-results').innerHTML = '<div class="loading">Searching...</div>';
-  try {
-    const data = await api('/memories/search', {
-      method: 'POST',
-      body: JSON.stringify({query: q, k, threshold, namespace: ns}),
-    });
-    renderSearchResults(data);
-  } catch(e) {
-    showError('search-results', e);
-  }
-}
-
-// List mode: mirrors GET /api/memories (same filters as the list tool)
-async function doListQuery() {
-  const params = new URLSearchParams();
-  const ns = $('list-ns').value;
-  if (ns) params.set('namespace', ns);
-  params.set('limit', parseInt($('list-limit').value) || 100);
-  params.set('offset', parseInt($('list-offset').value) || 0);
-  params.set('sort_by', $('list-sort').value);
-  const after = $('list-updated-after').value;
-  const before = $('list-updated-before').value;
-  if (after) params.set('updated_after', new Date(after).toISOString());
-  if (before) params.set('updated_before', new Date(before).toISOString());
-  Array.from($('list-keywords').selectedOptions).forEach(o => params.append('keywords', o.value));
-  $('search-results').innerHTML = '<div class="loading">Loading...</div>';
-  try {
-    const data = await api('/memories?' + params.toString());
-    renderListResults(data, params.get('sort_by'));
-  } catch(e) {
-    showError('search-results', e);
-  }
-}
-
-function renderListResults(data, sortBy) {
-  if (!data.length) {
-    $('search-results').innerHTML = '<div class="empty-state">No memories found</div>';
-    return;
-  }
-  const sortLabel = sortBy === 'updated_at' ? 'Updated' : 'Created';
-  let html = '<table><thead><tr><th>Text</th><th>Namespace</th>' +
-    `<th>${sortLabel}</th>` +
-    '<th style="width:100px">Actions</th></tr></thead><tbody>';
-  data.forEach(m => {
-    const displayText = m.summary || deriveSummary(m.text);
-    const ts = sortBy === 'updated_at' ? m.updated_at : m.created_at;
-    html += `<tr>
-      <td><div class="memory-text">${esc(displayText)}</div></td>
-      <td><span class="badge ns">${esc(m.namespace)}</span></td>
-      <td style="font-size:12px;color:#888">${formatTime(ts)}</td>
-      <td><button class="btn btn-sm btn-outline" data-memory-action="viewDetail">View</button></td>
-    </tr>`;
-  });
-  html += '</tbody></table>';
-  $('search-results').innerHTML = html;
-  bindMemoryRows($('search-results'), data);
-}
-
-function renderSearchResults(data) {
-  if (!data.length) {
-    $('search-results').innerHTML = '<div class="empty-state">No results found</div>';
-    return;
-  }
-  let html = '<table><thead><tr><th>Score</th><th>Text</th><th>Namespace</th><th style="width:100px">Actions</th></tr></thead><tbody>';
-  data.forEach(m => {
-    const displayText = m.summary || deriveSummary(m.text);
-    html += `<tr>
-      <td><span class="badge">${(m.score * 100).toFixed(1)}%</span></td>
-      <td><div class="memory-text">${esc(displayText)}</div></td>
-      <td><span class="badge ns">${esc(m.namespace)}</span></td>
-      <td><button class="btn btn-sm btn-outline" data-memory-action="viewDetail">View</button></td>
-    </tr>`;
-  });
-  html += '</tbody></table>';
-  $('search-results').innerHTML = html;
-  bindMemoryRows($('search-results'), data);
-}
-
-// Add
-async function doAdd(e) {
-  e.preventDefault();
-  const text = $('add-text').value;
-  let meta = {};
-  try {
-    const raw = $('add-metadata').value;
-    if (raw.trim()) meta = JSON.parse(raw);
-  } catch(e) { toast('Invalid metadata JSON', 'error'); return }
-  const ns = $('add-ns').value || 'default';
-  try {
-    let r;
-    try {
-      r = await api('/memories', {
-        method: 'POST',
-        body: JSON.stringify({text, metadata: meta, namespace: ns}),
-      });
-    } catch(err) {
-      if (!isNamespaceNotFound(err) || !confirmNamespaceCreation(err)) throw err;
-      r = await api('/memories', {
-        method: 'POST',
-        body: JSON.stringify({text, metadata: meta, namespace: ns,
-                              confirm_codes: ['namespace_not_found']}),
-      });
-    }
-    toast('Memory added: ' + r.id);
-    $('add-text').value = '';
-    $('add-metadata').value = '';
-    loadStats();
-  } catch(e) {
-    toast(e.message, 'error');
-  }
-}
-
-// Stats
-function formatBytes(value) {
-  const bytes = Number(value) || 0;
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
-}
-
-function escapeHtml(value) {
-  const node = document.createElement('span');
-  node.textContent = String(value);
-  return node.innerHTML;
-}
-
-async function loadStats() {
-  $('stats-content').innerHTML = '<div class="loading">Loading...</div>';
-  try {
-    const s = await api('/stats');
-    const compact = s.ndjson_compact;
-    const integrity = s.replica_integrity || {};
-    const automaticHealth = s.ndjson_health_check;
-    const embeddingStorage = s.embedding_storage || {};
-    const embeddingProfiles = s.embedding_profile || {};
-    const activeProfile = embeddingProfiles.active || s.embed_profile || '-';
-    const configuredProfile = s.embed_profile || '-';
-    const profileState = activeProfile === configuredProfile ? 'active/configured' : 'active differs from configured';
-    const profileHtml = Array.isArray(embeddingProfiles.profiles) && embeddingProfiles.profiles.length ? `
-      <div class="detail-field"><div class="label">Embedding Profiles</div><div class="value">${embeddingProfiles.profiles.map(p =>
-        `<span class="badge" style="margin:2px">${escapeHtml(p.status)} · ${escapeHtml(p.provider)}/${escapeHtml(p.model)} · ${escapeHtml(p.dimension)}d · ${escapeHtml(p.dtype || '-')} · ${escapeHtml(p.vector_count || 0)} vectors</span>`
-      ).join(' ')}</div></div>
-    ` : '';
-    const ollamaHtml = s.embed_provider === 'ollama' ? `
-      <div class="detail-field"><div class="label">Ollama URL</div><div class="value">${escapeHtml(s.ollama_base_url || '-')}</div></div>
-    ` : '';
-    const compactHtml = compact ? `
-      <div class="detail-field"><div class="label">NDJSON Compact</div><div class="value">${compact.last_result || 'not yet checked'}</div></div>
-      <div class="detail-field"><div class="label">Last Check</div><div class="value">${compact.last_check_at || '-'}</div></div>
-      <div class="detail-field"><div class="label">Last Compact</div><div class="value">${compact.last_compact_at || '-'}</div></div>
-      <div class="detail-field"><div class="label">Last Reclaimed</div><div class="value">${formatBytes(compact.last_reclaimed_bytes || 0)} (${((compact.last_reclaimable_ratio || 0) * 100).toFixed(1)}%)</div></div>
-      <div class="detail-field"><div class="label">Next Check Due</div><div class="value">${compact.next_due_at || '-'}</div></div>
-      ${compact.last_error ? `<div class="detail-field"><div class="label">Compact Error</div><div class="value">${escapeHtml(compact.last_error)}</div></div>` : ''}
-    ` : '';
-    const replicaHealthHtml = s.backend === 'dual' ? `
-      <div class="detail-field"><div class="label">Replica Health</div><div class="value"><span class="badge" style="background:${s.in_sync ? '#e8f5e9' : '#ffebee'};color:${s.in_sync ? '#388e3c' : '#c62828'}">${s.in_sync ? 'IN SYNC' : 'OUT OF SYNC'}</span></div></div>
-      ${!s.in_sync ? '<div class="detail-field"><div class="label">Recovery Action</div><div class="value" style="color:#c62828">Run Full Export below to perform a verified Full Sync. The service will not repair replica drift automatically.</div></div>' : ''}
-      <div class="detail-field"><div class="label">Pending</div><div class="value">${escapeHtml(s.pending ?? '-')}</div></div>
-      <div class="detail-field"><div class="label">Replica Integrity</div><div class="value">Missing ${escapeHtml(integrity.missing ?? '-')} · Extra ${escapeHtml(integrity.extra ?? '-')} · Corrupt Lines ${escapeHtml(integrity.corrupt_lines ?? '-')}</div></div>
-      <div class="detail-field"><div class="label">Live Check</div><div class="value">${escapeHtml(integrity.checked_at || '-')}</div></div>
-      ${integrity.error ? `<div class="detail-field"><div class="label">Health Error</div><div class="value" style="color:#c62828">${escapeHtml(integrity.error)}</div></div>` : ''}
-      ${automaticHealth ? `
-        <div class="detail-field"><div class="label">Last Automatic Check</div><div class="value">${escapeHtml(automaticHealth.last_result || '-')} · ${escapeHtml(automaticHealth.last_check_at || '-')} · trigger ${escapeHtml(automaticHealth.last_trigger || '-')}</div></div>
-        <div class="detail-field"><div class="label">Next Automatic Check</div><div class="value">${escapeHtml(automaticHealth.next_due_at || '-')}</div></div>
-        ${automaticHealth.last_error ? `<div class="detail-field"><div class="label">Automatic Check Error</div><div class="value" style="color:#c62828">${escapeHtml(automaticHealth.last_error)}</div></div>` : ''}
-      ` : '<div class="detail-field"><div class="label">Automatic Check</div><div class="value">Not run yet</div></div>'}
-    ` : '';
-    $('stats-content').innerHTML = `
-      <div class="detail-field"><div class="label">Total Memories</div><div class="value" style="font-size:28px;font-weight:700">${s.total}</div></div>
-      <div class="detail-field"><div class="label">Backend</div><div class="value">${s.backend}</div></div>
-      <div class="detail-field"><div class="label">Storage Path</div><div class="value">${s.path}</div></div>
-      ${replicaHealthHtml}
-      <div class="detail-field"><div class="label">Embedding Provider</div><div class="value">${escapeHtml(s.embed_provider || '-')}</div></div>
-      <div class="detail-field"><div class="label">Embedding Model</div><div class="value">${escapeHtml(s.embed_model || '-')}</div></div>
-      <div class="detail-field"><div class="label">Embedding Shape</div><div class="value">${escapeHtml(s.embed_dimension || '-')}d · ${escapeHtml(s.embed_dtype || embeddingStorage.write_dtype || '-')}</div></div>
-      <div class="detail-field"><div class="label">Active Profile</div><div class="value">${escapeHtml(activeProfile)} · ${escapeHtml(profileState)}</div></div>
-      <div class="detail-field"><div class="label">Active Embedding Storage</div><div class="value">${embeddingStorage.count || 0} vectors · ${formatBytes(embeddingStorage.bytes || 0)} · ${escapeHtml(Object.entries(embeddingStorage.formats || {}).map(([format, count]) => `${format} × ${count}`).join(', ') || '-')}</div></div>
-      ${profileHtml}
-      ${ollamaHtml}
-      <div class="detail-field"><div class="label">Namespaces (${Object.keys(s.namespace_counts || {}).length})</div><div class="value">${renderNamespaceCounts(s.namespace_counts)}</div></div>
-      <div class="detail-field"><div class="label">Keywords (${s.keyword_total || 0})</div><div class="value"><button class="btn btn-outline" onclick="switchPage('keywords')">Browse keywords</button></div></div>
-      ${compactHtml}
-      <div style="margin-top:16px">
-        <button id="btn-stats-refresh" class="btn btn-sm btn-outline" onclick="loadStats()">Refresh</button>
-      </div>
-    `;
-    // Update namespace tabs and search dropdown
-    statsData = s;
-    allNamespaces = s.namespaces || [];
-    updateNsTabs();
-    updateSearchNsDropdown();
-    updateKeywordDropdown();
-    updateKeywordNamespaces();
-  } catch(e) {
-    showError('stats-content', e);
-  }
-}
-
-function renderNamespaceCounts(counts) {
-  if (!counts || !Object.keys(counts).length) return '<span style="color:#999">(none)</span>';
-  const total = Object.values(counts).reduce((a, b) => a + b, 0);
-  return Object.entries(counts).map(([ns, n]) =>
-    '<span class="badge ns" style="margin:2px">' + esc(ns) + ' · ' + n + '</span>'
-  ).join(' ') + `<span style="color:#999;font-size:12px;margin-left:8px">total ${total}</span>`;
-}
-
-function updateSearchNsDropdown() {
-  for (const id of ['search-ns', 'list-ns']) {
-    const sel = $(id), current = sel.value;
-    sel.replaceChildren(new Option('(all)', ''), ...allNamespaces.map(ns => new Option(ns, ns)));
-    sel.value = current;
-  }
-}
-
-let keywordRequest = 0, keywordOffset = 0;
-let dropdownRequest = 0, dropdownOffset = 0;
-function updateKeywordNamespaces() {
-  const sel = $('kw-ns'), value = sel.value;
-  sel.replaceChildren(new Option('(all)', ''), ...allNamespaces.map(ns => new Option(ns, ns)));
-  sel.value = value;
-}
-function invalidateKeywords() {
-  keywordRequest++;
-  keywordOffset = 0;
-  $('kw-prev').disabled = $('kw-next').disabled = true;
-  $('kw-results').textContent = 'Submit Search to update results.';
-}
-async function loadKeywords(reset=false) {
-  if (reset) keywordOffset = 0;
-  const request = ++keywordRequest;
-  const query = $('kw-query').value.trim();
-  const mode = query ? $('kw-mode').value : 'browse';
-  const semantic = mode === 'semantic';
-  $('kw-sort').disabled = semantic;
-  const body = {mode, limit: semantic ? 20 : 50, offset: semantic ? 0 : keywordOffset};
-  const namespace = $('kw-ns').value;
-  if (namespace) body.namespace = namespace;
-  if (query) body.queries = [query];
-  if (!semantic) body.sort_by = $('kw-sort').value;
-  $('kw-results').textContent = 'Loading...';
-  $('kw-prev').disabled = $('kw-next').disabled = true;
-  try {
-    const data = await api('/keywords/query', {method:'POST', body:JSON.stringify(body)});
-    if (request !== keywordRequest) return;
-    const group = data.results[0], root = $('kw-results');
-    root.replaceChildren();
-    const summary = document.createElement('p');
-    summary.textContent = group.total ? `${group.total} matches · showing ${body.offset + 1}–${body.offset + group.items.length}` : 'No matching keywords.';
-    root.append(summary);
-    group.items.forEach(item => {
-      const row = document.createElement('div'), button = document.createElement('button');
-      button.className = 'btn btn-sm btn-outline';
-      button.textContent = item.keyword;
-      button.onclick = () => openKeywordMemories(item.keyword, namespace);
-      row.append(button, document.createTextNode(` · ${item.count} memories` + (semantic ? ` · score ${item.score.toFixed(3)}` : '')));
-      root.append(row);
-    });
-    $('kw-prev').disabled = semantic || keywordOffset === 0;
-    $('kw-next').disabled = semantic || keywordOffset + group.items.length >= group.total;
-  } catch (e) {
-    if (request === keywordRequest) $('kw-results').textContent = 'Error: ' + e.message;
-  }
-}
-function keywordPage(direction) {
-  keywordOffset = Math.max(0, keywordOffset + direction * 50);
-  loadKeywords();
-}
-function openKeywordMemories(keyword, namespace) {
-  switchPage('search');
-  switchSearchMode('list');
-  $('list-ns').value = namespace;
-  $('list-offset').value = '0';
-  $('list-updated-after').value = $('list-updated-before').value = '';
-  $('list-keyword-query').value = '';
-  dropdownRequest++;
-  $('list-keywords').replaceChildren(new Option(keyword, keyword, true, true));
-  updateKeywordDropdown();
-  doListQuery();
-}
-async function updateKeywordDropdown(more=false) {
-  const request = ++dropdownRequest;
-  if (!more) dropdownOffset = 0;
-  const offset = dropdownOffset;
-  const query = $('list-keyword-query').value.trim(), namespace = $('list-ns').value;
-  const body = {mode: query ? 'literal' : 'browse', limit:50, offset};
-  if (query) body.queries = [query];
-  if (namespace) body.namespace = namespace;
-  $('list-keyword-more').disabled = true;
-  $('list-keyword-status').textContent = 'Loading...';
-  try {
-    const data = await api('/keywords/query', {method:'POST', body:JSON.stringify(body)});
-    if (request !== dropdownRequest) return;
-    const sel = $('list-keywords'), group = data.results[0];
-    const selected = new Set(Array.from(sel.selectedOptions, o => o.value));
-    const kept = Array.from(sel.options).filter(o => more || o.selected);
-    const options = new Map(kept.map(o => [o.value, o]));
-    group.items.forEach(item => options.set(item.keyword,
-      new Option(`${item.keyword} (${item.count})`, item.keyword, false, selected.has(item.keyword))));
-    sel.replaceChildren(...options.values());
-    dropdownOffset = offset + group.items.length;
-    $('list-keyword-more').disabled = dropdownOffset >= group.total;
-    $('list-keyword-status').textContent = `${group.total} matches`;
-  } catch(e) {
-    if (request === dropdownRequest) $('list-keyword-status').textContent = 'Error: ' + e.message;
-  }
-}
-
-function switchNamespace(el, ns) {
-  currentNamespace = ns;
-  document.querySelectorAll('#ns-tabs .ns-tab').forEach(t => t.classList.remove('active'));
-  el.classList.add('active');
-  memoriesOffset = 0;
-  loadMemories();
-}
-
-function updateNsTabs() {
-  const container = $('ns-tabs');
-  const counts = (statsData && statsData.namespace_counts) || {};
-  container.replaceChildren();
-  for (const ns of ['', ...allNamespaces]) {
-    const tab = document.createElement('span');
-    tab.className = 'ns-tab' + (ns === currentNamespace ? ' active' : '');
-    tab.dataset.ns = ns;
-    const count = counts[ns] ?? currentMemories.filter(m => m.namespace === ns).length;
-    tab.textContent = ns === '' ? 'All Memories' : `${ns} (${count})`;
-    tab.onclick = () => switchNamespace(tab, ns);
-    container.append(tab);
-  }
-}
-
-function toggleDebug() {
-  document.body.classList.toggle('debug-ids');
-  const on = document.body.classList.contains('debug-ids');
-  $('btn-debug').textContent = on ? 'Debug ON' : 'Debug';
-  if (on) {
-    document.addEventListener('click', onDebugClick, true);
-  } else {
-    document.removeEventListener('click', onDebugClick, true);
-    document.querySelectorAll('.debug-focus').forEach(el => el.classList.remove('debug-focus'));
-  }
-}
-
-function onDebugClick(e) {
-  const el = e.target.closest('[id]');
-  if (!el || !document.body.classList.contains('debug-ids')) {
-    document.querySelectorAll('.debug-focus').forEach(f => f.classList.remove('debug-focus'));
-    return;
-  }
-  if (el.classList.contains('debug-focus')) {
-    el.classList.remove('debug-focus');
-    return;
-  }
-  document.querySelectorAll('.debug-focus').forEach(f => f.classList.remove('debug-focus'));
-  el.classList.add('debug-focus');
-  navigator.clipboard.writeText(el.id).catch(() => {});
-}
-
-async function loadOpsPage() {
-  const state = await refreshMaintenance();
-  await loadModelConfig();
-  if (state && state.required_reason === 'model_not_ready') return;
-  const data = await api('/stats');
-  const nsList = data.namespace_counts ? Object.keys(data.namespace_counts) : [];
-  nsList.sort();
-  // Source dropdown
-  const srcSelect = $('migrate-source');
-  srcSelect.innerHTML = '<option value="">Select namespace...</option>';
-  nsList.forEach(ns => {
-    const opt = document.createElement('option');
-    opt.value = ns;
-    opt.textContent = `${ns} (${data.namespace_counts[ns]})`;
-    srcSelect.appendChild(opt);
-  });
-  // Target datalist suggestions
-  const dl = $('migrate-target-suggestions');
-  dl.innerHTML = '';
-  nsList.forEach(ns => {
-    const opt = document.createElement('option');
-    opt.value = ns;
-    opt.textContent = ns;
-    dl.appendChild(opt);
-  });
-  const exportSel = $('export-namespace');
-  const exportCur = exportSel.value;
-  exportSel.innerHTML = '<option value="">Select namespace...</option>';
-  nsList.forEach(ns => {
-    const opt = document.createElement('option');
-    opt.value = ns;
-    opt.textContent = `${ns} (${data.namespace_counts[ns]})`;
-    if (ns === exportCur) opt.selected = true;
-    exportSel.appendChild(opt);
-  });
-  // Clear namespace dropdown
-  const clrSel = $('clear-ns');
-  const clrCur = clrSel.value;
-  clrSel.innerHTML = '<option value="">(all namespaces)</option>';
-  nsList.forEach(ns => {
-    const opt = document.createElement('option');
-    opt.value = ns;
-    opt.textContent = ns;
-    if (ns === clrCur) opt.selected = true;
-    clrSel.appendChild(opt);
-  });
-  $('migrate-result').textContent = '';
-}
-
-const MAINTENANCE_ACTION_IDS = [
-  'btn-restart', 'btn-shutdown', 'btn-recover', 'btn-import',
-  'btn-export-full', 'btn-export-ns', 'btn-sync', 'btn-clear', 'btn-migrate'
-];
-let serviceConfigLoaded = false;
-let configSaving = false;
-
-async function refreshMaintenance() {
-  try {
-    const state = await api('/maintenance');
-    const modelPending = state.required_reason === 'model_not_ready';
-    const ready = state.state === 'maintenance' && !state.action && !modelPending;
-    $('maintenance-banner').style.display = state.state === 'normal' ? 'none' : 'block';
-    $('maintenance-banner').textContent = modelPending
-      ? '模型尚未就绪：请在配置页面设置代理并查看准备进度。当前无法退出维护，记忆读写和搜索暂不可用。'
-      : 'Maintenance is active. Memory writes are paused; searches remain available.';
-    $('btn-add-submit').disabled = state.state !== 'normal';
-    $('maintenance-status').textContent = `State: ${state.state}` +
-      (state.action ? ` · Running: ${state.action}` : '') +
-      (state.error ? ` · Error: ${state.error}` : '');
-    $('btn-maintenance-enter').disabled = state.state !== 'normal';
-    $('btn-maintenance-exit').disabled = !ready || !!state.error;
-    MAINTENANCE_ACTION_IDS.forEach(id => {
-      const processControl = ['btn-restart', 'btn-shutdown'].includes(id);
-      $(id).disabled = !(ready || modelPending && processControl && !state.action)
-        || !!state.error && !['btn-sync', 'btn-restart', 'btn-shutdown'].includes(id);
-    });
-    renderModelStatus(state.model);
-    $('btn-model-save').disabled = !serviceConfigLoaded || configSaving;
-    $('btn-model-retry').disabled = !modelPending || ['downloading', 'validating', 'cancelling'].includes(state.model?.status);
-    if (state.state !== 'normal') {
-      $('btn-clear-ns').disabled = true;
-    } else {
-      $('btn-clear-ns').disabled = false;
-    }
-    return state;
-  } catch(e) {
-    $('maintenance-status').textContent = 'Maintenance status unavailable: ' + e.message;
-    MAINTENANCE_ACTION_IDS.forEach(id => { $(id).disabled = true; });
-  }
-}
-
-async function enterMaintenance() {
-  $('maintenance-result').textContent = 'Waiting for active writes...';
-  try {
-    await api('/maintenance/enter', {method:'POST'});
-    $('maintenance-result').textContent = 'Maintenance mode active.';
-  } catch(e) { $('maintenance-result').textContent = 'Error: ' + e.message; }
-  await refreshMaintenance();
-}
-
-function renderModelStatus(model) {
-  if (!model) return;
-  const labels = {waiting:'模型缓存缺失，请设置代理后重试', downloading:'正在下载 / 加载模型',
-    validating:'正在验证模型与数据库', ready:'模型已就绪', failed:'模型准备失败，可修改代理后重试',
-    cancelling:'正在结束上一次任务，随后使用新配置重试'};
-  $('model-status').textContent = labels[model.status] || model.status;
-  const bar = $('model-progress');
-  if (model.ready) bar.value = 100;
-  else if (model.percent != null) bar.value = model.percent;
-  else bar.removeAttribute('value');
-  $('model-progress-detail').textContent = model.total
-    ? `${model.file || '当前文件 / 下载批次'}：${formatBytes(model.completed)} / ${formatBytes(model.total)} (${model.percent.toFixed(1)}%)`
-    : '总量尚未确定；正在等待或准备模型。';
-  if (model.ready) $('model-progress-detail').textContent = '模型加载与验证完成。';
-  $('model-error').textContent = model.error || '';
-}
-
-async function loadModelConfig() {
-  try {
-    const config = await api('/config');
-    $('config-port').value = config.port;
-    $('config-language').value = config.language;
-    $('model-auto-download').checked = config.auto_download_model;
-    $('model-proxy-enabled').checked = config.proxy.enabled;
-    $('model-proxy-saved').textContent = config.proxy.url ? `已保存：${config.proxy.url}` : '尚未设置代理地址';
-    $('model-proxy-url').value = '';
-    serviceConfigLoaded = true;
-    $('btn-model-save').disabled = configSaving;
-  } catch (e) {
-    serviceConfigLoaded = false;
-    $('btn-model-save').disabled = true;
-    $('model-config-result').textContent = e.message;
-  }
-}
-
-async function saveModelConfig() {
-  const result = $('model-config-result');
-  if (configSaving || !serviceConfigLoaded) return;
-  configSaving = true;
-  $('btn-model-save').disabled = true;
-  try {
-    const port = Number($('config-port').value);
-    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('端口必须是 1–65535 的整数');
-    const proxy = {enabled: $('model-proxy-enabled').checked};
-    const url = $('model-proxy-url').value.trim();
-    if (url) proxy.url = url;
-    await api('/config', {method:'POST', body:JSON.stringify({
-      port, language:$('config-language').value,
-      auto_download_model:$('model-auto-download').checked, proxy})});
-    result.textContent = '配置已保存；端口与语言重启后生效。';
-    const state = await refreshMaintenance();
-    if (state?.required_reason === 'model_not_ready') {
-      await api('/model/retry', {method:'POST'});
-      result.textContent = '配置已保存，正在使用新配置准备模型；端口与语言重启后生效。';
-    }
-    await loadModelConfig();
-  } catch (e) { result.textContent = '保存失败：' + e.message; }
-  finally { configSaving = false; $('btn-model-save').disabled = !serviceConfigLoaded; }
-  await refreshMaintenance();
-}
-
-async function retryModel() {
-  try {
-    await api('/model/retry', {method:'POST'});
-    $('model-config-result').textContent = '已请求重试。';
-  } catch (e) { $('model-config-result').textContent = e.message; }
-  await refreshMaintenance();
-}
-
-async function exitMaintenance() {
-  try {
-    await api('/maintenance/exit', {method:'POST'});
-    $('maintenance-result').textContent = 'Normal service restored.';
-  } catch(e) { $('maintenance-result').textContent = 'Error: ' + e.message; }
-  await refreshMaintenance();
-}
-
-async function doRecover() {
-  const file = $('recover-file').files[0];
-  const resultEl = $('recover-result');
-  if (!file) { resultEl.textContent = 'Select a JSONL file.'; return; }
-  if (!confirm(`Replace ALL current memories with records from ${file.name}?`)) return;
-  const form = new FormData();
-  form.append('file', file);
-  resultEl.textContent = 'Uploading...';
-  try {
-    const response = await fetch('/api/recover', {method:'POST', body:form});
-    const job = await response.json();
-    if (!response.ok) throw new Error(job.detail || response.statusText);
-    await refreshMaintenance();
-    while (true) {
-      const status = await api('/recover/' + encodeURIComponent(job.id));
-      resultEl.textContent = `Recover: ${status.phase} ${status.completed}/${status.total}`;
-      if (status.status === 'completed') {
-        resultEl.textContent = `Recovered ${status.result.recovered} memories.`;
-        refreshStats();
-        break;
-      }
-      if (status.status === 'failed') throw new Error(status.error);
-      await new Promise(resolve => setTimeout(resolve, 750));
-    }
-  } catch(e) { resultEl.textContent = 'Error: ' + e.message; }
-  await refreshMaintenance();
-}
-
-setInterval(() => {
-  refreshMaintenance();
-}, 2000);
-
-async function doMigrate() {
-  const source = $('migrate-source').value;
-  const target = $('migrate-target').value.trim();
-  if (!source || !target) {
-    $('migrate-result').textContent = 'Please select source and enter target.';
-    return;
-  }
-  if (!confirm(`Move ALL memories from "${source}" to "${target}"? This cannot be undone.`)) {
-    return;
-  }
-  const btn = $('btn-migrate');
-  const resultEl = $('migrate-result');
-  btn.disabled = true;
-  resultEl.textContent = 'Migrating...';
-  try {
-    const result = await api('/namespaces/migrate', {
-      method: 'POST',
-      body: JSON.stringify({source, target}),
-    });
-    if (result.error) {
-      resultEl.textContent = result.error;
-    } else {
-      resultEl.textContent = `✅ Migrated ${result.migrated} memories from "${source}" to "${target}".`;
-      loadOpsPage();
-    }
-  } catch(e) {
-    resultEl.textContent = 'Error: ' + e.message;
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-// Ops actions
-async function doRestartServer() { return controlServer(true); }
-async function doShutdownServer() { return controlServer(false); }
-async function controlServer(restart) {
-  const message = restart
-    ? 'Restart the MCP server after active work finishes? Connections will need to reconnect.'
-    : 'Shut down the MCP server after active work finishes? You will need to start it again from the terminal.';
-  if (!confirm(message)) return;
-  const resultEl = $('restart-result');
-  const buttons = [$('btn-restart'), $('btn-shutdown')];
-  buttons.forEach(btn => { btn.disabled = true; });
-  resultEl.textContent = 'Sending request...';
-  try {
-    await api(restart ? '/restart' : '/shutdown', {method: 'POST'});
-    resultEl.textContent = restart
-      ? 'Restart accepted. Waiting for active work to finish; refresh once the server returns.'
-      : 'Shutdown accepted. Waiting for active work to finish. Start the server from the terminal to use it again.';
-  } catch(e) {
-    resultEl.textContent = 'Request could not be confirmed: ' + e.message;
-    buttons.forEach(btn => { btn.disabled = false; });
-  }
-}
-
-async function doImport() {
-  const file = $('import-file').files[0];
-  const prefix = $('import-prefix').value.trim();
-  const resultEl = $('import-result');
-  const btn = $('btn-import');
-  if (!file) { resultEl.textContent = 'Please select a JSONL file.'; return; }
-  btn.disabled = true;
-  resultEl.textContent = 'Importing...';
-  try {
-    const form = new FormData();
-    form.append('file', file);
-    form.append('namespace_prefix', prefix);
-    const response = await fetch('/api/import', {method: 'POST', body: form});
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.detail || response.statusText);
-    resultEl.textContent = `Import ${result.import_id}: queued`;
-    while (true) {
-      await new Promise(resolve => setTimeout(resolve, 750));
-      const status = await api('/import/' + encodeURIComponent(result.import_id));
-      resultEl.textContent = `Import ${result.import_id}: ${status.phase}`;
-      if (status.status === 'completed') {
-        resultEl.textContent = `✅ Imported ${status.result.imported}; skipped ${status.result.skipped}; renamed ${status.result.renamed}.`;
-        break;
-      }
-      if (status.status === 'failed') throw new Error(status.error.message);
-    }
-    refreshStats();
-  } catch(e) {
-    resultEl.textContent = 'Error: ' + e.message;
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-async function downloadExport(path, options) {
-  const response = await fetch('/api' + path, options);
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.detail || response.statusText);
-  }
-  const blob = await response.blob();
-  const disposition = response.headers.get('Content-Disposition') || '';
-  const match = disposition.match(/filename="?([^";]+)"?/i);
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = match ? match[1] : 'remember-me-export.jsonl';
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(link.href);
-  return response.headers.get('X-Memory-Count') || '?';
-}
-
-async function doExportFull() {
-  const resultEl = $('export-result');
-  resultEl.textContent = 'Full Sync and export in progress...';
-  try {
-    const count = await downloadExport('/export/full', {method: 'POST'});
-    resultEl.textContent = `✅ Downloaded full snapshot (${count} records).`;
-  } catch (e) { resultEl.textContent = 'Error: ' + e.message; }
-}
-
-async function doExportNamespace() {
-  const namespace = $('export-namespace').value;
-  const resultEl = $('export-result');
-  if (!namespace) { resultEl.textContent = 'Please select a namespace.'; return; }
-  resultEl.textContent = 'Exporting namespace...';
-  try {
-    const count = await downloadExport('/export/namespace', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({namespace}),
-    });
-    resultEl.textContent = `✅ Downloaded ${namespace} (${count} records).`;
-  } catch (e) { resultEl.textContent = 'Error: ' + e.message; }
-}
-
-async function doSync() {
-  const resultEl = $('sync-result');
-  const btn = $('btn-sync');
-  btn.disabled = true;
-  resultEl.textContent = 'Syncing...';
-  try {
-    const result = await api('/sync', {method: 'POST'});
-    if (result.error) {
-      resultEl.textContent = result.error;
-    } else {
-      resultEl.textContent = `✅ Synced ${result.synced || 0} records (errors: ${result.errors || 0}).`;
-    }
-  } catch(e) {
-    resultEl.textContent = 'Error: ' + e.message;
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-async function fetchStoragePaths() {
-  try {
-    const data = await api('/storage-paths');
-    if (data.backend === 'dual' && data.primary_path && data.secondary_path) {
-      const syncEl = $('sync-paths');
-      if (syncEl) syncEl.textContent = `${data.primary_path} → ${data.secondary_path}`;
-    }
-  } catch(e) {
-    // Not in dual mode — paths may be unavailable; leave placeholders empty.
-  }
-}
-
-// Clear — protected by a generated 8-char case-sensitive confirmation code
-let _clearScope = '';
-let _clearCode = '';
-
-const CODE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-
-function genClearCode(len = 8) {
-  let out = '';
-  const arr = new Uint32Array(len);
-  crypto.getRandomValues(arr);
-  for (let i = 0; i < len; i++) out += CODE_CHARS[arr[i] % CODE_CHARS.length];
-  return out;
-}
-
-function openClearModal(scope) {
-  _clearScope = scope;
-  _clearCode = genClearCode();
-  $('clear-confirm-scope').textContent = scope;
-  $('clear-confirm-code').textContent = _clearCode;
-  const input = $('clear-confirm-input');
-  input.value = '';
-  input.focus();
-  $('btn-clear-confirm').disabled = true;
-  $('clear-modal').style.display = 'flex';
-}
-
-function checkClearCode(confirmOnMatch = false) {
-  const ok = $('clear-confirm-input').value === _clearCode;
-  $('btn-clear-confirm').disabled = !ok;
-  if (confirmOnMatch && ok) doClearConfirmed();
-}
-
-function closeClearModal(e) {
-  if (e && e.target !== e.currentTarget) return;
-  $('clear-modal').style.display = 'none';
-  _clearScope = '';
-  _clearCode = '';
-}
-
-async function doClearAll() {
-  const ns = $('clear-ns').value.trim() || undefined;
-  const scope = ns ? `namespace "${ns}"` : 'ALL namespaces';
-  openClearModal(scope);
-}
-
-async function doClearConfirmed() {
-  const ns = $('clear-ns').value.trim() || undefined;
-  const resultEl = $('clear-result');
-  const btn = $('btn-clear');
-  closeClearModal();
-  btn.disabled = true;
-  resultEl.textContent = 'Clearing...';
-  try {
-    const q = ns ? '?namespace=' + encodeURIComponent(ns) : '';
-    const result = await api('/memories' + q, {method: 'DELETE'});
-    resultEl.textContent = `✅ Deleted ${result.deleted} memories.`;
-    refreshStats();
-  } catch(e) {
-    resultEl.textContent = 'Error: ' + e.message;
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-function showNsDropdown() {
-  const dd = $('ns-dropdown');
-  if (dd) dd.style.display = 'block';
-}
-
-function hideNsDropdown() {
-  const dd = $('ns-dropdown');
-  if (dd) dd.style.display = 'none';
-}
-
-function pickNs(ns) {
-  $('edit-namespace').value = ns;
-  hideNsDropdown();
-}
-
-function refreshStats() {
-  loadStats();
-  loadMemories();
-}
-
-// Audit log
-function truncateJson(obj, maxLen = 160) {
-  let s;
-  try { s = JSON.stringify(obj); } catch(e) { s = String(obj); }
-  if (s.length > maxLen) return s.slice(0, maxLen) + '…';
-  return s;
-}
-
-async function loadAudit() {
-  const tool = $('audit-tool').value;
-  const namespace = $('audit-namespace').value.trim();
-  let limit = parseInt($('audit-limit').value, 10);
-  if (isNaN(limit) || limit < 1) limit = 200;
-  if (limit > 5000) limit = 5000;
-  const params = new URLSearchParams({limit: String(limit)});
-  if (tool) params.set('tool', tool);
-  if (namespace) params.set('namespace', namespace);
-  const tbody = $('audit-list');
-  tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Loading...</td></tr>';
-  try {
-    const data = await api('/audit?' + params.toString());
-    renderAudit(data);
-  } catch(e) {
-    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Error: ' + esc(e.message) + '</td></tr>';
-  }
-}
-
-function renderAudit(events) {
-  const tbody = $('audit-list');
-  if (!events || events.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">暂无审计记录</td></tr>';
-    return;
-  }
-  tbody.innerHTML = events.map(ev => {
-    const status = ev.status === 'error'
-      ? '<span style="color:#d33;font-weight:600">error</span>'
-      : '<span style="color:#2a7d3f">ok</span>';
-    const err = ev.error ? ' <span style="color:#d33;font-size:12px">' + esc(ev.error.type) + ': ' + esc(ev.error.message) + '</span>' : '';
-    const params = truncateJson(ev.params);
-    const result = truncateJson(ev.result);
-    return '<tr style="border-bottom:1px solid #f0f0f0;vertical-align:top">' +
-      '<td style="white-space:nowrap;color:#666;font-size:12px">' + esc(formatTime(ev.ts)) + '</td>' +
-      '<td>' + esc(ev.tool) + '</td>' +
-      '<td>' + status + '</td>' +
-      '<td style="color:#666">' + esc(ev.duration_ms) + '</td>' +
-      '<td style="word-break:break-all;font-size:12px">' + esc(ev.namespace || '') + '</td>' +
-      '<td style="font-size:12px;color:#444;word-break:break-all"><div>params: ' + esc(params) + '</div>' +
-      '<div style="margin-top:2px">result: ' + esc(result) + '</div>' + err + '</td>' +
-      '</tr>';
-  }).join('');
-}
-
-function esc(s) {
-  if (s == null) return '';
-  const d = document.createElement('div');
-  d.textContent = String(s);
-  return d.innerHTML;
-}
-
-function deriveSummary(text, maxChars = 80) {
-  const lines = String(text || '').split(/\r?\n/)
-    .map(line => line.trim().replace(/\s+/g, ' '))
-    .filter(line => line && line !== '```' && line !== '~~~')
-    .map(line => line.replace(/^(?:#{1,6}\s+|[-*+]\s+|\d+[.)、]\s*)/, '').trim())
-    .filter(Boolean);
-  if (!lines.length) return '';
-  let candidate = lines[0];
-  if (Array.from(candidate.replace(/[：:]$/, '')).length < 10 && lines.length > 1) {
-    candidate += ' ' + lines[1];
-  }
-  const sentence = candidate.match(/^.*?[。！？!?；;]/);
-  if (sentence && Array.from(sentence[0]).length <= maxChars) return sentence[0];
-  const chars = Array.from(candidate);
-  return chars.length <= maxChars ? candidate : chars.slice(0, maxChars).join('').trimEnd() + '…';
-}
-
-// Init: missing-model bootstrap opens configuration instead of memory queries.
-(async () => {
-  const state = await refreshMaintenance();
-  if (state?.required_reason === 'model_not_ready') switchPage('ops');
-  else { loadMemories(); loadStats(); fetchStoragePaths(); }
-})();
-</script>
+<script type="module" src="/admin/console/static/js/main.js"></script>
 </body>
 </html>
