@@ -64,7 +64,7 @@ async function runThemeScenario(scenario) {
         themeSelect.value = 'dark'; themeSelect.dispatchEvent(new Event('change', {bubbles:true}));
       }
       if (collapsedOnly) {
-        $('btn-sidebar-toggle').click();
+        $('nav').click();
         assert($('app-shell').classList.contains('sidebar-collapsed'), 'dark sidebar collapsed');
       }
       result.textContent = 'PASS: ' + scheme + ' ' + (modalOnly ? 'detail modal' : collapsedOnly ? 'collapsed sidebar' : 'Memories') + ' screenshot';
@@ -423,6 +423,15 @@ try {
   // Shell layout: header + sidebar fixed, work area scrolls, no page-level h-scroll.
   assert($('app-shell').contains($('nav')), 'sidebar inside shell');
   assert($('app-shell').contains($('content')), 'work area inside shell');
+  assert(document.title === 'Remember Me' && document.querySelector('.brand h1').textContent.trim() === 'Remember Me', 'shell brand name');
+  assert(getComputedStyle(document.querySelector('.brand')).flexDirection === 'row', 'brand and server info share one line');
+  assert($('server-info').textContent.trim() === 'MCP Server', 'server info remains available');
+  assert(document.querySelector('#btn-refresh svg') && document.querySelector('#btn-debug svg'), 'global actions have inline icons');
+  assert(getComputedStyle(document.querySelector('.app-header')).minHeight === '54px', 'compact shell header baseline');
+  const sidebarRect = $('nav').getBoundingClientRect();
+  assert(!$('nav').querySelector('.sidebar-toggle'), 'no separate sidebar toggle control');
+  assert($('nav').tabIndex === 0, 'nav background is keyboard focusable for collapse toggle');
+  assert(Math.abs(document.querySelector('#nav-memories').getBoundingClientRect().top - sidebarRect.top) <= 1, 'sidebar menu starts at top without reserved toggle space');
   assert(!$('content').contains($('detail-modal')), 'detail modal outside the shell content');
   assert(!$('content').contains($('clear-modal')), 'clear modal outside the shell content');
   assert(document.documentElement.scrollWidth <= window.innerWidth, 'no page horizontal scroll');
@@ -437,23 +446,47 @@ try {
   assert(document.querySelector('.nav button[data-page="audit"]').getAttribute('aria-current') === 'page', 'aria-current set');
   assert(!document.querySelector('.nav button[data-page="keywords"]').hasAttribute('aria-current'), 'aria-current cleared');
 
-  // Sidebar collapse: aria-expanded, class, persistence, form content preserved.
+  // Blank-nav collapse: accessible state, persistence, menu routing and form content preserved.
   $('add-text').value = 'draft-kept';
-  const toggleBtn = document.querySelector('#btn-sidebar-toggle');
-  assert(toggleBtn.getAttribute('aria-expanded') === 'true', 'sidebar starts expanded');
-  toggleBtn.click();
+  const nav = $('nav');
+  assert(nav.getAttribute('aria-label').includes('已展开'), 'sidebar starts expanded');
+  nav.click();
   await settle();
   assert($('app-shell').classList.contains('sidebar-collapsed'), 'collapse toggles class');
-  assert(toggleBtn.getAttribute('aria-expanded') === 'false', 'collapse updates aria-expanded');
+  assert(nav.getAttribute('aria-label').includes('已折叠'), 'collapse updates accessible state');
+  const memBtn = document.querySelector('.nav button[data-page="memories"]');
+  const collapsedMemoriesRect = memBtn.getBoundingClientRect();
+  assert(Math.abs(collapsedMemoriesRect.top - sidebarRect.top) <= 1, 'collapsed Memories item starts at top');
+  assert(memBtn.getAttribute('aria-label') === 'Memories', 'collapsed nav keeps accessible name');
+  memBtn.focus();
+  assert(!$('nav-tooltip').hidden && $('nav-tooltip').textContent === 'Memories', 'collapsed nav tooltip appears on keyboard focus');
+  assert(memBtn.getAttribute('aria-describedby') === 'nav-tooltip', 'collapsed tooltip is announced');
   assert($('add-text').value === 'draft-kept', 'collapse preserves form content');
   assert(localStorage.getItem('remember-me.sidebar.collapsed.v1') === 'true', 'collapse persisted');
-  toggleBtn.click();
+  memBtn.click();
+  await settle();
+  assert($('app-shell').classList.contains('sidebar-collapsed'), 'menu click does not toggle sidebar');
+  nav.click();
   await settle();
   assert(!$('app-shell').classList.contains('sidebar-collapsed'), 'expand restores');
+  assert($('nav-tooltip').hidden && !memBtn.hasAttribute('aria-describedby'), 'expanding hides tooltip and clears description');
   assert(localStorage.getItem('remember-me.sidebar.collapsed.v1') === 'false', 'expand persisted');
 
+  // Debug styling must not change the nav click target's layout.
+  const navTop = nav.getBoundingClientRect().top;
+  $('btn-debug').click();
+  assert(document.body.classList.contains('debug-ids'), 'debug labels enabled');
+  assert(nav.getBoundingClientRect().top === navTop, 'debug mode preserves nav layout');
+  assert($('btn-debug').querySelector('svg'), 'debug toggle preserves its icon');
+  $('btn-debug').click();
+
+  nav.focus();
+  nav.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}));
+  assert($('app-shell').classList.contains('sidebar-collapsed'), 'focused nav toggles with Enter');
+  nav.dispatchEvent(new KeyboardEvent('keydown', {key: ' ', bubbles: true}));
+  assert(!$('app-shell').classList.contains('sidebar-collapsed'), 'focused nav toggles with Space');
+
   // Keyboard activation of the collapsed nav button.
-  const memBtn = document.querySelector('.nav button[data-page="memories"]');
   memBtn.focus();
   memBtn.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}));
   memBtn.click();

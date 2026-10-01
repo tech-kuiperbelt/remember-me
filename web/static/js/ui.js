@@ -20,7 +20,7 @@ export function showError(id, error) {
 export function toggleDebug() {
   document.body.classList.toggle('debug-ids');
   const on = document.body.classList.contains('debug-ids');
-  $('btn-debug').textContent = on ? 'Debug ON' : 'Debug';
+  $('btn-debug').querySelector('span').textContent = on ? 'Debug ON' : 'Debug';
   if (on) {
     document.addEventListener('click', onDebugClick, true);
   } else {

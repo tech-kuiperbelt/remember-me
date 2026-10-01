@@ -1,9 +1,9 @@
 # [50] 前端重构与 UI 调整路线图
 
-2026-10-01 用户认可路线。基线提交：`0c7bd46`。第一阶段已完成，
-见 [50.1 实施记录](50.1-frontend-module-split.md)；第二阶段第一项桌面布局已实施并验证，
-见 [50.2 实施记录](50.2-admin-desktop-layout.md)。下一项
-[50.3 主题基础](50.3-ui-theme-foundation.md) 已实施并通过隔离验证，待 review。
+2026-10-01 用户认可路线。第一阶段已完成，见 [50.1 实施记录](50.1-frontend-module-split.md)。
+第二阶段桌面布局、主题基础和 Shell 视觉已分别实施并通过回归，记录见
+[50.2 桌面布局](50.2-admin-desktop-layout.md)、[50.3 主题基础](50.3-ui-theme-foundation.md)
+和 [50.4 Shell 视觉](50.4-admin-shell-visual.md)；Shell 视觉已完成，Memories 列表专项仍待实施。
 
 ## 目标与顺序
 
@@ -51,8 +51,8 @@
 后续依据 [UI 设计规范](../../design/UI_DESIGN.md)、
 [UI 实施规则](../../design/UI_IMPLEMENTATION_RULES.md) 和
 [风格示意图](../../design/UI.png)，按“主题基础 → Shell 视觉 → Memories”推进。
-第一步见 [50.3 主题基础实施记录](50.3-ui-theme-foundation.md)；后两步分别规划。
-主题切换入口已确定放在配置页的独立“外观”区域。
+主题基础与 Shell 视觉已完成；下一项是 Memories 列表专项设计与实施。
+主题切换入口位于配置页的独立“外观”区域。
 
 ## 第三阶段：布局稳定后的结构复核
 
