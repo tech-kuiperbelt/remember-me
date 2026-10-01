@@ -65,6 +65,8 @@ def test_business_contract_is_shared_by_sqlite_and_dual(backend, tmp_path):
 
         assert store.search([1.0, 0.0], k=5, namespace="ns")[0]["text"] == "hello"
         assert [row["text"] for row in store.list_memories(namespace="ns")] == ["hello"]
+        page = store.list_memories_page(namespace="ns", categories=["bugfix"])
+        assert page["total"] == 1 and page["items"][0]["id"] == memory_id
         assert store.get(memory_id)["text"] == "hello"
         assert set(store.live_memory_ids()) == {memory_id}
         assert store.get_stats()["total"] == 1

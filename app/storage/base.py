@@ -108,6 +108,13 @@ class MemoryStorage(ABC):
                       categories: Optional[list[str]] = None) -> list[dict[str, Any]]: ...
 
     @abstractmethod
+    def list_memories_page(self, namespace=None, limit=20, offset=0,
+                           sort_by="updated_at", updated_after=None,
+                           updated_before=None, keywords=None, categories=None) -> dict[str, Any]:
+        """Return items and filtered total from a single read snapshot."""
+        ...
+
+    @abstractmethod
     def get(self, memory_id: str) -> Optional[dict[str, Any]]: ...
 
     @abstractmethod

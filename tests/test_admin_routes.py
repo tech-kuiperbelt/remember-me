@@ -19,6 +19,7 @@ EXPECTED_ORDER = [
     ("/api/memories", ("GET",)),
     ("/api/memories", ("POST",)),
     ("/api/memories", ("DELETE",)),
+    ("/api/memories/page", ("GET",)),
     ("/api/memories/search", ("POST",)),
     ("/api/memories/search/lexical", ("POST",)),
     ("/api/memories/search/anchor", ("POST",)),

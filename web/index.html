@@ -70,19 +70,21 @@
 
 <!-- Memories -->
 <div class="page active" id="page-memories">
-  <div class="card">
-    <div class="card-header">
-      <span id="memories-title">Memories</span>
-      <button id="btn-clear-ns" class="btn btn-danger btn-sm">Clear</button>
+  <section class="memories-workspace" aria-labelledby="memories-title">
+    <div class="memories-heading">
+      <h2 id="memories-title">Memories</h2>
+      <button id="btn-clear-ns" class="btn btn-outline btn-sm" disabled>Clear Namespace</button>
     </div>
-    <div class="ns-tabs" id="ns-tabs">
-      <span class="ns-tab active" data-ns="">All Namespaces</span>
+    <div class="memories-filters">
+      <label>Namespace <select id="memories-namespace"><option value="">全部 Namespace</option></select></label>
     </div>
-    <div class="card-body" style="padding:0">
-      <div id="memories-list"><div class="loading">Loading...</div></div>
-      <div class="pagination" id="memories-pagination"></div>
+    <div class="memories-result-header">
+      <span id="memories-count" tabindex="-1" role="status">Loading...</span>
+      <label>Sort <select id="memories-sort"><option value="updated_at">Updated time ↓</option><option value="created_at">Created time ↓</option></select></label>
     </div>
-  </div>
+    <div id="memories-list" class="memory-list" aria-busy="true"></div>
+    <div id="memories-pagination" class="memories-pagination"></div>
+  </section>
 </div>
 
 <!-- Search -->

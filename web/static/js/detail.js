@@ -7,13 +7,21 @@ import { getNamespaces, emitMemoriesChanged, emitStatsChanged } from './store.js
 
 let _currentDetailText = '';
 let _copyBtnTimer = null;
+let _onClose = null;
+
+export async function openMemory(id, {onClose = null} = {}) {
+  _onClose = onClose;
+  if (!await viewDetail(id)) _onClose = null;
+}
 
 async function viewDetail(id) {
   try {
     const m = await api('/memories/' + encodeURIComponent(id));
     showDetail(m, false);
+    return true;
   } catch(e) {
     toast(e.message, 'error');
+    return false;
   }
 }
 
@@ -82,8 +90,8 @@ function showDetail(m, editable) {
     button('Save', () => saveEdit(m.id), 'btn-primary');
     button('Cancel', closeDetail);
   } else {
-    button('Edit', () => { closeDetail(); editMemory(m.id); });
-    button('Delete', () => { closeDetail(); deleteMemory(m.id); }, 'btn-danger');
+    button('Edit', () => editMemory(m.id));
+    button('Delete', () => deleteMemory(m.id), 'btn-danger');
     button('Close', closeDetail);
   }
   $('detail-modal').style.display = 'flex';
@@ -138,6 +146,9 @@ function copyDetailText(btn) {
 function closeDetail(e) {
   if (e && e.target !== e.currentTarget) return;
   $('detail-modal').style.display = 'none';
+  const callback = _onClose;
+  _onClose = null;
+  if (callback) callback();
 }
 
 async function deleteMemory(id) {
@@ -145,7 +156,9 @@ async function deleteMemory(id) {
   try {
     await api('/memories/' + encodeURIComponent(id), {method: 'DELETE'});
     toast('Memory deleted');
+    closeDetail();
     emitMemoriesChanged();
+    emitStatsChanged();
   } catch(e) {
     toast(e.message, 'error');
   }

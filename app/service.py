@@ -392,6 +392,51 @@ class MemoryService:
             logger.error("list failed: %s", e, exc_info=True)
             raise
 
+    def memory_list_page(self, namespace=None, limit=20, offset=0,
+                         sort_by="updated_at", updated_after=None,
+                         updated_before=None, keywords=None, categories=None):
+        if type(limit) is not int or limit not in (10, 20, 50):
+            raise InvalidSearchFilter("limit must be 10, 20 or 50")
+        if type(offset) is not int or not 0 <= offset <= 2**63 - 1:
+            raise InvalidSearchFilter("offset must be a non-negative SQLite integer")
+        if sort_by not in ("created_at", "updated_at"):
+            raise InvalidSearchFilter("sort_by must be created_at or updated_at")
+        if namespace is not None and not isinstance(namespace, str):
+            raise InvalidNamespace("namespace must be a string")
+        namespace = normalize_namespace(namespace)
+        if namespace is not None:
+            namespace = self.check_namespace(namespace)
+        filters = {}
+        for name, raw in (("keywords", keywords), ("categories", categories)):
+            if raw is not None and (not isinstance(raw, list)
+                                    or any(not isinstance(v, str) for v in raw)):
+                raise InvalidSearchFilter(f"{name} must be a list of strings")
+            values = _normalize_keywords(raw) or []
+            if len(values) > MAX_FILTER_VALUES:
+                raise InvalidSearchFilter(f"{name} accepts at most {MAX_FILTER_VALUES} values")
+            filters[name] = values
+        bounds = []
+        for name, raw in (("updated_after", updated_after), ("updated_before", updated_before)):
+            if raw is None or (isinstance(raw, str) and not raw.strip()):
+                bounds.append(None)
+                continue
+            try:
+                stamp = datetime.fromisoformat(raw.strip().replace("Z", "+00:00"))
+                if stamp.tzinfo is None or stamp.utcoffset() is None:
+                    raise ValueError("timezone required")
+                bounds.append(stamp.astimezone(timezone.utc))
+            except (ValueError, TypeError, AttributeError, OverflowError) as exc:
+                raise InvalidSearchFilter(f"{name} must be an ISO 8601 timestamp with timezone") from exc
+        after, before = bounds
+        if after and before and after >= before:
+            raise InvalidSearchFilter("updated_after must be before updated_before")
+        result = self.storage.list_memories_page(
+            namespace=namespace, limit=limit, offset=offset, sort_by=sort_by,
+            updated_after=after.isoformat() if after else None,
+            updated_before=before.isoformat() if before else None, **filters)
+        return {"items": [_strip_internal_fields(row) for row in result["items"]],
+                "total": result["total"]}
+
     def memory_get(self, memory_id: str) -> dict | None:
         logger.info("get: id=%s", memory_id)
         try:

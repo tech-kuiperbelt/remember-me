@@ -6,6 +6,7 @@ import sqlite3
 import threading
 import logging
 from pathlib import Path
+from datetime import datetime, timezone
 
 logger = logging.getLogger("storage_sqlite")
 
@@ -20,6 +21,22 @@ from app.domain.anchors import MAX_ANCHORS, clean_anchors, anchor_fts_text
 
 # storage_state key holding the single derived lexical-index version.
 _LEXICAL_INDEX_STATE_KEY = "lexical_index_version"
+_TIMESTAMP_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def _timestamp_microseconds(value):
+    """Exact UTC comparison key; no Julian-day or floating-point rounding."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        stamp = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        # Historical naive stored timestamps were interpreted as UTC by SQLite.
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=timezone.utc)
+        delta = stamp - _TIMESTAMP_EPOCH
+    except (ValueError, OverflowError):
+        return None
+    return ((delta.days * 86400 + delta.seconds) * 1_000_000 + delta.microseconds)
 
 
 # Both dimensions are persisted in memories.metadata and indexed through one
@@ -76,7 +93,7 @@ class SQLiteStorage(SQLitePrimaryStorage):
                 self.conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
             else:
                 self.conn = sqlite3.connect(path, check_same_thread=False)
-            self.conn.row_factory = sqlite3.Row
+            self._configure_connection()
             if read_only:
                 self._load_active_embedding_profile()
             else:
@@ -88,6 +105,11 @@ class SQLiteStorage(SQLitePrimaryStorage):
             if self._writer_lock is not None:
                 self._writer_lock.release()
             raise
+
+    def _configure_connection(self):
+        self.conn.row_factory = sqlite3.Row
+        self.conn.create_function("memory_timestamp_us", 1, _timestamp_microseconds,
+                                  deterministic=True)
 
     def close(self):
         """Close the SQLite connection and release an optional writer lock."""
@@ -108,7 +130,7 @@ class SQLiteStorage(SQLitePrimaryStorage):
             if self.conn is not None:
                 raise RuntimeError("database connection is already open")
             self.conn = sqlite3.connect(self.path, check_same_thread=False)
-            self.conn.row_factory = sqlite3.Row
+            self._configure_connection()
             self._load_active_embedding_profile()
 
     def stop(self):
@@ -1488,6 +1510,46 @@ class SQLiteStorage(SQLitePrimaryStorage):
                 params,
             ).fetchall()
         return [self._row_to_dict(r) for r in rows]
+
+    def _page_conditions(self, namespace, updated_after, updated_before, keywords, categories):
+        clauses, params = ["deleted = 0"], []
+        if namespace:
+            clauses.append("namespace = ?")
+            params.append(namespace)
+        for boundary, operator in ((updated_after, ">"), (updated_before, "<")):
+            if boundary:
+                clauses.append(f"memory_timestamp_us(updated_at) {operator} memory_timestamp_us(?)")
+                params.append(boundary)
+        self._append_index_filter(clauses, params, "keywords", keywords)
+        self._append_index_filter(clauses, params, "categories", categories)
+        return " AND ".join(clauses), params
+
+    def list_memories_page(self, namespace=None, limit=20, offset=0,
+                           sort_by="updated_at", updated_after=None,
+                           updated_before=None, keywords=None, categories=None):
+        if sort_by not in ("created_at", "updated_at"):
+            raise ValueError("Unsupported page sort")
+        order = ("COALESCE(memory_timestamp_us(updated_at), memory_timestamp_us(created_at))"
+                 if sort_by == "updated_at" else "memory_timestamp_us(created_at)")
+        with self._lock:
+            where, params = self._page_conditions(
+                namespace, updated_after, updated_before, keywords, categories)
+            # SAVEPOINT also composes with callers that already own a transaction.
+            self.conn.execute("SAVEPOINT memories_page")
+            try:
+                total = self.conn.execute(
+                    f"SELECT COUNT(*) FROM memories WHERE {where}", params).fetchone()[0]
+                rows = self.conn.execute(
+                    f"SELECT * FROM memories WHERE {where} "
+                    f"ORDER BY {order} DESC, id ASC LIMIT ? OFFSET ?",
+                    [*params, limit, offset]).fetchall()
+                items = [self._row_to_dict(row) for row in rows]
+            except BaseException:
+                self.conn.execute("ROLLBACK TO memories_page")
+                raise
+            finally:
+                self.conn.execute("RELEASE memories_page")
+        return {"items": items, "total": total}
 
     def list_namespaces(self):
         """Distinct namespaces of live records; index-backed and cheap."""

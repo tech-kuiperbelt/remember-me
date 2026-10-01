@@ -7,6 +7,7 @@ import logging
 import time
 import tempfile
 import secrets
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -498,6 +499,27 @@ class AdminAPI:
         return json_response(result)
 
     @_maps_domain_errors
+    async def handle_list_memories_page(self, request: Request):
+        query = request.query_params
+        scalars = {"namespace", "limit", "offset", "sort_by", "updated_after", "updated_before"}
+        if set(query) - scalars - {"keywords", "categories"}:
+            raise InvalidRequest("Unknown memory page parameter")
+        if any(len(query.getlist(key)) > 1 for key in scalars):
+            raise InvalidRequest("Scalar page parameters must not be repeated")
+        numbers = {}
+        for key, default in (("limit", "20"), ("offset", "0")):
+            raw = query.get(key, default)
+            if not re.fullmatch(r"[0-9]{1,19}", raw):
+                raise InvalidRequest(f"{key} must be a decimal integer")
+            numbers[key] = int(raw)
+        result = await self._run(lambda: self.service.memory_list_page(
+            namespace=query.get("namespace"), **numbers,
+            sort_by=query.get("sort_by", "updated_at"),
+            updated_after=query.get("updated_after"), updated_before=query.get("updated_before"),
+            keywords=query.getlist("keywords"), categories=query.getlist("categories")))
+        return json_response(result)
+
+    @_maps_domain_errors
     async def handle_get_memory(self, request: Request):
         mid = request.path_params.get("memory_id")
         logger.info("GET /api/memories/%s", mid)
@@ -885,6 +907,7 @@ class AdminAPI:
         _Route("/api/memories", ("GET",), "handle_list_memories", "read"),
         _Route("/api/memories", ("POST",), "handle_add_memory", "write"),
         _Route("/api/memories", ("DELETE",), "handle_clear_memories", "action", action="clear"),
+        _Route("/api/memories/page", ("GET",), "handle_list_memories_page", "read"),
         _Route("/api/memories/search", ("POST",), "handle_search_memories", "read"),
         _Route("/api/memories/search/lexical", ("POST",), "handle_search_lexical", "read"),
         _Route("/api/memories/search/anchor", ("POST",), "handle_search_anchor", "read"),

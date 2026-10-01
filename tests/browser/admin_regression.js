@@ -53,10 +53,10 @@ async function runThemeScenario(scenario) {
     }
 
     if (memoriesOnly || modalOnly || collapsedOnly) {
-      await waitFor(() => $('memories-list') && !$('memories-list').textContent.includes('Loading...'), 'memories');
+      await waitFor(() => $('memories-list')?.getAttribute('aria-busy') === 'false' && $('memories-list').querySelector('.memory-open'), 'memories');
       assert($('page-memories').classList.contains('active'), 'memories page visible');
       if (modalOnly) {
-        $('memories-list').querySelector('[data-memory-action="viewDetail"]').click();
+        $('memories-list').querySelector('.memory-open').click();
         await waitFor(() => $('detail-modal').style.display === 'flex', 'dark detail modal');
         const themeSelect = $('theme-select');
         themeSelect.value = 'light'; themeSelect.dispatchEvent(new Event('change', {bubbles:true}));
@@ -138,9 +138,90 @@ try {
 
   // The real page bootstraps from the real backend; wait for the first load.
   await waitFor(() => $('stats-content') && !$('stats-content').textContent.includes('Loading...'), 'initial stats');
-  await waitFor(() => $('ns-tabs').children.length > 1, 'namespace tabs');
+  await waitFor(() => $('memories-namespace').options.length > 1, 'namespace options');
 
   assert(!$('stats-content').textContent.includes('cache clear'), 'Stats leaked vocabulary');
+
+  // Browse pagination uses the complete filtered total; refresh fixes a removed last page.
+  const inventory = Array.from({length: 41}, (_, i) => ({id: 'browse-' + i, namespace: 'a',
+    summary: 'Browse ' + i, text: 'Browse ' + i + ' body preview',
+    created_at: '2026-01-01T00:00:00Z', updated_at: '2026-02-01T00:00:00Z',
+    metadata: {categories: ['design', 'api'], keywords: ['cache', 'transaction', 'locking']}}));
+  let live = [...inventory];
+  S.setOverride((url, init) => {
+    if (url.startsWith('/api/memories/page?')) {
+      const params = new URL(url, location.origin).searchParams;
+      const offset = Number(params.get('offset')), limit = Number(params.get('limit'));
+      const rows = params.get('sort_by') === 'created_at' ? [...live].reverse() : live;
+      return json({items: rows.slice(offset, offset + limit), total: live.length});
+    }
+    if (url.startsWith('/api/memories/browse-')) {
+      const id = url.split('/').pop();
+      if (init?.method === 'DELETE') { live = live.filter(row => row.id !== id); return json({}); }
+      return json(live.find(row => row.id === id));
+    }
+    return undefined;
+  });
+  $('btn-refresh').click();
+  await waitFor(() => $('memories-count').textContent === '41 memories', 'browse total');
+  assert($('memories-list').querySelectorAll('.memory-row').length === 20, 'first page length');
+  const firstOpen = $('memories-list').querySelector('.memory-open');
+  assert(firstOpen.tagName === 'BUTTON', 'row opening has native keyboard activation');
+  firstOpen.focus(); firstOpen.click();
+  await waitFor(() => $('detail-modal').style.display === 'flex', 'keyboard entry detail');
+  Array.from($('detail-actions').children).find(el => el.textContent === 'Close').click();
+  assert(document.activeElement === firstOpen, 'closing detail restores row focus');
+  $('memories-list').querySelector('.memory-row-time').click();
+  await waitFor(() => $('detail-modal').style.display === 'flex', 'time area opens detail');
+  Array.from($('detail-actions').children).find(el => el.textContent === 'Close').click();
+  $('memories-list').querySelector('.memory-tags-more').click();
+  assert(document.querySelector('.memory-tags-popover')?.textContent.includes('locking'), 'overflow exposes tags');
+  assert($('detail-modal').style.display !== 'flex', 'tag overflow does not open detail');
+  document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
+  assert(!document.querySelector('.memory-tags-popover'), 'Escape closes tags');
+  assert(document.activeElement.classList.contains('memory-tags-more'), 'Escape restores tag focus');
+  $('memories-sort').value = 'created_at'; fire($('memories-sort'), 'change');
+  await waitFor(() => $('memories-list').querySelector('.memory-row-title')?.textContent === 'Browse 40', 'global sort');
+  $('memories-sort').value = 'updated_at'; fire($('memories-sort'), 'change');
+  await waitFor(() => $('memories-list').querySelector('.memory-row-title')?.textContent === 'Browse 0', 'browse sort reset');
+  $('memories-pagination').querySelector('[aria-label="下一页"]').click();
+  await waitFor(() => $('memories-pagination').textContent.includes('21–40 of 41'), 'second page');
+  $('memories-pagination').querySelector('[aria-label="下一页"]').click();
+  await waitFor(() => $('memories-pagination').textContent.includes('41–41 of 41'), 'last page');
+  const approveDelete = window.confirm; window.confirm = () => true;
+  const lastOpen = $('memories-list').querySelector('.memory-open');
+  lastOpen.focus(); lastOpen.click();
+  await waitFor(() => $('detail-modal').style.display === 'flex', 'last item detail');
+  Array.from($('detail-actions').children).find(el => el.textContent === 'Delete').click();
+  await waitFor(() => $('memories-pagination').textContent.includes('21–40 of 40'), 'delete adjusts page');
+  window.confirm = approveDelete;
+  $('memories-page-size').value = '10'; fire($('memories-page-size'), 'change');
+  await waitFor(() => $('memories-pagination').textContent.includes('1–10 of 40'), 'page size resets page');
+  $('memories-page-size').value = '20'; fire($('memories-page-size'), 'change');
+  await waitFor(() => $('memories-pagination').textContent.includes('1–20 of 40'), 'restore page size');
+
+  let releasePage;
+  S.setOverride(url => {
+    if (!url.startsWith('/api/memories/page?')) return undefined;
+    if (url.includes('sort_by=created_at')) return new Promise(resolve => {releasePage = resolve;});
+    return json({items: [{...inventory[0], summary: 'Latest result'}], total: 1});
+  });
+  $('memories-sort').value = 'created_at'; fire($('memories-sort'), 'change');
+  await waitFor(() => releasePage, 'deferred browse response');
+  $('memories-sort').value = 'updated_at'; fire($('memories-sort'), 'change');
+  await waitFor(() => $('memories-list').textContent.includes('Latest result'), 'latest browse response');
+  releasePage(json({items: inventory.slice(0, 20), total: 41})); await settle(50);
+  assert($('memories-count').textContent === '1 memories' && $('memories-list').textContent.includes('Latest result'), 'stale browse ignored');
+  let failPage = true;
+  S.setOverride(url => url.startsWith('/api/memories/page?')
+    ? failPage ? json({detail: 'Temporary failure'}, 500) : json({items: inventory.slice(0, 20), total: 41}) : undefined);
+  $('btn-refresh').click();
+  await waitFor(() => $('memories-list').textContent.includes('Temporary failure'), 'browse error');
+  failPage = false;
+  Array.from($('memories-list').querySelectorAll('button')).find(el => el.textContent === 'Retry').click();
+  await waitFor(() => $('memories-count').textContent === '41 memories', 'browse retry');
+  assert($('memories-sort').value === 'updated_at', 'retry retains sort');
+  S.reset();
 
   // Real nav click exercises router.bindNav + switchPage.
   document.querySelector('.nav button[data-page="keywords"]').click();
@@ -198,34 +279,34 @@ try {
   await waitFor(() => Array.from($('search-ns').options).some(o => o.value === special), 'special namespace option');
   S.setOverride(url => {
     if (url === '/api/stats') return json(specialStats);
-    if (url.startsWith('/api/memories')) return json([]);
+    if (url.startsWith('/api/memories/page?')) return json({items: [], total: 0});
     return undefined;
   });
-  Array.from($('ns-tabs').children).find(el => el.dataset.ns === special).click();
-  await waitFor(() => $('memories-list').textContent.includes('No memories found'), 'special list');
-  const activeTab = Array.from($('ns-tabs').children).find(el => el.dataset.ns === special);
-  assert(activeTab && activeTab.classList.contains('active'), 'namespace click roundtrip');
+  $('memories-namespace').value = special; fire($('memories-namespace'), 'change');
+  await waitFor(() => $('memories-list').textContent.includes('当前范围没有记忆'), 'special list');
+  assert($('memories-namespace').value === special, 'namespace selection roundtrip');
 
   const record = {id: specialId, namespace: special, text: special, summary: special,
                   created_at: '2026-09-22T00:00:00Z', updated_at: '2026-09-22T00:00:00Z', score: 1, metadata: {}};
   const detailUrl = '/api/memories/' + encodeURIComponent(specialId);
   S.setOverride((url, init) => {
     const method = (init && init.method) || 'GET';
+    if (url.startsWith('/api/memories/page?')) return json({items: [record], total: 1});
     if (url === '/api/memories' || url.startsWith('/api/memories?')) return json([record]);
     if (url.startsWith('/api/memories/')) return method === 'PUT' || method === 'DELETE' ? json({id: specialId}) : json(record);
     return undefined;
   });
   document.querySelector('.nav button[data-page="memories"]').click();
-  await waitFor(() => $('memories-list').querySelector('.memory-text') && $('memories-list').querySelector('.memory-text').title === special, 'list record');
+  await waitFor(() => $('memories-list').querySelector('.memory-row-title') && $('memories-list').querySelector('.memory-row-title').title === special, 'list record');
 
   S.resetCalls();
-  $('memories-list').querySelectorAll('[data-memory-action]')[0].click();
+  $('memories-list').querySelector('.memory-open').click();
   await waitFor(() => $('detail-modal').style.display === 'flex', 'view modal');
   assert(S.calls.some(c => c.url === detailUrl && c.method === 'GET'), 'view detail URL');
   assert(!$('edit-text'), 'view opens read-only detail');
 
   S.resetCalls();
-  $('memories-list').querySelectorAll('[data-memory-action]')[1].click();
+  Array.from($('detail-actions').children).find(el => el.textContent === 'Edit').click();
   await waitFor(() => $('edit-text'), 'edit modal');
   assert(S.calls.some(c => c.url === detailUrl), 'edit detail URL');
   assert($('edit-namespace').value === special, 'edit namespace value');
@@ -240,9 +321,11 @@ try {
 
   const originalConfirm = window.confirm;
   window.confirm = () => true;
-  await waitFor(() => $('memories-list').querySelectorAll('[data-memory-action]').length === 3, 'list restored');
+  await waitFor(() => $('memories-list').querySelector('.memory-open'), 'list restored');
+  $('memories-list').querySelector('.memory-open').click();
+  await waitFor(() => $('detail-modal').style.display === 'flex' && !$('edit-text'), 'delete detail');
   S.resetCalls();
-  $('memories-list').querySelectorAll('[data-memory-action]')[2].click();
+  Array.from($('detail-actions').children).find(el => el.textContent === 'Delete').click();
   await waitFor(() => S.calls.some(c => c.url === detailUrl && c.method === 'DELETE'), 'detail delete action');
   window.confirm = originalConfirm;
 
@@ -250,6 +333,7 @@ try {
   S.setOverride((url, init) => {
     const method = (init && init.method) || 'GET';
     if (url === '/api/memories/search') return json([record]);
+    if (url.startsWith('/api/memories/page?')) return json({items: [record], total: 1});
     if (url === '/api/memories' || url.startsWith('/api/memories?')) return json([record]);
     if (url.startsWith('/api/memories/')) return method === 'PUT' || method === 'DELETE' ? json({id: specialId}) : json(record);
     return undefined;
@@ -271,9 +355,9 @@ try {
   await waitFor(() => S.calls.some(c => c.url === detailUrl), 'semantic results action');
 
   // Literal error rendering in every container.
-  S.setOverride(url => (url === '/api/memories' || url.startsWith('/api/memories?')) ? json({detail: special}, 500) : undefined);
+  S.setOverride(url => url.startsWith('/api/memories/page?') ? json({detail: special}, 500) : undefined);
   document.querySelector('.nav button[data-page="memories"]').click();
-  await waitFor(() => $('memories-list').textContent === 'Error: ' + special, 'literal error memories-list');
+  await waitFor(() => $('memories-list').querySelector('p')?.textContent === 'Error: ' + special, 'literal error memories-list');
   assert(!$('memories-list').querySelector('img'), 'literal error memories-list safe');
 
   S.setOverride(url => url === '/api/memories/search' ? json({detail: special}, 500) : undefined);

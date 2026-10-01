@@ -27,7 +27,7 @@ function mountAll() {
   layout.mount();
   theme.mount();
   detail.mount();
-  memories.mount({ preselectClearNamespace: ops.preselectClearNamespace });
+  memories.mount({ preselectClearNamespace: ops.preselectClearNamespace, openMemory: detail.openMemory });
   search.mount();
   keywords.mount({ showKeyword: search.showKeyword });
   add.mount();

@@ -474,6 +474,9 @@ class DualStorage(MemoryStorage):
     def list_memories(self, *args, **kwargs):
         return self.primary.list_memories(*args, **kwargs)
 
+    def list_memories_page(self, *args, **kwargs):
+        return self.primary.list_memories_page(*args, **kwargs)
+
     def list_namespaces(self, *args, **kwargs):
         return self.primary.list_namespaces(*args, **kwargs)
 
