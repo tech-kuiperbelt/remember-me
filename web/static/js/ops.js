@@ -199,15 +199,21 @@ function renderModelStatus(model) {
   $('model-error').textContent = model.error || '';
 }
 
+function updateLocalOnlyWarning() {
+  $('config-local-only-warning').hidden = $('config-local-only').checked;
+}
+
 async function loadModelConfig() {
   try {
     const config = await api('/config');
     $('config-port').value = config.port;
     $('config-language').value = config.language;
+    $('config-local-only').checked = config.local_only;
     $('model-auto-download').checked = config.auto_download_model;
     $('model-proxy-enabled').checked = config.proxy.enabled;
     $('model-proxy-saved').textContent = config.proxy.url ? `已保存：${config.proxy.url}` : '尚未设置代理地址';
     $('model-proxy-url').value = '';
+    updateLocalOnlyWarning();
     serviceConfigLoaded = true;
     $('btn-model-save').disabled = configSaving;
   } catch (e) {
@@ -230,8 +236,9 @@ async function saveModelConfig() {
     if (url) proxy.url = url;
     await api('/config', {method:'POST', body:JSON.stringify({
       port, language:$('config-language').value,
-      auto_download_model:$('model-auto-download').checked, proxy})});
-    result.textContent = '配置已保存；端口与语言重启后生效。';
+      auto_download_model:$('model-auto-download').checked,
+      local_only:$('config-local-only').checked, proxy})});
+    result.textContent = '配置已保存；端口、语言与访问范围重启后生效。';
     const state = await refreshMaintenance();
     if (state?.required_reason === 'model_not_ready') {
       await api('/model/retry', {method:'POST'});
@@ -445,6 +452,7 @@ export async function fetchStoragePaths() {
 
 export function mount() {
   $('btn-model-save').addEventListener('click', saveModelConfig);
+  $('config-local-only').addEventListener('change', updateLocalOnlyWarning);
   $('btn-model-retry').addEventListener('click', retryModel);
   $('btn-maintenance-enter').addEventListener('click', enterMaintenance);
   $('btn-maintenance-exit').addEventListener('click', exitMaintenance);

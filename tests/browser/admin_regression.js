@@ -329,7 +329,7 @@ try {
   S.setOverride((url, init) => {
     if (url === '/api/maintenance') return json(preparing);
     if (url === '/api/config' && init && init.method === 'POST') { saved = JSON.parse(init.body); return json({}); }
-    if (url === '/api/config') return json({port: 1314, language: 'zh-CN', auto_download_model: true, proxy: {enabled: true, url: 'http://***@localhost:7890'}});
+    if (url === '/api/config') return json({port: 1314, language: 'zh-CN', auto_download_model: true, local_only: true, proxy: {enabled: true, url: 'http://***@localhost:7890'}});
     if (url === '/api/model/retry') { retried = true; return json({}); }
     return undefined;
   });
@@ -365,10 +365,15 @@ try {
   assert($('btn-sync').disabled && $('btn-restart').disabled, 'normal mode blocks maintenance actions');
 
   $('config-port').value = '2314'; $('config-language').value = 'en';
+  assert($('config-local-only').checked === true, 'local-only loaded from config');
+  assert($('config-local-only-warning').hidden, 'LAN warning hidden when local-only');
+  $('config-local-only').checked = false;
+  $('config-local-only').dispatchEvent(new Event('change'));
+  assert(!$('config-local-only-warning').hidden, 'LAN warning shown when local access disabled');
   retried = false;
   $('btn-model-save').click();
   await waitFor(() => saved.port === 2314, 'full config save');
-  assert(saved.language === 'en' && !retried, 'full config save in normal mode');
+  assert(saved.language === 'en' && saved.local_only === false && !retried, 'full config save in normal mode');
   assert($('model-config-result').textContent.includes('重启后生效'), 'restart requirement shown');
   assert($('model-card').compareDocumentPosition($('model-preparation-card')) & Node.DOCUMENT_POSITION_FOLLOWING, 'configuration above maintenance');
   S.reset();
@@ -411,7 +416,7 @@ try {
   // Recovery restores normal gating (writers enabled, bulk actions off).
   S.setOverride(url => {
     if (url === '/api/maintenance') return json({state: 'normal', action: null, required_reason: null, model: {status: 'ready', ready: true}});
-    if (url === '/api/config') return json({port: 1314, language: 'zh-CN', auto_download_model: true, proxy: {enabled: false, url: ''}});
+    if (url === '/api/config') return json({port: 1314, language: 'zh-CN', auto_download_model: true, local_only: true, proxy: {enabled: false, url: ''}});
     if (url === '/api/stats') return json({total: 0, backend: 'sqlite', path: 'x', namespaces: [], namespace_counts: {}});
     return undefined;
   });
