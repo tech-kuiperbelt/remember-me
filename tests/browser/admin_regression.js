@@ -168,7 +168,7 @@ async function runThemeScenario(scenario) {
 
 try {
   const scenario = new URLSearchParams(location.search).get('smoke') || '';
-  if (await runThemeScenario(scenario)) { /* theme scenario finished */ }
+  if (await runMemoriesVisualScenario(scenario) || await runThemeScenario(scenario)) { /* theme scenario finished */ }
   else {
 
   // The real page bootstraps from the real backend; wait for the first load.
@@ -604,6 +604,13 @@ try {
 
   await runMemoriesFiltersRegression();
   await runMemoriesSearchRegression();
+  await runMemoriesAcceptanceRegression();
   result.textContent = 'PASS: real /admin/console entry; nav switch; browse, pagination, literal, semantic, exact jump, selection retention, low-frequency, stale response; common filters, candidates, focus and reset; special characters, safe actions and errors; shutdown controls; model bootstrap/progress/proxy/retry; desktop shell status/layout/collapse/scroll';
   }
 } catch (e) { result.textContent = 'FAIL: ' + e.stack; }
+
+finally {
+  const metrics=document.createElement('pre'); metrics.id='smoke-metrics';
+  metrics.textContent=JSON.stringify({width:innerWidth,height:innerHeight,dpr:devicePixelRatio});
+  metrics.hidden=true; document.body.append(metrics);
+}

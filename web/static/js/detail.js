@@ -95,6 +95,7 @@ function showDetail(m, editable) {
     button('Close', closeDetail);
   }
   $('detail-modal').style.display = 'flex';
+  (editable ? $('edit-text') : $('btn-detail-close')).focus();
 }
 
 async function saveEdit(id) {
@@ -180,6 +181,21 @@ function pickNs(ns) {
 }
 
 export function mount() {
+  document.addEventListener('keydown', event => {
+    const modal = $('detail-modal');
+    if (modal.style.display !== 'flex' || event.isComposing) return;
+    if (event.key === 'Escape') {
+      event.preventDefault(); closeDetail(); return;
+    }
+    if (event.key !== 'Tab') return;
+    const controls = [...modal.querySelectorAll('button, input, textarea, select, [tabindex]')]
+      .filter(node => !node.disabled && node.tabIndex >= 0 && node.getClientRects().length);
+    const first = controls[0], last = controls.at(-1);
+    if (!modal.contains(document.activeElement) || (!event.shiftKey && document.activeElement === last)
+        || (event.shiftKey && document.activeElement === first)) {
+      event.preventDefault(); (event.shiftKey ? last : first)?.focus();
+    }
+  });
   $('detail-modal').addEventListener('click', closeDetail);
   $('btn-detail-close').addEventListener('click', () => closeDetail());
 }

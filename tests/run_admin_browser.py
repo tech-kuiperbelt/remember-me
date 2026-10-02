@@ -8,6 +8,8 @@ this run, a test harness (fetch-boundary interception) and the regression checks
 are injected into the console HTML response, so no test hooks live in production.
 """
 import os
+import json
+import math
 import sys
 import tempfile
 import threading
@@ -49,6 +51,8 @@ harness = (ROOT / 'tests/browser/smoke_harness.js').read_text()
 checks = (ROOT / 'tests/browser/admin_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/memories_filters_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/memories_search_regression.js').read_text()
+checks += '\n' + (ROOT / 'tests/browser/memories_acceptance_regression.js').read_text()
+checks += '\n' + (ROOT / 'tests/browser/memories_visual_regression.js').read_text()
 HEAD_SCRIPT = '<script>' + harness + '</script>'
 BODY_SCRIPT = '<script type="module">' + checks + '</script>'
 
@@ -132,7 +136,7 @@ sock = socket.socket(); sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1
 server = uvicorn.Server(uvicorn.Config(app, log_level='error'))
 t = threading.Thread(target=server.run, kwargs={'sockets':[sock]}, daemon=True); t.start()
 
-# Desktop viewports (CSS px) and browser zoom factors. Width is measured by the
+# Desktop window sizes and device pixel density (DPR) factors, not browser zoom. Width is measured by the
 # page as window.innerWidth; combinations below 1024 CSS px are informational
 # only, not part of the acceptance range.
 VIEWPORTS = ["1024,768", "1280,720", "1366,768", "1920,1080", "2560,1440"]
@@ -146,8 +150,14 @@ THEME_SCHEMES = ["light", "dark"]
 THEME_EDGE_CASES = ["system", "blocked", "default", "invalid"]
 
 
-def run_case(profile, label, window_size, scale, shot_dir, query, theme=None):
+def run_case(profile, label, window_size, scale, shot_dir, query, theme=None, zoom=1):
     """Run the browser regression at one viewport/scale, saving a screenshot."""
+    # Chrome's actual browser page-zoom preference, separate from device scale.
+    preferences = Path(profile) / 'Default' / 'Preferences'
+    preferences.parent.mkdir(parents=True, exist_ok=True)
+    prefs = json.loads(preferences.read_text()) if preferences.exists() else {}
+    prefs.setdefault('partition', {})['default_zoom_level'] = {'x': math.log(zoom) / math.log(1.2)}
+    preferences.write_text(json.dumps(prefs))
     shot = Path(shot_dir) / (label + ".png")
     url = f'http://127.0.0.1:{port}/admin/console?smoke=' + query
     if theme:
@@ -158,7 +168,38 @@ def run_case(profile, label, window_size, scale, shot_dir, query, theme=None):
            '--force-device-scale-factor=' + scale,
            '--screenshot=' + str(shot), '--dump-dom',
            '--virtual-time-budget=40000', url]
-    return subprocess.run(cmd, capture_output=True, text=True, timeout=90), shot
+    import re
+    import html
+    metrics = None
+    # Window dimensions include Chrome decorations; adjust once for the declared
+    # acceptance content viewport and verify actual CSS dimensions afterwards.
+    for attempt in range(2):
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
+        match = re.search(r'<pre id="smoke-metrics"[^>]*>(.*?)</pre>', proc.stdout, re.S)
+        if not match:
+            break
+        metrics = json.loads(html.unescape(match.group(1)))
+        target_height = int(window_size.split(',')[1]) / zoom
+        if query.startswith('acceptance-') and attempt == 0 and abs(metrics['height'] - target_height) > 2:
+            adjustment = round((target_height - metrics['height']) * zoom)
+            option = next(i for i, arg in enumerate(cmd) if arg.startswith('--window-size='))
+            width, height = map(int, window_size.split(','))
+            cmd[option] = f'--window-size={width},{height + adjustment}'
+            continue
+        break
+    if query.startswith('acceptance-'):
+        if not metrics:
+            raise AssertionError('Acceptance viewport metrics missing: ' + label)
+        width, height = map(int, window_size.split(','))
+        if abs(metrics['width'] - width / zoom) > 2 or abs(metrics['height'] - height / zoom) > 2:
+            raise AssertionError('Acceptance viewport mismatch: ' + str(metrics))
+    if metrics:
+        metrics.update(window=window_size, device_scale=float(scale), browser_zoom=zoom)
+        shot.with_suffix('.json').write_text(json.dumps(metrics, indent=2) + '\n')
+        if zoom != 1 and (abs(metrics['dpr'] - zoom * float(scale)) > .02
+                         or abs(metrics['width'] - int(window_size.split(',')[0]) / zoom) > 2):
+            raise AssertionError('Browser zoom preference did not apply: ' + str(metrics))
+    return proc, shot
 
 
 def selected(label):
@@ -241,6 +282,25 @@ try:
             ok, text = check(proc)
             print(('PASS ' if ok else 'FAIL ') + label + ' -> ' + str(shot) +
                   ('' if ok else ' :: ' + (text or proc.stderr[-400:])))
+            if not ok:
+                failures.append(label)
+        # 24 layout combinations, four constrained popovers, and real browser zoom.
+        acceptance = [(f'acceptance-{size.replace(",", "x")}-{scheme}-{sidebar}-{mode}', size, scheme, 1)
+                      for size in ('1024,768', '1440,900', '1920,1080')
+                      for scheme in ('light', 'dark') for sidebar in ('expanded', 'collapsed')
+                      for mode in ('browse', 'search')]
+        acceptance += [(f'acceptance-1024x768-{scheme}-expanded-{popover}', '1024,768', scheme, 1)
+                       for scheme in ('light', 'dark') for popover in ('categories', 'keywords')]
+        acceptance += [(f'acceptance-zoom-{zoom}-{scheme}-expanded-{mode}', '1920,1080', scheme, zoom)
+                       for zoom in (1, 1.25, 1.5) for scheme in ('light', 'dark')
+                       for mode in ('browse', 'search')]
+        for label, size, scheme, zoom in acceptance:
+            if not selected(label):
+                continue
+            proc, shot = run_case(profile, label, size, '1', shots, label, theme=scheme, zoom=zoom)
+            ok, text = check(proc)
+            print(('PASS ' if ok else 'FAIL ') + label + ' -> ' + str(shot) +
+                  ('' if ok else ' :: ' + (text or proc.stderr[-400:])), flush=True)
             if not ok:
                 failures.append(label)
         if failures:

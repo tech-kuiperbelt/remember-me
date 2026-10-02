@@ -3,7 +3,7 @@
 2026-10-01 用户认可路线。第一阶段已完成，见 [50.1 实施记录](50.1-frontend-module-split.md)。
 第二阶段桌面布局、主题基础和 Shell 视觉已分别实施并通过回归，记录见
 [50.2 桌面布局](50.2-admin-desktop-layout.md)、[50.3 主题基础](50.3-ui-theme-foundation.md)
-和 [50.4 Shell 视觉](50.4-admin-shell-visual.md)；Shell 视觉已完成，Memories 浏览与共用筛选已完成，统一搜索已实施，独立 review 通过，待实际服务验证。
+和 [50.4 Shell 视觉](50.4-admin-shell-visual.md)；Shell 视觉已完成，Memories 浏览与共用筛选已完成，统一搜索已完成，隔离回归、独立 review 和实际服务验证通过；[3.5 整体验收](50.5.5-memories-acceptance-and-closeout.md)已实施，最终回归通过、待独立 review。
 
 ## 目标与顺序
 
@@ -52,7 +52,7 @@
 [UI 实施规则](../../design/UI_IMPLEMENTATION_RULES.md) 和
 [风格示意图](../../design/UI.png)，按“主题基础 → Shell 视觉 → Memories”推进。
 主题基础与 Shell 视觉已完成；正在推进 Memories 工作区专项，见
-[50.5 Memories 工作区改版总体计划](50.5-memories-workspace.md)（3.2 浏览列表已完成；3.3 共用筛选已完成，回归及独立 review 通过；[3.4 统一搜索](50.5.4-memories-unified-search.md)已实施并通过隔离回归，独立 review 通过，待实际服务验证）。
+[50.5 Memories 工作区改版总体计划](50.5-memories-workspace.md)（3.2 浏览列表已完成；3.3 共用筛选已完成，回归及独立 review 通过；[3.4 统一搜索](50.5.4-memories-unified-search.md)已完成，隔离回归、独立 review 和实际服务验证通过）。
 主题切换入口位于配置页的独立“外观”区域。
 
 ## 第三阶段：布局稳定后的结构复核
