@@ -84,20 +84,34 @@ class MemoryStorage(ABC):
 
     @abstractmethod
     def search_lexical(self, query: str, k: int = 10,
-                       namespace: Optional[str] = None) -> list[dict[str, Any]]:
+                       namespace: Optional[str] = None, *,
+                       categories: Optional[list[str]] = None,
+                       keywords: Optional[list[str]] = None,
+                       updated_after: Optional[str] = None,
+                       updated_before: Optional[str] = None,
+                       min_score: Optional[float] = None) -> list[dict[str, Any]]:
         """Content-only FTS5/BM25 search, ordered best-first.
 
-        Score is ``-raw_bm25``; callers must not compare it with cosine scores.
+        Optional exact candidate filters (categories/keywords, OR within a
+        dimension and AND across dimensions), strict updated-time bounds and a
+        non-negative ``min_score`` floor are applied before Top-K. Score is the
+        raw ``-bm25``; callers must not compare it with cosine scores.
         """
         ...
 
     @abstractmethod
     def search_anchor(self, query: str, k: int = 10,
-                      namespace: Optional[str] = None) -> list[dict[str, Any]]:
+                      namespace: Optional[str] = None, *,
+                      categories: Optional[list[str]] = None,
+                      keywords: Optional[list[str]] = None,
+                      updated_after: Optional[str] = None,
+                      updated_before: Optional[str] = None,
+                      min_score: Optional[float] = None) -> list[dict[str, Any]]:
         """Anchor-only FTS5/BM25 search, ordered best-first.
 
         Matches ``metadata.anchors`` (identity signals), not memory content.
-        Score is ``-raw_bm25``; callers must not compare it with cosine scores.
+        Shares the exact candidate filters, time bounds and score floor of
+        :meth:`search_lexical`. Score is the raw ``-bm25``.
         """
         ...
 

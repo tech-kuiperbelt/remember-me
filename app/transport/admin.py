@@ -785,12 +785,17 @@ class AdminAPI:
         """Shared mechanical flow for the lexical/anchor term searches.
 
         Parsing, namespace handling and the JSON envelope are shared; the
-        operation's query implementation and scoring stay in the service.
+        operation's query implementation and scoring stay in the service. ``k``
+        is passed through raw so the service/storage validate it strictly
+        (bool/non-integer/out-of-range -> invalid_query) instead of truncating.
         """
         body = await _request_object(request, required=("query",), string_fields=("query",))
         logger.info("%s query_len=%d", label, len(body.get("query", "")))
         results = await self._run(lambda: operation(
-            body["query"], _number(body.get("k", default_k), int, "k"), body.get("namespace")))
+            body["query"], body.get("k", default_k), body.get("namespace"),
+            categories=body.get("categories"), keywords=body.get("keywords"),
+            updated_after=body.get("updated_after"), updated_before=body.get("updated_before"),
+            min_score=body.get("min_score")))
         return json_response(results)
 
     @_maps_domain_errors

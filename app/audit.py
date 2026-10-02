@@ -117,7 +117,7 @@ def _params_transfer(args, result):
     return args
 
 
-def _params_search_semantic(args, result):
+def _params_search_filters(args, result):
     for dimension in ("keywords", "categories"):
         values = args.get(dimension)
         if isinstance(values, list) and len(values) > _MAX_FILTER_VALUES:
@@ -158,7 +158,9 @@ PARAM_POLICIES: dict[str, object] = {
     "update": _params_update,
     "memory_import": _params_transfer,
     "memory_export": _params_transfer,
-    "search_semantic": _params_search_semantic,
+    "search_semantic": _params_search_filters,
+    "search_lexical": _params_search_filters,
+    "search_anchor": _params_search_filters,
     "report": _params_report,
 }
 

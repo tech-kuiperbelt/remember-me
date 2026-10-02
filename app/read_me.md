@@ -85,6 +85,8 @@ Ops 进入运维状态时，`add`、`update`、`delete` 暂停并返回 `respons
 
 `search_lexical` 面向英文/代码类文本（类名、异常码、符号、版本号），且 BM25 分数与 `search_semantic` 的余弦分不可比较；连续中文在 FTS 中不切分，中文与概念检索请用 `search_semantic`。
 
+`search_lexical` 与 `search_anchor` 均支持可选的公共筛选与分数门槛：`categories` / `keywords`（精确匹配，维度内 OR、跨维度 AND，不做语义解析）、`updated_after` / `updated_before`（与 `search_semantic` 相同的带时区 ISO 8601、微秒严格开区间）、以及 `min_score`（原始 BM25 最低分，接受有限非负数字、无统一 0–1 范围）。筛选与分数门槛都在 Top-K 截取前生效，同分按记忆 ID 升序稳定排序；返回原始 `-bm25` 分数（不再舍入到六位小数），与其它检索分数不可比较。
+
 `search_anchor` 只匹配记忆声明过的 **anchors**（写入时通过 `metadata.anchors` 提供 0–5 个有辨识度的标识符：类名、API、异常码、配置键、版本号等），不搜索正文、keywords 或 categories。三种检索的原始分数互不可比；`search_anchor` 无结果时改用 `search_lexical` 或 `search_semantic`。写入引导：新增记忆或修改正文时，从内容中选择 0–5 个有辨识度的 anchors，保留原拼写，不要编造或直接复制泛化的 keywords，没有就传 `[]`。keywords 表示内容概念，categories 表示记忆性质，anchors 标识具体对象。显式 anchors 替换旧列表，`[]` 清空；正文实质变化且未重新提交 anchors 会清空旧值，仅改其他元数据或空白等价正文时省略 anchors 则保留原值。
 
 新增记忆或修改正文时，为记忆选择 1–3 个相关的 `metadata.categories`；优先复用 `stats.category_counts` 中符合含义的分类。只修改其他元数据时可以保留原分类。已知目标关键词或分类时，`search_semantic` 可用 `keywords` / `categories` 先缩小候选集，再按正文余弦相似度排序：精确索引值优先，未命中的值会在同一维度与 namespace 内尝试语义解析，实际映射见 `filter_resolution`。探索性问题可省略过滤条件；`search_meta` 的同名过滤条件只做精确匹配。

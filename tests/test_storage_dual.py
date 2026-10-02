@@ -92,3 +92,16 @@ def test_dual_search_passes_time_scope_to_primary(dual, mock_primary):
     result = dual.search([1., 0.], k=1, namespace="default", **bounds)
     assert result == [{"id": "within-window"}]
     mock_primary.search.assert_called_once_with([1., 0.], k=1, namespace="default", **bounds)
+
+
+@pytest.mark.parametrize("method", ["search_lexical", "search_anchor"])
+def test_dual_term_search_forwards_filters(dual, mock_primary, method):
+    """Lexical/anchor filters, time and min_score reach the SQLite primary."""
+    getattr(mock_primary, method).return_value = [{"id": "hit"}]
+    kwargs = {"k": 5, "namespace": "ns", "categories": ["design"], "keywords": ["alpha"],
+              "updated_after": "2026-01-01T00:00:00Z", "updated_before": None,
+              "min_score": 0.5}
+    result = getattr(dual, method)("query", **kwargs)
+    assert result == [{"id": "hit"}]
+    getattr(mock_primary, method).assert_called_once_with("query", **kwargs)
+

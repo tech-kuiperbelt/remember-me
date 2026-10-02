@@ -10,6 +10,7 @@ from app.embedding.provider_adapter import wrap_provider
 from app.storage import StorageCapabilityError
 from app.domain.lexical import LexicalQueryError
 from app.domain.time_filters import normalize_updated_range
+from app.domain.search_filters import normalize_min_score
 from app.domain.anchors import normalize_anchors, InvalidAnchors
 from app import audit
 from app.domain.summary_policy import derive_summary, normalize_summary
@@ -329,18 +330,58 @@ class MemoryService:
             logger.error("search failed: %s", e, exc_info=True)
             raise
 
-    def memory_search_lexical(self, query: str, k: int = 10,
-                              namespace: str | None = None) -> list[dict]:
-        """Content-only lexical (FTS5/BM25) search; scores are not cosine-comparable."""
+    def _normalize_term_search_filters(self, namespace, categories, keywords,
+                                       updated_after, updated_before, min_score):
+        """Validate/None-normalize the shared lexical/anchor search filters.
+
+        Returns ``(namespace, keywords, categories, updated_after, updated_before,
+        min_score)``. Filter/time/min_score failures raise ``InvalidSearchFilter``
+        (HTTP 400 ``invalid_request``); query-syntax and Top-K failures stay with
+        the storage ``LexicalQueryError`` channel (``invalid_query``).
+        """
         if namespace is not None and not isinstance(namespace, str):
             raise InvalidNamespace("namespace must be a string")
         namespace = normalize_namespace(namespace)
         if namespace is not None:
             namespace = self.check_namespace(namespace)
-        logger.info("lexical search: query_len=%d k=%s namespace=%s",
-                    len(query) if isinstance(query, str) else -1, k, namespace)
         try:
-            results = self.storage.search_lexical(query, k=k, namespace=namespace)
+            updated_after, updated_before = normalize_updated_range(updated_after, updated_before)
+        except ValueError as exc:
+            raise InvalidSearchFilter(str(exc)) from exc
+        kw = _normalize_keywords(keywords)
+        cats = normalize_categories_filter(categories)
+        for dimension, values in (("keywords", kw), ("categories", cats)):
+            if values and len(values) > MAX_FILTER_VALUES:
+                raise InvalidSearchFilter(
+                    f"{dimension} accepts at most {MAX_FILTER_VALUES} filter values"
+                )
+        try:
+            min_score = normalize_min_score(min_score)
+        except ValueError as exc:
+            raise InvalidSearchFilter(str(exc)) from exc
+        return namespace, kw, cats, updated_after, updated_before, min_score
+
+    def memory_search_lexical(self, query: str, k: int = 10,
+                              namespace: str | None = None, *,
+                              categories: list | None = None,
+                              keywords: list | None = None,
+                              updated_after: str | None = None,
+                              updated_before: str | None = None,
+                              min_score: float | None = None) -> list[dict]:
+        """Content-only lexical (FTS5/BM25) search; scores are not cosine-comparable."""
+        namespace, kw, cats, updated_after, updated_before, min_score = (
+            self._normalize_term_search_filters(
+                namespace, categories, keywords, updated_after, updated_before, min_score))
+        if k is None:
+            k = 10
+        logger.info("lexical search: query_len=%d k=%s namespace=%s keywords=%s categories=%s "
+                    "updated_after=%s updated_before=%s min_score=%s",
+                    len(query) if isinstance(query, str) else -1, k, namespace, kw, cats,
+                    updated_after, updated_before, min_score)
+        try:
+            results = self.storage.search_lexical(
+                query, k=k, namespace=namespace, categories=cats, keywords=kw,
+                updated_after=updated_after, updated_before=updated_before, min_score=min_score)
         except LexicalQueryError:
             # Expected input validation; transports map it to a structured 4xx.
             raise
@@ -351,17 +392,26 @@ class MemoryService:
         return [_strip_internal_fields(r) for r in results]
 
     def memory_search_anchor(self, query: str, k: int = 10,
-                             namespace: str | None = None) -> list[dict]:
+                             namespace: str | None = None, *,
+                             categories: list | None = None,
+                             keywords: list | None = None,
+                             updated_after: str | None = None,
+                             updated_before: str | None = None,
+                             min_score: float | None = None) -> list[dict]:
         """Anchor-only lexical (FTS5/BM25) search; scores are not cosine-comparable."""
-        if namespace is not None and not isinstance(namespace, str):
-            raise InvalidNamespace("namespace must be a string")
-        namespace = normalize_namespace(namespace)
-        if namespace is not None:
-            namespace = self.check_namespace(namespace)
-        logger.info("anchor search: query_len=%d k=%s namespace=%s",
-                    len(query) if isinstance(query, str) else -1, k, namespace)
+        namespace, kw, cats, updated_after, updated_before, min_score = (
+            self._normalize_term_search_filters(
+                namespace, categories, keywords, updated_after, updated_before, min_score))
+        if k is None:
+            k = 10
+        logger.info("anchor search: query_len=%d k=%s namespace=%s keywords=%s categories=%s "
+                    "updated_after=%s updated_before=%s min_score=%s",
+                    len(query) if isinstance(query, str) else -1, k, namespace, kw, cats,
+                    updated_after, updated_before, min_score)
         try:
-            results = self.storage.search_anchor(query, k=k, namespace=namespace)
+            results = self.storage.search_anchor(
+                query, k=k, namespace=namespace, categories=cats, keywords=kw,
+                updated_after=updated_after, updated_before=updated_before, min_score=min_score)
         except LexicalQueryError:
             # Expected input validation; transports map it to a structured 4xx.
             raise

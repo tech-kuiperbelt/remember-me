@@ -177,7 +177,10 @@ def test_online_connection_access_holds_storage_lock():
     storage.list_memories_page(limit=10, updated_after="2000-01-01T00:00:00Z")
     storage.search([1.0, 0.0, 0.0], k=2)
     storage.search_lexical("record")
+    storage.search_lexical("record", categories=["design"], keywords=["kw1"],
+                           updated_after="2000-01-01T00:00:00Z", min_score=0.0)
     storage.search_anchor("anchor-0")
+    storage.search_anchor("anchor-0", keywords=["kw0"], min_score=0.0)
     storage.get_unsynced_records(limit=10)
     storage.get_details([memory_id])
     storage.get_stats()
@@ -247,7 +250,10 @@ def run_mixed():
             storage.list_memories(
                 limit=10, updated_after="2000-01-01T00:00:00Z")
             storage.search_lexical("record")
+            storage.search_lexical("record", categories=["design"], keywords=["kw1"],
+                                   updated_after="2000-01-01T00:00:00Z", min_score=0.0)
             storage.search_anchor("anchor-0")
+            storage.search_anchor("anchor-0", keywords=["kw0"], min_score=0.0)
             storage.get_unsynced_records(limit=10)
             storage.get_stats()
     except BaseException as exc:

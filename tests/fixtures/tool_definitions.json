@@ -206,14 +206,34 @@
   },
   {
     "annotations": null,
-    "description": "Exact-term (lexical) search over memory text using full-text matching (SQLite FTS5 / BM25). Use this for literal identifiers, error codes, class or symbol names, version numbers and distinctive phrases that semantic search may miss — e.g. \"PoolAcquirePendingLimitException\", \"ORA-00060\", \"subscriptionsPerConnection\". It matches memory CONTENT only (not keywords/categories) and requires an actual term match, so it does not generalise to paraphrases; use 'search_semantic' for topic or conceptual questions. Continuous Chinese text is not segmented in this index, so use 'search_semantic' for Chinese queries rather than 'search_lexical'. Results return the memory summary; call 'get_details' with the returned IDs for full content. Scores are BM25-based and are NOT comparable with search_semantic scores. If no results are found, call 'stats' to verify the namespace, or retry with 'search_semantic'. If the response has response_code='namespace_not_found', the requested namespace does not exist; use response_meta.known_namespaces or omit the namespace to search all namespaces.",
+    "description": "Exact-term (lexical) search over memory text using full-text matching (SQLite FTS5 / BM25). Use this for literal identifiers, error codes, class or symbol names, version numbers and distinctive phrases that semantic search may miss — e.g. \"PoolAcquirePendingLimitException\", \"ORA-00060\", \"subscriptionsPerConnection\". It matches memory CONTENT only (not keywords/categories) and requires an actual term match, so it does not generalise to paraphrases; use 'search_semantic' for topic or conceptual questions. Continuous Chinese text is not segmented in this index, so use 'search_semantic' for Chinese queries rather than 'search_lexical'. Results return the memory summary; call 'get_details' with the returned IDs for full content. Scores are BM25-based and are NOT comparable with search_semantic scores. Optional categories/keywords restrict candidates to memories carrying those exact index values (OR within a dimension, AND across dimensions; no semantic resolution), updated_after/updated_before bound updated_at, and min_score drops results below a raw BM25 floor; all apply before Top-K. BM25 has no fixed 0-1 range. If no results are found, call 'stats' to verify the namespace, or retry with 'search_semantic'. If the response has response_code='namespace_not_found', the requested namespace does not exist; use response_meta.known_namespaces or omit the namespace to search all namespaces.",
     "execution": null,
     "icons": null,
     "inputSchema": {
       "properties": {
+        "categories": {
+          "description": "Restrict candidates to memories carrying any of these categories (exact match, OR). Omit for no category filter. Combined with keywords, namespace and time using AND.",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
         "k": {
           "description": "Max number of results to return (default: 10, range 1-100).",
           "type": "integer"
+        },
+        "keywords": {
+          "description": "Restrict candidates to memories carrying any of these keywords (exact match, OR). Omit for no keyword filter. Combined with categories, namespace and time using AND.",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "min_score": {
+          "description": "Optional minimum raw BM25 relevance score (finite, non-negative; no upper bound). Results below the floor are dropped before Top-K. Omit or null for no floor; BM25 has no fixed 0-1 range.",
+          "type": "number"
         },
         "namespace": {
           "description": "Only search within this namespace (optional). Leave empty to search all namespaces. An unknown namespace returns response_code='namespace_not_found'.",
@@ -221,6 +241,14 @@
         },
         "query": {
           "description": "Literal text or terms to match. The query's terms are OR-combined; long identifiers may be split on punctuation, so include the distinctive parts.",
+          "type": "string"
+        },
+        "updated_after": {
+          "description": "Optional timezone-aware ISO 8601 timestamp. Restrict candidates to memories updated strictly after this moment before ranking. Omit or leave blank for no lower bound.",
+          "type": "string"
+        },
+        "updated_before": {
+          "description": "Optional timezone-aware ISO 8601 timestamp. Restrict candidates to memories updated strictly before this moment before ranking. Must be later than updated_after when both are supplied.",
           "type": "string"
         }
       },
@@ -236,14 +264,34 @@
   },
   {
     "annotations": null,
-    "description": "Search the retrieval anchors a memory declared — distinctive identifiers, names, class/API names, error codes, config keys, versions. Use this when the query contains distinctive terms likely to appear in a declared anchor (e.g. a class name or ticket id). It matches the ANCHORS field only (not memory text, keywords or categories), so it can be narrower than 'search_lexical' and 'search_semantic'; retry with those when it returns nothing. Results return the memory summary; call 'get_details' with the returned IDs for full content. Scores are BM25-based and are NOT comparable with the other search scores. If the response has response_code='namespace_not_found', the requested namespace does not exist; use response_meta.known_namespaces or omit the namespace to search all namespaces.",
+    "description": "Search the retrieval anchors a memory declared — distinctive identifiers, names, class/API names, error codes, config keys, versions. Use this when the query contains distinctive terms likely to appear in a declared anchor (e.g. a class name or ticket id). It matches the ANCHORS field only (not memory text, keywords or categories), so it can be narrower than 'search_lexical' and 'search_semantic'; retry with those when it returns nothing. Results return the memory summary; call 'get_details' with the returned IDs for full content. Scores are BM25-based and are NOT comparable with the other search scores. Optional categories/keywords restrict candidates to memories carrying those exact index values (OR within a dimension, AND across dimensions; no semantic resolution), updated_after/updated_before bound updated_at, and min_score drops results below a raw BM25 floor; all apply before Top-K. BM25 has no fixed 0-1 range. If the response has response_code='namespace_not_found', the requested namespace does not exist; use response_meta.known_namespaces or omit the namespace to search all namespaces.",
     "execution": null,
     "icons": null,
     "inputSchema": {
       "properties": {
+        "categories": {
+          "description": "Restrict candidates to memories carrying any of these categories (exact match, OR). Omit for no category filter. Combined with keywords, namespace and time using AND.",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
         "k": {
           "description": "Max number of results to return (default: 10, range 1-100).",
           "type": "integer"
+        },
+        "keywords": {
+          "description": "Restrict candidates to memories carrying any of these keywords (exact match, OR). Omit for no keyword filter. Combined with categories, namespace and time using AND.",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "min_score": {
+          "description": "Optional minimum raw BM25 relevance score (finite, non-negative; no upper bound). Results below the floor are dropped before Top-K. Omit or null for no floor; BM25 has no fixed 0-1 range.",
+          "type": "number"
         },
         "namespace": {
           "description": "Only search within this namespace (optional). Leave empty to search all namespaces. An unknown namespace returns response_code='namespace_not_found'.",
@@ -251,6 +299,14 @@
         },
         "query": {
           "description": "Anchor text to match. The query's terms are OR-combined.",
+          "type": "string"
+        },
+        "updated_after": {
+          "description": "Optional timezone-aware ISO 8601 timestamp. Restrict candidates to memories updated strictly after this moment before ranking. Omit or leave blank for no lower bound.",
+          "type": "string"
+        },
+        "updated_before": {
+          "description": "Optional timezone-aware ISO 8601 timestamp. Restrict candidates to memories updated strictly before this moment before ranking. Must be later than updated_after when both are supplied.",
           "type": "string"
         }
       },

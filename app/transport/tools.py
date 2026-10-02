@@ -85,13 +85,19 @@ def _handle_search_semantic(ctx, a):
 
 def _handle_search_lexical(ctx, a):
     items = _prepare_for_llm(ctx.service.memory_search_lexical(
-        a["query"], int(a.get("k", 10)), a.get("namespace")))
+        a["query"], a.get("k", 10), a.get("namespace"),
+        categories=a.get("categories"), keywords=a.get("keywords"),
+        updated_after=a.get("updated_after"), updated_before=a.get("updated_before"),
+        min_score=a.get("min_score")))
     return ToolOutcome(_wrap_search_lexical(items))
 
 
 def _handle_search_anchor(ctx, a):
     items = _prepare_for_llm(ctx.service.memory_search_anchor(
-        a["query"], int(a.get("k", 10)), a.get("namespace")))
+        a["query"], a.get("k", 10), a.get("namespace"),
+        categories=a.get("categories"), keywords=a.get("keywords"),
+        updated_after=a.get("updated_after"), updated_before=a.get("updated_before"),
+        min_score=a.get("min_score")))
     return ToolOutcome(_wrap_search_anchor(items))
 
 

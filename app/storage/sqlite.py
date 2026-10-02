@@ -1226,15 +1226,19 @@ class SQLiteStorage(SQLitePrimaryStorage):
         return {r["value"]: r["cnt"] for r in rows}
 
     def _append_index_filter(self, clauses: list[str], params: list,
-                             dimension: str, raw_values) -> None:
-        """Add an OR-within-dimension SQL filter; dimensions compose via AND."""
+                             dimension: str, raw_values, alias: str = "") -> None:
+        """Add an OR-within-dimension SQL filter; dimensions compose via AND.
+
+        ``alias`` is the already-suffixed table prefix (e.g. ``"m."``) so the
+        clause can be reused from a joined query without ambiguous columns.
+        """
         values = self._normalize_index_filter(dimension, raw_values)
         if not values:
             return
         self._index_spec(dimension)
         placeholders = ",".join(["?"] * len(values))
         clauses.append(
-            "id IN (SELECT link.memory_id FROM memory_index_values link "
+            f"{alias}id IN (SELECT link.memory_id FROM memory_index_values link "
             "JOIN index_values iv ON iv.id = link.index_value_id "
             f"WHERE iv.dimension = ? AND iv.value IN ({placeholders}))"
         )
@@ -1459,13 +1463,18 @@ class SQLiteStorage(SQLitePrimaryStorage):
         scored.sort(key=lambda x: x[0], reverse=True)
         return [{**d, "score": round(s, 6)} for s, d in scored[:k]]
 
-    def _search_fts(self, table: str, query, k, namespace, match_type: str):
+    def _search_fts(self, table: str, query, k, namespace, match_type: str, *,
+                    categories=None, keywords=None, updated_after=None,
+                    updated_before=None, min_score=None):
         """Shared FTS5/BM25 search over one derived index.
 
-        The public score is ``-raw_bm25`` so a higher score is better while the
-        SQL ordering follows FTS5's ascending bm25. ``match_info`` echoes the raw
-        value and marks the retrieval type; scores are not comparable with
-        semantic (cosine) scores.
+        Candidate filters (namespace/categories/keywords/time) restrict the
+        ``memories`` join by exact match and compose with AND; ``min_score``
+        filters on ``score = -bm25(...)``. Both are applied **before** Top-K, so
+        a high-scoring row outside the filters cannot occupy a result slot. The
+        public score is the raw ``-bm25`` (no rounding) so thresholds compare at
+        the same precision; ``match_info`` echoes the raw value. Scores are not
+        comparable with semantic (cosine) scores.
         """
         if table not in self._FTS_SCHEMAS:
             raise ValueError(f"unknown FTS table: {table}")
@@ -1473,18 +1482,21 @@ class SQLiteStorage(SQLitePrimaryStorage):
         if match is None:
             return []
         k = normalize_k(k)
-        clauses = ["m.deleted = 0"]
-        params = [match]
-        if namespace:
-            clauses.append("m.namespace = ?")
-            params.append(namespace)
+        where, filter_params = self._memory_filter_conditions(
+            namespace, updated_after, updated_before, keywords, categories, alias="m.")
+        score_clause = " WHERE -_bm25_raw >= ?" if min_score is not None else ""
+        params = [match, *filter_params]
+        if min_score is not None:
+            params.append(min_score)
         params.append(k)
         with self._lock:
             rows = self.conn.execute(
+                f"SELECT * FROM ("
                 f"SELECT m.*, bm25({table}) AS _bm25_raw FROM {table} "
                 f"JOIN memories m ON m.id = {table}.memory_id "
-                f"WHERE {table} MATCH ? AND {' AND '.join(clauses)} "
-                f"ORDER BY bm25({table}) LIMIT ?",
+                f"WHERE {table} MATCH ? AND {where})"
+                f"{score_clause} "
+                f"ORDER BY _bm25_raw ASC, id ASC LIMIT ?",
                 params,
             ).fetchall()
             results = []
@@ -1492,19 +1504,29 @@ class SQLiteStorage(SQLitePrimaryStorage):
                 raw = float(row["_bm25_raw"])
                 record = self._row_to_dict(row)
                 record.pop("_bm25_raw", None)
-                record["score"] = round(-raw, 6)
+                record["score"] = -raw
                 record["match_info"] = {"type": match_type, "score_type": "fts5_bm25",
-                                        "raw_bm25": round(raw, 6)}
+                                        "raw_bm25": raw}
                 results.append(record)
         return results
 
-    def search_lexical(self, query, k=DEFAULT_K, namespace=None):
-        """Content-only FTS5/BM25 search."""
-        return self._search_fts("memory_content_fts", query, k, namespace, "lexical")
+    def search_lexical(self, query, k=DEFAULT_K, namespace=None, *,
+                       categories=None, keywords=None, updated_after=None,
+                       updated_before=None, min_score=None):
+        """Content-only FTS5/BM25 search with exact candidate filters."""
+        return self._search_fts("memory_content_fts", query, k, namespace, "lexical",
+                                categories=categories, keywords=keywords,
+                                updated_after=updated_after, updated_before=updated_before,
+                                min_score=min_score)
 
-    def search_anchor(self, query, k=DEFAULT_K, namespace=None):
+    def search_anchor(self, query, k=DEFAULT_K, namespace=None, *,
+                      categories=None, keywords=None, updated_after=None,
+                      updated_before=None, min_score=None):
         """Anchor-only FTS5/BM25 search (identity signals, not memory content)."""
-        return self._search_fts("memory_anchor_fts", query, k, namespace, "anchor")
+        return self._search_fts("memory_anchor_fts", query, k, namespace, "anchor",
+                                categories=categories, keywords=keywords,
+                                updated_after=updated_after, updated_before=updated_before,
+                                min_score=min_score)
 
     def list_memories(self, namespace=None, limit=100, offset=0, sort_by="created_at",
                       updated_after=None, updated_before=None, keywords=None,
@@ -1520,17 +1542,24 @@ class SQLiteStorage(SQLitePrimaryStorage):
             ).fetchall()
             return [self._row_to_dict(r) for r in rows]
 
-    def _memory_filter_conditions(self, namespace, updated_after, updated_before, keywords, categories):
-        clauses, params = ["deleted = 0"], []
+    def _memory_filter_conditions(self, namespace, updated_after, updated_before, keywords, categories,
+                                  alias: str = ""):
+        """Build the shared candidate predicate.
+
+        ``alias`` is the already-suffixed table prefix (``""`` for an unaliased
+        ``memories`` query, ``"m."`` for a joined query).
+        """
+        clauses, params = [f"{alias}deleted = 0"], []
         if namespace:
-            clauses.append("namespace = ?")
+            clauses.append(f"{alias}namespace = ?")
             params.append(namespace)
         for boundary, operator in ((updated_after, ">"), (updated_before, "<")):
             if boundary:
-                clauses.append(f"memory_timestamp_us(updated_at) {operator} memory_timestamp_us(?)")
+                clauses.append(
+                    f"memory_timestamp_us({alias}updated_at) {operator} memory_timestamp_us(?)")
                 params.append(boundary)
-        self._append_index_filter(clauses, params, "keywords", keywords)
-        self._append_index_filter(clauses, params, "categories", categories)
+        self._append_index_filter(clauses, params, "keywords", keywords, alias=alias)
+        self._append_index_filter(clauses, params, "categories", categories, alias=alias)
         return " AND ".join(clauses), params
 
     def list_memories_page(self, namespace=None, limit=20, offset=0,

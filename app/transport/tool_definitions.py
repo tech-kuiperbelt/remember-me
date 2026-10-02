@@ -193,6 +193,11 @@ def build_tools() -> list[types.Tool]:
                             "Results return the memory summary; call 'get_details' with the returned "
                             "IDs for full content. Scores are BM25-based and are NOT comparable with "
                             "search_semantic scores. "
+                            "Optional categories/keywords restrict candidates to memories carrying "
+                            "those exact index values (OR within a dimension, AND across dimensions; "
+                            "no semantic resolution), updated_after/updated_before bound updated_at, "
+                            "and min_score drops results below a raw BM25 floor; all apply before "
+                            "Top-K. BM25 has no fixed 0-1 range. "
                             "If no results are found, call 'stats' to verify the namespace, or retry "
                             "with 'search_semantic'. If the response has response_code='namespace_not_found', "
                             "the requested namespace does not exist; use response_meta.known_namespaces "
@@ -203,6 +208,21 @@ def build_tools() -> list[types.Tool]:
                         "query": {"type": "string", "description": "Literal text or terms to match. The query's terms are OR-combined; long identifiers may be split on punctuation, so include the distinctive parts."},
                         "k": {"type": "integer", "description": "Max number of results to return (default: 10, range 1-100)."},
                         "namespace": {"type": "string", "description": "Only search within this namespace (optional). Leave empty to search all namespaces. An unknown namespace returns response_code='namespace_not_found'."},
+                        "categories": {
+                            "type": "array",
+                            "maxItems": 20,
+                            "items": {"type": "string"},
+                            "description": "Restrict candidates to memories carrying any of these categories (exact match, OR). Omit for no category filter. Combined with keywords, namespace and time using AND.",
+                        },
+                        "keywords": {
+                            "type": "array",
+                            "maxItems": 20,
+                            "items": {"type": "string"},
+                            "description": "Restrict candidates to memories carrying any of these keywords (exact match, OR). Omit for no keyword filter. Combined with categories, namespace and time using AND.",
+                        },
+                        "updated_after": {"type": "string", "description": "Optional timezone-aware ISO 8601 timestamp. Restrict candidates to memories updated strictly after this moment before ranking. Omit or leave blank for no lower bound."},
+                        "updated_before": {"type": "string", "description": "Optional timezone-aware ISO 8601 timestamp. Restrict candidates to memories updated strictly before this moment before ranking. Must be later than updated_after when both are supplied."},
+                        "min_score": {"type": "number", "description": "Optional minimum raw BM25 relevance score (finite, non-negative; no upper bound). Results below the floor are dropped before Top-K. Omit or null for no floor; BM25 has no fixed 0-1 range."},
                     },
                     "required": ["query"],
                 },
@@ -219,6 +239,11 @@ def build_tools() -> list[types.Tool]:
                             "Results return the memory summary; call 'get_details' with the "
                             "returned IDs for full content. Scores are BM25-based and are NOT "
                             "comparable with the other search scores. "
+                            "Optional categories/keywords restrict candidates to memories carrying "
+                            "those exact index values (OR within a dimension, AND across dimensions; "
+                            "no semantic resolution), updated_after/updated_before bound updated_at, "
+                            "and min_score drops results below a raw BM25 floor; all apply before "
+                            "Top-K. BM25 has no fixed 0-1 range. "
                             "If the response has response_code='namespace_not_found', the "
                             "requested namespace does not exist; use response_meta.known_namespaces "
                             "or omit the namespace to search all namespaces.",
@@ -228,6 +253,21 @@ def build_tools() -> list[types.Tool]:
                         "query": {"type": "string", "description": "Anchor text to match. The query's terms are OR-combined."},
                         "k": {"type": "integer", "description": "Max number of results to return (default: 10, range 1-100)."},
                         "namespace": {"type": "string", "description": "Only search within this namespace (optional). Leave empty to search all namespaces. An unknown namespace returns response_code='namespace_not_found'."},
+                        "categories": {
+                            "type": "array",
+                            "maxItems": 20,
+                            "items": {"type": "string"},
+                            "description": "Restrict candidates to memories carrying any of these categories (exact match, OR). Omit for no category filter. Combined with keywords, namespace and time using AND.",
+                        },
+                        "keywords": {
+                            "type": "array",
+                            "maxItems": 20,
+                            "items": {"type": "string"},
+                            "description": "Restrict candidates to memories carrying any of these keywords (exact match, OR). Omit for no keyword filter. Combined with categories, namespace and time using AND.",
+                        },
+                        "updated_after": {"type": "string", "description": "Optional timezone-aware ISO 8601 timestamp. Restrict candidates to memories updated strictly after this moment before ranking. Omit or leave blank for no lower bound."},
+                        "updated_before": {"type": "string", "description": "Optional timezone-aware ISO 8601 timestamp. Restrict candidates to memories updated strictly before this moment before ranking. Must be later than updated_after when both are supplied."},
+                        "min_score": {"type": "number", "description": "Optional minimum raw BM25 relevance score (finite, non-negative; no upper bound). Results below the floor are dropped before Top-K. Omit or null for no floor; BM25 has no fixed 0-1 range."},
                     },
                     "required": ["query"],
                 },
