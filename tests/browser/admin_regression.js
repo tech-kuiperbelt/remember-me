@@ -30,6 +30,8 @@ async function runThemeScenario(scenario) {
     const modalOnly = scenario.endsWith('modal-dark');
     const collapsedOnly = scenario.endsWith('collapsed-dark');
     const refreshOnly = scenario.endsWith('refresh-dark');
+    const filtersOnly = scenario.endsWith('filters-light') || scenario.endsWith('filters-dark');
+    const filtersError = scenario.endsWith('filters-error-light');
     const blocked = scenario.endsWith('blocked');
     const system = scenario.endsWith('system');
     const unseeded = scenario.endsWith('default') || scenario.endsWith('invalid');
@@ -52,9 +54,34 @@ async function runThemeScenario(scenario) {
       return true;
     }
 
-    if (memoriesOnly || modalOnly || collapsedOnly) {
+    if (filtersError) {
+      await waitFor(() => $('stats-content').textContent.includes('Initial Stats failure'), 'initial stats error');
+      $('memories-categories').click();
+      assert($('memories-categories-popover').textContent.includes('Initial Stats failure'), 'category initial error visible');
+      assert(!document.querySelector('.memory-category-option'), 'initial failure is not an empty vocabulary');
+      S.reset();
+      [...$('memories-categories-popover').querySelectorAll('button')].find(node => node.textContent === 'Retry').click();
+      await waitFor(() => document.querySelectorAll('.memory-category-option').length > 0, 'category retry recovers');
+      result.textContent = 'PASS: category first-load failure and recovery'; return true;
+    }
+    if (memoriesOnly || modalOnly || collapsedOnly || filtersOnly) {
       await waitFor(() => $('memories-list')?.getAttribute('aria-busy') === 'false' && $('memories-list').querySelector('.memory-open'), 'memories');
       assert($('page-memories').classList.contains('active'), 'memories page visible');
+      if (filtersOnly) {
+        $('memories-categories').click();
+        await waitFor(() => document.querySelector('.memory-category-option'), 'filter candidates');
+        const checkbox = [...document.querySelectorAll('.memory-category-option input')].find(node => node.dataset.value === 'design');
+        checkbox.click();
+        document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles:true}));
+        $('memories-keywords').click();
+        $('memories-keywords-query').value = 'word'; fire($('memories-keywords-query'), 'input');
+        await waitFor(() => document.querySelector('[data-keyword]'), 'filter suggestions');
+        document.querySelector('[data-keyword]').click();
+        await waitFor(() => $('memories-list').getAttribute('aria-busy') === 'false', 'filter result');
+        const box = document.querySelector('.memory-filter-popover').getBoundingClientRect();
+        assert(box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight, 'filter popover fits viewport');
+        assert(document.documentElement.scrollWidth <= innerWidth, 'filters do not overflow page');
+      }
       if (modalOnly) {
         $('memories-list').querySelector('.memory-open').click();
         await waitFor(() => $('detail-modal').style.display === 'flex', 'dark detail modal');
@@ -283,7 +310,7 @@ try {
     return undefined;
   });
   $('memories-namespace').value = special; fire($('memories-namespace'), 'change');
-  await waitFor(() => $('memories-list').textContent.includes('当前范围没有记忆'), 'special list');
+  await waitFor(() => $('memories-list').textContent.includes('当前筛选没有匹配的记忆'), 'special list');
   assert($('memories-namespace').value === special, 'namespace selection roundtrip');
 
   const record = {id: specialId, namespace: special, text: special, summary: special,
@@ -537,6 +564,7 @@ try {
 
   // Blank-nav collapse: accessible state, persistence, menu routing and form content preserved.
   $('add-text').value = 'draft-kept';
+  $('btn-refresh').focus();
   const nav = $('nav');
   assert(nav.getAttribute('aria-label').includes('已展开'), 'sidebar starts expanded');
   nav.click();
@@ -547,6 +575,7 @@ try {
   const collapsedMemoriesRect = memBtn.getBoundingClientRect();
   assert(Math.abs(collapsedMemoriesRect.top - sidebarRect.top) <= 1, 'collapsed Memories item starts at top');
   assert(memBtn.getAttribute('aria-label') === 'Memories', 'collapsed nav keeps accessible name');
+  memBtn.blur();
   memBtn.focus();
   assert(!$('nav-tooltip').hidden && $('nav-tooltip').textContent === 'Memories', 'collapsed nav tooltip appears on keyboard focus');
   assert(memBtn.getAttribute('aria-describedby') === 'nav-tooltip', 'collapsed tooltip is announced');
@@ -582,6 +611,7 @@ try {
   await settle();
   assert($('page-memories').classList.contains('active'), 'keyboard/nav activation switches page');
 
-  result.textContent = 'PASS: real /admin/console entry; nav switch; browse, pagination, literal, semantic, exact jump, selection retention, low-frequency, stale response; special characters, safe actions and errors; shutdown controls; model bootstrap/progress/proxy/retry; desktop shell status/layout/collapse/scroll';
+  await runMemoriesFiltersRegression();
+  result.textContent = 'PASS: real /admin/console entry; nav switch; browse, pagination, literal, semantic, exact jump, selection retention, low-frequency, stale response; common filters, candidates, focus and reset; special characters, safe actions and errors; shutdown controls; model bootstrap/progress/proxy/retry; desktop shell status/layout/collapse/scroll';
   }
 } catch (e) { result.textContent = 'FAIL: ' + e.stack; }

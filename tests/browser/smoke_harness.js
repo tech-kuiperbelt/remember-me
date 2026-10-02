@@ -22,7 +22,7 @@
     const url = typeof input === 'string' ? input : (input && input.url) || String(input);
     const method = (init && init.method) || (input && input.method) || 'GET';
     if (maintenanceFrozen && url === '/api/maintenance') return new Promise(() => {});
-    calls.push({url, method});
+    calls.push({url, method, body: init?.body});
     if (override) {
       const handled = override(url, init, realFetch);
       if (handled !== undefined) return handled;

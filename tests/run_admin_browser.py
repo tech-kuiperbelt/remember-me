@@ -41,11 +41,13 @@ admin = AdminAPI(service)
 service.embed_query = lambda _: [1.,0.]
 words = ['cache', 'cache clear', 'rare_id'] + ['word%03d' % i for i in range(60)]
 for i, word in enumerate(words):
-    service.storage.add('memory %s' % word, [1.,0.], namespace='a', metadata={'keywords':[word]},
+    service.storage.add('memory %s' % word, [1.,0.], namespace='a',
+                        metadata={'keywords':[word], 'categories':['design' if i % 2 == 0 else 'bugfix']},
                         index_embeddings={('keywords',word): [1.,0.] if word.startswith('cache') else [0.,1.]})
 
 harness = (ROOT / 'tests/browser/smoke_harness.js').read_text()
 checks = (ROOT / 'tests/browser/admin_regression.js').read_text()
+checks += '\n' + (ROOT / 'tests/browser/memories_filters_regression.js').read_text()
 HEAD_SCRIPT = '<script>' + harness + '</script>'
 BODY_SCRIPT = '<script type="module">' + checks + '</script>'
 
@@ -110,7 +112,13 @@ class InjectHarness:
             if idx == -1:
                 raise AssertionError("theme bootstrap script missing from console HTML")
             text = text[:idx] + seed + text[idx:]
-        text = text.replace("</head>", HEAD_SCRIPT + "</head>").replace("</body>", BODY_SCRIPT + "</body>")
+        extra = ""
+        scenario = (parse_qs(scope.get("query_string", b"").decode()).get("smoke") or [""])[0]
+        if 'filters-error' in scenario:
+            extra = """<script>window.__smoke.setOverride(url => url === '/api/stats'
+              ? new Response(JSON.stringify({detail:'Initial Stats failure'}),
+                {status:500,headers:{'content-type':'application/json'}}) : undefined);</script>"""
+        text = text.replace("</head>", HEAD_SCRIPT + extra + "</head>").replace("</body>", BODY_SCRIPT + "</body>")
         payload = text.encode("utf-8")
         headers = [(k, v) for k, v in start.get("headers", []) if k.lower() != b"content-length"]
         headers.append((b"content-length", str(len(payload)).encode()))
@@ -152,6 +160,11 @@ def run_case(profile, label, window_size, scale, shot_dir, query, theme=None):
     return subprocess.run(cmd, capture_output=True, text=True, timeout=90), shot
 
 
+def selected(label):
+    # Optional single scenario for debugging; the default still runs the full matrix.
+    return len(sys.argv) == 1 or sys.argv[1:] == ['--case', label]
+
+
 def check(proc):
     import re
     import html
@@ -174,6 +187,8 @@ try:
         for window_size in VIEWPORTS:
             for scale in SCALES:
                 label = window_size.replace(',', 'x') + '@' + scale
+                if not selected(label):
+                    continue
                 proc, shot = run_case(profile, label, window_size, scale, shots, label)
                 ok, text = check(proc)
                 print(('PASS ' if ok else 'FAIL ') + label + ' -> ' + str(shot) +
@@ -184,6 +199,8 @@ try:
         for window_size in THEME_VIEWPORTS:
             for scheme in THEME_SCHEMES:
                 label = 'theme-' + window_size.replace(',', 'x') + '-' + scheme
+                if not selected(label):
+                    continue
                 proc, shot = run_case(profile, label, window_size, '1', shots,
                                       label, theme=scheme)
                 ok, text = check(proc)
@@ -193,6 +210,8 @@ try:
                     failures.append(label)
         for scheme in THEME_EDGE_CASES:
             label = 'theme-1280x800-' + scheme
+            if not selected(label):
+                continue
             proc, shot = run_case(profile, label, '1280,800', '1', shots,
                                   label, theme=scheme)
             ok, text = check(proc)
@@ -201,8 +220,11 @@ try:
             if not ok:
                 failures.append(label)
         for subject, scheme in (('memories', 'light'), ('memories', 'dark'),
+                                ('filters', 'light'), ('filters', 'dark'), ('filters-error', 'light'),
                                 ('modal', 'dark'), ('collapsed', 'dark')):
             label = 'theme-1440x900-' + subject + '-' + scheme
+            if not selected(label):
+                continue
             proc, shot = run_case(profile, label, '1440,900', '1', shots,
                                   label, theme=scheme)
             ok, text = check(proc)
@@ -211,13 +233,14 @@ try:
             if not ok:
                 failures.append(label)
         label = 'theme-1280x800-refresh-dark'
-        proc, shot = run_case(profile, label, '1280,800', '1', shots,
-                              label, theme='dark')
-        ok, text = check(proc)
-        print(('PASS ' if ok else 'FAIL ') + label + ' -> ' + str(shot) +
-              ('' if ok else ' :: ' + (text or proc.stderr[-400:])))
-        if not ok:
-            failures.append(label)
+        if selected(label):
+            proc, shot = run_case(profile, label, '1280,800', '1', shots,
+                                  label, theme='dark')
+            ok, text = check(proc)
+            print(('PASS ' if ok else 'FAIL ') + label + ' -> ' + str(shot) +
+                  ('' if ok else ' :: ' + (text or proc.stderr[-400:])))
+            if not ok:
+                failures.append(label)
         if failures:
             print('FAIL: scenarios failed: ' + ', '.join(failures))
             sys.exit(1)

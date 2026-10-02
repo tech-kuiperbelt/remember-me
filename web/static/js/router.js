@@ -4,11 +4,13 @@ import { $ } from './core.js';
 
 const pages = new Map();
 
-export function register(id, { onShow }) {
-  pages.set(id, { onShow });
+export function register(id, { onShow, onHide }) {
+  pages.set(id, { onShow, onHide });
 }
 
 export function switchPage(name) {
+  const previous = document.querySelector('.page.active')?.id.replace('page-', '');
+  if (previous && previous !== name) pages.get(previous)?.onHide?.();
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav button[data-page]').forEach(btn => {
     btn.classList.remove('active');

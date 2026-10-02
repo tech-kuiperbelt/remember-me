@@ -3,13 +3,17 @@
 import { $, escapeHtml, formatBytes } from './core.js';
 import { api } from './api.js';
 import { showError } from './ui.js';
-import { setNamespaces, setCategories, onStatsChanged } from './store.js';
+import { setNamespaces, setCategories, setCategoryState, onStatsChanged } from './store.js';
 import { switchPage } from './router.js';
 
+let version = 0;
 export async function loadStats() {
+  const request = ++version;
+  setCategoryState('loading');
   $('stats-content').innerHTML = '<div class="loading">Loading...</div>';
   try {
     const s = await api('/stats');
+    if (request !== version) return;
     const compact = s.ndjson_compact;
     const integrity = s.replica_integrity || {};
     const automaticHealth = s.ndjson_health_check;
@@ -73,6 +77,8 @@ export async function loadStats() {
     setNamespaces(s.namespaces || [], s.namespace_counts || {});
     setCategories(s.category_counts || {});
   } catch(e) {
+    if (request !== version) return;
+    setCategoryState('error', e);
     showError('stats-content', e);
   }
 }

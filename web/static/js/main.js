@@ -27,7 +27,8 @@ function mountAll() {
   layout.mount();
   theme.mount();
   detail.mount();
-  memories.mount({ preselectClearNamespace: ops.preselectClearNamespace, openMemory: detail.openMemory });
+  memories.mount({ preselectClearNamespace: ops.preselectClearNamespace,
+    openMemory: detail.openMemory, retryCategories: stats.loadStats });
   search.mount();
   keywords.mount({ showKeyword: search.showKeyword });
   add.mount();
@@ -40,7 +41,7 @@ function mountAll() {
 }
 
 function registerPages() {
-  register('memories', { onShow: memories.loadMemories });
+  register('memories', { onShow: memories.loadMemories, onHide: memories.hide });
   register('search', { onShow: () => {} });
   register('add', { onShow: () => {} });
   register('keywords', { onShow: () => keywords.loadKeywords(true) });

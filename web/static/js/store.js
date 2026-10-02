@@ -4,6 +4,7 @@
 let namespaces = [];
 let namespaceCounts = {};
 let categories = {};
+let categoryState = {status: 'idle', hasData: false, error: null};
 let maintenance = null;
 
 const namespaceListeners = new Set();
@@ -23,8 +24,14 @@ export function setNamespaces(list, counts) {
 export function onNamespacesChanged(fn) { namespaceListeners.add(fn); }
 
 export function getCategories() { return categories; }
+export function getCategoryState() { return {...categoryState}; }
+export function setCategoryState(status, error = null) {
+  categoryState = {...categoryState, status, error};
+  categoryListeners.forEach(fn => fn());
+}
 export function setCategories(map) {
   categories = map || {};
+  categoryState = {status: 'ready', hasData: true, error: null};
   categoryListeners.forEach(fn => fn());
 }
 export function onCategoriesChanged(fn) { categoryListeners.add(fn); }

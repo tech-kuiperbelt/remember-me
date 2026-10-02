@@ -85,7 +85,22 @@ input[type="checkbox"],progress{accent-color:var(--accent-solid)}
 .memories-heading,.memories-result-header{display:flex;align-items:center;justify-content:space-between;gap:16px}
 .memories-heading{margin-bottom:20px}
 .memories-heading h2{margin:0;font-size:24px;line-height:32px;font-weight:600}
-.memories-filters{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.memories-filters{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
+.memories-filters [hidden]{display:none}
+.memory-keyword-control,.memory-selected-preview{display:flex;gap:6px;align-items:center;flex-wrap:wrap;min-width:0;max-width:100%}
+.memory-selected-preview .btn{max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.memory-filter-popover{position:fixed;z-index:90;width:360px;max-width:calc(100vw - 16px);max-height:min(460px,calc(100vh - 16px));box-sizing:border-box;display:flex;flex-direction:column;gap:10px;padding:14px;border:1px solid var(--border-control);border-radius:8px;background:var(--bg-elevated);color:var(--text-primary);box-shadow:var(--shadow-floating);overflow:auto}
+.memory-filter-search{display:flex;flex-direction:column;gap:6px;font-size:12px;flex-shrink:0;color:var(--text-secondary)}
+.memory-filter-search input{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border-control);border-radius:6px;background:var(--bg-surface);color:var(--text-primary);font:inherit}
+.memory-filter-selected{display:flex;gap:6px;flex-wrap:wrap;flex-shrink:0}
+.memory-filter-caption{flex-basis:100%;font-size:12px;color:var(--text-muted)}
+.memory-filter-selected .btn{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.memory-filter-options{display:flex;flex-direction:column;gap:6px;min-height:0;overflow:auto}
+.memory-filter-options p{margin:4px 0;font-size:12px}
+.memory-filter-options .btn{text-align:left;white-space:normal;overflow-wrap:anywhere}
+.memory-category-option{display:flex;align-items:flex-start;gap:8px;padding:5px 2px;font-size:13px;cursor:pointer}
+.memory-category-option span{min-width:0;overflow-wrap:anywhere}
+.memory-category-option input{flex-shrink:0;accent-color:var(--accent);margin-top:2px}
 .memories-filters label,.memories-result-header label,.memories-size{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-secondary);min-width:0}
 .memories-workspace select{padding:7px 10px;border:1px solid var(--border-control);border-radius:6px;background:var(--bg-surface);color:var(--text-primary);font:inherit;max-width:100%;min-width:0}
 .memories-filters select{max-width:min(440px,65vw)}

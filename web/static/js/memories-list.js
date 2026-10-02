@@ -29,7 +29,7 @@ function relativeTime(stamp) {
   return new Date(stamp).toLocaleDateString();
 }
 
-export function createMemoriesList({root, pagination, count, onOpen, onPage, onPageSize, onRetry, onAll}) {
+export function createMemoriesList({root, pagination, count, onOpen, onPage, onPageSize, onRetry, onAll, onReset}) {
   let popup = null;
   function closeTags(restore = false) {
     if (!popup) return;
@@ -120,7 +120,11 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
       if (state.error.payload?.response_code === 'namespace_not_found') error.append(button('返回全部范围', onAll));
       root.append(error);
     } else if (!state.items.length) {
-      root.append(el('div', 'memory-state', state.namespace ? '当前范围没有记忆' : '暂无记忆'));
+      const filtered = state.namespace || state.categories.length || state.keywords.length;
+      const empty = el('div', 'memory-state');
+      empty.append(el('p', '', filtered ? '当前筛选没有匹配的记忆' : '暂无记忆'));
+      if (filtered) empty.append(button('Clear filters', onReset));
+      root.append(empty);
     } else state.items.forEach(memory => root.append(row(memory)));
 
     const ready = state.status === 'ready', last = Math.max(1, Math.ceil(state.total / state.pageSize));
