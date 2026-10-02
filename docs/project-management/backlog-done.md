@@ -2,6 +2,8 @@
 
 本文件归档已完成的项目待办。详细实现记录保留在 git 提交和项目变更日志中。
 
+- [50.5.7] SQLite 共享连接并发卡死修复（2026-10-02 实现并验证，待 commit）：根因是共享 `sqlite3` 连接的 `RLock` 保护不完整——`get()` 无锁、`_row_to_dict()` 补查向量无锁、`list_memories`/`get_unsynced_records`/`_search_fts` 锁外转换，遇到带 `memory_timestamp_us` UDF 的时间过滤语句时形成 SQLite 连接互斥锁与 Python GIL 交叉等待。修复仅收紧锁范围（不改 schema/API/事务语义）：`get` 全程持锁、`_row_to_dict` 自锁兜底、上述三处转换纳入查询锁、`get_keyword_vocabulary` 补锁，并加锁契约注释与构造期前提标注。新增 `tests/test_storage_concurrency.py` 5 项（确定性连接代理锁门禁、常开子进程 4×300 时间过滤列表、profile/plain 混合并发，20s 栈 dump + 30s 硬超时）。运行时猴补未加锁路径复现 4 线程 15s 全卡死；全量 **794 passed**（基线 789 + 新增 5）；重启加载修复后只读并发 smoke 5 轮 ×4 并发 **20/20 成功、0 失败**（最大 0.111s）。详见 [`plans/50.5.7-sqlite-concurrency-lock-fix.md`](plans/50.5.7-sqlite-concurrency-lock-fix.md)。
+
 - [51] 仅本机服务配置与局域网访问（2026-10-01 实现并验证）：新增布尔配置 `local_only`（默认 `true`；旧配置缺字段同默认）接入 Configuration/Settings/JSONC，`true` 仅监听 `127.0.0.1`、`false` 监听 `0.0.0.0` 并对局域网开放全部 HTTP 入口；局域网模式关闭 `/mcp` 的 Host/Origin 校验（无鉴权，仅限可信网络）。配置页新增“仅本机服务”复选框，取消时显示醒目局域网暴露警告，保存无需维护、重启生效。全量 720 项 pytest 与浏览器回归通过，`resolve_bind_host`、本机/局域网 Host/Origin 行为均有测试覆盖。详见 [`plans/51-local-only-service.md`](plans/51-local-only-service.md)。
 
 - [52] list_keywords 按 categories 过滤（2026-10-01 实现并验证）：`list_keywords` 与 `POST /api/keywords/query` 新增可选 `categories`，按精确匹配的 categories（维度内 OR、与 namespace 用 AND）返回范围内存活记忆实际使用的关键词及计数；向后兼容（不传时行为与 SQL 不变），`keyword_counts` 增加可选参数，结果回显 `categories`，工具 schema/描述、审计裁剪与 Admin 允许集同步，网页 Keywords 页新增分类多选。无 DB schema 变更与数据迁移。全量 716 项 pytest、干净 HEAD 上的隔离浏览器回归、重启后实况 smoke（含与独立记忆路径 13=13 交叉验证）通过。详见 [`plans/52-list-keywords-category-filter.md`](plans/52-list-keywords-category-filter.md)。

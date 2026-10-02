@@ -6,7 +6,7 @@
 
 ### 前端工作
 
-- [50] 前端重构与 UI 调整：第一阶段模块拆分、第二阶段桌面布局、主题基础与 Shell 视觉均已实施并验证，记录见 [50.1](plans/50.1-frontend-module-split.md)、[50.2](plans/50.2-admin-desktop-layout.md)、[50.3](plans/50.3-ui-theme-foundation.md) 和 [50.4](plans/50.4-admin-shell-visual.md)。Memories 的 [3.2 浏览列表](plans/50.5.2-memories-browse-list.md)已完成；[3.3 共用筛选](plans/50.5.3-memories-common-filters.md)已完成，回归及独立 review 通过，[3.4 统一搜索](plans/50.5.4-memories-unified-search.md)已完成，隔离回归、独立 review 和实际服务验证通过；[3.5 整体验收](plans/50.5.5-memories-acceptance-and-closeout.md)已实施，最终回归通过、待独立 review，详见[总体计划](plans/50.5-memories-workspace.md)；[共用时间过滤扩展](plans/50.5.6-semantic-time-filters.md)已实施并完成重启后的 Admin／MCP／浏览器只读验证；随后经确认补修 search_meta 的共用时间校验及微秒比较，789 项 Python 回归通过，补修待再次重启验证；第三阶段布局稳定后复核组件化需求。详见[路线图](plans/50-frontend-refactoring-and-ui-roadmap.md)。
+- [50] 前端重构与 UI 调整：第一阶段模块拆分、第二阶段桌面布局、主题基础与 Shell 视觉均已实施并验证，记录见 [50.1](plans/50.1-frontend-module-split.md)、[50.2](plans/50.2-admin-desktop-layout.md)、[50.3](plans/50.3-ui-theme-foundation.md) 和 [50.4](plans/50.4-admin-shell-visual.md)。Memories 的 [3.2 浏览列表](plans/50.5.2-memories-browse-list.md)已完成；[3.3 共用筛选](plans/50.5.3-memories-common-filters.md)已完成，回归及独立 review 通过，[3.4 统一搜索](plans/50.5.4-memories-unified-search.md)已完成，隔离回归、独立 review 和实际服务验证通过；[3.5 整体验收](plans/50.5.5-memories-acceptance-and-closeout.md)已实施，最终回归通过、待独立 review，详见[总体计划](plans/50.5-memories-workspace.md)；[共用时间过滤扩展](plans/50.5.6-semantic-time-filters.md)已实施并完成重启后的 Admin／MCP／浏览器只读验证；随后经确认补修 search_meta 的共用时间校验及微秒比较，789 项 Python 回归通过，补修待再次重启验证；[SQLite 并发卡死修复](plans/50.5.7-sqlite-concurrency-lock-fix.md) 已完成锁范围修复与 `tests/test_storage_concurrency.py`（含常开子进程复现），全量 794 passed，重启后只读并发 smoke 20/20 通过（0 失败），代码未提交；第三阶段布局稳定后复核组件化需求。详见[路线图](plans/50-frontend-refactoring-and-ui-roadmap.md)。
 
 ### 其他开放项
 

@@ -78,6 +78,18 @@ class SQLiteStorage(SQLitePrimaryStorage):
         self.embedding_spec = embedding_spec
         self.read_only = read_only
         self._active_profile_id = None
+        # Shared-connection locking contract:
+        #   * Every ``self.conn`` access on a live instance MUST hold ``_lock``
+        #     (RLock, so nested public calls such as update()->get() re-enter).
+        #     This prevents cross-thread SQLite-mutex/GIL wait cycles, e.g. a
+        #     Python UDF running in one statement while another thread is inside
+        #     ``_row_to_dict``'s profile lookup. See plan 50.5.7.
+        #   * Construction/offline-exclusive paths (``_init_db`` and the
+        #     FTS rebuild/migration helpers) run before the instance is shared
+        #     and are annotated; they intentionally do not take the lock.
+        #   * Pure in-memory work (cosine scoring, deserialization, sorting)
+        #     stays outside the lock; never hold it across embedding inference,
+        #     file sync or thread waits.
         self._lock = threading.RLock()
         self._writer_lock = (DatabaseWriterLock(path)
                              if writer_lock and not read_only and path != ":memory:"
@@ -138,6 +150,8 @@ class SQLiteStorage(SQLitePrimaryStorage):
         self.close()
 
     def _init_db(self):
+        # Construction-only (called from __init__ before the instance is shared):
+        # intentionally accesses self.conn without _lock.
         self.conn.executescript("""
             PRAGMA journal_mode=WAL;
             PRAGMA synchronous=NORMAL;
@@ -454,6 +468,8 @@ class SQLiteStorage(SQLitePrimaryStorage):
                 "reencoded": len(rows), "index_values_reencoded": len(index_rows)}
 
     def _queryable_index_values(self) -> list[sqlite3.Row]:
+        # Caller-held-lock helper: only invoked from methods that already hold
+        # _lock (index_embedding_completeness / reindex_index_values).
         placeholders = ",".join("?" * len(_EMBEDDING_DIMENSIONS))
         return self.conn.execute(
             "SELECT iv.id, iv.dimension, iv.value FROM index_values iv "
@@ -708,6 +724,9 @@ class SQLiteStorage(SQLitePrimaryStorage):
     def _migrate_legacy_metadata_indexes(self) -> None:
         """Replace the old per-dimension tables with the generic index.
 
+        Construction-only: called from ``_init_db`` before the instance is
+        shared, so it intentionally accesses ``self.conn`` without ``_lock``.
+
         The legacy tables were always rebuildable caches, so migration reads
         the authoritative active records from memories.metadata instead of
         trusting possibly stale associations.  The transaction is committed by
@@ -806,6 +825,8 @@ class SQLiteStorage(SQLitePrimaryStorage):
         current = self._get_storage_state(_LEXICAL_INDEX_STATE_KEY)
         if present and current == LEXICAL_INDEX_VERSION:
             return
+        # Construction-only: called from _init_db before the instance is shared,
+        # so the FTS helpers below access self.conn without _lock.
         self._create_fts_tables()
         self._rebuild_lexical_index()
 
@@ -895,11 +916,14 @@ class SQLiteStorage(SQLitePrimaryStorage):
         d = dict(row)
         blob = d.pop("_profile_embedding", None)
         if blob is None and self._active_profile_id and d.get("id"):
-            profile_row = self.conn.execute(
-                "SELECT embedding FROM memory_embeddings "
-                "WHERE memory_id = ? AND profile_id = ?",
-                (d["id"], self._active_profile_id),
-            ).fetchone()
+            # Self-locking fallback so helper callers cannot bypass the
+            # shared-connection contract (RLock re-enters under public locks).
+            with self._lock:
+                profile_row = self.conn.execute(
+                    "SELECT embedding FROM memory_embeddings "
+                    "WHERE memory_id = ? AND profile_id = ?",
+                    (d["id"], self._active_profile_id),
+                ).fetchone()
             blob = profile_row["embedding"] if profile_row else None
         if blob is None:
             blob = d.get("embedding")
@@ -1246,24 +1270,26 @@ class SQLiteStorage(SQLitePrimaryStorage):
         from memories.metadata, so this is safe to call at any time.
         """
         if namespace:
-            rows = self.conn.execute(
-                "SELECT v.value FROM index_values v "
-                "JOIN memory_index_values link ON link.index_value_id = v.id "
-                "JOIN memories m ON m.id = link.memory_id "
-                "WHERE v.dimension = 'keywords' AND m.deleted = 0 AND m.namespace = ? "
-                "GROUP BY v.value "
-                "ORDER BY COUNT(DISTINCT link.memory_id) DESC, v.value ASC",
-                (namespace,),
-            ).fetchall()
+            with self._lock:
+                rows = self.conn.execute(
+                    "SELECT v.value FROM index_values v "
+                    "JOIN memory_index_values link ON link.index_value_id = v.id "
+                    "JOIN memories m ON m.id = link.memory_id "
+                    "WHERE v.dimension = 'keywords' AND m.deleted = 0 AND m.namespace = ? "
+                    "GROUP BY v.value "
+                    "ORDER BY COUNT(DISTINCT link.memory_id) DESC, v.value ASC",
+                    (namespace,),
+                ).fetchall()
         else:
-            rows = self.conn.execute(
-                "SELECT v.value FROM index_values v "
-                "JOIN memory_index_values link ON link.index_value_id = v.id "
-                "JOIN memories m ON m.id = link.memory_id "
-                "WHERE v.dimension = 'keywords' AND m.deleted = 0 "
-                "GROUP BY v.value "
-                "ORDER BY COUNT(DISTINCT link.memory_id) DESC, v.value ASC"
-            ).fetchall()
+            with self._lock:
+                rows = self.conn.execute(
+                    "SELECT v.value FROM index_values v "
+                    "JOIN memory_index_values link ON link.index_value_id = v.id "
+                    "JOIN memories m ON m.id = link.memory_id "
+                    "WHERE v.dimension = 'keywords' AND m.deleted = 0 "
+                    "GROUP BY v.value "
+                    "ORDER BY COUNT(DISTINCT link.memory_id) DESC, v.value ASC"
+                ).fetchall()
         return [r["value"] for r in rows]
 
     @classmethod
@@ -1324,7 +1350,7 @@ class SQLiteStorage(SQLitePrimaryStorage):
                 "SELECT * FROM memories WHERE synced = 0 ORDER BY updated_at ASC LIMIT ?",
                 (limit,),
             ).fetchall()
-        return [self._row_to_dict(r) for r in rows]
+            return [self._row_to_dict(r) for r in rows]
 
     def mark_synced_batch(self, memory_ids):
         """Batch-mark records as synced. Internal use only."""
@@ -1461,15 +1487,15 @@ class SQLiteStorage(SQLitePrimaryStorage):
                 f"ORDER BY bm25({table}) LIMIT ?",
                 params,
             ).fetchall()
-        results = []
-        for row in rows:
-            raw = float(row["_bm25_raw"])
-            record = self._row_to_dict(row)
-            record.pop("_bm25_raw", None)
-            record["score"] = round(-raw, 6)
-            record["match_info"] = {"type": match_type, "score_type": "fts5_bm25",
-                                    "raw_bm25": round(raw, 6)}
-            results.append(record)
+            results = []
+            for row in rows:
+                raw = float(row["_bm25_raw"])
+                record = self._row_to_dict(row)
+                record.pop("_bm25_raw", None)
+                record["score"] = round(-raw, 6)
+                record["match_info"] = {"type": match_type, "score_type": "fts5_bm25",
+                                        "raw_bm25": round(raw, 6)}
+                results.append(record)
         return results
 
     def search_lexical(self, query, k=DEFAULT_K, namespace=None):
@@ -1492,7 +1518,7 @@ class SQLiteStorage(SQLitePrimaryStorage):
                 f"ORDER BY {sort_col} DESC LIMIT ? OFFSET ?",
                 [*params, limit, offset],
             ).fetchall()
-        return [self._row_to_dict(r) for r in rows]
+            return [self._row_to_dict(r) for r in rows]
 
     def _memory_filter_conditions(self, namespace, updated_after, updated_before, keywords, categories):
         clauses, params = ["deleted = 0"], []
@@ -1552,10 +1578,11 @@ class SQLiteStorage(SQLitePrimaryStorage):
         return [r["id"] for r in rows]
 
     def get(self, memory_id):
-        row = self.conn.execute(
-            "SELECT * FROM memories WHERE id = ? AND deleted = 0", (memory_id,)
-        ).fetchone()
-        return self._row_to_dict(row) if row else None
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM memories WHERE id = ? AND deleted = 0", (memory_id,)
+            ).fetchone()
+            return self._row_to_dict(row) if row else None
 
     def update(self, memory_id, text=None, embedding=None, metadata=None, namespace=None, summary=None,
                index_embeddings=None):
