@@ -1397,25 +1397,20 @@ class SQLiteStorage(SQLitePrimaryStorage):
         return {"id": eid, "created": True}
 
     def search(self, query_embedding, k=5, threshold=0.0, namespace=None,
-               categories=None, keywords=None):
+               categories=None, keywords=None, updated_after=None, updated_before=None):
         with self._lock:
-            clauses = ["deleted = 0"]
-            params = []
-            if namespace:
-                clauses.append("namespace = ?")
-                params.append(namespace)
-            self._append_index_filter(clauses, params, "keywords", keywords)
-            self._append_index_filter(clauses, params, "categories", categories)
+            where, params = self._memory_filter_conditions(
+                namespace, updated_after, updated_before, keywords, categories)
             if self._active_profile_id:
                 rows = self.conn.execute(
                     "SELECT memories.*, me.embedding AS _profile_embedding "
                     "FROM memories JOIN memory_embeddings me ON me.memory_id = memories.id "
-                    f"AND me.profile_id = ? WHERE {' AND '.join(clauses)}",
+                    f"AND me.profile_id = ? WHERE {where}",
                     [self._active_profile_id, *params],
                 ).fetchall()
             else:
                 rows = self.conn.execute(
-                    f"SELECT * FROM memories WHERE {' AND '.join(clauses)}", params
+                    f"SELECT * FROM memories WHERE {where}", params
                 ).fetchall()
         scored = []
         for row in rows:
@@ -1489,29 +1484,17 @@ class SQLiteStorage(SQLitePrimaryStorage):
                       updated_after=None, updated_before=None, keywords=None,
                       categories=None):
         sort_col = sort_by if sort_by in ("created_at", "updated_at") else "created_at"
-        clauses = ["deleted = 0"]
-        params = []
-        if namespace:
-            clauses.append("namespace = ?")
-            params.append(namespace)
-        if updated_after:
-            clauses.append("updated_at > ?")
-            params.append(updated_after)
-        if updated_before:
-            clauses.append("updated_at < ?")
-            params.append(updated_before)
-        self._append_index_filter(clauses, params, "keywords", keywords)
-        self._append_index_filter(clauses, params, "categories", categories)
-        params.extend([limit, offset])
         with self._lock:
+            where, params = self._memory_filter_conditions(
+                namespace, updated_after, updated_before, keywords, categories)
             rows = self.conn.execute(
-                f"SELECT * FROM memories WHERE {' AND '.join(clauses)} "
+                f"SELECT * FROM memories WHERE {where} "
                 f"ORDER BY {sort_col} DESC LIMIT ? OFFSET ?",
-                params,
+                [*params, limit, offset],
             ).fetchall()
         return [self._row_to_dict(r) for r in rows]
 
-    def _page_conditions(self, namespace, updated_after, updated_before, keywords, categories):
+    def _memory_filter_conditions(self, namespace, updated_after, updated_before, keywords, categories):
         clauses, params = ["deleted = 0"], []
         if namespace:
             clauses.append("namespace = ?")
@@ -1532,7 +1515,7 @@ class SQLiteStorage(SQLitePrimaryStorage):
         order = ("COALESCE(memory_timestamp_us(updated_at), memory_timestamp_us(created_at))"
                  if sort_by == "updated_at" else "memory_timestamp_us(created_at)")
         with self._lock:
-            where, params = self._page_conditions(
+            where, params = self._memory_filter_conditions(
                 namespace, updated_after, updated_before, keywords, categories)
             # SAVEPOINT also composes with callers that already own a transaction.
             self.conn.execute("SAVEPOINT memories_page")

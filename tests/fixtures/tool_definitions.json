@@ -144,7 +144,7 @@
   },
   {
     "annotations": null,
-    "description": "Semantic search across memories by query text. Use this for topic/keyword questions — e.g. \"what do we know about X\", \"anything related to Y\" — where you want the most semantically similar memories. Results return the memory summary (falling back to a deterministic leading-text extract when absent); call 'get_details' with the returned IDs to fetch full content. For time-based questions (e.g. \"what did we do recently / last session\") use 'search_meta' with sort_by='updated_at' instead. When you know the memory's keyword or category, pass keywords= and/or categories= to pre-filter candidates before similarity scoring. Exact index values are used directly; unmatched values are semantically resolved to the closest existing values in the same dimension and namespace. For exploratory questions, omit filters to keep the full candidate set. Use 'list_keywords' or 'stats' to inspect existing values. The response reports the applied mapping in filter_resolution. Values within each dimension use OR; keywords and categories combine with each other and namespace using AND. If no results are found, inspect filter_resolution when filters were supplied, or call 'stats' to verify the namespace before retrying. If the response has response_code='namespace_not_found', the requested namespace does not exist; use response_meta.known_namespaces or omit the namespace to search all namespaces.",
+    "description": "Semantic search across memories by query text. Use this for topic/keyword questions — e.g. \"what do we know about X\", \"anything related to Y\" — where you want the most semantically similar memories. Results return the memory summary (falling back to a deterministic leading-text extract when absent); call 'get_details' with the returned IDs to fetch full content. For time-based questions (e.g. \"what did we do recently / last session\") use 'search_meta' with sort_by='updated_at'. For conceptual questions within a time window, use updated_after/updated_before here: bounds filter updated_at before similarity scoring and Top-K. Use stats.server_time to compute relative windows. When you know the memory's keyword or category, pass keywords= and/or categories= to pre-filter candidates before similarity scoring. Exact index values are used directly; unmatched values are semantically resolved to the closest existing values in the same dimension and namespace. For exploratory questions, omit filters to keep the full candidate set. Use 'list_keywords' or 'stats' to inspect existing values. The response reports the applied mapping in filter_resolution. Values within each dimension use OR; keywords and categories combine with each other and namespace using AND. If no results are found, inspect filter_resolution when filters were supplied, or call 'stats' to verify the namespace before retrying. If the response has response_code='namespace_not_found', the requested namespace does not exist; use response_meta.known_namespaces or omit the namespace to search all namespaces.",
     "execution": null,
     "icons": null,
     "inputSchema": {
@@ -184,6 +184,14 @@
         "threshold": {
           "description": "Minimum similarity score 0-1 (default: 0 = no filter). Higher values return fewer but more relevant results. Keep at 0 unless you want to narrow down.",
           "type": "number"
+        },
+        "updated_after": {
+          "description": "Optional timezone-aware ISO 8601 timestamp. Restrict candidates to memories updated strictly after this moment before ranking. Omit or leave blank for no lower bound.",
+          "type": "string"
+        },
+        "updated_before": {
+          "description": "Optional timezone-aware ISO 8601 timestamp. Restrict candidates to memories updated strictly before this moment before ranking. Must be later than updated_after when both are supplied.",
+          "type": "string"
         }
       },
       "required": [
@@ -302,11 +310,11 @@
           "type": "string"
         },
         "updated_after": {
-          "description": "ISO8601 timestamp (e.g. '2026-07-01T00:00:00+00:00'). Only return memories updated after this moment (exclusive). If the user asks for a relative window (e.g. 'last week', 'this month') and you are unsure of the current date, call 'stats' first to get its 'server_time', then compute this value.",
+          "description": "ISO8601 timestamp (e.g. '2026-07-01T00:00:00+00:00'). Only return memories updated after this moment (exclusive, microsecond precision). A timezone is required; omit or leave blank for no lower bound. If the user asks for a relative window (e.g. 'last week', 'this month') and you are unsure of the current date, call 'stats' first to get its 'server_time', then compute this value.",
           "type": "string"
         },
         "updated_before": {
-          "description": "ISO8601 timestamp (e.g. '2026-07-01T00:00:00+00:00'). Only return memories updated before this moment (exclusive). If the user asks for a relative window (e.g. 'last week', 'this month') and you are unsure of the current date, call 'stats' first to get its 'server_time', then compute this value.",
+          "description": "ISO8601 timestamp (e.g. '2026-07-01T00:00:00+00:00'). Only return memories updated before this moment (exclusive, microsecond precision). A timezone is required; omit or leave blank for no upper bound. Must be later than updated_after when both are supplied. If the user asks for a relative window (e.g. 'last week', 'this month') and you are unsure of the current date, call 'stats' first to get its 'server_time', then compute this value.",
           "type": "string"
         }
       },

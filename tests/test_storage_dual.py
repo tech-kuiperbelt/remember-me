@@ -84,3 +84,11 @@ def test_dual_list_namespaces_delegates_to_primary(dual, mock_primary):
 
     assert dual.list_namespaces() == ["a", "b"]
     mock_primary.list_namespaces.assert_called_once_with()
+
+
+def test_dual_search_passes_time_scope_to_primary(dual, mock_primary):
+    mock_primary.search.return_value = [{"id": "within-window"}]
+    bounds = {"updated_after": "2026-01-01T00:00:00Z", "updated_before": "2027-01-01T00:00:00Z"}
+    result = dual.search([1., 0.], k=1, namespace="default", **bounds)
+    assert result == [{"id": "within-window"}]
+    mock_primary.search.assert_called_once_with([1., 0.], k=1, namespace="default", **bounds)

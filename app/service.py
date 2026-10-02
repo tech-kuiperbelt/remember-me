@@ -9,6 +9,7 @@ from app.operations.import_coordinator import ImportCoordinator
 from app.embedding.provider_adapter import wrap_provider
 from app.storage import StorageCapabilityError
 from app.domain.lexical import LexicalQueryError
+from app.domain.time_filters import normalize_updated_range
 from app.domain.anchors import normalize_anchors, InvalidAnchors
 from app import audit
 from app.domain.summary_policy import derive_summary, normalize_summary
@@ -280,7 +281,8 @@ class MemoryService:
                       namespace: str | None = None,
                       categories: list | None = None,
                       keywords: list | None = None,
-                      return_resolution: bool = False):
+                      return_resolution: bool = False,
+                      updated_after: str | None = None, updated_before: str | None = None):
         k = _sanitize_k(k)
         # Reject an unknown namespace before embedding: an empty result must not
         # be confused with "namespace does not exist".
@@ -289,6 +291,10 @@ class MemoryService:
         namespace = normalize_namespace(namespace)
         if namespace is not None:
             namespace = self.check_namespace(namespace)
+        try:
+            updated_after, updated_before = normalize_updated_range(updated_after, updated_before)
+        except ValueError as exc:
+            raise InvalidSearchFilter(str(exc)) from exc
         kw = _normalize_keywords(keywords)
         cats = normalize_categories_filter(categories)
         for dimension, values in (("keywords", kw), ("categories", cats)):
@@ -311,6 +317,7 @@ class MemoryService:
                 results = self.storage.search(
                     query_emb, k=k, threshold=threshold, namespace=namespace,
                     keywords=resolved.get("keywords"), categories=resolved.get("categories"),
+                    updated_after=updated_after, updated_before=updated_before,
                 )
             logger.info("search: %d results", len(results))
             items = [_strip_internal_fields(r) for r in results]
@@ -377,6 +384,10 @@ class MemoryService:
         namespace = normalize_namespace(namespace)
         if namespace is not None:
             namespace = self.check_namespace(namespace)
+        try:
+            updated_after, updated_before = normalize_updated_range(updated_after, updated_before)
+        except ValueError as exc:
+            raise InvalidSearchFilter(str(exc)) from exc
         kw = _normalize_keywords(keywords)
         cats = normalize_categories_filter(categories)
         logger.info("list: namespace=%s limit=%d offset=%d sort_by=%s updated_after=%s updated_before=%s keywords=%s categories=%s",
@@ -415,25 +426,13 @@ class MemoryService:
             if len(values) > MAX_FILTER_VALUES:
                 raise InvalidSearchFilter(f"{name} accepts at most {MAX_FILTER_VALUES} values")
             filters[name] = values
-        bounds = []
-        for name, raw in (("updated_after", updated_after), ("updated_before", updated_before)):
-            if raw is None or (isinstance(raw, str) and not raw.strip()):
-                bounds.append(None)
-                continue
-            try:
-                stamp = datetime.fromisoformat(raw.strip().replace("Z", "+00:00"))
-                if stamp.tzinfo is None or stamp.utcoffset() is None:
-                    raise ValueError("timezone required")
-                bounds.append(stamp.astimezone(timezone.utc))
-            except (ValueError, TypeError, AttributeError, OverflowError) as exc:
-                raise InvalidSearchFilter(f"{name} must be an ISO 8601 timestamp with timezone") from exc
-        after, before = bounds
-        if after and before and after >= before:
-            raise InvalidSearchFilter("updated_after must be before updated_before")
+        try:
+            updated_after, updated_before = normalize_updated_range(updated_after, updated_before)
+        except ValueError as exc:
+            raise InvalidSearchFilter(str(exc)) from exc
         result = self.storage.list_memories_page(
             namespace=namespace, limit=limit, offset=offset, sort_by=sort_by,
-            updated_after=after.isoformat() if after else None,
-            updated_before=before.isoformat() if before else None, **filters)
+            updated_after=updated_after, updated_before=updated_before, **filters)
         return {"items": [_strip_internal_fields(row) for row in result["items"]],
                 "total": result["total"]}
 

@@ -81,9 +81,9 @@
       <summary>Advanced</summary>
       <form id="memories-advanced-form" class="memories-advanced-fields" novalidate>
         <label>Top-K <input id="memories-k" type="number" min="1" max="100" value="10"><span id="memories-k-error" class="text-danger"></span><small>仅搜索时生效</small></label>
-        <label>Threshold <input id="memories-threshold" type="number" min="0" max="1" step="0.05" value="0"><span id="memories-threshold-error" class="text-danger"></span><small>仅搜索时生效</small></label>
-        <label>Updated after <input id="memories-updated-after" type="datetime-local" step="1"><span id="memories-updated-after-error" class="text-danger"></span><small>仅浏览时生效</small></label>
-        <label>Updated before <input id="memories-updated-before" type="datetime-local" step="1"><span id="memories-updated-before-error" class="text-danger"></span><small>仅浏览时生效</small></label>
+        <label>最低相似度 <input id="memories-threshold" type="number" min="0" max="1" step="0.05" value="0"><span id="memories-threshold-error" class="text-danger"></span><small>仅搜索时生效</small></label>
+        <label>Updated after <input id="memories-updated-after" type="datetime-local" step="1"><span id="memories-updated-after-error" class="text-danger"></span><small>浏览与搜索均生效</small></label>
+        <label>Updated before <input id="memories-updated-before" type="datetime-local" step="1"><span id="memories-updated-before-error" class="text-danger"></span><small>浏览与搜索均生效</small></label>
         <button id="memories-advanced-apply" class="btn btn-outline" type="submit">Apply</button>
       </form>
     </details>

@@ -66,6 +66,8 @@ export function createMemoriesData(onChange) {
         const body = {query: query.submittedQuery, k: query.k, threshold: query.threshold, include_resolution: true};
         if (query.namespace) body.namespace = query.namespace;
         for (const dimension of ['categories', 'keywords']) if (query[dimension].length) body[dimension] = query[dimension];
+        if (query.updatedAfter) body.updated_after = query.updatedAfter;
+        if (query.updatedBefore) body.updated_before = query.updatedBefore;
         const response = await api('/memories/search', {method: 'POST', body: JSON.stringify(body)});
         if (request !== version) return;
         validateSearch(response); collection = response.items; state.filterResolution = response.filter_resolution;

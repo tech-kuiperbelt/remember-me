@@ -77,10 +77,27 @@ async function runMemoriesSearchRegression() {
   $('memories-updated-after').value = '2021-01-01T00:00:00'; // unapplied draft
   S.setOverride(url => url === '/api/memories/search' ? json({items:records,filter_resolution:null}) : undefined);
   S.resetCalls(); search('dates'); await ready();
-  assert(!('updated_after' in JSON.parse(searchCalls()[0].body)) && $('memories-updated-after').disabled, 'search excludes retained dates');
+  assert(JSON.parse(searchCalls()[0].body).updated_after === new Date('2021-01-01T00:00:00').toISOString()
+    && !$('memories-updated-after').disabled, 'Search applies date drafts');
+  $('memories-updated-after').value = '2031-01-01T00:00:00'; S.resetCalls(); search('invalid dates');
+  assert(!searchCalls().length && $('memories-updated-before').getAttribute('aria-invalid') === 'true', 'Search rejects invalid range');
+  $('memories-updated-after').value = '2022-01-01T00:00:00'; S.resetCalls(); submit($('memories-advanced-form')); await ready();
+  assert(JSON.parse(searchCalls()[0].body).query === 'dates' && JSON.parse(searchCalls()[0].body).updated_after === new Date('2022-01-01T00:00:00').toISOString(), 'Apply dates uses submitted query');
+  let oldDate;
+  S.setOverride(url => url === '/api/memories/search' ? new Promise(resolve => {oldDate = resolve;}) : undefined);
+  $('memories-updated-after').value = '2021-06-01T00:00:00'; submit($('memories-advanced-form'));
+  await waitFor(() => oldDate, 'old date search started');
+  S.setOverride(url => url === '/api/memories/search' ? json({items:[],filter_resolution:null}) : undefined);
+  $('memories-updated-after').value = '2022-01-01T00:00:00'; submit($('memories-advanced-form')); await ready();
+  oldDate(json({items:records,filter_resolution:mapped})); await settle(25);
+  assert(!$('memories-list').querySelector('.memory-row') && !$('memories-filter-resolution').textContent, 'old date response cannot replace latest window');
+  assert([...$('memories-list').querySelectorAll('button')].some(node => node.textContent === 'Clear filters'), 'time-filtered empty search can clear filters');
+  S.setOverride(url => url === '/api/memories/search' ? json({items:records,filter_resolution:null}) : undefined);
+  $('memories-updated-after').value = '2023-01-01T00:00:00'; S.resetCalls(); $('btn-refresh').click(); await ready();
+  assert(JSON.parse(searchCalls()[0].body).updated_after === new Date('2022-01-01T00:00:00').toISOString(), 'Refresh uses applied date');
   S.resetCalls(); $('memories-search-clear').click(); await ready();
-  assert(new URL(pageCalls()[0].url,location.origin).searchParams.get('updated_after') === params.get('updated_after'), 'return Browse uses applied time');
-  assert(new Date($('memories-updated-after').value).getTime() === new Date('2021-01-01T00:00:00').getTime(), 'unapplied date retained');
+  assert(new URL(pageCalls()[0].url,location.origin).searchParams.get('updated_after') === new Date('2022-01-01T00:00:00').toISOString(), 'return Browse uses applied time');
+  assert(new Date($('memories-updated-after').value).getTime() === new Date('2023-01-01T00:00:00').getTime(), 'unapplied date retained');
   S.resetCalls(); $('memories-reset').click(); await ready();
   assert(pageCalls().length === 1 && !$('memories-updated-after').value, 'Reset clears applied and draft date once');
   // A late success cannot restore mappings after clear; invalid retained K remains editable.

@@ -192,19 +192,23 @@ tombstone 事件删除对应行。`clear` 无 namespace 清全部，有则只清
 handle_call_tool("search_semantic")
   → MemoryService.memory_search(query, k, threshold, namespace, categories, keywords, return_resolution=True)
       check_namespace()                    # 未知 → 空结果信封 namespace_not_found
+      normalize_updated_range()            # 带时区、严格边界，先于 embedding 校验
       归一化 keywords/categories（各 ≤20）
       IndexValueResolver.resolve(filters, namespace)
           精确命中直接用；未命中 → 语义解析（同维度/同命名空间，Top-K + 下限 + 间隔）
       若某维度提供了值却完全无法解析 → 返回空结果
       embed_query(query)                   # query 向量
       storage.search(query_emb, k, threshold, namespace, resolved_filters)
-          先按 namespace + 索引值维度过滤候选（维度内 OR，维度间 AND）
+          先按 namespace + 索引值维度 + updated_after/before 过滤候选（维度内 OR，维度间 AND）
+          时间通过 UTC 整数微秒比较，与 Browse 共用谓词
           再逐条 cosine 相似度打分，threshold 过滤，降序取 k
   → _wrap_search_semantic() 附加 search_id / note / total / items / filter_resolution
   → audit.record("search_semantic", …)   # 记录 search_id 供 report 关联
 ```
 
 ### 3.5 读：`search_meta`
+
+时间边界复用 normalize_updated_range，要求带时区、after < before；旧 Admin 列表入口使用同一路径。SQLite 通过共用 UTC 整数微秒谓词筛选，避免不同时区 ISO 字符串的字典序比较。
 
 精确过滤（不走语义解析）：`namespace` + `updated_after/before` + `keywords`(OR) +
 `categories`(OR)，按 `created_at`/`updated_at` 降序分页。响应经 `_wrap_search_meta()`

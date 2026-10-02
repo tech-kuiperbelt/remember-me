@@ -136,7 +136,9 @@ def build_tools() -> list[types.Tool]:
                             "Results return the memory summary (falling back to a deterministic leading-text extract when absent); "
                             "call 'get_details' with the returned IDs to fetch full content. "
                             "For time-based questions (e.g. \"what did we do recently / last session\") "
-                            "use 'search_meta' with sort_by='updated_at' instead. "
+                            "use 'search_meta' with sort_by='updated_at'. For conceptual questions within "
+                            "a time window, use updated_after/updated_before here: bounds filter updated_at "
+                            "before similarity scoring and Top-K. Use stats.server_time to compute relative windows. "
                             "When you know the memory's keyword or category, pass keywords= and/or categories= to pre-filter candidates "
                             "before similarity scoring. Exact index values are used directly; unmatched values "
                             "are semantically resolved to the closest existing values in the same dimension and "
@@ -168,6 +170,8 @@ def build_tools() -> list[types.Tool]:
                             "items": {"type": "string"},
                             "description": "Use when the desired memory nature/classification is known. Restrict candidates to memories carrying any of these categories (OR) before memory-text cosine scoring. Exact values win; unmatched words are semantically resolved within the same namespace. Omit for broad discovery. Combined with keywords and namespace using AND.",
                         },
+                        "updated_after": {"type": "string", "description": "Optional timezone-aware ISO 8601 timestamp. Restrict candidates to memories updated strictly after this moment before ranking. Omit or leave blank for no lower bound."},
+                        "updated_before": {"type": "string", "description": "Optional timezone-aware ISO 8601 timestamp. Restrict candidates to memories updated strictly before this moment before ranking. Must be later than updated_after when both are supplied."},
                         "keyword_query_id": {"type": "string", "description": "Optional ID from list_keywords; audit linkage only."},
                     },
                     "required": ["query"],
@@ -254,8 +258,8 @@ def build_tools() -> list[types.Tool]:
                         "offset": {"type": "number", "description": "Pagination offset (default: 0)"},
                         "sort_by": {"type": "string", "enum": ["created_at", "updated_at"],
                                     "description": "Sort field, descending. Default: created_at. Use 'updated_at' for most recently written/changed first."},
-                        "updated_after": {"type": "string", "description": "ISO8601 timestamp (e.g. '2026-07-01T00:00:00+00:00'). Only return memories updated after this moment (exclusive). If the user asks for a relative window (e.g. 'last week', 'this month') and you are unsure of the current date, call 'stats' first to get its 'server_time', then compute this value."},
-                        "updated_before": {"type": "string", "description": "ISO8601 timestamp (e.g. '2026-07-01T00:00:00+00:00'). Only return memories updated before this moment (exclusive). If the user asks for a relative window (e.g. 'last week', 'this month') and you are unsure of the current date, call 'stats' first to get its 'server_time', then compute this value."},
+                        "updated_after": {"type": "string", "description": "ISO8601 timestamp (e.g. '2026-07-01T00:00:00+00:00'). Only return memories updated after this moment (exclusive, microsecond precision). A timezone is required; omit or leave blank for no lower bound. If the user asks for a relative window (e.g. 'last week', 'this month') and you are unsure of the current date, call 'stats' first to get its 'server_time', then compute this value."},
+                        "updated_before": {"type": "string", "description": "ISO8601 timestamp (e.g. '2026-07-01T00:00:00+00:00'). Only return memories updated before this moment (exclusive, microsecond precision). A timezone is required; omit or leave blank for no upper bound. Must be later than updated_after when both are supplied. If the user asks for a relative window (e.g. 'last week', 'this month') and you are unsure of the current date, call 'stats' first to get its 'server_time', then compute this value."},
                         "keywords": {
                             "type": "array",
                             "items": {"type": "string"},

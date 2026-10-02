@@ -777,7 +777,8 @@ class AdminAPI:
             body["query"], _number(body.get("k", 5), int, "k"),
             _number(body.get("threshold", 0.0), float, "threshold"), body.get("namespace"),
             keywords=body.get("keywords"),
-            categories=body.get("categories"), return_resolution=include_resolution))
+            categories=body.get("categories"), return_resolution=include_resolution,
+            updated_after=body.get("updated_after"), updated_before=body.get("updated_before")))
         return json_response(results)
 
     async def _terms_search(self, request, operation, default_k, label):

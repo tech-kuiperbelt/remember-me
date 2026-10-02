@@ -77,7 +77,8 @@ def _handle_search_semantic(ctx, a):
     result = ctx.service.memory_search(
         a["query"], int(a.get("k", 5)), float(a.get("threshold", 0.0)),
         a.get("namespace"), keywords=a.get("keywords"),
-        categories=a.get("categories"), return_resolution=True)
+        categories=a.get("categories"), return_resolution=True,
+        updated_after=a.get("updated_after"), updated_before=a.get("updated_before"))
     result["items"] = _prepare_for_llm(result["items"])
     return ToolOutcome(_wrap_search_semantic(result))
 

@@ -135,7 +135,7 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
       root.append(error);
     } else if (!state.items.length) {
       const filtered = state.namespace || state.categories.length || state.keywords.length
-        || (!searching && (state.updatedAfter || state.updatedBefore));
+        || state.updatedAfter || state.updatedBefore;
       const empty = el('div', 'memory-state');
       empty.append(el('p', '', filtered || searching ? '当前搜索或筛选没有匹配的记忆' : '暂无记忆'));
       if (filtered) empty.append(button('Clear filters', onReset));

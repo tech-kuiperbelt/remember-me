@@ -89,6 +89,8 @@ Ops 进入运维状态时，`add`、`update`、`delete` 暂停并返回 `respons
 
 新增记忆或修改正文时，为记忆选择 1–3 个相关的 `metadata.categories`；优先复用 `stats.category_counts` 中符合含义的分类。只修改其他元数据时可以保留原分类。已知目标关键词或分类时，`search_semantic` 可用 `keywords` / `categories` 先缩小候选集，再按正文余弦相似度排序：精确索引值优先，未命中的值会在同一维度与 namespace 内尝试语义解析，实际映射见 `filter_resolution`。探索性问题可省略过滤条件；`search_meta` 的同名过滤条件只做精确匹配。
 
+`search_semantic` 也接受 `updated_after` / `updated_before`：带时区的 ISO 8601 时间（支持 Z），严格筛选更新时间大于／小于边界的候选，再计算相似度和 Top-K；同时传入时 after 必须早于 before。省略或空白表示无该边界，保留微秒精度。概念问题限定时间窗口用此检索；只想按更新时间查看最近记忆用 `search_meta`。相对窗口可参考 `stats.server_time`。`search_meta` 和旧 Admin 列表接口采用同样的时间校验及微秒边界规则；无时区、非法时间或 after >= before 均拒绝。Admin Memories 的日期条件同样同时适用于浏览与搜索。
+
 `list_keywords` 提供 browse/literal/semantic 三种模式与可选 `namespace`，还可传 `categories`（精确匹配，多个为 OR，与 namespace 用 AND），用于查看某命名空间下、带这些分类的记忆实际使用的关键词词表；不传 `categories` 时行为与词表查询不变。
 
 权威清单以客户端连上后的 MCP `tools/list` 为准；本页只给概要。
