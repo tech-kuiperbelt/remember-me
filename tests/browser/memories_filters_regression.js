@@ -23,9 +23,22 @@ async function runMemoriesFiltersRegression() {
   assert(document.activeElement === $('memories-categories-query'), 'category opening focuses search');
   chooseCategory('design');
   await waitFor(() => $('memories-count').textContent === '32 memories', 'real category filter count');
+  assert($('memories-categories').classList.contains('has-filter') && $('memories-reset').classList.contains('has-filter'),
+    'applied category and Reset highlighted');
   assert($('memories-pagination').textContent.includes('1–20'), 'filter resets page');
   chooseCategory('bugfix');
   await waitFor(() => $('memories-count').textContent === '63 memories', 'real category OR');
+  const categoryPreview = $('memories-selected-categories');
+  assert(categoryPreview.children.length === 2 && categoryPreview.textContent.includes('design')
+    && categoryPreview.textContent.includes('bugfix'), 'selected categories visible beside trigger');
+  assert([...categoryPreview.children].every(node => node.id), 'category preview controls have IDs');
+  const removeDesign = [...categoryPreview.children].find(node => node.title === 'design');
+  removeDesign.focus(); removeDesign.click();
+  await waitFor(() => $('memories-count').textContent === '31 memories', 'category chip removes applied filter');
+  assert(categoryPreview.children.length === 1 && categoryPreview.contains(document.activeElement),
+    'category removal preserves remaining chip focus');
+  $('memories-categories').click(); chooseCategory('design');
+  await waitFor(() => $('memories-count').textContent === '63 memories', 'restore category OR');
   escape(); assert(document.activeElement === $('memories-categories'), 'category Escape focus');
   S.resetCalls(); $('memories-keywords').click(); await settle(300);
   assert(!S.calls.some(call => call.url === '/api/keywords/query'), 'empty keyword input sends no requests');
@@ -42,7 +55,9 @@ async function runMemoriesFiltersRegression() {
   $('memories-namespace').value = 'a'; fire($('memories-namespace'), 'change');
   assert(!document.querySelector('.memory-filter-popover'), 'namespace change closes the open filter popover');
   await waitFor(() => $('memories-list').getAttribute('aria-busy') === 'false', 'namespace filter applied');
-  assert(document.querySelector('.memory-selected-preview').textContent.includes('cache clear'), 'scope preserves selected keywords');
+  assert($('memories-namespace-control').classList.contains('has-filter') && $('memories-keywords').classList.contains('has-filter'),
+    'applied namespace and keywords highlighted');
+  assert($('memories-selected-preview').textContent.includes('cache clear'), 'scope preserves selected keywords');
   let bodies = [];
   S.setOverride((url, init) => {
     if (url === '/api/keywords/query') bodies.push(JSON.parse(init.body));
@@ -58,6 +73,8 @@ async function runMemoriesFiltersRegression() {
   S.resetCalls(); $('memories-reset').click();
   assert(!document.querySelector('.memory-filter-popover') && document.activeElement === $('memories-namespace'), 'Reset closes popup and restores focus');
   await waitFor(() => $('memories-count').textContent === '63 memories', 'real reset');
+  assert(['memories-namespace-control','memories-categories','memories-keywords','memories-reset']
+    .every(id => !$(id).classList.contains('has-filter')), 'Reset clears all applied filter highlights');
   assert(S.calls.filter(call => call.url.startsWith('/api/memories/page?')).length === 1, 'Reset makes one request');
   assert($('memories-sort').value === 'created_at' && $('memories-page-size').value === '10', 'Reset preserves sort and size');
   $('memories-sort').value = 'updated_at'; fire($('memories-sort'), 'change');
@@ -115,7 +132,7 @@ async function runMemoriesFiltersRegression() {
   await waitFor(() => document.querySelectorAll('[data-keyword]').length === 21, 'retry more same offset');
   for (const word of words.slice(1, 20)) addKeyword(word.keyword);
   assert([...document.querySelectorAll('[data-keyword]')].every(node => node.disabled), '20 keyword cap disables additions');
-  assert(document.querySelector('.memory-selected-preview').children.length === 2 && $('memories-keywords').textContent.includes('+18'), 'compact selected preview');
+  assert($('memories-selected-preview').children.length === 5 && $('memories-keywords').textContent.includes('+15'), 'compact selected preview');
   const firstSelected = document.querySelector('.memory-filter-selected button');
   firstSelected.focus(); firstSelected.click();
   assert(![...document.querySelectorAll('[data-keyword]')].find(node => node.dataset.keyword === 'pick20').disabled, 'removal permits additions');

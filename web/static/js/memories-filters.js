@@ -11,7 +11,10 @@ function el(tag, className, text) {
 function button(text, action, key) {
   const node = el('button', 'btn btn-sm btn-outline', text);
   node.type = 'button'; node.onclick = action;
-  if (key) node.dataset.focusKey = key;
+  if (key) {
+    node.dataset.focusKey = key;
+    node.id = 'memories-filter-' + encodeURIComponent(key);
+  }
   return node;
 }
 function replaceKeepingFocus(root, nodes, fallback) {
@@ -29,22 +32,39 @@ export function createMemoriesFilters({root, onChange, onReset, onRetryCategorie
   let registry = {namespaces: [], categories: {}, categoryState: {status: 'idle', hasData: false}};
   let popup = null, timer = null, version = 0, context = '', namespaceSignature = '';
   let keywordSignature = '';
+  let categorySignature = '';
   let suggestions = [], offset = 0, total = 0, status = 'idle', error = null;
 
-  const nsLabel = el('label', '', 'Namespace '), namespace = el('select');
+  const nsLabel = el('label', 'memory-namespace-control'), namespace = el('select');
+  nsLabel.id = 'memories-namespace-control';
+  nsLabel.append(el('span', 'memory-namespace-label', 'Namespace:'));
   namespace.id = 'memories-namespace'; nsLabel.append(namespace);
   const categories = button('Categories ▾', () => open('categories', categories));
+  categories.classList.add('memory-filter-trigger');
   categories.id = 'memories-categories';
+  const categoryGroup = el('div', 'memory-category-control');
+  categoryGroup.id = 'memories-category-control';
+  categoryGroup.setAttribute('role', 'group');
+  categoryGroup.setAttribute('aria-label', '分类筛选');
+  const categoryPreview = el('div', 'memory-selected-preview');
+  categoryPreview.id = 'memories-selected-categories';
+  categoryGroup.append(categories, categoryPreview);
   const keywordGroup = el('div', 'memory-keyword-control');
+  keywordGroup.id = 'memories-keyword-control';
+  keywordGroup.setAttribute('role', 'group');
+  keywordGroup.setAttribute('aria-label', '关键词筛选');
   const selectedPreview = el('div', 'memory-selected-preview');
+  selectedPreview.id = 'memories-selected-preview';
   const keywords = button('Keywords ▾', () => open('keywords', keywords));
+  keywords.classList.add('memory-filter-trigger');
   keywords.id = 'memories-keywords';
-  keywordGroup.append(selectedPreview, keywords);
+  keywordGroup.append(keywords, selectedPreview);
   const reset = button('Reset', () => { close(); onReset(); }); reset.id = 'memories-reset';
+  reset.classList.add('memory-filter-reset');
   for (const trigger of [categories, keywords]) {
     trigger.setAttribute('aria-haspopup', 'dialog'); trigger.setAttribute('aria-expanded', 'false');
   }
-  root.replaceChildren(nsLabel, categories, keywordGroup, reset);
+  root.replaceChildren(nsLabel, categoryGroup, keywordGroup, reset);
   namespace.onchange = () => { close(); onChange({namespace: namespace.value}); };
 
   function invalidate() {
@@ -75,6 +95,10 @@ export function createMemoriesFilters({root, onChange, onReset, onRetryCategorie
     input.placeholder = kind === 'categories' ? '查找分类…' : '输入关键词查找…';
     label.append(input);
     const selected = el('div', 'memory-filter-selected'), body = el('div', 'memory-filter-options');
+    if (kind === 'keywords') {
+      body.classList.add('memory-keyword-suggestions');
+      body.setAttribute('aria-labelledby', 'memories-keywords-suggestions-title');
+    }
     node.append(label, selected, body); document.body.append(node);
     popup = {kind, trigger, node, input, selected, body};
     trigger.setAttribute('aria-expanded', 'true'); trigger.setAttribute('aria-controls', node.id);
@@ -85,6 +109,16 @@ export function createMemoriesFilters({root, onChange, onReset, onRetryCategorie
   }
   function removeKeyword(value) {
     onChange({keywords: state.keywords.filter(word => word !== value)});
+  }
+  function previewChip(value, dimension) {
+    const remove = button('', () => onChange({[dimension]: state[dimension].filter(item => item !== value)}),
+      'preview:' + dimension + ':' + value);
+    remove.classList.add('memory-filter-chip');
+    const label = el('span', 'memory-filter-chip-text', value), cross = el('span', 'memory-filter-chip-remove', ' ×');
+    cross.setAttribute('aria-hidden', 'true');
+    const pill = el('span', 'memory-filter-chip-pill'); pill.append(label, cross); remove.append(pill);
+    remove.title = value; remove.setAttribute('aria-label', (dimension === 'categories' ? '移除分类 ' : '移除关键词 ') + value);
+    return remove;
   }
   function renderSelected() {
     if (popup?.kind !== 'keywords') return;
@@ -109,6 +143,8 @@ export function createMemoriesFilters({root, onChange, onReset, onRetryCategorie
     if (state.categories.length === 20) nodes.push(el('p', 'text-muted', '最多选择 20 个分类；可取消已选项'));
     for (const value of values.filter(value => value.includes(query))) {
       const label = el('label', 'memory-category-option'), checkbox = el('input'); checkbox.type = 'checkbox';
+      label.id = 'memories-category-option-' + encodeURIComponent(value);
+      checkbox.id = 'memories-category-' + encodeURIComponent(value);
       checkbox.checked = state.categories.includes(value);
       checkbox.disabled = !checkbox.checked && state.categories.length >= 20;
       checkbox.dataset.focusKey = value; checkbox.dataset.value = value;
@@ -122,12 +158,19 @@ export function createMemoriesFilters({root, onChange, onReset, onRetryCategorie
   }
   function renderSuggestions() {
     if (popup?.kind !== 'keywords') return;
-    const nodes = [];
+    const heading = el('span', 'memory-filter-suggestions-title', 'Suggestions');
+    heading.id = 'memories-keywords-suggestions-title';
+    const nodes = [heading];
     if (state.keywords.length === 20) nodes.push(el('p', 'text-muted', '最多选择 20 个关键词；可移除已选项'));
     for (const item of suggestions) {
       const chosen = state.keywords.includes(item.keyword);
-      const add = button((chosen ? '✓ ' : '+ ') + item.keyword + ' (' + item.count + ')',
+      const add = button('',
         () => onChange({keywords: [...state.keywords, item.keyword]}), 'suggestion:' + item.keyword);
+      add.classList.add('memory-keyword-suggestion');
+      const icon = el('span', 'memory-keyword-suggestion-icon', chosen ? '✓' : '+');
+      icon.setAttribute('aria-hidden', 'true');
+      add.append(icon, el('span', 'memory-keyword-suggestion-text', item.keyword),
+        el('span', 'memory-keyword-suggestion-count', '(' + item.count + ')'));
       add.disabled = chosen || state.keywords.length >= 20;
       add.title = item.keyword; add.setAttribute('aria-label', (chosen ? '已选择 ' : '添加关键词 ') + item.keyword);
       add.dataset.keyword = item.keyword; nodes.push(add);
@@ -175,22 +218,29 @@ export function createMemoriesFilters({root, onChange, onReset, onRetryCategorie
     state = next; registry = candidates;
     const signature = JSON.stringify([registry.namespaces, state.namespace]);
     if (signature !== namespaceSignature) {
-      namespace.replaceChildren(new Option('全部 Namespace', ''), ...registry.namespaces.map(value => new Option(value, value)));
+      namespace.replaceChildren(new Option('All', ''), ...registry.namespaces.map(value => new Option(value, value)));
       if (state.namespace && !registry.namespaces.includes(state.namespace)) namespace.append(new Option(state.namespace + '（已不可用）', state.namespace));
       namespace.value = state.namespace; namespaceSignature = signature;
     }
-    categories.textContent = 'Categories' + (state.categories.length ? ' · ' + state.categories.length : '') + ' ▾';
+    nsLabel.classList.toggle('has-filter', Boolean(state.namespace));
+    categories.classList.toggle('has-filter', state.categories.length > 0);
+    keywords.classList.toggle('has-filter', state.keywords.length > 0);
+    categories.textContent = 'Categories' + (state.categories.length > 3 ? ' · +' + (state.categories.length - 3) : '') + ' ▾';
+    categories.setAttribute('aria-label', '选择分类，已选 ' + state.categories.length + ' 项');
+    const selectedCategorySignature = JSON.stringify(state.categories);
+    if (categorySignature !== selectedCategorySignature) {
+      replaceKeepingFocus(categoryPreview, state.categories.slice(0, 3).map(value => previewChip(value, 'categories')), categories);
+      categorySignature = selectedCategorySignature;
+    }
     const selectedSignature = JSON.stringify(state.keywords);
     if (keywordSignature !== selectedSignature) {
-      const nodes = state.keywords.slice(0, 2).map(value => {
-        const remove = button(value + ' ×', () => removeKeyword(value), value);
-        remove.title = value; remove.setAttribute('aria-label', '移除关键词 ' + value); return remove;
-      });
+      const nodes = state.keywords.slice(0, 5).map(value => previewChip(value, 'keywords'));
       replaceKeepingFocus(selectedPreview, nodes, keywords); keywordSignature = selectedSignature;
     }
-    keywords.textContent = (state.keywords.length > 2 ? '+' + (state.keywords.length - 2) : 'Keywords') + ' ▾';
+    keywords.textContent = 'Keywords' + (state.keywords.length > 5 ? ' · +' + (state.keywords.length - 5) : '') + ' ▾';
     keywords.setAttribute('aria-label', '选择关键词，已选 ' + state.keywords.length + ' 项');
     reset.hidden = !state.namespace && !state.categories.length && !state.keywords.length && !state.updatedAfter && !state.updatedBefore;
+    reset.classList.toggle('has-filter', !reset.hidden);
     if (popup?.kind === 'categories') renderCategories();
     if (popup?.kind === 'keywords') { renderSelected(); renderSuggestions(); }
     const nextContext = JSON.stringify([state.namespace, state.categories]);

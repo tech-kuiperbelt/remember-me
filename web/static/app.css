@@ -85,10 +85,23 @@ input[type="checkbox"],progress{accent-color:var(--accent-solid)}
 .memories-heading,.memories-result-header{display:flex;align-items:center;justify-content:space-between;gap:16px}
 .memories-heading{margin-bottom:20px}
 .memories-heading h2{margin:0;font-size:24px;line-height:32px;font-weight:600}
-.memories-filters{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
+.memories-filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
 .memories-filters [hidden]{display:none}
-.memory-keyword-control,.memory-selected-preview{display:flex;gap:6px;align-items:center;flex-wrap:wrap;min-width:0;max-width:100%}
-.memory-selected-preview .btn{max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.memory-category-control,.memory-keyword-control,.memory-selected-preview{display:flex;gap:6px;align-items:center;flex-wrap:wrap;min-width:0;max-width:100%}
+.memory-category-control,.memory-keyword-control{gap:8px;margin-left:8px;padding-left:16px;border-left:1px solid var(--border-subtle)}
+.memory-category-control>.memory-filter-trigger,.memory-keyword-control>.memory-filter-trigger{flex-shrink:0}
+.memories-filters .memory-namespace-control{gap:0;height:40px;max-width:280px;padding-left:12px;border:1px solid var(--border-subtle);border-radius:7px;background:var(--bg-surface);color:var(--text-primary)}
+.memory-namespace-label{flex-shrink:0}
+.memories-filters .memory-namespace-control select{height:38px;border:0;outline:none;background:transparent;padding:8px;max-width:190px;flex:1;min-width:0}
+.memories-filters .memory-filter-trigger{height:40px;min-height:40px;line-height:20px;padding:8px 12px;border-color:var(--border-subtle);border-radius:7px;background:var(--bg-surface);color:var(--text-primary);font-size:13px}
+.memory-selected-preview .memory-filter-chip{max-width:160px;min-height:40px;padding:4px;border-color:var(--border-subtle);border-radius:7px;background:var(--bg-surface);color:var(--text-primary);font-size:13px}
+.memory-filter-chip-pill{display:flex;align-items:center;gap:10px;min-width:0;padding:5px 8px;border-radius:5px;background:var(--bg-hover)}
+.memory-filter-chip-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.memory-filter-chip-remove{flex-shrink:0;color:var(--text-secondary);font-size:16px;line-height:18px}
+.memories-filters .memory-filter-reset{height:40px;min-height:40px;line-height:20px;padding:8px 12px;border-color:var(--border-subtle);border-radius:7px;background:var(--bg-surface);color:var(--text-primary);font-size:13px;font-weight:400}
+.memories-filters .memory-filter-trigger:hover,.memory-selected-preview .memory-filter-chip:hover,.memories-filters .memory-filter-reset:hover{background:var(--bg-hover)}
+.memories-filters .memory-namespace-control.has-filter,.memories-filters .memory-filter-trigger.has-filter,.memories-filters .memory-filter-reset.has-filter{border-color:var(--accent);background:var(--accent-subtle);color:var(--accent)}
+.memories-filters .memory-namespace-control.has-filter select{color:var(--accent)}
 .memory-filter-popover{position:fixed;z-index:90;width:360px;max-width:calc(100vw - 16px);max-height:min(460px,calc(100vh - 16px));box-sizing:border-box;display:flex;flex-direction:column;gap:10px;padding:14px;border:1px solid var(--border-control);border-radius:8px;background:var(--bg-elevated);color:var(--text-primary);box-shadow:var(--shadow-floating);overflow:auto}
 .memory-filter-search{display:flex;flex-direction:column;gap:6px;font-size:12px;flex-shrink:0;color:var(--text-secondary)}
 .memory-filter-search input{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border-control);border-radius:6px;background:var(--bg-surface);color:var(--text-primary);font:inherit}
@@ -98,6 +111,13 @@ input[type="checkbox"],progress{accent-color:var(--accent-solid)}
 .memory-filter-options{display:flex;flex-direction:column;gap:6px;min-height:0;overflow:auto}
 .memory-filter-options p{margin:4px 0;font-size:12px}
 .memory-filter-options .btn{text-align:left;white-space:normal;overflow-wrap:anywhere}
+.memory-keyword-suggestions{border-top:1px solid var(--border-subtle);padding-top:10px}
+.memory-filter-suggestions-title{font-size:13px;font-weight:500;color:var(--text-primary);flex-shrink:0}
+.memory-keyword-suggestions .memory-keyword-suggestion{justify-content:flex-start;gap:10px;padding:5px 2px;border-color:transparent;background:transparent;color:var(--text-primary);flex-shrink:0}
+.memory-keyword-suggestions .memory-keyword-suggestion:hover{background:var(--bg-hover)}
+.memory-keyword-suggestion-icon{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border:1px solid var(--text-muted);border-radius:50%;color:var(--text-secondary);flex-shrink:0;font-size:14px;line-height:1}
+.memory-keyword-suggestion-text{min-width:0;overflow-wrap:anywhere}
+.memory-keyword-suggestion-count{font-size:11px;color:var(--text-muted);margin-left:auto;flex-shrink:0}
 .memory-category-option{display:flex;align-items:flex-start;gap:8px;padding:5px 2px;font-size:13px;cursor:pointer}
 .memory-category-option span{min-width:0;overflow-wrap:anywhere}
 .memory-category-option input{flex-shrink:0;accent-color:var(--accent);margin-top:2px}
@@ -160,6 +180,7 @@ pre.json{background:var(--bg-code);padding:12px;border-radius:6px;font-size:12px
 .modal-overlay{position:fixed;inset:0;z-index:100;background:var(--overlay);display:flex;align-items:center;justify-content:center}
 .modal-panel{background:var(--bg-elevated);border-radius:12px;box-shadow:var(--shadow-modal)}
 .debug-ids [id]{outline:1px dashed #e53935;outline-offset:1px;position:relative}
+.debug-ids .memory-filter-popover{position:fixed}
 .debug-ids [id]::before{content:attr(id);position:absolute;top:-1px;left:-1px;font-size:10px;background:#e53935;color:#fff;padding:1px 4px;border-radius:0 0 4px 0;z-index:999;font-family:monospace;line-height:1.2;white-space:nowrap;cursor:pointer}
 .debug-focus{outline:3px solid #4caf50!important;outline-offset:3px;box-shadow:0 0 0 5px rgba(76,175,80,.25),0 4px 16px rgba(76,175,80,.15);background:rgba(76,175,80,.06);transition:all .2s}
 @media(max-width:900px){.content{padding:16px}}
