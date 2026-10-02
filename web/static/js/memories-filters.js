@@ -190,7 +190,7 @@ export function createMemoriesFilters({root, onChange, onReset, onRetryCategorie
     }
     keywords.textContent = (state.keywords.length > 2 ? '+' + (state.keywords.length - 2) : 'Keywords') + ' ▾';
     keywords.setAttribute('aria-label', '选择关键词，已选 ' + state.keywords.length + ' 项');
-    reset.hidden = !state.namespace && !state.categories.length && !state.keywords.length;
+    reset.hidden = !state.namespace && !state.categories.length && !state.keywords.length && !state.updatedAfter && !state.updatedBefore;
     if (popup?.kind === 'categories') renderCategories();
     if (popup?.kind === 'keywords') { renderSelected(); renderSuggestions(); }
     const nextContext = JSON.stringify([state.namespace, state.categories]);

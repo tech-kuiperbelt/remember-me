@@ -1,6 +1,6 @@
-// detail.js — memory detail/edit modal shared by the list and search pages.
+// detail.js — memory detail/edit modal used by the Memories workspace.
 
-import { $, esc, formatTime, deriveSummary } from './core.js';
+import { $, esc, formatTime } from './core.js';
 import { api, isNamespaceNotFound, confirmNamespaceCreation } from './api.js';
 import { toast } from './ui.js';
 import { getNamespaces, emitMemoriesChanged, emitStatsChanged } from './store.js';
@@ -162,21 +162,6 @@ async function deleteMemory(id) {
   } catch(e) {
     toast(e.message, 'error');
   }
-}
-
-export function bindMemoryRows(root, memories) {
-  root.querySelectorAll('tbody tr').forEach((row, i) => {
-    const memory = memories[i];
-    row.querySelector('.memory-text').title = memory.summary || deriveSummary(memory.text);
-    row.querySelectorAll('[data-memory-action]').forEach(button => {
-      button.onclick = () => {
-        const action = button.dataset.memoryAction;
-        if (action === 'viewDetail') viewDetail(memory.id);
-        else if (action === 'editMemory') editMemory(memory.id);
-        else if (action === 'deleteMemory') deleteMemory(memory.id);
-      };
-    });
-  });
 }
 
 function showNsDropdown() {

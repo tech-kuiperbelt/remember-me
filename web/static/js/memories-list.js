@@ -29,7 +29,7 @@ function relativeTime(stamp) {
   return new Date(stamp).toLocaleDateString();
 }
 
-export function createMemoriesList({root, pagination, count, onOpen, onPage, onPageSize, onRetry, onAll, onReset}) {
+export function createMemoriesList({root, pagination, count, onOpen, onPage, onPageSize, onRetry, onAll, onReset, onClearSearch}) {
   let popup = null;
   function closeTags(restore = false) {
     if (!popup) return;
@@ -58,7 +58,7 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
     popup = {node, trigger}; trigger.setAttribute('aria-expanded', 'true'); node.focus();
   }
 
-  function row(memory) {
+  function row(memory, searching) {
     const title = clean(memory.summary) || deriveSummary(memory.text) || '空内容记忆';
     const body = clean(memory.text), prefix = title.replace(/…$/, '');
     const remainder = body.startsWith(prefix) ? body.slice(prefix.length).trim() : body;
@@ -94,7 +94,9 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
     const stamp = memoryDate(memory), time = el('span', 'memory-row-time', relativeTime(stamp));
     time.title = stamp ? formatTime(stamp) : '无有效时间';
     if (stamp) open.setAttribute('aria-label', '查看记忆：' + title + '，更新于 ' + formatTime(stamp));
-    item.append(open, icon, content, time);
+    const timing = el('div', 'memory-row-time'); timing.append(time);
+    if (searching) timing.append(el('span', 'memory-search-score', memory.score.toFixed(2) + ' · Semantic'));
+    item.append(open, icon, content, timing);
     item.addEventListener('click', event => {
       if (!event.target.closest('button')) onOpen(memory.id);
     });
@@ -109,7 +111,19 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
   function render(state) {
     closeTags(); root.replaceChildren(); pagination.replaceChildren();
     root.setAttribute('aria-busy', String(state.status === 'loading'));
-    count.textContent = state.status === 'ready' ? state.total + ' memories' : state.status === 'error' ? '加载失败' : 'Loading...';
+    const searching = Boolean(state.submittedQuery);
+    const resolution = document.getElementById('memories-filter-resolution'); resolution.replaceChildren();
+    if (searching && state.status === 'ready' && state.filterResolution) {
+      for (const [dimension, label] of [['keywords', '关键词'], ['categories', '分类']]) {
+        for (const mapping of state.filterResolution[dimension] || []) {
+          if (mapping.match_type === 'exact') continue;
+          const text = mapping.match_type === 'none' ? label + ' ' + mapping.input + ' 未找到匹配值'
+            : label + '：' + mapping.input + ' → ' + mapping.matches.filter(match => match.accepted).map(match => match.value).join('、');
+          resolution.append(el('div', '', text));
+        }
+      }
+    }
+    count.textContent = state.status === 'ready' ? (searching ? '本次搜索 ' + state.total + ' 条 · 最多 ' + state.k + ' 条' : state.total + ' memories') : state.status === 'error' ? '加载失败' : 'Loading...';
     if (state.status === 'loading' || state.status === 'idle') {
       const skeleton = el('div', 'memory-skeletons'); skeleton.setAttribute('aria-label', '正在加载记忆');
       for (let i = 0; i < 5; i++) skeleton.append(el('div', 'memory-skeleton'));
@@ -120,17 +134,19 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
       if (state.error.payload?.response_code === 'namespace_not_found') error.append(button('返回全部范围', onAll));
       root.append(error);
     } else if (!state.items.length) {
-      const filtered = state.namespace || state.categories.length || state.keywords.length;
+      const filtered = state.namespace || state.categories.length || state.keywords.length
+        || (!searching && (state.updatedAfter || state.updatedBefore));
       const empty = el('div', 'memory-state');
-      empty.append(el('p', '', filtered ? '当前筛选没有匹配的记忆' : '暂无记忆'));
+      empty.append(el('p', '', filtered || searching ? '当前搜索或筛选没有匹配的记忆' : '暂无记忆'));
       if (filtered) empty.append(button('Clear filters', onReset));
+      else if (searching) empty.append(button('清空搜索', onClearSearch));
       root.append(empty);
-    } else state.items.forEach(memory => root.append(row(memory)));
+    } else state.items.forEach(memory => root.append(row(memory, searching)));
 
     const ready = state.status === 'ready', last = Math.max(1, Math.ceil(state.total / state.pageSize));
     const start = ready && state.total ? (state.page - 1) * state.pageSize + 1 : 0;
     const end = ready ? Math.min(state.page * state.pageSize, state.total) : 0;
-    pagination.append(el('span', 'memories-range', ready ? start + '–' + end + ' of ' + state.total + ' memories' : ''));
+    pagination.append(el('span', 'memories-range', ready ? start + '–' + end + ' of ' + state.total + (searching ? ' 本次搜索结果' : ' memories') : ''));
     const nav = el('nav', 'memories-pages'); nav.setAttribute('aria-label', '记忆分页');
     if (ready && state.total) {
       nav.append(button('‹', () => onPage(state.page - 1), state.page === 1));
@@ -153,5 +169,5 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
     select.value = state.pageSize;
     select.onchange = () => onPageSize(Number(select.value)); size.append(select); pagination.append(size);
   }
-  return {render};
+  return {render, closeTags};
 }

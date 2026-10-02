@@ -131,3 +131,64 @@ def test_domain_error_mapping_preserves_codes():
     assert status == 400 and body["response_code"] == "invalid_query"
 
     assert domain_error_response(ValueError("plain")) is None
+
+
+@pytest.mark.parametrize('include', ['omitted', False, True, None, 0, 1, 'true'])
+def test_search_resolution_envelope_and_boolean_validation(include):
+    import asyncio
+    from types import SimpleNamespace
+
+    seen = []
+    def search(*args, **kwargs):
+        seen.append(kwargs)
+        return {'items': [], 'filter_resolution': None} if kwargs['return_resolution'] else []
+
+    api = AdminAPI(SimpleNamespace(memory_search=search))
+    body = {'query': 'test'}
+    if include != 'omitted':
+        body['include_resolution'] = include
+    async def receive():
+        return {'type': 'http.request', 'body': json.dumps(body).encode(), 'more_body': False}
+    request = Request({'type': 'http', 'method': 'POST', 'path': '/api/memories/search', 'headers': []}, receive)
+    response = asyncio.run(api.handle_search_memories(request))
+    valid = include == 'omitted' or isinstance(include, bool)
+    if valid:
+        assert response.status_code == 200
+        assert json.loads(response.body) == ({'items': [], 'filter_resolution': None} if include is True else [])
+        assert seen[0]['return_resolution'] is (include is True)
+    else:
+        assert response.status_code == 400
+        assert json.loads(response.body)['response_code'] == 'invalid_request'
+        assert not seen
+
+
+def test_search_resolution_real_service_and_error_mapping(admin, service, monkeypatch):
+    import asyncio
+
+    record = service.memory_add('cache design', namespace=service.settings.DEFAULT_NAMESPACE,
+                                metadata={'keywords': ['cache'], 'categories': ['design']})
+    async def call(body):
+        async def receive():
+            return {'type': 'http.request', 'body': json.dumps(body).encode(), 'more_body': False}
+        req = Request({'type': 'http', 'method': 'POST', 'path': '/api/memories/search', 'headers': []}, receive)
+        return await admin.handle_search_memories(req)
+
+    body = {'query': 'cache', 'include_resolution': True, 'keywords': ['cache'], 'categories': ['design']}
+    response = asyncio.run(call(body))
+    assert response.status_code == 200
+    envelope = json.loads(response.body)
+    assert envelope['items'][0]['id'] == record['id']
+    for dimension in ('keywords', 'categories'):
+        assert envelope['filter_resolution'][dimension][0]['match_type'] == 'exact'
+    assert 'embedding' not in envelope['items'][0]
+
+    response = asyncio.run(call({**body, 'namespace': 'missing-search-scope'}))
+    assert response.status_code == 400
+    assert json.loads(response.body)['response_code'] == 'namespace_not_found'
+
+    def fail(*args, **kwargs):
+        raise RuntimeError('provider failure')
+    monkeypatch.setattr(service, 'memory_search', fail)
+    response = asyncio.run(call(body))
+    assert response.status_code == 500
+    assert json.loads(response.body)['detail'] == 'Internal error'

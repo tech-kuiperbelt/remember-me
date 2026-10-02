@@ -6,10 +6,13 @@ import { getNamespaces, getCategories, getCategoryState, getMaintenance, onNames
 import { switchPage } from './router.js';
 import { createMemoriesData } from './memories-data.js';
 import { createMemoriesList } from './memories-list.js';
+import { createMemoriesSearch } from './memories-search.js';
 import { createMemoriesFilters } from './memories-filters.js';
 
 let data;
 let filters;
+let searchControls;
+let view;
 let focusId = null;
 const activeRow = () => document.activeElement?.closest('.memory-row')?.dataset.memoryId;
 function restoreFocus(id) {
@@ -27,27 +30,39 @@ function updateClear() {
 }
 
 export function loadMemories() { return data.refresh(); }
-export function hide() { filters.close(); }
+export function hide() { filters.close(); view.closeTags(); focusId = null; }
+export function prepareKeywordBrowse(keyword, namespace) {
+  hide(); searchControls.clearDates(); data.prepareKeywordBrowse(keyword, namespace);
+}
 function resetFilters() {
   filters.close();
-  data.resetFilters();
+  searchControls.clearDates(); data.resetFilters();
   $('memories-namespace').focus();
 }
 
 export function mount({preselectClearNamespace = () => {}, openMemory = () => {}, retryCategories = () => {}} = {}) {
   filters = createMemoriesFilters({root: $('memories-filters'),
     onChange: changes => data.change(changes), onReset: resetFilters, onRetryCategories: retryCategories});
-  const view = createMemoriesList({root: $('memories-list'), pagination: $('memories-pagination'),
+  searchControls = createMemoriesSearch({onInput: value => data.input(value),
+    onSubmit: options => data.submit(options), onClear: () => data.clearSearch(), onApply: options => data.change(options)});
+  view = createMemoriesList({root: $('memories-list'), pagination: $('memories-pagination'),
     count: $('memories-count'),
     onOpen: id => openMemory(id, {onClose: () => restoreFocus(id)}),
     onPage: page => data.change({page}, false),
     onPageSize: pageSize => data.change({pageSize}),
     onRetry: () => data.refresh(),
-    onAll: () => data.change({namespace: ''}), onReset: resetFilters});
+    onAll: () => data.change({namespace: ''}), onReset: resetFilters, onClearSearch: () => { data.clearSearch(); $('memories-query').focus(); }});
   data = createMemoriesData(state => {
     focusId = activeRow() || focusId;
-    view.render(state); updateFilters(state); updateClear();
-    if (state.status !== 'loading' && focusId) {
+    view.render(state); updateFilters(state); searchControls.update(state); updateClear();
+    const sort = $('memories-sort'), searching = Boolean(state.submittedQuery);
+    const options = searching ? [['relevance', 'Relevance'], ['updated_at', 'Updated time ↓']]
+      : [['updated_at', 'Updated time ↓'], ['created_at', 'Created time ↓']];
+    if (sort.dataset.mode !== String(searching)) {
+      sort.replaceChildren(...options.map(([value, label]) => new Option(label, value))); sort.dataset.mode = String(searching);
+    }
+    sort.value = state.sort;
+    if (state.status !== 'loading' && focusId && $('page-memories').classList.contains('active')) {
       // Refetch replaces the focused row; restore by identity, not DOM position.
       if (document.activeElement === document.body) restoreFocus(focusId);
       focusId = null;

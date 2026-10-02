@@ -48,6 +48,7 @@ for i, word in enumerate(words):
 harness = (ROOT / 'tests/browser/smoke_harness.js').read_text()
 checks = (ROOT / 'tests/browser/admin_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/memories_filters_regression.js').read_text()
+checks += '\n' + (ROOT / 'tests/browser/memories_search_regression.js').read_text()
 HEAD_SCRIPT = '<script>' + harness + '</script>'
 BODY_SCRIPT = '<script type="module">' + checks + '</script>'
 
@@ -221,6 +222,7 @@ try:
                 failures.append(label)
         for subject, scheme in (('memories', 'light'), ('memories', 'dark'),
                                 ('filters', 'light'), ('filters', 'dark'), ('filters-error', 'light'),
+                                ('search', 'light'), ('search', 'dark'), ('advanced', 'light'), ('advanced', 'dark'),
                                 ('modal', 'dark'), ('collapsed', 'dark')):
             label = 'theme-1440x900-' + subject + '-' + scheme
             if not selected(label):

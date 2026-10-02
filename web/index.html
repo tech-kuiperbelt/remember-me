@@ -40,10 +40,6 @@
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
           <span class="nav-label">Memories</span>
         </button>
-        <button id="nav-search" class="nav-item" data-page="search">
-          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-          <span class="nav-label">Search</span>
-        </button>
         <button id="nav-add" class="nav-item" data-page="add">
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
           <span class="nav-label">Add Memory</span>
@@ -75,100 +71,30 @@
       <h2 id="memories-title">Memories</h2>
       <button id="btn-clear-ns" class="btn btn-outline btn-sm" disabled>Clear Namespace</button>
     </div>
+    <form id="memories-search-form" class="memories-search-form" novalidate>
+      <input id="memories-query" type="search" aria-label="Search memories" placeholder="Search memories…">
+      <button id="memories-search-submit" class="btn btn-primary" type="submit">Search</button>
+      <button id="memories-search-clear" class="btn btn-outline" type="button" disabled>Clear search</button>
+    </form>
     <div class="memories-filters" id="memories-filters" aria-label="记忆筛选"></div>
+    <details id="memories-advanced" class="memories-advanced">
+      <summary>Advanced</summary>
+      <form id="memories-advanced-form" class="memories-advanced-fields" novalidate>
+        <label>Top-K <input id="memories-k" type="number" min="1" max="100" value="10"><span id="memories-k-error" class="text-danger"></span><small>仅搜索时生效</small></label>
+        <label>Threshold <input id="memories-threshold" type="number" min="0" max="1" step="0.05" value="0"><span id="memories-threshold-error" class="text-danger"></span><small>仅搜索时生效</small></label>
+        <label>Updated after <input id="memories-updated-after" type="datetime-local" step="1"><span id="memories-updated-after-error" class="text-danger"></span><small>仅浏览时生效</small></label>
+        <label>Updated before <input id="memories-updated-before" type="datetime-local" step="1"><span id="memories-updated-before-error" class="text-danger"></span><small>仅浏览时生效</small></label>
+        <button id="memories-advanced-apply" class="btn btn-outline" type="submit">Apply</button>
+      </form>
+    </details>
     <div class="memories-result-header">
       <span id="memories-count" tabindex="-1" role="status">Loading...</span>
       <label>Sort <select id="memories-sort"><option value="updated_at">Updated time ↓</option><option value="created_at">Created time ↓</option></select></label>
     </div>
+    <div id="memories-filter-resolution" class="memories-filter-resolution" role="status" aria-live="polite"></div>
     <div id="memories-list" class="memory-list" aria-busy="true"></div>
     <div id="memories-pagination" class="memories-pagination"></div>
   </section>
-</div>
-
-<!-- Search -->
-<div class="page" id="page-search">
-  <div class="card">
-    <div class="card-header">
-      <span>Search</span>
-      <div class="ns-tabs" id="search-mode-tabs" style="padding:0;border-bottom:none;background:none">
-        <span class="ns-tab active" data-mode="semantic">语义搜索</span>
-        <span class="ns-tab" data-mode="list">精确查询</span>
-      </div>
-    </div>
-    <div class="card-body">
-      <!-- Semantic mode -->
-      <form id="form-search" novalidate>
-        <div id="search-mode-semantic">
-          <div class="form-group">
-            <label>Query</label>
-            <input id="search-query" placeholder="Enter search text..." required>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label>Max results (k)</label>
-              <input id="search-k" type="number" value="10" min="1" max="100">
-            </div>
-            <div class="form-group">
-              <label>Threshold</label>
-              <input id="search-threshold" type="number" value="0" min="0" max="1" step="0.05">
-            </div>
-            <div class="form-group">
-              <label>Namespace</label>
-              <select id="search-ns">
-                <option value="">(all)</option>
-              </select>
-            </div>
-          </div>
-        </div>
-        <!-- List mode (exact query, mirrors list tool) -->
-        <div id="search-mode-list" style="display:none">
-          <div class="form-row">
-            <div class="form-group">
-              <label>Namespace</label>
-              <select id="list-ns">
-                <option value="">(all)</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Sort By</label>
-              <select id="list-sort">
-                <option value="created_at">created_at</option>
-                <option value="updated_at">updated_at</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Limit</label>
-              <input id="list-limit" type="number" value="100" min="1">
-            </div>
-            <div class="form-group">
-              <label>Offset</label>
-              <input id="list-offset" type="number" value="0" min="0">
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label>Updated After</label>
-              <input id="list-updated-after" type="datetime-local">
-            </div>
-            <div class="form-group">
-              <label>Updated Before</label>
-              <input id="list-updated-before" type="datetime-local">
-            </div>
-            <div class="form-group" style="flex:2">
-              <label>Keywords (OR)</label>
-              <input id="list-keyword-query" placeholder="Find keyword">
-              <select id="list-keywords" multiple size="4">
-              </select>
-              <button id="list-keyword-more" class="btn btn-sm btn-outline" type="button">Load more keywords</button>
-              <span id="list-keyword-status"></span>
-            </div>
-          </div>
-        </div>
-        <button id="btn-search-submit" class="btn btn-primary" type="submit">Search</button>
-      </form>
-      <div id="search-results" style="margin-top:16px"></div>
-    </div>
-  </div>
 </div>
 
 <!-- Add -->

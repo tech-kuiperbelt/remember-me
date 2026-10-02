@@ -769,12 +769,15 @@ class AdminAPI:
     @_maps_domain_errors
     async def handle_search_memories(self, request: Request):
         body = await _request_object(request, required=("query",), string_fields=("query",))
+        include_resolution = body.get("include_resolution", False)
+        if not isinstance(include_resolution, bool):
+            raise InvalidRequest("include_resolution must be a boolean")
         logger.info("POST /api/memories/search query_len=%d", len(body.get("query", "")))
         results = await self._run(lambda: self.service.memory_search(
             body["query"], _number(body.get("k", 5), int, "k"),
             _number(body.get("threshold", 0.0), float, "threshold"), body.get("namespace"),
             keywords=body.get("keywords"),
-            categories=body.get("categories")))
+            categories=body.get("categories"), return_resolution=include_resolution))
         return json_response(results)
 
     async def _terms_search(self, request, operation, default_k, label):

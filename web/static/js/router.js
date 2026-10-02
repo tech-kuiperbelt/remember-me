@@ -9,6 +9,7 @@ export function register(id, { onShow, onHide }) {
 }
 
 export function switchPage(name) {
+  if (!pages.has(name) || !$('page-' + name)) return false;
   const previous = document.querySelector('.page.active')?.id.replace('page-', '');
   if (previous && previous !== name) pages.get(previous)?.onHide?.();
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));

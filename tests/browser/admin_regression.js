@@ -31,6 +31,8 @@ async function runThemeScenario(scenario) {
     const collapsedOnly = scenario.endsWith('collapsed-dark');
     const refreshOnly = scenario.endsWith('refresh-dark');
     const filtersOnly = scenario.endsWith('filters-light') || scenario.endsWith('filters-dark');
+    const searchOnly = scenario.endsWith('search-light') || scenario.endsWith('search-dark');
+    const advancedOnly = scenario.endsWith('advanced-light') || scenario.endsWith('advanced-dark');
     const filtersError = scenario.endsWith('filters-error-light');
     const blocked = scenario.endsWith('blocked');
     const system = scenario.endsWith('system');
@@ -64,9 +66,15 @@ async function runThemeScenario(scenario) {
       await waitFor(() => document.querySelectorAll('.memory-category-option').length > 0, 'category retry recovers');
       result.textContent = 'PASS: category first-load failure and recovery'; return true;
     }
-    if (memoriesOnly || modalOnly || collapsedOnly || filtersOnly) {
+    if (memoriesOnly || modalOnly || collapsedOnly || filtersOnly || searchOnly || advancedOnly) {
       await waitFor(() => $('memories-list')?.getAttribute('aria-busy') === 'false' && $('memories-list').querySelector('.memory-open'), 'memories');
       assert($('page-memories').classList.contains('active'), 'memories page visible');
+      if (searchOnly) {
+        $('memories-query').value = 'cache'; fire($('memories-query'), 'input'); submit($('memories-search-form'));
+        await waitFor(() => $('memories-list').querySelector('.memory-search-score'), 'search score');
+      }
+      if (advancedOnly) $('memories-advanced').open = true;
+      assert(document.documentElement.scrollWidth <= innerWidth, 'workspace fits viewport');
       if (filtersOnly) {
         $('memories-categories').click();
         await waitFor(() => document.querySelector('.memory-category-option'), 'filter candidates');
@@ -270,17 +278,13 @@ try {
   // Jump from a keyword into an exact query.
   $('kw-query').value = ''; $('kw-mode').value = 'literal'; $('kw-ns').value = 'a'; fire($('kw-ns'), 'change');
   await waitFor(() => Array.from($('kw-results').querySelectorAll('button')).some(b => b.textContent === 'cache'), 'cache keyword button');
+  S.resetCalls();
   Array.from($('kw-results').querySelectorAll('button')).find(b => b.textContent === 'cache').click();
-  await waitFor(() => $('search-results').textContent.includes('memory cache'), 'keyword jump result');
-  assert($('list-ns').value === 'a', 'namespace jump');
-  assert(Array.from($('list-keywords').selectedOptions).some(o => o.value === 'cache'), 'selected keyword');
-
-  $('list-keyword-more').click();
-  await waitFor(() => Array.from($('list-keywords').options).some(o => o.value === 'word059'), 'load more');
-  assert(Array.from($('list-keywords').selectedOptions).some(o => o.value === 'cache'), 'selection retained');
-  $('list-keyword-query').value = 'rare_id'; fire($('list-keyword-query'), 'input');
-  await waitFor(() => Array.from($('list-keywords').options).some(o => o.value === 'rare_id'), 'low frequency word');
-
+  await waitFor(() => $('memories-list').textContent.includes('memory cache'), 'keyword jump result');
+  assert(S.calls.filter(c => c.url.startsWith('/api/memories/page?')).length === 1, 'keyword jump queries exactly once');
+  assert($('memories-namespace').value === 'a', 'namespace jump');
+  assert($('memories-filters').textContent.includes('cache ×'), 'selected keyword');
+  document.querySelector('.nav button[data-page="keywords"]').click();
   // Stale response must not overwrite the newer one.
   let release, first = true;
   S.setOverride(url => {
@@ -303,14 +307,14 @@ try {
                         namespace_counts: {a: 63, [special]: 1}, keyword_total: 63};
   S.setOverride(url => url === '/api/stats' ? json(specialStats) : undefined);
   document.querySelector('.nav button[data-page="stats"]').click();
-  await waitFor(() => Array.from($('search-ns').options).some(o => o.value === special), 'special namespace option');
+  await waitFor(() => Array.from($('memories-namespace').options).some(o => o.value === special), 'special namespace option');
   S.setOverride(url => {
     if (url === '/api/stats') return json(specialStats);
     if (url.startsWith('/api/memories/page?')) return json({items: [], total: 0});
     return undefined;
   });
   $('memories-namespace').value = special; fire($('memories-namespace'), 'change');
-  await waitFor(() => $('memories-list').textContent.includes('当前筛选没有匹配的记忆'), 'special list');
+  await waitFor(() => $('memories-list').textContent.includes('当前搜索或筛选没有匹配的记忆'), 'special list');
   assert($('memories-namespace').value === special, 'namespace selection roundtrip');
 
   const record = {id: specialId, namespace: special, text: special, summary: special,
@@ -356,42 +360,29 @@ try {
   await waitFor(() => S.calls.some(c => c.url === detailUrl && c.method === 'DELETE'), 'detail delete action');
   window.confirm = originalConfirm;
 
-  // Exact-list and semantic result View buttons.
+  // Semantic rows share the same safe detail action as browse.
   S.setOverride((url, init) => {
-    const method = (init && init.method) || 'GET';
-    if (url === '/api/memories/search') return json([record]);
+    const method = init?.method || 'GET';
+    if (url === '/api/memories/search') return json({items: [{...record, score: 0.91}], filter_resolution: null});
     if (url.startsWith('/api/memories/page?')) return json({items: [record], total: 1});
-    if (url === '/api/memories' || url.startsWith('/api/memories?')) return json([record]);
     if (url.startsWith('/api/memories/')) return method === 'PUT' || method === 'DELETE' ? json({id: specialId}) : json(record);
     return undefined;
   });
-  document.querySelector('.nav button[data-page="search"]').click();
-  document.querySelector('#search-mode-tabs .ns-tab[data-mode="list"]').click();
-  submit($('form-search'));
-  await waitFor(() => $('search-results').querySelector('[data-memory-action]'), 'list results');
-  S.resetCalls();
-  $('search-results').querySelector('[data-memory-action]').click();
-  await waitFor(() => S.calls.some(c => c.url === detailUrl), 'exact results action');
-
-  document.querySelector('#search-mode-tabs .ns-tab[data-mode="semantic"]').click();
-  $('search-query').value = 'x';
-  submit($('form-search'));
-  await waitFor(() => $('search-results').querySelector('[data-memory-action]'), 'semantic results');
-  S.resetCalls();
-  $('search-results').querySelector('[data-memory-action]').click();
+  $('memories-query').value = 'x'; fire($('memories-query'), 'input'); submit($('memories-search-form'));
+  await waitFor(() => $('memories-list').querySelector('.memory-search-score'), 'semantic results');
+  S.resetCalls(); $('memories-list').querySelector('.memory-open').click();
   await waitFor(() => S.calls.some(c => c.url === detailUrl), 'semantic results action');
+  Array.from($('detail-actions').children).find(el => el.textContent === 'Close').click();
 
-  // Literal error rendering in every container.
   S.setOverride(url => url.startsWith('/api/memories/page?') ? json({detail: special}, 500) : undefined);
-  document.querySelector('.nav button[data-page="memories"]').click();
+  $('memories-search-clear').click();
   await waitFor(() => $('memories-list').querySelector('p')?.textContent === 'Error: ' + special, 'literal error memories-list');
   assert(!$('memories-list').querySelector('img'), 'literal error memories-list safe');
-
   S.setOverride(url => url === '/api/memories/search' ? json({detail: special}, 500) : undefined);
-  document.querySelector('#search-mode-tabs .ns-tab[data-mode="semantic"]').click();
-  submit($('form-search'));
-  await waitFor(() => $('search-results').textContent === 'Error: ' + special, 'literal error search-results');
-  assert(!$('search-results').querySelector('img'), 'literal error search-results safe');
+  $('memories-query').value = 'x'; fire($('memories-query'), 'input'); submit($('memories-search-form'));
+  await waitFor(() => $('memories-list').querySelector('p')?.textContent === 'Error: ' + special, 'literal search error');
+  assert(!$('memories-list').querySelector('img'), 'literal search error safe');
+  S.reset(); $('memories-search-clear').click();
 
   S.setOverride(url => url === '/api/stats' ? json({detail: special}, 500) : undefined);
   document.querySelector('.nav button[data-page="stats"]').click();
@@ -612,6 +603,7 @@ try {
   assert($('page-memories').classList.contains('active'), 'keyboard/nav activation switches page');
 
   await runMemoriesFiltersRegression();
+  await runMemoriesSearchRegression();
   result.textContent = 'PASS: real /admin/console entry; nav switch; browse, pagination, literal, semantic, exact jump, selection retention, low-frequency, stale response; common filters, candidates, focus and reset; special characters, safe actions and errors; shutdown controls; model bootstrap/progress/proxy/retry; desktop shell status/layout/collapse/scroll';
   }
 } catch (e) { result.textContent = 'FAIL: ' + e.stack; }

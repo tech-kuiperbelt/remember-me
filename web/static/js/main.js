@@ -7,7 +7,6 @@ import { toggleDebug } from './ui.js';
 import { switchPage, register, bindNav } from './router.js';
 import * as detail from './detail.js';
 import * as memories from './memories.js';
-import * as search from './search.js';
 import * as keywords from './keywords.js';
 import * as add from './add.js';
 import * as stats from './stats.js';
@@ -29,8 +28,9 @@ function mountAll() {
   detail.mount();
   memories.mount({ preselectClearNamespace: ops.preselectClearNamespace,
     openMemory: detail.openMemory, retryCategories: stats.loadStats });
-  search.mount();
-  keywords.mount({ showKeyword: search.showKeyword });
+  keywords.mount({ showKeyword: (keyword, namespace) => {
+    memories.prepareKeywordBrowse(keyword, namespace); switchPage('memories');
+  } });
   add.mount();
   stats.mount();
   ops.mount();
@@ -42,7 +42,6 @@ function mountAll() {
 
 function registerPages() {
   register('memories', { onShow: memories.loadMemories, onHide: memories.hide });
-  register('search', { onShow: () => {} });
   register('add', { onShow: () => {} });
   register('keywords', { onShow: () => keywords.loadKeywords(true) });
   register('stats', { onShow: stats.loadStats });
