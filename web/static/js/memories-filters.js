@@ -1,6 +1,9 @@
 // Filter controls and transient candidate requests. Applied filters arrive from data.
 import { api } from './api.js';
 
+const CATEGORY_PREVIEW_LIMIT = 3;
+const KEYWORD_PREVIEW_LIMIT = 5;
+
 const normalize = values => [...new Set(values.map(value => value.trim().toLowerCase()).filter(Boolean))];
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -225,19 +228,22 @@ export function createMemoriesFilters({root, onChange, onReset, onRetryCategorie
     nsLabel.classList.toggle('has-filter', Boolean(state.namespace));
     categories.classList.toggle('has-filter', state.categories.length > 0);
     keywords.classList.toggle('has-filter', state.keywords.length > 0);
-    categories.textContent = 'Categories' + (state.categories.length > 3 ? ' · +' + (state.categories.length - 3) : '') + ' ▾';
+    categories.textContent = 'Categories' + (state.categories.length > CATEGORY_PREVIEW_LIMIT
+      ? ' · +' + (state.categories.length - CATEGORY_PREVIEW_LIMIT) : '') + ' ▾';
     categories.setAttribute('aria-label', '选择分类，已选 ' + state.categories.length + ' 项');
     const selectedCategorySignature = JSON.stringify(state.categories);
     if (categorySignature !== selectedCategorySignature) {
-      replaceKeepingFocus(categoryPreview, state.categories.slice(0, 3).map(value => previewChip(value, 'categories')), categories);
+      replaceKeepingFocus(categoryPreview, state.categories.slice(0, CATEGORY_PREVIEW_LIMIT)
+        .map(value => previewChip(value, 'categories')), categories);
       categorySignature = selectedCategorySignature;
     }
     const selectedSignature = JSON.stringify(state.keywords);
     if (keywordSignature !== selectedSignature) {
-      const nodes = state.keywords.slice(0, 5).map(value => previewChip(value, 'keywords'));
+      const nodes = state.keywords.slice(0, KEYWORD_PREVIEW_LIMIT).map(value => previewChip(value, 'keywords'));
       replaceKeepingFocus(selectedPreview, nodes, keywords); keywordSignature = selectedSignature;
     }
-    keywords.textContent = 'Keywords' + (state.keywords.length > 5 ? ' · +' + (state.keywords.length - 5) : '') + ' ▾';
+    keywords.textContent = 'Keywords' + (state.keywords.length > KEYWORD_PREVIEW_LIMIT
+      ? ' · +' + (state.keywords.length - KEYWORD_PREVIEW_LIMIT) : '') + ' ▾';
     keywords.setAttribute('aria-label', '选择关键词，已选 ' + state.keywords.length + ' 项');
     reset.hidden = !state.namespace && !state.categories.length && !state.keywords.length && !state.updatedAfter && !state.updatedBefore;
     reset.classList.toggle('has-filter', !reset.hidden);

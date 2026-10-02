@@ -80,7 +80,7 @@ input[type="checkbox"],progress{accent-color:var(--accent-solid)}
 .pagination{display:flex;align-items:center;gap:8px;padding:12px 0;font-size:13px;justify-content:center;color:var(--text-muted)}
 .pagination button{min-width:32px}
 
-/* Memories browse workspace. Search/filter expansion follows in later phases. */
+/* Memories workspace: shared browse/search controls, filters and result list. */
 .memories-workspace{min-width:0}
 .memories-heading,.memories-result-header{display:flex;align-items:center;justify-content:space-between;gap:16px}
 .memories-heading{margin-bottom:20px}
@@ -93,12 +93,11 @@ input[type="checkbox"],progress{accent-color:var(--accent-solid)}
 .memories-filters .memory-namespace-control{gap:0;height:40px;max-width:280px;padding-left:12px;border:1px solid var(--border-subtle);border-radius:7px;background:var(--bg-surface);color:var(--text-primary)}
 .memory-namespace-label{flex-shrink:0}
 .memories-filters .memory-namespace-control select{height:38px;border:0;outline:none;background:transparent;padding:8px;max-width:190px;flex:1;min-width:0}
-.memories-filters .memory-filter-trigger{height:40px;min-height:40px;line-height:20px;padding:8px 12px;border-color:var(--border-subtle);border-radius:7px;background:var(--bg-surface);color:var(--text-primary);font-size:13px}
+.memories-filters .memory-filter-trigger,.memories-filters .memory-filter-reset{height:40px;min-height:40px;line-height:20px;padding:8px 12px;border-color:var(--border-subtle);border-radius:7px;background:var(--bg-surface);color:var(--text-primary);font-size:13px;font-weight:400}
 .memory-selected-preview .memory-filter-chip{max-width:160px;min-height:40px;padding:4px;border-color:var(--border-subtle);border-radius:7px;background:var(--bg-surface);color:var(--text-primary);font-size:13px}
 .memory-filter-chip-pill{display:flex;align-items:center;gap:10px;min-width:0;padding:5px 8px;border-radius:5px;background:var(--bg-hover)}
 .memory-filter-chip-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .memory-filter-chip-remove{flex-shrink:0;color:var(--text-secondary);font-size:16px;line-height:18px}
-.memories-filters .memory-filter-reset{height:40px;min-height:40px;line-height:20px;padding:8px 12px;border-color:var(--border-subtle);border-radius:7px;background:var(--bg-surface);color:var(--text-primary);font-size:13px;font-weight:400}
 .memories-filters .memory-filter-trigger:hover,.memory-selected-preview .memory-filter-chip:hover,.memories-filters .memory-filter-reset:hover{background:var(--bg-hover)}
 .memories-filters .memory-namespace-control.has-filter,.memories-filters .memory-filter-trigger.has-filter,.memories-filters .memory-filter-reset.has-filter{border-color:var(--accent);background:var(--accent-subtle);color:var(--accent)}
 .memories-filters .memory-namespace-control.has-filter select{color:var(--accent)}

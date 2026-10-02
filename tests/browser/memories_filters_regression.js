@@ -130,7 +130,22 @@ async function runMemoriesFiltersRegression() {
   failMore = false;
   [...$('memories-keywords-popover').querySelectorAll('button')].find(node => node.textContent === 'Retry').click();
   await waitFor(() => document.querySelectorAll('[data-keyword]').length === 21, 'retry more same offset');
-  for (const word of words.slice(1, 20)) addKeyword(word.keyword);
+  for (const [index, word] of words.slice(1, 20).entries()) {
+    addKeyword(word.keyword);
+    if (index === 3) {
+      assert($('memories-selected-preview').children.length === 5 && $('memories-keywords').textContent === 'Keywords ▾',
+        'five keywords all visible without overflow count');
+    }
+    if (index === 4) {
+      assert($('memories-selected-preview').children.length === 5 && $('memories-keywords').textContent === 'Keywords · +1 ▾'
+        && ![...$('memories-selected-preview').children].some(node => node.title === word.keyword),
+        'sixth keyword hidden and counted once');
+      [...document.querySelectorAll('.memory-filter-selected button')].find(node => node.title === word.keyword).click();
+      assert($('memories-selected-preview').children.length === 5 && $('memories-keywords').textContent === 'Keywords ▾',
+        'removing sixth keyword clears overflow count');
+      addKeyword(word.keyword);
+    }
+  }
   assert([...document.querySelectorAll('[data-keyword]')].every(node => node.disabled), '20 keyword cap disables additions');
   assert($('memories-selected-preview').children.length === 5 && $('memories-keywords').textContent.includes('+15'), 'compact selected preview');
   const firstSelected = document.querySelector('.memory-filter-selected button');
@@ -142,7 +157,21 @@ async function runMemoriesFiltersRegression() {
   S.setOverride(url => url === '/api/stats' ? json({...sample, category_counts: Object.fromEntries(candidateNames.map(value => [value, 0]))}) : undefined);
   $('btn-refresh').click(); $('memories-categories').click();
   await waitFor(() => document.querySelectorAll('.memory-category-option').length === 21, 'category cap fixture');
-  candidateNames.slice(0, 20).forEach(chooseCategory);
+  candidateNames.slice(0, 20).forEach((value, index) => {
+    chooseCategory(value);
+    if (index === 2) {
+      assert(categoryPreview.children.length === 3 && $('memories-categories').textContent === 'Categories ▾',
+        'three categories all visible without overflow count');
+    }
+    if (index === 3) {
+      assert(categoryPreview.children.length === 3 && $('memories-categories').textContent === 'Categories · +1 ▾'
+        && ![...categoryPreview.children].some(node => node.title === value), 'fourth category hidden and counted once');
+      chooseCategory(value);
+      assert(categoryPreview.children.length === 3 && $('memories-categories').textContent === 'Categories ▾',
+        'removing fourth category clears overflow count');
+      chooseCategory(value);
+    }
+  });
   assert([...document.querySelectorAll('.memory-category-option input')].find(node => node.dataset.value === 'category20').disabled, '20 category cap');
   chooseCategory('category0');
   assert(![...document.querySelectorAll('.memory-category-option input')].find(node => node.dataset.value === 'category20').disabled, 'category removal permits additions');
