@@ -44,6 +44,7 @@ export function mount({preselectClearNamespace = () => {}, openMemory = () => {}
   filters = createMemoriesFilters({root: $('memories-filters'),
     onChange: changes => data.change(changes), onReset: resetFilters, onRetryCategories: retryCategories});
   searchControls = createMemoriesSearch({onInput: value => data.input(value),
+    onMode: mode => data.setMode(mode),
     onSubmit: options => data.submit(options), onClear: () => data.clearSearch(), onApply: options => data.change(options)});
   view = createMemoriesList({root: $('memories-list'), pagination: $('memories-pagination'),
     count: $('memories-count'),
@@ -56,12 +57,12 @@ export function mount({preselectClearNamespace = () => {}, openMemory = () => {}
     focusId = activeRow() || focusId;
     view.render(state); updateFilters(state); searchControls.update(state); updateClear();
     const sort = $('memories-sort'), searching = Boolean(state.submittedQuery);
-    const options = searching ? [['relevance', 'Relevance'], ['updated_at', 'Updated time ↓']]
+    const options = searching ? [['relevance', 'Relevance']]
       : [['updated_at', 'Updated time ↓'], ['created_at', 'Created time ↓']];
     if (sort.dataset.mode !== String(searching)) {
       sort.replaceChildren(...options.map(([value, label]) => new Option(label, value))); sort.dataset.mode = String(searching);
     }
-    sort.value = state.sort;
+    sort.value = state.sort; sort.disabled = searching;
     if (state.status !== 'loading' && focusId && $('page-memories').classList.contains('active')) {
       // Refetch replaces the focused row; restore by identity, not DOM position.
       if (document.activeElement === document.body) restoreFocus(focusId);

@@ -19,15 +19,15 @@ async function runMemoriesSearchRegression() {
   submit($('memories-search-form')); await ready();
   assert(searchCalls().length === 1 && JSON.parse(searchCalls()[0].body).include_resolution === true, 'one envelope request');
   assert($('memories-count').textContent === '本次搜索 25 条 · 最多 25 条', 'Top-K count not full inventory');
-  assert($('memories-list').textContent.includes('0.99 · Semantic'), 'raw cosine not probability');
+  assert($('memories-list').textContent.includes('Semantic 0.99'), 'raw cosine not probability');
   assert($('memories-filter-resolution').textContent.includes('<locking> → optimistic-lock、lock'), 'semantic accepted values shown');
   assert($('memories-filter-resolution').textContent.includes('absent 未找到匹配值'), 'none explained');
   assert(!$('memories-filter-resolution').textContent.includes('design') && !$('memories-filter-resolution').querySelector('locking'), 'exact hidden and text safe');
   $('memories-page-size').value = '10'; fire($('memories-page-size'), 'change');
   $('memories-pagination').querySelector('[aria-label="下一页"]').click();
   assert($('memories-pagination').textContent.includes('11–20'), 'local search page');
-  $('memories-sort').value = 'updated_at'; fire($('memories-sort'), 'change');
-  assert($('memories-list').querySelector('.memory-row').dataset.memoryId === 'search-23', 'microsecond order and API tie stability');
+  assert($('memories-sort').disabled && $('memories-sort').options.length === 1, 'search sort fixed to relevance');
+  assert($('memories-list').querySelector('.memory-row').dataset.memoryId === 'search-10', 'server order retained on local page');
   assert(searchCalls().length === 1, 'paging and sorting avoid repeated inference');
   query('B'); S.resetCalls(); $('btn-refresh').click(); await ready();
   assert(JSON.parse(searchCalls()[0].body).query === 'A' && $('memories-query').value === 'B', 'Refresh uses submitted query and retains draft');
@@ -52,6 +52,91 @@ async function runMemoriesSearchRegression() {
   $('memories-k').value = '25'; $('memories-threshold').value = '2'; S.resetCalls(); submit($('memories-advanced-form'));
   assert($('memories-threshold').getAttribute('aria-invalid') === 'true' && !searchCalls().length, 'invalid threshold rejected');
   $('memories-threshold').value = '0'; submit($('memories-advanced-form')); await ready();
+
+  // Modes retain independent raw drafts and applied parameters; public scope is shared.
+  const modeButton = name => $('memories-mode-' + name);
+  const allSearchCalls = () => S.calls.filter(c => c.url.startsWith('/api/memories/search'));
+  const lastBody = () => JSON.parse(allSearchCalls().at(-1).body);
+  const bm25 = records.map((row, i) => ({...row, score: i === 0 ? 1e-9 : 2.123456789}));
+  S.setOverride(url => url === '/api/memories/search' ? json({items:records,filter_resolution:mapped})
+    : url.startsWith('/api/memories/search/') ? json(bm25) : undefined);
+  $('memories-updated-after').value = '2020-01-01T00:00:00'; submit($('memories-advanced-form')); await ready();
+  $('memories-namespace').value = 'a'; fire($('memories-namespace'),'change'); await ready();
+  $('memories-categories').click();
+  [...document.querySelectorAll('.memory-category-option input')].find(n => n.dataset.value === 'design').click(); await ready();
+  document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+  $('memories-keywords').click(); $('memories-keywords-query').value='cache'; fire($('memories-keywords-query'),'input');
+  await waitFor(()=>document.querySelector('[data-keyword="cache"]'),'mode keyword');
+  document.querySelector('[data-keyword="cache"]').click(); await ready();
+  $('memories-k').value='bad'; $('memories-threshold').value='NaN';
+  $('memories-updated-after').value='2021-01-01T00:00:00'; query('unsubmitted');
+  S.resetCalls(); modeButton('lexical').click(); await ready();
+  assert(allSearchCalls()[0].url.endsWith('/lexical') && lastBody().query==='A' && lastBody().k===10
+    && !('min_score' in lastBody()) && !('threshold' in lastBody()) && !('include_resolution' in lastBody()), 'Lexical route and default applied parameters');
+  assert(lastBody().namespace==='a' && lastBody().categories[0]==='design' && lastBody().keywords[0]==='cache'
+    && lastBody().updated_after===new Date('2020-01-01T00:00:00').toISOString(), 'mode carries applied public filters and date');
+  assert($('memories-query').value==='unsubmitted' && $('memories-k').value==='10' && $('memories-threshold').value==='', 'switch preserves query and restores mode draft');
+  assert($('memories-list').textContent.includes('FTS 1e-9') && !$('memories-filter-resolution').textContent, 'tiny raw FTS score and mappings cleared');
+  $('memories-k').value='13'; $('memories-threshold').value='2e0'; submit($('memories-advanced-form')); await ready();
+  assert(lastBody().query==='A' && lastBody().k===13 && lastBody().min_score===2, 'BM25 scientific notation above one and Apply query');
+  for(const bad of ['-1','Infinity','NaN','1e999','0x10']) {
+    $('memories-threshold').value=bad; S.resetCalls(); submit($('memories-advanced-form'));
+    assert(!allSearchCalls().length && document.activeElement===$('memories-threshold'), 'invalid BM25 focuses field: '+bad);
+  }
+  $('memories-threshold').value='-1'; S.resetCalls(); modeButton('anchor').click(); await ready();
+  assert(allSearchCalls()[0].url.endsWith('/anchor') && lastBody().k===10 && !('min_score' in lastBody()), 'Anchor defaults isolated');
+  assert($('memories-list').textContent.includes('Anchor 1e-9'), 'Anchor raw label');
+  $('memories-k').value='7'; $('memories-threshold').value='1e-8'; submit($('memories-advanced-form')); await ready();
+  assert(lastBody().k===7 && lastBody().min_score===1e-8, 'Anchor independent applied values');
+  modeButton('lexical').click(); await ready();
+  assert(lastBody().k===13 && lastBody().min_score===2 && $('memories-threshold').value==='-1', 'invalid raw draft retained without application');
+  $('memories-threshold').value=''; submit($('memories-advanced-form')); await ready();
+  assert(!('min_score' in lastBody()), 'blank BM25 floor omitted');
+  $('memories-reset').click(); await ready();
+  assert(lastBody().k===13 && lastBody().query==='A' && !lastBody().namespace && !$('memories-updated-after').value, 'Reset retains mode parameters and query');
+  modeButton('semantic').click(); await ready();
+  assert(lastBody().k===25 && lastBody().threshold===0 && $('memories-k').value==='bad' && $('memories-threshold').value==='NaN', 'Semantic applied and invalid draft retained');
+  $('memories-k').value='25'; $('memories-threshold').value='0';
+  // Response contracts are validated before rows render; Retry keeps applied mode parameters.
+  for (const name of ['lexical','anchor']) {
+    S.setOverride(url => url.endsWith('/'+name) ? json({items:bm25}) : undefined);
+    modeButton(name).click(); await ready();
+    assert($('memories-list').textContent.includes('Invalid search response'), 'terms envelope rejected: '+name);
+    S.setOverride(url => url.endsWith('/'+name) ? json([{...bm25[0],score:'1e-9'}]) : undefined);
+    [...$('memories-list').querySelectorAll('button')].find(b=>b.textContent==='Retry').click(); await ready();
+    assert($('memories-list').textContent.includes('Invalid search response'), 'non-number score rejected: '+name);
+    S.setOverride(url => url.endsWith('/'+name) ? json(bm25) : undefined);
+    S.resetCalls(); [...$('memories-list').querySelectorAll('button')].find(b=>b.textContent==='Retry').click(); await ready();
+    assert(allSearchCalls().length===1 && lastBody().query==='A' && lastBody().k===(name==='lexical'?13:7), 'Retry keeps terms mode applied values');
+  }
+  S.setOverride(url => url === '/api/memories/search' ? json({items:records,filter_resolution:null}) : undefined);
+  modeButton('semantic').click(); await ready();
+  // Old mode success/failure cannot replace a new mode or restore mappings.
+  for(const failure of [false,true]) {
+    let old;
+    S.setOverride(url => url === '/api/memories/search' ? new Promise(resolve=>{old=resolve;})
+      : url.startsWith('/api/memories/search/') ? json(bm25) : undefined);
+    $('btn-refresh').click(); await waitFor(()=>old,'pending mode response');
+    modeButton('anchor').click();
+    assert(!$('memories-list').querySelector('.memory-search-score'), 'mode loading clears old scores');
+    await ready(); old(failure ? json({detail:'stale mode failure'},500) : json({items:records,filter_resolution:mapped})); await settle(25);
+    assert($('memories-list').textContent.includes('Anchor 1e-9') && !$('memories-filter-resolution').textContent, 'stale mode response ignored');
+    S.setOverride(url => url === '/api/memories/search' ? json({items:records,filter_resolution:null}) : undefined);
+    modeButton('semantic').click(); await ready();
+  }
+  $('memories-search-clear').click(); await ready(); S.resetCalls();
+  const key = (name, value) => modeButton(name).dispatchEvent(new KeyboardEvent('keydown',{key:value,bubbles:true,cancelable:true}));
+  modeButton('semantic').focus(); key('semantic','ArrowLeft');
+  assert(modeButton('anchor').getAttribute('aria-checked')==='true' && document.activeElement===modeButton('anchor'), 'arrow wrap and focus');
+  key('anchor','Home'); key('semantic','End'); key('anchor','ArrowRight'); key('semantic',' '); key('semantic','Enter');
+  assert(!allSearchCalls().length && !pageCalls().length, 'Browse switches and same selection do not request');
+  assert([...$('memories-search-mode').children].filter(n=>n.tabIndex===0).length===1, 'single Tab stop');
+  $('btn-debug').click();
+  for(const id of ['memories-search-mode','memories-mode-semantic','memories-mode-lexical','memories-mode-anchor','memories-threshold-label','memories-threshold-help']) {
+    assert(getComputedStyle($(id),'::before').content.includes(id), 'Debug ID: '+id);
+  }
+  $('btn-debug').click();
+  S.setOverride(url => url === '/api/memories/search' ? json({items:records,filter_resolution:null}) : undefined);
 
   let release;
   S.setOverride(url => url === '/api/memories/search' ? new Promise(resolve => {release = resolve;}) : undefined);

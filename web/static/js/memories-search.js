@@ -1,14 +1,17 @@
 // Search form and unapplied advanced field drafts; no API calls.
 import { $ } from './core.js';
 
-export function createMemoriesSearch({onInput, onSubmit, onClear, onApply}) {
+export function createMemoriesSearch({onInput, onSubmit, onClear, onApply, onMode}) {
   let searching = false, composing = false;
+  let mode = 'semantic';
+  const modes = ['semantic', 'lexical', 'anchor'];
+  const drafts = {semantic: {k: '10', score: '0'}, lexical: {k: '10', score: ''}, anchor: {k: '10', score: ''}};
   const query = $('memories-query');
   const ids = ['memories-k', 'memories-threshold', 'memories-updated-after', 'memories-updated-before'];
   function error(id, message) {
     const field = $(id), output = $(id + '-error');
     field.setAttribute('aria-invalid', String(Boolean(message)));
-    field.setAttribute('aria-describedby', output.id); output.textContent = message;
+    field.setAttribute('aria-describedby', output.id + (id === 'memories-threshold' ? ' memories-threshold-help' : '')); output.textContent = message;
   }
   function validate(search) {
     ids.forEach(id => error(id, ''));
@@ -19,8 +22,12 @@ export function createMemoriesSearch({onInput, onSubmit, onClear, onApply}) {
       const raw = $('memories-k').value.trim(), k = Number(raw), thresholdRaw = $('memories-threshold').value.trim();
       const threshold = Number(thresholdRaw);
       if (!/^\d+$/.test(raw) || k < 1 || k > 100) invalid('memories-k', '请输入 1–100 的整数');
-      if (!thresholdRaw || !Number.isFinite(threshold) || threshold < 0 || threshold > 1) invalid('memories-threshold', '请输入 0–1 的数字');
-      options = {k, threshold};
+      const semantic = mode === 'semantic';
+      const numeric = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(thresholdRaw);
+      if ((semantic || thresholdRaw) && (!numeric || !Number.isFinite(threshold) || threshold < 0 || (semantic && threshold > 1))) {
+        invalid('memories-threshold', semantic ? '请输入 0–1 的有限数字' : '请输入有限非负数字，或留空');
+      }
+      options = semantic ? {k, threshold} : {k, minScore: thresholdRaw ? threshold : null};
     }
     function date(id) {
       const raw = $(id).value;
@@ -45,6 +52,21 @@ export function createMemoriesSearch({onInput, onSubmit, onClear, onApply}) {
     }
     return options;
   }
+  for (const [index, name] of modes.entries()) {
+    const button = $('memories-mode-' + name);
+    button.onclick = () => onMode(name);
+    button.onkeydown = event => {
+      let target;
+      if (['ArrowRight', 'ArrowDown'].includes(event.key)) target = (index + 1) % modes.length;
+      if (['ArrowLeft', 'ArrowUp'].includes(event.key)) target = (index + modes.length - 1) % modes.length;
+      if (event.key === 'Home') target = 0;
+      if (event.key === 'End') target = modes.length - 1;
+      if (target !== undefined) {
+        event.preventDefault(); onMode(modes[target]); $('memories-mode-' + modes[target]).focus();
+      }
+      if ([' ', 'Enter'].includes(event.key)) { event.preventDefault(); onMode(name); }
+    };
+  }
   query.oncompositionstart = () => { composing = true; };
   query.oncompositionend = () => { composing = false; onInput(query.value); updateClear(); };
   query.oninput = () => {
@@ -63,6 +85,18 @@ export function createMemoriesSearch({onInput, onSubmit, onClear, onApply}) {
   };
   function updateClear() { $('memories-search-clear').disabled = !query.value && !searching; }
   function update(state) {
+    if (mode !== state.searchMode) {
+      drafts[mode] = {k: $('memories-k').value, score: $('memories-threshold').value};
+      mode = state.searchMode;
+      $('memories-k').value = drafts[mode].k; $('memories-threshold').value = drafts[mode].score;
+      ['memories-k', 'memories-threshold'].forEach(id => error(id, ''));
+    }
+    for (const name of modes) {
+      const button = $('memories-mode-' + name), selected = name === mode;
+      button.setAttribute('aria-checked', String(selected)); button.tabIndex = selected ? 0 : -1;
+    }
+    $('memories-threshold-label').textContent = mode === 'semantic' ? '最低相似度' : '最低相关性分数';
+    $('memories-threshold-help').textContent = mode === 'semantic' ? '仅搜索时生效 · 0–1' : '留空不限 · BM25 无统一范围';
     searching = Boolean(state.submittedQuery);
     if (query.value !== state.inputQuery && !composing) query.value = state.inputQuery;
     $('memories-k').disabled = $('memories-threshold').disabled = !searching;

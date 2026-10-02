@@ -294,6 +294,8 @@ try:
         acceptance += [(f'acceptance-zoom-{zoom}-{scheme}-expanded-{mode}', '1920,1080', scheme, zoom)
                        for zoom in (1, 1.25, 1.5) for scheme in ('light', 'dark')
                        for mode in ('browse', 'search')]
+        acceptance += [(f'acceptance-1024x768-{scheme}-expanded-{mode}', '1024,768', scheme, 1)
+                       for scheme in ('light', 'dark') for mode in ('lexical', 'anchor')]
         for label, size, scheme, zoom in acceptance:
             if not selected(label):
                 continue

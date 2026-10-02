@@ -12,12 +12,16 @@ async function runMemoriesVisualScenario(scenario) {
   S.setOverride(url=>{
     if(url.startsWith('/api/memories/page?')) return json({items:rows.slice(0,20),total:21});
     if(url==='/api/memories/search') return json({items:rows.slice(0,10),filter_resolution:mapping});
+    if(url.startsWith('/api/memories/search/')) return json(rows.slice(0,10).map(row=>({...row,score:1e-9})));
     return undefined;
   });
   const collapsed=scenario.includes('-collapsed-');
   if($('app-shell').classList.contains('sidebar-collapsed')!==collapsed) $('nav').click();
   $('btn-refresh').click(); await waitFor(()=>$('memories-list').getAttribute('aria-busy')==='false','visual browse');
-  if(scenario.includes('-search')) {
+  if(['-search','-lexical','-anchor'].some(mode=>scenario.includes(mode))) {
+    if(scenario.endsWith('-lexical') || scenario.endsWith('-anchor')) {
+      $('memories-mode-'+scenario.split('-').at(-1)).click(); $('memories-advanced').open=true;
+    }
     $('memories-query').value='搜索输入 '+long.repeat(5); fire($('memories-query'),'input'); submit($('memories-search-form'));
     await waitFor(()=>$('memories-list').querySelector('.memory-search-score'),'visual search');
   } else $('memories-advanced').open=true;
@@ -33,11 +37,16 @@ async function runMemoriesVisualScenario(scenario) {
   assert(innerWidth>=1024,'acceptance CSS width at least 1024');
   assert(document.documentElement.scrollWidth<=innerWidth,'no document horizontal overflow');
   assert($('content').scrollWidth<=$('content').clientWidth+1,'no workspace horizontal overflow');
-  for(const id of ['memories-query','memories-search-submit','memories-search-clear','memories-sort','memories-advanced-apply']) {
+  for(const id of ['memories-query','memories-search-mode','memories-search-submit','memories-search-clear','memories-sort','memories-advanced-apply']) {
     const node=$(id),box=node.getBoundingClientRect();
     if(!box.width)continue;
     assert(box.left>=0 && box.right<=innerWidth,'control fits horizontally: '+id);
   }
+  const searchBoxes=['memories-query','memories-search-submit','memories-search-clear'].map(id=>$(id).getBoundingClientRect());
+  assert(Math.max(...searchBoxes.map(b=>b.top+b.height/2))-Math.min(...searchBoxes.map(b=>b.top+b.height/2))<3,'search controls stay on one line');
+  const modeBox=$('memories-search-mode').getBoundingClientRect(), filterBox=$('memories-filters').getBoundingClientRect(), rowBox=$('memories-filter-row').getBoundingClientRect();
+  assert(Math.abs(modeBox.top-filterBox.top)<2 && Math.abs(modeBox.right-rowBox.right)<2,'mode aligns right on filter row');
+  assert(modeBox.top>=Math.max(...searchBoxes.map(b=>b.bottom)),'mode is below search form');
   const popup=document.querySelector('.memory-filter-popover');
   if(popup) {
     const box=popup.getBoundingClientRect();

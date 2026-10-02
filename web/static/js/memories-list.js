@@ -58,7 +58,7 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
     popup = {node, trigger}; trigger.setAttribute('aria-expanded', 'true'); node.focus();
   }
 
-  function row(memory, searching) {
+  function row(memory, searchMode) {
     const title = clean(memory.summary) || deriveSummary(memory.text) || '空内容记忆';
     const body = clean(memory.text), prefix = title.replace(/…$/, '');
     const remainder = body.startsWith(prefix) ? body.slice(prefix.length).trim() : body;
@@ -95,7 +95,8 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
     time.title = stamp ? formatTime(stamp) : '无有效时间';
     if (stamp) open.setAttribute('aria-label', '查看记忆：' + title + '，更新于 ' + formatTime(stamp));
     const timing = el('div', 'memory-row-time'); timing.append(time);
-    if (searching) timing.append(el('span', 'memory-search-score', memory.score.toFixed(2) + ' · Semantic'));
+    if (searchMode) timing.append(el('span', 'memory-search-score',
+      ({semantic: 'Semantic', lexical: 'FTS', anchor: 'Anchor'})[searchMode] + ' ' + String(memory.score)));
     item.append(open, icon, content, timing);
     item.addEventListener('click', event => {
       if (!event.target.closest('button')) onOpen(memory.id);
@@ -113,7 +114,7 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
     root.setAttribute('aria-busy', String(state.status === 'loading'));
     const searching = Boolean(state.submittedQuery);
     const resolution = document.getElementById('memories-filter-resolution'); resolution.replaceChildren();
-    if (searching && state.status === 'ready' && state.filterResolution) {
+    if (searching && state.searchMode === 'semantic' && state.status === 'ready' && state.filterResolution) {
       for (const [dimension, label] of [['keywords', '关键词'], ['categories', '分类']]) {
         for (const mapping of state.filterResolution[dimension] || []) {
           if (mapping.match_type === 'exact') continue;
@@ -141,7 +142,7 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
       if (filtered) empty.append(button('Clear filters', onReset));
       else if (searching) empty.append(button('清空搜索', onClearSearch));
       root.append(empty);
-    } else state.items.forEach(memory => root.append(row(memory, searching)));
+    } else state.items.forEach(memory => root.append(row(memory, searching ? state.searchMode : null)));
 
     const ready = state.status === 'ready', last = Math.max(1, Math.ceil(state.total / state.pageSize));
     const start = ready && state.total ? (state.page - 1) * state.pageSize + 1 : 0;

@@ -1,25 +1,6 @@
 // Workspace state, network requests and local Top-K paging; no DOM dependencies.
 import { api } from './api.js';
 
-// ISO timestamps retain microseconds; timezone-free historical values mean UTC.
-export function timestampMicros(value) {
-  if (typeof value !== 'string') return null;
-  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?(Z|[+-]\d{2}:\d{2})?$/);
-  if (!match) return null;
-  const [, year, month, day, hour, minute, second, fraction = '', zone = 'Z'] = match;
-  const base = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}Z`);
-  if (!Number.isFinite(base.getTime()) || base.getUTCFullYear() !== +year || base.getUTCMonth() + 1 !== +month
-      || base.getUTCDate() !== +day || base.getUTCHours() !== +hour || base.getUTCMinutes() !== +minute
-      || base.getUTCSeconds() !== +second) return null;
-  let offset = 0;
-  if (zone !== 'Z') {
-    const hours = +zone.slice(1, 3), minutes = +zone.slice(4);
-    if (hours > 23 || minutes > 59) return null;
-    offset = (hours * 60 + minutes) * (zone[0] === '+' ? 1 : -1);
-  }
-  return BigInt(base.getTime() - offset * 60000) * 1000n + BigInt(fraction.padEnd(6, '0'));
-}
-const time = item => timestampMicros(item.updated_at) ?? timestampMicros(item.created_at);
 function validateSearch(response) {
   if (!response || !Array.isArray(response.items) || response.items.some(item => !Number.isFinite(item.score))) {
     throw new Error('Invalid search response');
@@ -39,20 +20,19 @@ function validateSearch(response) {
 
 export function createMemoriesData(onChange) {
   const state = {inputQuery: '', submittedQuery: '', namespace: '', categories: [], keywords: [],
-    browseSort: 'updated_at', searchSort: 'relevance', page: 1, pageSize: 20, k: 10, threshold: 0,
+    browseSort: 'updated_at', searchMode: 'semantic', page: 1, pageSize: 20,
+    searchParams: {semantic: {k: 10, threshold: 0}, lexical: {k: 10, minScore: null}, anchor: {k: 10, minScore: null}},
     updatedAfter: '', updatedBefore: '', items: [], total: 0, totalKind: 'exact', filterResolution: null,
     status: 'idle', error: null};
   let version = 0, collection = [];
   const searching = () => Boolean(state.submittedQuery);
-  const snapshot = () => ({...state, sort: searching() ? state.searchSort : state.browseSort,
+  const snapshot = () => ({...state, sort: searching() ? 'relevance' : state.browseSort,
+    ...state.searchParams[state.searchMode],
+    searchParams: Object.fromEntries(Object.entries(state.searchParams).map(([mode, params]) => [mode, {...params}])),
     categories: [...state.categories], keywords: [...state.keywords], items: [...state.items]});
   const emit = () => onChange(snapshot());
   function localPage() {
-    let items = [...collection];
-    if (state.searchSort === 'updated_at') items.sort((a, b) => {
-      const first = time(a), second = time(b);
-      return first === second ? 0 : first === null ? 1 : second === null ? -1 : first > second ? -1 : 1;
-    });
+    const items = collection;
     state.total = items.length;
     state.page = Math.min(state.page, Math.max(1, Math.ceil(items.length / state.pageSize)));
     state.items = items.slice((state.page - 1) * state.pageSize, state.page * state.pageSize);
@@ -63,13 +43,17 @@ export function createMemoriesData(onChange) {
     state.totalKind = searching() ? 'top_k_results' : 'exact'; collection = []; emit();
     try {
       if (query.submittedQuery) {
-        const body = {query: query.submittedQuery, k: query.k, threshold: query.threshold, include_resolution: true};
+        const body = {query: query.submittedQuery, k: query.k};
+        if (query.searchMode === 'semantic') Object.assign(body, {threshold: query.threshold, include_resolution: true});
+        else if (query.minScore !== null) body.min_score = query.minScore;
         if (query.namespace) body.namespace = query.namespace;
         for (const dimension of ['categories', 'keywords']) if (query[dimension].length) body[dimension] = query[dimension];
         if (query.updatedAfter) body.updated_after = query.updatedAfter;
         if (query.updatedBefore) body.updated_before = query.updatedBefore;
-        const response = await api('/memories/search', {method: 'POST', body: JSON.stringify(body)});
+        const path = '/memories/search' + (query.searchMode === 'semantic' ? '' : '/' + query.searchMode);
+        const raw = await api(path, {method: 'POST', body: JSON.stringify(body)});
         if (request !== version) return;
+        const response = query.searchMode === 'semantic' ? raw : {items: raw, filter_resolution: null};
         validateSearch(response); collection = response.items; state.filterResolution = response.filter_resolution;
         localPage();
       } else {
@@ -106,7 +90,12 @@ export function createMemoriesData(onChange) {
       if (changes[dimension]?.length > 20) throw new Error('最多选择 20 项');
     }
     if ('sort' in changes) {
-      changes = {...changes, [searching() ? 'searchSort' : 'browseSort']: changes.sort}; delete changes.sort;
+      if (!searching()) state.browseSort = changes.sort;
+      changes = {...changes}; delete changes.sort;
+    }
+    changes = {...changes};
+    for (const key of ['k', 'threshold', 'minScore']) {
+      if (key in changes) { state.searchParams[state.searchMode][key] = changes[key]; delete changes[key]; }
     }
     Object.assign(state, changes);
     if (resetPage) state.page = 1;
@@ -126,6 +115,12 @@ export function createMemoriesData(onChange) {
     state.inputQuery = value;
     if (!value.trim()) return clearSearch();
   }
+  function setMode(mode) {
+    if (mode === state.searchMode || !Object.hasOwn(state.searchParams, mode)) return;
+    state.searchMode = mode;
+    if (searching()) { state.page = 1; return refresh(); }
+    emit();
+  }
   const submit = options => change({submittedQuery: state.inputQuery.trim(), ...options});
   function resetFilters() {
     if (!state.namespace && !state.categories.length && !state.keywords.length && !state.updatedAfter && !state.updatedBefore) return;
@@ -137,5 +132,5 @@ export function createMemoriesData(onChange) {
       updatedAfter: '', updatedBefore: '', items: [], total: 0, status: 'idle', error: null,
       filterResolution: null, totalKind: 'exact'}); emit();
   }
-  return {snapshot, refresh, change, resetFilters, input, submit, clearSearch, prepareKeywordBrowse};
+  return {snapshot, refresh, change, setMode, resetFilters, input, submit, clearSearch, prepareKeywordBrowse};
 }
