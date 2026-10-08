@@ -20,6 +20,22 @@ async function runMemoriesSearchRegression() {
   assert(searchCalls().length === 1 && JSON.parse(searchCalls()[0].body).include_resolution === true, 'one envelope request');
   assert($('memories-count').textContent === '本次搜索 25 条 · 最多 25 条', 'Top-K count not full inventory');
   assert($('memories-list').textContent.includes('Semantic 0.99'), 'raw cosine not probability');
+  const regionIds = ['memory-row-1', 'memory-row-1-open', 'memory-row-1-title',
+    'memory-row-1-summary', 'memory-row-1-footer', 'memory-row-1-score', 'memory-row-1-date'];
+  const geometry = id => {
+    const box = $(id).getBoundingClientRect();
+    return [box.x, box.y, box.width, box.height];
+  };
+  const originalRegions = regionIds.map(geometry), originalList = $('memories-list').textContent;
+  $('btn-debug').click();
+  assert(regionIds.every((id, i) => JSON.stringify(geometry(id)) === JSON.stringify(originalRegions[i])), 'Debug preserves row region geometry');
+  assert(getComputedStyle($('memory-row-1-open')).position === 'absolute', 'Debug preserves row overlay positioning');
+  $('memory-row-1-title').dispatchEvent(new MouseEvent('mouseover', {bubbles:true}));
+  assert(document.querySelector('.debug-id-label').textContent === 'memory-row-1-title', 'Debug identifies row title');
+  $('memory-row-1-open').click();
+  assert($('detail-modal').style.display === 'none' && $('memories-list').textContent === originalList, 'Debug inspection does not open detail or change content');
+  $('btn-debug').click();
+  assert(!document.querySelector('.debug-id-label') && !$('memories-list').querySelector('.debug-focus'), 'Debug cleanup removes overlay and selection');
   assert($('memories-filter-resolution').textContent.includes('<locking> → optimistic-lock、lock'), 'semantic accepted values shown');
   assert($('memories-filter-resolution').textContent.includes('absent 未找到匹配值'), 'none explained');
   assert(!$('memories-filter-resolution').textContent.includes('design') && !$('memories-filter-resolution').querySelector('locking'), 'exact hidden and text safe');
@@ -76,7 +92,9 @@ async function runMemoriesSearchRegression() {
   assert(lastBody().namespace==='a' && lastBody().categories[0]==='design' && lastBody().keywords[0]==='cache'
     && lastBody().updated_after===new Date('2020-01-01T00:00:00').toISOString(), 'mode carries applied public filters and date');
   assert($('memories-query').value==='unsubmitted' && $('memories-k').value==='10' && $('memories-threshold').value==='', 'switch preserves query and restores mode draft');
-  assert($('memories-list').textContent.includes('FTS 1e-9') && !$('memories-filter-resolution').textContent, 'tiny raw FTS score and mappings cleared');
+  assert($('memories-list').textContent.includes('FTS 0.000')
+    && $('memories-list').querySelector('.memory-search-score').title === 'FTS 1e-9'
+    && !$('memories-filter-resolution').textContent, 'FTS three decimals, full score tooltip and mappings cleared');
   $('memories-k').value='13'; $('memories-threshold').value='2e0'; submit($('memories-advanced-form')); await ready();
   assert(lastBody().query==='A' && lastBody().k===13 && lastBody().min_score===2, 'BM25 scientific notation above one and Apply query');
   for(const bad of ['-1','Infinity','NaN','1e999','0x10']) {
@@ -85,7 +103,8 @@ async function runMemoriesSearchRegression() {
   }
   $('memories-threshold').value='-1'; S.resetCalls(); modeButton('anchor').click(); await ready();
   assert(allSearchCalls()[0].url.endsWith('/anchor') && lastBody().k===10 && !('min_score' in lastBody()), 'Anchor defaults isolated');
-  assert($('memories-list').textContent.includes('Anchor 1e-9'), 'Anchor raw label');
+  assert($('memory-row-1-score').textContent === 'Anchor 0.000'
+    && $('memory-row-1-score').title === 'Anchor 1e-9', 'Anchor three decimals with full score tooltip');
   $('memories-k').value='7'; $('memories-threshold').value='1e-8'; submit($('memories-advanced-form')); await ready();
   assert(lastBody().k===7 && lastBody().min_score===1e-8, 'Anchor independent applied values');
   modeButton('lexical').click(); await ready();
@@ -120,7 +139,7 @@ async function runMemoriesSearchRegression() {
     modeButton('anchor').click();
     assert(!$('memories-list').querySelector('.memory-search-score'), 'mode loading clears old scores');
     await ready(); old(failure ? json({detail:'stale mode failure'},500) : json({items:records,filter_resolution:mapped})); await settle(25);
-    assert($('memories-list').textContent.includes('Anchor 1e-9') && !$('memories-filter-resolution').textContent, 'stale mode response ignored');
+    assert($('memories-list').textContent.includes('Anchor 0.000') && !$('memories-filter-resolution').textContent, 'stale mode response ignored');
     S.setOverride(url => url === '/api/memories/search' ? json({items:records,filter_resolution:null}) : undefined);
     modeButton('semantic').click(); await ready();
   }
@@ -133,7 +152,8 @@ async function runMemoriesSearchRegression() {
   assert([...$('memories-search-mode').children].filter(n=>n.tabIndex===0).length===1, 'single Tab stop');
   $('btn-debug').click();
   for(const id of ['memories-search-mode','memories-mode-semantic','memories-mode-lexical','memories-mode-anchor','memories-threshold-label','memories-threshold-help']) {
-    assert(getComputedStyle($(id),'::before').content.includes(id), 'Debug ID: '+id);
+    $(id).dispatchEvent(new MouseEvent('mouseover', {bubbles:true}));
+    assert(document.querySelector('.debug-id-label').textContent === id, 'Debug ID: '+id);
   }
   $('btn-debug').click();
   S.setOverride(url => url === '/api/memories/search' ? json({items:records,filter_resolution:null}) : undefined);

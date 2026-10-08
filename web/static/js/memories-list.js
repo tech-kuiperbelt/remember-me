@@ -18,15 +18,9 @@ function memoryDate(memory) {
   return null;
 }
 
-function relativeTime(stamp) {
+function displayDate(stamp) {
   if (!stamp) return '—';
-  const seconds = (Date.now() - Date.parse(stamp)) / 1000;
-  if (seconds < 0) return formatTime(stamp);
-  if (seconds < 60) return '刚刚';
-  if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
-  if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ago';
-  if (seconds < 604800) return Math.floor(seconds / 86400) + 'd ago';
-  return new Date(stamp).toLocaleDateString();
+  return new Date(stamp).toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'});
 }
 
 export function createMemoriesList({root, pagination, count, onOpen, onPage, onPageSize, onRetry, onAll, onReset, onClearSearch}) {
@@ -46,10 +40,11 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
   window.addEventListener('resize', () => closeTags());
   document.getElementById('content').addEventListener('scroll', () => closeTags());
 
-  function showTags(trigger, tags) {
+  function showTags(trigger, tags, label) {
     closeTags();
     const node = el('div', 'memory-tags-popover');
-    node.setAttribute('role', 'dialog'); node.setAttribute('aria-label', '全部标签'); node.tabIndex = -1;
+    node.id = trigger.id + '-popover';
+    node.setAttribute('role', 'dialog'); node.setAttribute('aria-label', '全部' + label); node.tabIndex = -1;
     for (const tag of tags) node.append(el('span', 'memory-chip', tag.dimension + ': ' + tag.value));
     document.body.append(node);
     const box = trigger.getBoundingClientRect();
@@ -58,12 +53,16 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
     popup = {node, trigger}; trigger.setAttribute('aria-expanded', 'true'); node.focus();
   }
 
-  function row(memory, searchMode) {
+  function row(memory, searchMode, index) {
+    // Position-based IDs let callers identify regions of the current page.
+    // dataset.memoryId continues to identify the underlying memory record.
+    const rowId = 'memory-row-' + (index + 1);
     const title = clean(memory.summary) || deriveSummary(memory.text) || '空内容记忆';
     const body = clean(memory.text), prefix = title.replace(/…$/, '');
     const remainder = body.startsWith(prefix) ? body.slice(prefix.length).trim() : body;
     const preview = Array.from(remainder).slice(0, 256).join('');
     const item = el('div', 'memory-row');
+    item.id = rowId;
     item.dataset.memoryId = memory.id;
     const open = el('button', 'memory-open'); open.type = 'button';
     open.setAttribute('aria-label', '查看记忆：' + title);
@@ -75,29 +74,49 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
     const summary = el('div', 'memory-row-summary', preview || '\u00a0');
     if (!preview) summary.setAttribute('aria-hidden', 'true');
     content.append(heading, summary);
+    const footer = el('div', 'memory-row-footer');
     const metadata = el('div', 'memory-row-metadata');
-    const namespace = el('span', 'memory-namespace', memory.namespace || ''); namespace.title = memory.namespace || '';
+    if (searchMode) {
+      const label = ({semantic: 'Semantic', lexical: 'FTS', anchor: 'Anchor'})[searchMode];
+      const score = el('span', 'memory-chip memory-search-score',
+        label + ' ' + memory.score.toFixed(3));
+      score.title = label + ' ' + String(memory.score);
+      score.id = rowId + '-score';
+      metadata.append(score);
+    }
+    const namespace = el('div', 'memory-tag-group memory-namespace'); namespace.title = memory.namespace || '';
+    namespace.append(el('span', 'memory-group-label', '空间：'), el('span', 'memory-chip memory-namespace-value', memory.namespace || '—'));
     metadata.append(namespace);
-    const tags = [...values(memory.metadata?.categories).map(value => ({dimension: 'category', value})),
-      ...values(memory.metadata?.keywords).map(value => ({dimension: 'keyword', value}))];
-    for (const tag of tags.slice(0, 3)) {
-      const chip = el('span', 'memory-chip', tag.value); chip.title = tag.dimension + ': ' + tag.value;
-      metadata.append(chip);
+    for (const [field, dimension, label, limit] of [['categories', 'category', '分类', 3], ['keywords', 'keyword', '关键词', 5]]) {
+      const tags = values(memory.metadata?.[field]).map(value => ({dimension, value}));
+      if (!tags.length) continue;
+      const group = el('div', 'memory-tag-group'); group.id = rowId + '-' + field;
+      group.append(el('span', 'memory-group-label', label + '：'));
+      tags.slice(0, limit).forEach((tag, tagIndex) => {
+        const chip = el('span', 'memory-chip memory-' + dimension + '-chip', tag.value);
+        chip.title = label + ': ' + tag.value;
+        chip.id = rowId + '-' + dimension + '-' + (tagIndex + 1);
+        group.append(chip);
+      });
+      if (tags.length > limit) {
+        const overflow = el('button', 'memory-chip memory-tags-more', '+' + (tags.length - limit));
+        overflow.id = rowId + '-' + dimension + '-more';
+        overflow.type = 'button'; overflow.setAttribute('aria-label', '查看全部 ' + tags.length + ' 个' + label);
+        overflow.setAttribute('aria-haspopup', 'dialog'); overflow.setAttribute('aria-expanded', 'false');
+        overflow.onclick = () => showTags(overflow, tags, label); group.append(overflow);
+      }
+      metadata.append(group);
     }
-    if (tags.length > 3) {
-      const overflow = el('button', 'memory-chip memory-tags-more', '+' + (tags.length - 3));
-      overflow.type = 'button'; overflow.setAttribute('aria-label', '查看全部 ' + tags.length + ' 个标签');
-      overflow.setAttribute('aria-haspopup', 'dialog'); overflow.setAttribute('aria-expanded', 'false');
-      overflow.onclick = () => showTags(overflow, tags); metadata.append(overflow);
-    }
-    content.append(metadata);
-    const stamp = memoryDate(memory), time = el('span', 'memory-row-time', relativeTime(stamp));
+    const stamp = memoryDate(memory), time = el('span', 'memory-row-time', displayDate(stamp));
     time.title = stamp ? formatTime(stamp) : '无有效时间';
+    for (const [region, node] of Object.entries({open, icon, content, title: heading, summary,
+      footer, metadata, namespace, date: time})) node.id = rowId + '-' + region;
     if (stamp) open.setAttribute('aria-label', '查看记忆：' + title + '，更新于 ' + formatTime(stamp));
-    const timing = el('div', 'memory-row-time'); timing.append(time);
-    if (searchMode) timing.append(el('span', 'memory-search-score',
-      ({semantic: 'Semantic', lexical: 'FTS', anchor: 'Anchor'})[searchMode] + ' ' + String(memory.score)));
-    item.append(open, icon, content, timing);
+    footer.append(metadata, time); content.append(footer);
+    const detailArrow = el('span', 'memory-row-detail-arrow', '›');
+    detailArrow.id = rowId + '-detail-arrow';
+    detailArrow.setAttribute('aria-hidden', 'true');
+    item.append(open, icon, content, detailArrow);
     item.addEventListener('click', event => {
       if (!event.target.closest('button')) onOpen(memory.id);
     });
@@ -142,7 +161,7 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
       if (filtered) empty.append(button('Clear filters', onReset));
       else if (searching) empty.append(button('清空搜索', onClearSearch));
       root.append(empty);
-    } else state.items.forEach(memory => root.append(row(memory, searching ? state.searchMode : null)));
+    } else state.items.forEach((memory, index) => root.append(row(memory, searching ? state.searchMode : null, index)));
 
     const ready = state.status === 'ready', last = Math.max(1, Math.ceil(state.total / state.pageSize));
     const start = ready && state.total ? (state.page - 1) * state.pageSize + 1 : 0;

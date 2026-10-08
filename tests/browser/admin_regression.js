@@ -181,7 +181,7 @@ try {
   const inventory = Array.from({length: 41}, (_, i) => ({id: 'browse-' + i, namespace: 'a',
     summary: 'Browse ' + i, text: 'Browse ' + i + ' body preview',
     created_at: '2026-01-01T00:00:00Z', updated_at: '2026-02-01T00:00:00Z',
-    metadata: {categories: ['design', 'api'], keywords: ['cache', 'transaction', 'locking']}}));
+    metadata: {categories: ['design', 'api', 'verification'], keywords: ['cache', 'transaction', 'locking', 'sqlite', 'search', 'overflow']}}));
   let live = [...inventory];
   S.setOverride((url, init) => {
     if (url.startsWith('/api/memories/page?')) {
@@ -206,11 +206,19 @@ try {
   await waitFor(() => $('detail-modal').style.display === 'flex', 'keyboard entry detail');
   Array.from($('detail-actions').children).find(el => el.textContent === 'Close').click();
   assert(document.activeElement === firstOpen, 'closing detail restores row focus');
+  $('memory-row-1-detail-arrow').click();
+  await waitFor(() => $('detail-modal').style.display === 'flex', 'right arrow opens detail');
+  Array.from($('detail-actions').children).find(el => el.textContent === 'Close').click();
   $('memories-list').querySelector('.memory-row-time').click();
   await waitFor(() => $('detail-modal').style.display === 'flex', 'time area opens detail');
   Array.from($('detail-actions').children).find(el => el.textContent === 'Close').click();
-  $('memories-list').querySelector('.memory-tags-more').click();
-  assert(document.querySelector('.memory-tags-popover')?.textContent.includes('locking'), 'overflow exposes tags');
+  assert($('memory-row-1-namespace').textContent === '空间：a', 'namespace has explicit group label');
+  assert($('memory-row-1-categories').querySelectorAll('.memory-category-chip').length === 3
+    && $('memory-row-1-keywords').querySelectorAll('.memory-keyword-chip').length === 5, 'categories display three and keywords five independently');
+  assert(!$('memory-row-1-category-more') && $('memory-row-1-keyword-more').textContent === '+1', 'overflow reflects independent limits');
+  $('memory-row-1-keyword-more').click();
+  assert(document.querySelector('.memory-tags-popover')?.textContent.includes('overflow')
+    && !document.querySelector('.memory-tags-popover').textContent.includes('verification'), 'keyword overflow exposes all keywords only');
   assert($('detail-modal').style.display !== 'flex', 'tag overflow does not open detail');
   document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
   assert(!document.querySelector('.memory-tags-popover'), 'Escape closes tags');
