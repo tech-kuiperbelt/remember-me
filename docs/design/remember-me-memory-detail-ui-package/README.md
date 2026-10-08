@@ -1,47 +1,32 @@
 # Remember Me — Memory Detail Drawer UI Package
 
-This package documents the agreed UI and interaction design for the Memory Detail experience in Remember Me.
+2026-10-08: implementation and verification complete; review found no clear actionable regressions and the user authorized the frontend commit. This package now describes the implemented behavior. Images remain design references and do not override the written contract.
 
-## Scope
+## Documents
 
-This package covers:
-
-- Right-side overlay Drawer as the Detail surface
-- View mode
-- Edit mode
-- Markdown rendering in View mode
-- Markdown source editing in Edit mode
-- Edit / Preview toggle for Markdown content
-- Editable Namespace, Summary, Content, Categories, Keywords
-- Read-only ID / Created At / Updated At
-- Dirty-state detection
-- Save / Cancel behavior
-- Unsaved-change confirmation
-- Delete flow and confirmation
-- Synchronization with the current Memories List/Search result after save/delete
-
-This package intentionally does **not** redesign the Memories List/Search page. That is handled by the previous Memories UI package.
-
-## Files
-
-- `UI_MEMORY_DETAIL_SPEC.md` — visual and information architecture specification
-- `UI_MEMORY_DETAIL_INTERACTIONS.md` — behavioral rules and state transitions
-- `UI_MEMORY_DETAIL_IMPLEMENTATION_PLAN.md` — suggested implementation sequence
-- `images/detail-drawer-view-edit-delete.png` — primary detail design reference
-- `images/drawer-vs-panel-reference.png` — reference for choosing overlay Drawer instead of split Panel
-- `images/memories-list-context.png` — contextual reference showing where Detail is opened from
+- [50.6.1 backend contract](../../project-management/plans/50.6.1-memory-detail-backend.md) — Admin update, summary clear and anchors semantics.
+- [50.6.2 frontend contract](../../project-management/plans/50.6.2-memory-detail-frontend.md) — approved behavior and acceptance requirements.
+- [50.6.3 coding plan and results](../../project-management/plans/50.6.3-memory-detail-coding-plan.md) — modules, actual commands, verification boundaries and screenshots.
+- [UI specification](UI_MEMORY_DETAIL_SPEC.md) — layout, fields, Markdown, editing and accessibility.
+- [Interaction specification](UI_MEMORY_DETAIL_INTERACTIONS.md) — state, dirty/leave guard, PUT→GET, deletion and list refresh.
+- [Implementation record](UI_MEMORY_DETAIL_IMPLEMENTATION_PLAN.md) — completed sequence and module mapping.
 
 ## Core decisions
 
-1. Memory Detail uses a **right-side overlay Drawer**, not a split panel and not a separate page.
-2. Opening Detail must not resize the Memories List layout.
-3. View mode is the default state.
-4. Markdown content is rendered in View mode.
-5. Edit mode edits raw Markdown source.
-6. Markdown preview uses an **Edit / Preview toggle**, not a two-column editor.
-7. Namespace, Summary, Content, Categories, and Keywords are editable.
-8. ID, Created At, and Updated At are read-only.
-9. Edit is explicit; there is no autosave.
-10. Delete lives under the `...` menu and requires explicit confirmation.
-11. Unsaved changes must be protected when closing the Drawer, pressing Esc, clicking the overlay, or switching to another memory.
-12. After save, the memory must be re-evaluated against the active query + filters. If it no longer belongs in the current result set, remove it from the list.
+- Modal right-side drawer, 60vw clamped to 640–1040px / max 100vw, fixed header and independent body scroll. Background stays visible and inert, with unchanged list width and scrollbar.
+- Plain stored Summary; safe Markdown Content with images represented as text/links. No Score, Source, tabs or invented quotas.
+- Editable Namespace, Summary, Content, Categories, Keywords and ordered Anchors. Categories max 3; Anchors max 5; Keywords have no write cap.
+- Explicit Edit/Preview, Save and Cancel; no autosave. Dirty leave uses one confirmation and preserves the first requested action.
+- PUT is a receipt, followed by authoritative GET; reread failure is read-only and Retry never repeats PUT.
+- Delete is View-only under More, with title/full ID confirmation. Refresh re-runs the active Browse/Search; there is no client inference of ranking or filter exit.
+- Collapsed Technical details contains ID/timestamps/metadata, Copy ID and shared Debug. Stable region IDs and modal focus behavior are preserved.
+
+## Verification and references
+
+112/112 browser scenarios passed; final targeted regressions and real Admin/isolated SQLite save-clear-delete round trips passed. Actual production Chrome verification used readonly requests and local drafts only. Screenshots and precise commands are in 50.6.3; no frontend commit or production restart was performed.
+
+- `images/detail-drawer-view-edit-delete.png` — original View/Edit/Delete reference.
+- `images/drawer-vs-panel-reference.png` — drawer selection reference.
+- `images/memories-list-context.png` — original list context.
+
+Memory List remains a completed stage. This detail work does not mark the entire frontend roadmap complete.

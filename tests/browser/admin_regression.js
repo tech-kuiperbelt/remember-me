@@ -92,7 +92,7 @@ async function runThemeScenario(scenario) {
       }
       if (modalOnly) {
         $('memories-list').querySelector('.memory-open').click();
-        await waitFor(() => $('detail-modal').style.display === 'flex', 'dark detail modal');
+        await waitFor(() => $('detail-edit'), 'dark detail modal');
         const themeSelect = $('theme-select');
         themeSelect.value = 'light'; themeSelect.dispatchEvent(new Event('change', {bubbles:true}));
         assert($('detail-modal').style.display === 'flex', 'theme switch keeps modal open');
@@ -168,7 +168,7 @@ async function runThemeScenario(scenario) {
 
 try {
   const scenario = new URLSearchParams(location.search).get('smoke') || '';
-  if (await runMemoriesVisualScenario(scenario) || await runThemeScenario(scenario)) { /* theme scenario finished */ }
+  if (await runDetailScenario(scenario) || await runMemoriesVisualScenario(scenario) || await runThemeScenario(scenario)) { /* theme scenario finished */ }
   else {
 
   // The real page bootstraps from the real backend; wait for the first load.
@@ -204,14 +204,14 @@ try {
   assert(firstOpen.tagName === 'BUTTON', 'row opening has native keyboard activation');
   firstOpen.focus(); firstOpen.click();
   await waitFor(() => $('detail-modal').style.display === 'flex', 'keyboard entry detail');
-  Array.from($('detail-actions').children).find(el => el.textContent === 'Close').click();
+  $('btn-detail-close').click();
   assert(document.activeElement === firstOpen, 'closing detail restores row focus');
   $('memory-row-1-detail-arrow').click();
   await waitFor(() => $('detail-modal').style.display === 'flex', 'right arrow opens detail');
-  Array.from($('detail-actions').children).find(el => el.textContent === 'Close').click();
+  $('btn-detail-close').click();
   $('memories-list').querySelector('.memory-row-time').click();
   await waitFor(() => $('detail-modal').style.display === 'flex', 'time area opens detail');
-  Array.from($('detail-actions').children).find(el => el.textContent === 'Close').click();
+  $('btn-detail-close').click();
   assert($('memory-row-1-namespace').textContent === '空间：a', 'namespace has explicit group label');
   $('memory-row-1').scrollIntoView({block:'center'});
   for (const id of ['memory-row-1-date', 'memory-row-1-namespace', 'memory-row-1-category-1', 'memory-row-1-keyword-1']) {
@@ -242,7 +242,7 @@ try {
   const lastOpen = $('memories-list').querySelector('.memory-open');
   lastOpen.focus(); lastOpen.click();
   await waitFor(() => $('detail-modal').style.display === 'flex', 'last item detail');
-  Array.from($('detail-actions').children).find(el => el.textContent === 'Delete').click();
+  await waitFor(() => $('detail-more'), 'detail loaded'); $('detail-more').click(); $('detail-delete').click(); $('detail-confirm-delete').click();
   await waitFor(() => $('memories-pagination').textContent.includes('21–40 of 40'), 'delete adjusts page');
   window.confirm = approveDelete;
   $('memories-page-size').value = '10'; fire($('memories-page-size'), 'change');
@@ -347,23 +347,20 @@ try {
 
   S.resetCalls();
   $('memories-list').querySelector('.memory-open').click();
-  await waitFor(() => $('detail-modal').style.display === 'flex', 'view modal');
+  await waitFor(() => $('detail-edit'), 'view modal');
   assert(S.calls.some(c => c.url === detailUrl && c.method === 'GET'), 'view detail URL');
   assert(!$('edit-text'), 'view opens read-only detail');
 
   S.resetCalls();
   Array.from($('detail-actions').children).find(el => el.textContent === 'Edit').click();
   await waitFor(() => $('edit-text'), 'edit modal');
-  assert(S.calls.some(c => c.url === detailUrl), 'edit detail URL');
+  assert(!S.calls.some(c => c.url === detailUrl), 'editing reuses authoritative detail');
   assert($('edit-namespace').value === special, 'edit namespace value');
-  const option = Array.from($('ns-dropdown').children).find(el => el.textContent === special);
-  assert(option, 'namespace picker option');
-  $('edit-namespace').value = ''; option.dispatchEvent(new MouseEvent('mousedown'));
-  assert($('edit-namespace').value === special, 'namespace picker');
-
-  S.resetCalls();
-  Array.from($('detail-actions').children).find(el => el.textContent === 'Save').click();
+  assert([...$('detail-namespaces').children].some(el=>el.value===special), 'namespace candidates');
+  $('edit-text').value += '\nEdited'; fire($('edit-text'),'input');
+  S.resetCalls(); $('detail-save').click();
   await waitFor(() => S.calls.some(c => c.url === detailUrl && c.method === 'PUT'), 'detail save action');
+  await waitFor(() => $('detail-edit'), 'saved detail stays open'); $('btn-detail-close').click();
 
   const originalConfirm = window.confirm;
   window.confirm = () => true;
@@ -371,7 +368,7 @@ try {
   $('memories-list').querySelector('.memory-open').click();
   await waitFor(() => $('detail-modal').style.display === 'flex' && !$('edit-text'), 'delete detail');
   S.resetCalls();
-  Array.from($('detail-actions').children).find(el => el.textContent === 'Delete').click();
+  await waitFor(() => $('detail-more'), 'detail loaded'); $('detail-more').click(); $('detail-delete').click(); $('detail-confirm-delete').click();
   await waitFor(() => S.calls.some(c => c.url === detailUrl && c.method === 'DELETE'), 'detail delete action');
   window.confirm = originalConfirm;
 
@@ -387,7 +384,7 @@ try {
   await waitFor(() => $('memories-list').querySelector('.memory-search-score'), 'semantic results');
   S.resetCalls(); $('memories-list').querySelector('.memory-open').click();
   await waitFor(() => S.calls.some(c => c.url === detailUrl), 'semantic results action');
-  Array.from($('detail-actions').children).find(el => el.textContent === 'Close').click();
+  $('btn-detail-close').click();
 
   S.setOverride(url => url.startsWith('/api/memories/page?') ? json({detail: special}, 500) : undefined);
   $('memories-search-clear').click();

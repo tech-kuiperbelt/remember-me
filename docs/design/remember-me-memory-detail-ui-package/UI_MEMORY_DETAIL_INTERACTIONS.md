@@ -1,267 +1,52 @@
 # Memory Detail Drawer — Interaction Specification
 
-## 1. Core state model
+Updated 2026-10-08 to match implementation. See [50.6.2 behavior contract](../../project-management/plans/50.6.2-memory-detail-frontend.md) and [50.6.3 implementation record](../../project-management/plans/50.6.3-memory-detail-coding-plan.md).
 
-Recommended high-level states:
+## Session and states
 
-```text
-CLOSED
-  ↓ select memory
-VIEW
-  ↓ Edit
-EDIT_CLEAN
-  ↓ change
-EDIT_DIRTY
-  ↓ Save
-SAVING
-  ↓ success
-VIEW
-```
+The drawer owns selected ID, last confirmed memory, draft, preview mode, request version and one pending leave action. States are CLOSED, LOADING, LOAD_ERROR, VIEW, EDIT (clean/dirty derived), SAVING, RELOADING_AFTER_SAVE, SAVED_RELOAD_ERROR, NOT_FOUND and DELETING. Menus, pickers and confirmations are nested states.
 
-Additional flows:
+Opening shows the modal immediately, focuses Close, loads the record and selects its row by ID. Background content is inert; users close before clicking another row. Programmatic target changes remain possible through the leave guard. Each open, close and reread invalidates earlier reads; late A/B or closed-session responses cannot replace or reopen the drawer.
 
-```text
-EDIT_DIRTY
-  ↓ attempt to leave
-DISCARD_CONFIRMATION
-  ├─ Keep editing → EDIT_DIRTY
-  └─ Discard changes → requested destination
-```
+## Draft and editing
 
-```text
-VIEW
-  ↓ Delete
-DELETE_CONFIRMATION
-  ↓ confirm
-DELETING
-  ↓ success
-CLOSED + remove list item
-```
+Edit copies the last confirmed record and focuses Namespace. Content compares exact source; Namespace/Summary compare trimmed values, with null summary and blank input equivalent. Categories/Keywords compare normalized sets; Anchors compare normalized ordered arrays. Reverting values restores clean state.
 
----
+Save requires dirty and valid values. Untouched historical dimensions are not cleaned or truncated. An explicitly edited invalid dimension must be repaired. Preview only renders draft Content, retaining source, selection, scroll and dirty state.
 
-## 2. Opening a memory
+Cancel explicitly discards the draft and returns to the last confirmed View; it does not close the drawer or require a second confirmation. Copy content copies saved source in View; Copy draft copies unsaved source in Edit. Clipboard failures are reported.
 
-When a list row is clicked:
+## Leaving and focus
 
-1. Open the right-side Drawer
-2. Load/show that memory
-3. Highlight the row
-4. Do not reset search/filter/sort/pagination
-5. Do not change list width
+Close, overlay, Escape, programmatic record changes and router navigation call one synchronous `requestLeave(action)` coordinator. Clean sessions leave directly. Dirty sessions capture the first action and show Keep editing / Discard changes, initially focusing Keep editing. Later requests cannot replace the pending destination.
 
-If another memory is clicked while the Drawer is already open:
+Keep editing/Escape dismisses the confirmation and retains the draft. Discard executes the original continuation once. Navigation preparation is inside that continuation, so cancelling cannot mutate destination filters early. Dirty and busy states register beforeunload protection; no persistent draft or autosave exists.
 
-- In View mode: replace Drawer content with the new memory
-- In Edit Clean mode: switching is allowed directly
-- In Edit Dirty mode: show unsaved-change confirmation first
+Saving/deleting rejects leave and repeated business actions. Tab cycles within the topmost confirmation/picker/menu/drawer. Closed details' internal controls are excluded. Escape first exits Debug, or closes the topmost nested surface, before attempting drawer leave. IME Escape is ignored. Closing restores row focus, falling back to the result bar if necessary.
 
----
+## Save contract and failures
 
-## 3. Dirty-state definition
+1. Validate and build a minimal update: changed scalars and changed metadata dimensions only.
+2. Body changes additionally send current Summary and Anchors, including `summary: ""` and `anchors: []`. This deliberately keeps stored null summary null after body edits, while list/LLM display fallback remains available. HTTP null/omission is not the clear operation; the frontend never sends null to clear.
+3. Lock the form and send PUT once. Unknown Namespace uses existing confirmation and a confirmed retry; cancelling returns to the same draft.
+4. PUT failure retains draft and re-enables controls with an inline error. PUT 404 reports the missing record while preserving Copy draft.
+5. PUT success clears dirty and emits one Memories and one Stats notification, then GETs the authoritative record. PUT returns a receipt, not detail data.
+6. GET success returns to View with the drawer open. GET failure enters read-only SAVED_RELOAD_ERROR; Retry repeats GET only. GET 404 enters NOT_FOUND.
 
-Dirty state is based on semantic difference from the values captured when Edit mode began.
+Successful writes are not reported as failed because a subsequent detail or list read failed. List errors are displayed by the list independently.
 
-Fields participating in dirty checking:
+## Result refresh and selection
 
-- Namespace
-- Summary
-- Content
-- Categories
-- Keywords
+The data module re-runs the applied Browse/Semantic/Lexical/Anchor request after save/delete. It retains query/parameter drafts, applied filters, sort, page size and page, correcting an out-of-range final page. It owns ranking and membership; the drawer does not edit rows or scores optimistically.
 
-If the user changes a field and then restores its original value, that field must no longer make the form dirty.
+Refresh retains sufficient list height and restores/clamps scroll after completion. It does not steal drawer focus. Selection stays tied to ID through reorder or disappearance; it never transfers to a different row at the same position. An absent record on the current page does not justify an “exited filters” message. Clearing Summary bumps updated_at and may change normal Browse order/time-filter membership.
 
-For collection fields, compare normalized values according to API semantics rather than UI ordering unless ordering itself is meaningful.
+## Delete
 
----
+Delete exists only in View's More menu. Confirmation includes the title and full ID and defaults to Cancel. Cancel retains View. Confirm locks actions and issues one DELETE.
 
-## 4. Save behavior
+Success closes, clears selection, emits one Memories/Stats refresh and shows success. Failure retains confirmation and record, displays the error, and enables Retry/Cancel. DELETE 404 says the record is already missing; the user can close and refresh to reconcile. No optimistic deletion occurs.
 
-When Save is clicked:
+## Deferred behavior
 
-1. Validate form values
-2. Disable editing controls to prevent duplicate submission
-3. Submit all changed editable data as required by the API contract
-4. Wait for server response
-5. On success, treat the server response as authoritative
-6. Update Drawer data
-7. Return to View mode
-8. Update the corresponding row in the current list if it still belongs there
-9. Re-evaluate current query + filters
-
-### Result-set reconciliation
-
-After Save, the memory may no longer match current filters because Namespace, Categories, or Keywords may have changed.
-
-Rule:
-
-```text
-still matches current query + filters
-  → update row in place
-
-no longer matches current query + filters
-  → remove row from current result list
-```
-
-Do not leave stale data in the current result set.
-
-If the current Search API ranking/score cannot be reproduced safely client-side, prefer re-fetching/revalidating the active result set rather than inventing client-side ranking behavior.
-
----
-
-## 5. Save success feedback
-
-Show lightweight success feedback such as a toast:
-
-```text
-Memory updated
-Your changes have been saved.
-```
-
-If it was removed from the current filtered result set, optional message:
-
-```text
-Memory updated
-It no longer matches the current filters and was removed from the list.
-```
-
-Do not treat removal from the filtered list as a deletion.
-
----
-
-## 6. Save failure
-
-If the update request fails:
-
-- Stay in Edit mode
-- Preserve all unsaved values
-- Re-enable controls
-- Show an error message
-- Do not mutate/remove the list row based on an unsuccessful save
-
-The user must be able to retry or cancel.
-
----
-
-## 7. Cancel behavior
-
-Cancel means:
-
-- Discard all unsaved edits from the current edit session
-- Restore the last server-confirmed memory values
-- Return to View mode
-
-Cancel from Edit Dirty does not require an additional confirmation because the user explicitly chose Cancel.
-
-If desired later, this can be revisited, but the initial implementation should keep the flow simple.
-
----
-
-## 8. Leaving with unsaved changes
-
-The following actions count as attempts to leave Edit Dirty state:
-
-- Close button
-- Esc
-- Overlay click
-- Selecting a different memory
-- Navigation away from Memories if the Drawer component owns that transition
-
-Show one common confirmation dialog:
-
-```text
-Discard unsaved changes?
-
-You have unsaved changes in this memory.
-
-[ Keep editing ] [ Discard changes ]
-```
-
-### Keep editing
-
-- Close dialog
-- Remain in current Drawer/Edit state
-- Preserve edits
-
-### Discard changes
-
-- Drop local edits
-- Perform the originally requested action
-
-The requested action should be remembered while the confirmation is open.
-
----
-
-## 9. Delete behavior
-
-Delete is available from View mode via the `...` menu.
-
-Recommended initial rule: do not expose Delete while actively editing. The user should cancel/save first, which keeps destructive behavior unambiguous.
-
-Flow:
-
-1. Open `...`
-2. Select `Delete memory`
-3. Show confirmation
-4. Confirm Delete
-5. Disable confirmation actions during request
-6. Call Delete API
-7. On success:
-   - Remove memory from current List/Search result
-   - Close Drawer
-   - Clear selection
-   - Show success toast
-
----
-
-## 10. Delete failure
-
-If delete fails:
-
-- Keep Drawer open
-- Keep the memory in the list
-- Close or retain the confirmation dialog according to component convention, but clearly show the failure
-- Never optimistically remove the item unless rollback behavior is explicitly implemented
-
-The simplest recommended behavior is server-confirmed deletion before mutating the list.
-
----
-
-## 11. Markdown Preview behavior
-
-Preview renders the current local Content value.
-
-Rules:
-
-- No API call is required for ordinary client-side Markdown preview
-- Preview does not save
-- Preview does not clear dirty state
-- Edit → Preview → Edit must preserve exact Markdown source
-- If render fails, show an inline preview error without losing source text
-
----
-
-## 12. Closing behavior in View mode
-
-In View mode, these actions close directly:
-
-- Close button
-- Esc
-- Overlay click
-
-No confirmation is required because there are no unsaved edits.
-
----
-
-## 13. Keyboard behavior
-
-Recommended:
-
-- `Esc`
-  - View → close Drawer
-  - Edit Clean → close or return to View according to chosen component behavior; recommended: close Drawer
-  - Edit Dirty → unsaved-change confirmation
-- Do not bind `Ctrl/Cmd+S` until browser/default handling and accessibility are intentionally designed
-
-Keep the first implementation conservative.
+There is no autosave, persisted draft, version-conflict detection, Ctrl/Cmd+S binding or new backend endpoint. PUT→GET retains the existing concurrent-write window; the GET is authoritative for display.

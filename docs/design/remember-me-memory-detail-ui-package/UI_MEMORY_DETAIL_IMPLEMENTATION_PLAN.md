@@ -1,310 +1,45 @@
-# Memory Detail Drawer — Suggested Implementation Plan
-
-The implementation should be incremental so View/Edit/Delete behavior is testable independently.
-
-## Phase 1 — Drawer shell and selection
-
-Goal: open/close a stable overlay Drawer without editing.
-
-Implement:
-
-- `selectedMemoryId`
-- Drawer open/closed state
-- Overlay behavior
-- Close button
-- Esc close
-- Overlay-click close
-- Independent Drawer scrolling
-- Selected-row highlight
-- Responsive Drawer width
-
-Acceptance:
-
-- Opening Detail does not resize the list
-- Search/filter/list state remains intact
-- List scroll position remains intact
-
----
-
-## Phase 2 — View mode
-
-Implement the information hierarchy:
-
-- Header
-- Namespace + updated time
-- Summary
-- Markdown-rendered Content
-- Categories
-- Keywords
-- Technical details
-
-Prefer reusable components:
-
-- `MemoryDetailDrawer`
-- `MemoryDetailView`
-- `MarkdownContent`
-- `TagChips`
-- `TechnicalDetails`
-
-Acceptance:
-
-- Markdown headings/lists/code/tables render correctly
-- Very long content scrolls only inside Drawer
-- Many keywords do not destroy layout
-
----
-
-## Phase 3 — Markdown renderer safety/style
-
-Configure Markdown behavior explicitly.
-
-Implement/test:
-
-- Raw HTML policy
-- Sanitization
-- Safe links
-- Code blocks
-- Tables
-- Long lines / URLs
-- Drawer-specific typography
-
-Do not rely on Markdown library defaults as the visual specification.
-
----
-
-## Phase 4 — Edit shell
-
-Add View → Edit transition.
-
-Introduce a local edit model copied from the last server-confirmed memory.
-
-Suggested state shape:
-
-```text
-mode: view | edit
-previewMode: edit | preview
-originalMemory
-editDraft
-isDirty
-isSaving
-```
-
-Implement editable fields:
-
-- Namespace
-- Summary
-- Content
-- Categories
-- Keywords
-
-Keep ID/Created/Updated read-only.
-
----
-
-## Phase 5 — Shared picker reuse
-
-Reuse the components/behavior already built for the Memories filter where practical:
-
-- Namespace selector
-- Category multi-select
-- Keyword remote search-to-add picker
-
-Avoid creating a second, inconsistent Categories/Keywords interaction model just for Detail.
-
-Differences in context are acceptable, but selection semantics should stay the same.
-
----
-
-## Phase 6 — Markdown Edit / Preview toggle
-
-Implement:
-
-```text
-[ Edit | Preview ]
-```
-
-Default to Edit when entering edit mode.
-
-Preview renders `editDraft.content`, not the last saved content.
-
-Acceptance:
-
-- Toggle causes no data loss
-- Preview never triggers save
-- Dirty state remains correct
-
----
-
-## Phase 7 — Dirty state and Cancel
-
-Implement field-level or whole-form normalized comparison.
-
-Requirements:
-
-- Save disabled when clean
-- Reverting changes restores clean state
-- Cancel restores original server-confirmed values
-- Cancel returns to View mode
-
-Test changes to:
-
-- Scalar fields
-- Namespace
-- Category additions/removals
-- Keyword additions/removals
-- Markdown text
-
----
-
-## Phase 8 — Unsaved-change guard
-
-Create one reusable unsaved-change guard for:
-
-- Close button
-- Esc
-- Overlay click
-- Selecting another memory
-
-The guard should capture the intended next action.
-
-Pseudo-flow:
-
-```text
-requestLeave(action)
-  if !dirty:
-      action()
-  else:
-      pendingAction = action
-      showDiscardDialog = true
-```
-
-On `Discard changes`, execute `pendingAction`.
-
----
-
-## Phase 9 — Save API integration
-
-Implement server update.
-
-On success:
-
-1. Replace original memory with server response
-2. Clear dirty state
-3. Return to View mode
-4. Synchronize list row
-5. Reconcile active query + filters
-
-Important:
-
-If a saved memory no longer matches current filters, remove it from the current list.
-
-For semantic Search results, if score/ranking cannot be correctly recalculated on the client, refresh/revalidate the search result rather than guessing.
-
-On failure:
-
-- Preserve draft
-- Remain in Edit mode
-- Show error
-
----
-
-## Phase 10 — Delete
-
-Implement View-mode `...` menu.
-
-Add:
-
-- Delete menu item
-- Confirmation dialog
-- Delete request state
-- Server-confirmed removal
-- Drawer close
-- List removal
-- Success/error feedback
-
-Do not expose destructive delete as a primary button.
-
----
-
-## Phase 11 — Responsive behavior
-
-Recommended behavior:
-
-Desktop:
-
-- Right-side overlay Drawer, approx. 560–640px
-
-Medium screens:
-
-- Increase Drawer percentage width
-
-Small screens:
-
-- Drawer becomes near/full-width
-- Maintain same View/Edit interaction model
-
-Do not create a separate mobile Detail information architecture unless later usability testing requires it.
-
----
-
-## Phase 12 — Test matrix
-
-### View
-
-- Open detail from List
-- Open detail from Search result
-- Long Markdown
-- Code block
-- Table
-- Many keywords
-- Missing optional values
-
-### Edit
-
-- Change only Summary
-- Change Markdown
-- Preview unsaved Markdown
-- Change Namespace
-- Add/remove Category
-- Add/remove Keyword
-- Revert every change to original
-
-### Leave protection
-
-- Close button while dirty
-- Esc while dirty
-- Overlay click while dirty
-- Select another memory while dirty
-
-### Save
-
-- Successful save still matches filters
-- Successful save no longer matches filters
-- Save failure
-- Search result revalidation
-
-### Delete
-
-- Cancel delete
-- Successful delete
-- Delete failure
-
----
-
-## Recommended implementation order summary
-
-```text
-Drawer shell
-→ View mode
-→ Markdown rendering
-→ Edit form
-→ Shared pickers
-→ Edit/Preview toggle
-→ Dirty/Cancel
-→ Unsaved guard
-→ Save/reconcile
-→ Delete
-→ Responsive polish
-```
-
-Do not implement every interaction in one pass. Keep each phase independently reviewable.
+# Memory Detail Drawer — Implementation Record
+
+2026-10-08: implementation and verification complete, awaiting user review; no frontend commit or production restart performed. The original design sequence has been converted into [50.6.3 coding plan and implementation record](../../project-management/plans/50.6.3-memory-detail-coding-plan.md). The approved behavior remains [50.6.2](../../project-management/plans/50.6.2-memory-detail-frontend.md); API details are in [50.6.1](../../project-management/plans/50.6.1-memory-detail-backend.md).
+
+## Implemented modules
+
+| Responsibility | Location |
+|---|---|
+| Draft creation, dirty/validation, minimal PUT | `web/static/js/detail-model.js` |
+| Safe Markdown, source copy, code/table DOM | `web/static/js/markdown.js` |
+| Fixed local libraries, licenses and integrity | `web/static/vendor/` |
+| Independent picker instances and list policy wrapper | `web/static/js/memory-value-picker.js`, `memories-filters.js` |
+| Drawer session, View/Edit/Preview, guard, save/reread and delete | `web/static/js/detail.js` |
+| Drawer shell and scoped styling | `web/index.html`, `web/static/app.css` |
+| Synchronous navigation continuation and composition | `web/static/js/router.js`, `main.js` |
+| Identity selection, single refresh and scroll/focus handling | `web/static/js/memories.js`, `memories-list.js` |
+| Shared Debug entry points and modal exit focus | `web/static/js/ui.js` |
+| Isolated contracts, real Admin/SQLite writes and visual scenarios | `tests/browser/detail_regression.js`, `tests/run_admin_browser.py` |
+
+Native ES modules are retained. There is no framework/build migration, new API endpoint or MCP schema change. Namespace uses an input/datalist; Categories and Keywords reuse the shared picker with distinct write limits; Anchors has its own ordered editor. Preview uses `editDraft.text`, the actual API field.
+
+## Completed sequence
+
+1. Responsive 60vw modal shell clamped to 640–1040px/max-100vw, loading/error states, identity selection and focus.
+2. Plain Summary, safe Markdown, collapsed technical details and copy actions.
+3. Six-field editor, category/keyword candidates, explicit new values, Anchors and Preview.
+4. Dirty comparison, Cancel, first-action leave continuation and unload protection.
+5. Minimal PUT, mandatory Summary/Anchors on body edits, authoritative GET and independent reread failure.
+6. Confirmed deletion, notification-driven active result refresh, scroll/focus retention and Debug.
+7. Browser regressions, real readonly Chrome review, screenshots and documentation.
+
+## Recorded verification
+
+- Full browser matrix: 112/112 passed (79 existing + 1 Detail contract scenario + 32 Detail visual scenarios).
+- Detail visual coverage: 1024×768, 1280×800, 1440×900 and 390×844; View/Edit/Preview/confirmation in light/dark.
+- Final targeted reruns: `1280x720@1` and `detail-functional` passed after final fixes and the isolated test provider correction.
+- Real Admin HTTP → isolated SQLite: body save preserves null Summary and ordered/case-preserving Anchors; Summary save/clear and deletion pass.
+- Actual production browser: readonly view, local draft/Preview, native Tab/Escape, focus restoration and unchanged list width/scroll verified. No production UI PUT/DELETE.
+- `git diff --check` and JavaScript syntax checks passed. This frontend task did not rerun full pytest; the separately completed backend recorded 852 passed.
+
+Matrix screenshots remain in `/tmp/remember-detail-final/`; production readonly screenshots are `/tmp/remember-detail-real-1024-view.png`, `/tmp/remember-detail-real-1024-preview.png` and `/tmp/remember-detail-real-1024-confirm.png`. They are not committed assets. Full commands and verification boundaries are recorded in 50.6.3.
+
+## Remaining status
+
+User review and an explicitly authorized commit are pending. The broader frontend roadmap remains open; this implementation does not mark unrelated pages or the later structural review complete.

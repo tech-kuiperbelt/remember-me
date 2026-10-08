@@ -2,7 +2,8 @@
 
 本文件归档已完成的项目待办。详细实现记录保留在 git 提交和项目变更日志中。
 
-- [50.5] Memory List（2026-10-08 用户确认完成并授权提交）：浏览分页、共用筛选、时间过滤、三模式搜索与 Top-K 本地分页、列表卡片与区域 ID 已完成。最终 review 修复长标签挤压／越界、日期与标签悬停命中、Debug 键盘及原生控件隔离；浏览器矩阵 79/79、真实 Chrome 复核通过。下一阶段为 Memory Detail，前端整体路线仍开放。详见[总体记录](plans/50.5-memories-workspace.md)和[修复验收](plans/50.5.9-memories-search-modes.md)。
+- [50.5] Memory List（2026-10-08 用户确认完成并授权提交）：浏览分页、共用筛选、时间过滤、三模式搜索与 Top-K 本地分页、列表卡片与区域 ID 已完成。最终 review 修复长标签挤压／越界、日期与标签悬停命中、Debug 键盘及原生控件隔离；浏览器矩阵 79/79、真实 Chrome 复核通过。后续 Memory Detail 实现与验证进度见 [50.6.3](plans/50.6.3-memory-detail-coding-plan.md)，详情 review 已完成，前端整体路线仍开放。详见[总体记录](plans/50.5-memories-workspace.md)和[修复验收](plans/50.5.9-memories-search-modes.md)。
+- [50.6] Memory Detail（2026-10-08 用户授权提交）：响应式抽屉、安全 Markdown、六字段编辑、Preview、离开保护、PUT→GET 与删除已完成；后端提交 `0056c8b`，前端随 `Implement responsive Memory Detail drawer and editing workflow` 归档。完整矩阵 112/112、隔离接口联调和只读浏览器验证已有通过记录，宽屏调整后三项回归通过。review 未发现明确回归，独立浏览器复验受沙箱限制。详见 [50.6.3](plans/50.6.3-memory-detail-coding-plan.md)。
 
 - [50.5.9] Memories 三模式搜索前端（2026-10-02 实现、验收并经用户确认，随本次提交归档）：接入 Semantic／Lexical／Anchor 单选模式、独立参数草稿和已应用值，共享筛选／时间条件、请求版本保护及 Top-K 本地分页；按后台相关性顺序展示原始分数，仅 Semantic 展示筛选映射。最终布局为搜索输入与按钮在第一行，模式控件在公共筛选行右侧，内边距 6px、34px 高度与 Search 一致。浏览器矩阵 79/79、接口回归 58 passed、真实服务三模式只读验证通过；最终布局定向回归通过。详见 [实施记录](plans/50.5.9-memories-search-modes.md)。
 

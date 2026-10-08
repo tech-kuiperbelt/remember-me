@@ -40,7 +40,7 @@ function resetFilters() {
   $('memories-namespace').focus();
 }
 
-export function mount({preselectClearNamespace = () => {}, openMemory = () => {}, retryCategories = () => {}} = {}) {
+export function mount({preselectClearNamespace = () => {}, openMemory = () => {}, retryCategories = () => {}, isDetailOpen = () => false, onDetailSelection = () => {}} = {}) {
   filters = createMemoriesFilters({root: $('memories-filters'),
     onChange: changes => data.change(changes), onReset: resetFilters, onRetryCategories: retryCategories});
   searchControls = createMemoriesSearch({onInput: value => data.input(value),
@@ -48,13 +48,17 @@ export function mount({preselectClearNamespace = () => {}, openMemory = () => {}
     onSubmit: options => data.submit(options), onClear: () => data.clearSearch(), onApply: options => data.change(options)});
   view = createMemoriesList({root: $('memories-list'), pagination: $('memories-pagination'),
     count: $('memories-count'),
-    onOpen: id => openMemory(id, {onClose: () => restoreFocus(id)}),
+    onOpen: id => { filters.close(); view.closeTags(); openMemory(id, {onClose: () => restoreFocus(id)}); },
     onPage: page => data.change({page}, false),
     onPageSize: pageSize => data.change({pageSize}),
     onRetry: () => data.refresh(),
     onAll: () => data.change({namespace: ''}), onReset: resetFilters, onClearSearch: () => { data.clearSearch(); $('memories-query').focus(); }});
+  onDetailSelection(id => view.setSelected(id));
+  let savedScroll = null;
   data = createMemoriesData(state => {
     focusId = activeRow() || focusId;
+    const content = $('content');
+    if (state.status === 'loading' && savedScroll === null) { savedScroll = content.scrollTop; $('memories-list').style.minHeight = $('memories-list').offsetHeight + 'px'; }
     view.render(state); updateFilters(state); searchControls.update(state); updateClear();
     const sort = $('memories-sort'), searching = Boolean(state.submittedQuery);
     const options = searching ? [['relevance', 'Relevance']]
@@ -63,9 +67,10 @@ export function mount({preselectClearNamespace = () => {}, openMemory = () => {}
       sort.replaceChildren(...options.map(([value, label]) => new Option(label, value))); sort.dataset.mode = String(searching);
     }
     sort.value = state.sort; sort.disabled = searching;
+    if (state.status !== 'loading' && savedScroll !== null) { $('memories-list').style.minHeight = ''; content.scrollTop = savedScroll; savedScroll = null; }
     if (state.status !== 'loading' && focusId && $('page-memories').classList.contains('active')) {
       // Refetch replaces the focused row; restore by identity, not DOM position.
-      if (document.activeElement === document.body) restoreFocus(focusId);
+      if (!isDetailOpen() && document.activeElement === document.body) restoreFocus(focusId);
       focusId = null;
     }
   });
@@ -73,8 +78,10 @@ export function mount({preselectClearNamespace = () => {}, openMemory = () => {}
   $('btn-clear-ns').addEventListener('click', () => {
     const ns = data.snapshot().namespace;
     if (!ns || getMaintenance()?.state !== 'normal') return;
-    switchPage('ops'); preselectClearNamespace(ns);
-    toast('Enter maintenance mode, then use Clear in Ops.', 'info');
+    switchPage('ops', () => {
+      preselectClearNamespace(ns);
+      toast('Enter maintenance mode, then use Clear in Ops.', 'info');
+    });
   });
   onNamespacesChanged(() => updateFilters());
   onCategoriesChanged(() => updateFilters());

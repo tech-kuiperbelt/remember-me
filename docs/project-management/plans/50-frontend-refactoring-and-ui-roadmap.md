@@ -3,12 +3,11 @@
 2026-10-01 用户认可路线。第一阶段已完成，见 [50.1 实施记录](50.1-frontend-module-split.md)。
 第二阶段桌面布局、主题基础和 Shell 视觉已分别实施并通过回归，记录见
 [50.2 桌面布局](50.2-admin-desktop-layout.md)、[50.3 主题基础](50.3-ui-theme-foundation.md)
-和 [50.4 Shell 视觉](50.4-admin-shell-visual.md)；Shell 视觉已完成，Memories 浏览与共用筛选已完成，统一搜索已完成，隔离回归、独立 review 和实际服务验证通过；[3.5 整体验收](50.5.5-memories-acceptance-and-closeout.md)及后续列表校准已收尾。2026-10-08 用户确认 Memory List 完成，review 修复后浏览器矩阵 79/79、真实 Chrome 复核通过；下一阶段为 Memory Detail，详情专项尚未实施。
+和 [50.4 Shell 视觉](50.4-admin-shell-visual.md)；Shell 视觉已完成，Memories 浏览与共用筛选已完成，统一搜索已完成，隔离回归、独立 review 和实际服务验证通过；[3.5 整体验收](50.5.5-memories-acceptance-and-closeout.md)及后续列表校准已收尾。2026-10-08 用户确认 Memory List 完成，review 修复后浏览器矩阵 79/79、真实 Chrome 复核通过；Memory Detail 现已实施并验证，review 未发现明确回归，用户已授权提交。
 
 ## 目标与顺序
 
-后续工作聚焦 UI，用户将逐项提出页面布局与功能组织的修改意见。当前前端集中在
-`web/index.html`，HTML、CSS、JavaScript 及多个页面的状态和交互混在一起。
+后续工作聚焦 UI，用户将逐项提出页面布局与功能组织的修改意见。路线提出时，前端集中在 `web/index.html`，页面结构与多个页面的状态、样式和交互混在一起。现已拆为 HTML、静态 CSS 和原生 ES Modules，入口为 `web/static/js/main.js`。
 
 采用“先做一轮小范围重构，再逐项调整 UI，随需求逐步完善结构”的路线。
 第一轮降低连续修改的成本；后续模块边界根据实际布局与交互需求调整，避免按旧页面
@@ -51,14 +50,14 @@
 后续依据 [UI 设计规范](../../design/UI_DESIGN.md)、
 [UI 实施规则](../../design/UI_IMPLEMENTATION_RULES.md) 和
 [风格示意图](../../design/UI.png)，按“主题基础 → Shell 视觉 → Memories”推进。
-主题基础、Shell 视觉和 Memory List 已完成；下一阶段推进 Memory Detail。列表记录见
+主题基础、Shell 视觉、Memory List 和 Memory Detail 实施已完成；详情review 未发现明确回归，用户已授权提交。列表记录见
 [50.5 Memories 工作区改版总体计划](50.5-memories-workspace.md)（3.2 浏览列表已完成；3.3 共用筛选已完成，回归及独立 review 通过；[3.4 统一搜索](50.5.4-memories-unified-search.md)已完成，隔离回归、独立 review 和实际服务验证通过）。
 主题切换入口位于配置页的独立“外观”区域。
 [50.5.9 三模式搜索](50.5.9-memories-search-modes.md)于 2026-10-02 完成并经用户确认，随本次提交归档：模式控件位于公共筛选行右侧、34px 高度；浏览器矩阵 79/79、接口回归 58 passed、真实服务三模式只读及最终布局定向验证通过。
 
 ## Memory Detail 进度（2026-10-08）
 
-用户确认采用右侧模态抽屉，支持摘要清空、Anchors 编辑、分类／关键词新增，Markdown 图片以文字和链接展示。设计已拆为两份实施文档：[50.6.1 后端契约](50.6.1-memory-detail-backend.md)与 [50.6.2 前端实施](50.6.2-memory-detail-frontend.md)。后端文档定义公共接口契约，前端可先按契约测试数据开发，真实保存联调依赖后端完成并加载。后端已实施：Admin PUT 显式空白摘要清空、anchors 回传／清除契约、Dual→NDJSON null 同步；全量 pytest 852 passed，用户重启加载后只读在线验收通过（数字摘要→400 invalid_request，GET 详情返回 anchors，无生产写入）。前端尚未实施；Memory List 保持完成，后续分别记录后端完成、前端完成及联调验收。
+用户确认采用右侧模态抽屉，支持摘要清空、Anchors 编辑、分类／关键词新增，Markdown 图片以文字和链接展示。设计已拆为两份实施文档：[50.6.1 后端契约](50.6.1-memory-detail-backend.md)与 [50.6.2 前端实施](50.6.2-memory-detail-frontend.md)。后端文档定义公共接口契约；后端已加载，前端已完成隔离真实接口联调。后端已实施：Admin PUT 显式空白摘要清空、anchors 回传／清除契约、Dual→NDJSON null 同步；全量 pytest 852 passed，用户重启加载后只读在线验收通过（数字摘要→400 invalid_request，GET 详情返回 anchors，无生产写入）。前端已实施，见 [50.6.3 编程与实施记录](50.6.3-memory-detail-coding-plan.md)：响应式模态抽屉（60vw，下限 640px、上限 1040px）、安全 Markdown、六字段编辑、Preview、未保存保护、PUT→GET 和删除；浏览器矩阵 112/112、真实只读 Chrome 和隔离 Admin／SQLite 保存／清空联调通过。后端完成、前端完成及隔离联调验收均已记录，review 未发现明确回归，用户已授权提交；随本次提交归档，未重启生产服务。Memory List 保持完成。
 
 ## 第三阶段：布局稳定后的结构复核
 

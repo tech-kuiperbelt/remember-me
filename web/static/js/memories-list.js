@@ -24,7 +24,8 @@ function displayDate(stamp) {
 }
 
 export function createMemoriesList({root, pagination, count, onOpen, onPage, onPageSize, onRetry, onAll, onReset, onClearSearch}) {
-  let popup = null;
+  let popup = null, selectedId = null;
+  function setSelected(id) { selectedId = id; root.querySelectorAll(".memory-row").forEach(row => row.classList.toggle("is-selected", row.dataset.memoryId === id)); }
   function closeTags(restore = false) {
     if (!popup) return;
     const {node, trigger} = popup;
@@ -192,5 +193,5 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
     select.value = state.pageSize;
     select.onchange = () => onPageSize(Number(select.value)); size.append(select); pagination.append(size);
   }
-  return {render, closeTags};
+  return {render(state) { render(state); setSelected(selectedId); }, closeTags, setSelected};
 }

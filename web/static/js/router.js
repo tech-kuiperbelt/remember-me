@@ -3,13 +3,18 @@
 import { $ } from './core.js';
 
 const pages = new Map();
+let leaveGuard = action => { action(); return true; };
+export function setLeaveGuard(guard) { leaveGuard = guard; }
 
 export function register(id, { onShow, onHide }) {
   pages.set(id, { onShow, onHide });
 }
 
-export function switchPage(name) {
+export function switchPage(name, prepare = () => {}) {
   if (!pages.has(name) || !$('page-' + name)) return false;
+  return leaveGuard(() => { prepare(); showPage(name); });
+}
+function showPage(name) {
   const previous = document.querySelector('.page.active')?.id.replace('page-', '');
   if (previous && previous !== name) pages.get(previous)?.onHide?.();
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));

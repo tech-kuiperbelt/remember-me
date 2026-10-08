@@ -4,7 +4,7 @@
 
 import { $ } from './core.js';
 import { toggleDebug } from './ui.js';
-import { switchPage, register, bindNav } from './router.js';
+import { switchPage, register, bindNav, setLeaveGuard } from './router.js';
 import * as detail from './detail.js';
 import * as memories from './memories.js';
 import * as keywords from './keywords.js';
@@ -25,11 +25,12 @@ function mountAll() {
   bindNav();
   layout.mount();
   theme.mount();
-  detail.mount();
+  detail.mount({retryCategories: stats.loadStats});
+  setLeaveGuard(detail.requestLeave);
   memories.mount({ preselectClearNamespace: ops.preselectClearNamespace,
-    openMemory: detail.openMemory, retryCategories: stats.loadStats });
+    openMemory: detail.openMemory, isDetailOpen: detail.isOpen, onDetailSelection: detail.onSelectionChanged, retryCategories: stats.loadStats });
   keywords.mount({ showKeyword: (keyword, namespace) => {
-    memories.prepareKeywordBrowse(keyword, namespace); switchPage('memories');
+    switchPage('memories', () => memories.prepareKeywordBrowse(keyword, namespace));
   } });
   add.mount();
   stats.mount();

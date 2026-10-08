@@ -25,19 +25,21 @@ function stopDebugAction(event) {
 }
 
 function onDebugPointerDown(event) {
-  if (event.target.closest('#btn-debug') || event.button !== 0) return;
+  if (event.target.closest('[data-debug-toggle]') || event.button !== 0) return;
   // Stop native controls before focus, selection or a dropdown changes state.
   if (event.target.closest(debugControl)) stopDebugAction(event);
 }
 
 function onDebugKeyDown(event) {
   if (event.key === 'Escape') {
-    stopDebugAction(event); toggleDebug(); $('btn-debug').focus(); return;
+    stopDebugAction(event); toggleDebug(); const modal = $('detail-modal');
+    const trigger = document.querySelector('#detail-technical[open] [data-debug-toggle]');
+    (modal.style.display === 'flex' ? trigger || $('btn-detail-close') : $('btn-debug')).focus(); return;
   }
-  if (event.target.closest('#btn-debug')) return;
-  // Tab and browser shortcuts keep their native behavior, but never reach
-  // application key handlers. beforeinput guards editing shortcuts separately.
-  event.stopImmediatePropagation();
+  if (event.target.closest('[data-debug-toggle]')) return;
+  // Tab may reach the drawer focus trap; editing and business shortcuts remain
+  // blocked. beforeinput separately guards text changes.
+  if (event.key !== 'Tab') event.stopImmediatePropagation();
   if (event.key !== 'Tab' && !event.ctrlKey && !event.metaKey && event.target.closest(debugControl)) {
     event.preventDefault();
   }
@@ -62,7 +64,7 @@ function showDebugLabel(element) {
 
 function onDebugHover(event) {
   const element = event.target.closest('[id]');
-  if (element && element.id !== 'btn-debug') showDebugLabel(element);
+  if (element && !element.matches('[data-debug-toggle]')) showDebugLabel(element);
   else if (debugLabel) debugLabel.hidden = true;
 }
 
@@ -73,7 +75,7 @@ function hideDebugLabel() {
 export function toggleDebug() {
   document.body.classList.toggle('debug-ids');
   const on = document.body.classList.contains('debug-ids');
-  $('btn-debug').setAttribute('aria-pressed', String(on));
+  document.querySelectorAll('[data-debug-toggle]').forEach(el => el.setAttribute('aria-pressed', String(on)));
   if (on) {
     debugLabel = document.createElement('div');
     debugLabel.className = 'debug-id-label';
@@ -90,7 +92,7 @@ export function toggleDebug() {
 }
 
 function onDebugClick(e) {
-  if (e.target.closest('#btn-debug')) return;
+  if (e.target.closest('[data-debug-toggle]')) return;
   e.preventDefault(); e.stopImmediatePropagation();
   const el = e.target.closest('[id]');
   if (!el || !document.body.classList.contains('debug-ids')) {

@@ -37,8 +37,19 @@ from app.storage.sqlite import SQLiteStorage
 from starlette.applications import Starlette
 import uvicorn
 audit.configure()
+
+
+class BrowserProvider(FakeProvider):
+    """Match the two-dimensional profile used by the browser fixtures."""
+    def __init__(self):
+        self.spec = EmbeddingSpec('test', 'smoke', 2)
+
+    def embed_document(self, text):
+        return [1., 0.]
+
+
 service = MemoryService(Settings.from_env(),
-    SQLiteStorage(':memory:', embedding_spec=EmbeddingSpec('test','smoke',2).as_dict()), FakeProvider())
+    SQLiteStorage(':memory:', embedding_spec=EmbeddingSpec('test','smoke',2).as_dict()), BrowserProvider())
 admin = AdminAPI(service)
 service.embed_query = lambda _: [1.,0.]
 words = ['cache', 'cache clear', 'rare_id'] + ['word%03d' % i for i in range(60)]
@@ -53,6 +64,7 @@ checks += '\n' + (ROOT / 'tests/browser/memories_filters_regression.js').read_te
 checks += '\n' + (ROOT / 'tests/browser/memories_search_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/memories_acceptance_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/memories_visual_regression.js').read_text()
+checks += '\n' + (ROOT / 'tests/browser/detail_regression.js').read_text()
 HEAD_SCRIPT = '<script>' + harness + '</script>'
 BODY_SCRIPT = '<script type="module">' + checks + '</script>'
 
@@ -199,6 +211,8 @@ def run_case(profile, label, window_size, scale, shot_dir, query, theme=None, zo
         if zoom != 1 and (abs(metrics['dpr'] - zoom * float(scale)) > .02
                          or abs(metrics['width'] - int(window_size.split(',')[0]) / zoom) > 2):
             raise AssertionError('Browser zoom preference did not apply: ' + str(metrics))
+    if not check(proc)[0]:
+        shot.with_suffix(".html").write_text(proc.stdout)
     return proc, shot
 
 
@@ -303,6 +317,19 @@ try:
             ok, text = check(proc)
             print(('PASS ' if ok else 'FAIL ') + label + ' -> ' + str(shot) +
                   ('' if ok else ' :: ' + (text or proc.stderr[-400:])), flush=True)
+            if not ok:
+                failures.append(label)
+        detail_cases = [('detail-functional', '1280,800', 'light')]
+        detail_cases += [(f'detail-{size.replace(",", "x")}-{mode}-{scheme}', size, scheme)
+                         for size in ('1024,768', '1280,800', '1440,900', '390,844')
+                         for mode in ('view', 'edit', 'preview', 'confirm')
+                         for scheme in ('light', 'dark')]
+        for label, size, scheme in detail_cases:
+            if not selected(label):
+                continue
+            proc, shot = run_case(profile, label, size, '1', shots, label, theme=scheme)
+            ok, text = check(proc)
+            print(('PASS ' if ok else 'FAIL ') + label + ' -> ' + str(shot) + ('' if ok else ' :: ' + (text or proc.stderr[-400:])), flush=True)
             if not ok:
                 failures.append(label)
         if failures:

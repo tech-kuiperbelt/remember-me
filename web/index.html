@@ -24,7 +24,7 @@
         <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 9a7 7 0 0 1 11.8-2L20 12M4 12l2.6 5a7 7 0 0 0 11.8-2"/></svg>
         <span>Refresh</span>
       </button>
-      <button id="btn-debug" class="btn btn-outline">
+      <button id="btn-debug" data-debug-toggle class="btn btn-outline">
         <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.6 9a2.5 2.5 0 0 1 4.8 1c0 1.7-2.4 2-2.4 3.5M12 17h.01"/></svg>
         <span>Debug</span>
       </button>
@@ -401,13 +401,14 @@
 </div>
 
 <!-- Detail modal (outside the shell; fixed overlay) -->
-<div id="detail-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="detail-title" style="display:none">
-  <div class="modal-panel" style="width:700px;max-width:95vw;height:90vh;display:flex;flex-direction:column">
-    <div style="padding:18px 20px;border-bottom:1px solid var(--border-subtle);display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
-      <strong id="detail-title" style="font-size:16px">Memory Detail</strong>
-      <button id="btn-detail-close" class="btn btn-sm btn-outline">✕</button>
-    </div>
-    <div style="padding:20px;overflow-y:auto;flex:1" id="detail-body"></div>
+<div id="detail-modal" class="modal-overlay detail-overlay" role="dialog" aria-modal="true" aria-labelledby="detail-title" style="display:none">
+  <div id="detail-panel" class="detail-panel">
+    <header id="detail-header" class="detail-header">
+      <div id="detail-heading" class="detail-heading"><strong id="detail-title">Memory Detail</strong><div id="detail-subtitle" class="text-muted"></div></div>
+      <div id="detail-actions" class="detail-actions"></div>
+      <button id="btn-detail-close" class="btn btn-sm btn-outline" aria-label="Close memory detail">✕</button>
+    </header>
+    <div id="detail-body" class="detail-body"></div>
   </div>
 </div>
 
