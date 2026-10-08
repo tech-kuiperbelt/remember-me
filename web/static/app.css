@@ -140,15 +140,18 @@ input[type="checkbox"],progress{accent-color:var(--accent-solid)}
 .memory-row-summary{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;font-size:13px;line-height:20px;color:var(--text-secondary);margin-top:6px;overflow:hidden;overflow-wrap:anywhere;padding-right:24px}
 .memory-row-detail-arrow{position:absolute;right:16px;top:34px;width:16px;font-size:26px;line-height:20px;text-align:center;color:var(--text-muted);pointer-events:none}
 .memory-row:hover .memory-row-detail-arrow,.memory-row:focus-within .memory-row-detail-arrow{color:var(--accent)}
-.memory-row-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:10px;min-width:0}
-.memory-row-metadata{display:flex;align-items:center;gap:12px;white-space:nowrap;min-width:0;flex:1}
+.memory-row-footer{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-top:10px;min-width:0}
+.memory-row-metadata{display:flex;flex-wrap:wrap;align-items:center;gap:12px;white-space:nowrap;min-width:0;flex:1}
 .memory-chip{display:inline-block;border:0;padding:3px 8px;border-radius:4px;background:var(--bg-hover);color:var(--text-secondary);font-size:12px;line-height:18px;max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:1;min-width:0}
-.memory-tag-group{display:flex;align-items:center;gap:6px;min-width:0;flex:0 1 auto;padding-left:12px;border-left:1px solid var(--border-subtle)}
+.memory-tag-group{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0;max-width:100%;flex:0 0 auto;padding-left:12px;border-left:1px solid var(--border-subtle);position:relative;z-index:2;pointer-events:auto}
+.memory-row-metadata .memory-chip{min-width:48px;max-width:min(150px,100%);flex-shrink:0}
+.memory-row-metadata .memory-tags-more{min-width:0}
 .memory-tag-group:first-child{padding-left:0;border-left:0}
-.memory-namespace{max-width:160px;min-width:55px;flex:0 1 auto}
+.memory-namespace{max-width:160px;min-width:55px;flex-wrap:nowrap}
+.memory-namespace .memory-chip{flex-shrink:1}
 .memory-group-label{flex-shrink:0;font-size:12px;line-height:18px;color:var(--text-muted)}
 .memory-tags-more{cursor:pointer;position:relative;z-index:2;pointer-events:auto;flex-shrink:0}
-.memory-row-time{font-size:12px;line-height:20px;color:var(--text-muted);white-space:nowrap;flex-shrink:0;text-align:right;font-variant-numeric:tabular-nums}
+.memory-row-time{font-size:12px;line-height:20px;color:var(--text-muted);white-space:nowrap;flex-shrink:0;text-align:right;font-variant-numeric:tabular-nums;position:relative;z-index:2;pointer-events:auto;margin-bottom:2px}
 .memory-tags-popover{position:fixed;z-index:1100;display:flex;gap:8px;flex-wrap:wrap;max-width:min(340px,calc(100vw - 16px));max-height:220px;overflow:auto;padding:12px;border:1px solid var(--border-control);border-radius:8px;background:var(--bg-elevated);box-shadow:var(--shadow-floating)}
 .memory-state{text-align:center;padding:40px 16px;color:var(--text-secondary);overflow-wrap:anywhere}
 .memory-state .btn{margin:4px}

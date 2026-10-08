@@ -34,7 +34,22 @@ async function runMemoriesSearchRegression() {
   assert(document.querySelector('.debug-id-label').textContent === 'memory-row-1-title', 'Debug identifies row title');
   $('memory-row-1-open').click();
   assert($('detail-modal').style.display === 'none' && $('memories-list').textContent === originalList, 'Debug inspection does not open detail or change content');
-  $('btn-debug').click();
+  const modeBeforeDebug = document.querySelector('#memories-search-mode [aria-checked="true"]').id;
+  for (const key of ['ArrowRight', 'ArrowLeft', 'Home', 'End', 'Enter', ' ']) {
+    $('memories-mode-semantic').dispatchEvent(new KeyboardEvent('keydown', {key, bubbles:true, cancelable:true}));
+  }
+  assert(document.querySelector('#memories-search-mode [aria-checked="true"]').id === modeBeforeDebug
+    && $('memories-list').textContent === originalList, 'Debug blocks mode keyboard actions and rerender');
+  $('memories-query').focus();
+  assert(!$('memories-query').dispatchEvent(new InputEvent('beforeinput', {inputType:'insertText',data:'x',bubbles:true,cancelable:true})), 'Debug prevents editing before value changes');
+  assert(!$('memories-namespace').dispatchEvent(new PointerEvent('pointerdown', {button:0,bubbles:true,cancelable:true})), 'Debug blocks native select pointer activation');
+  const callsBeforeDebugSubmit = S.calls.length;
+  submit($('memories-search-form'));
+  assert(S.calls.length === callsBeforeDebugSubmit, 'Debug blocks form submit');
+  assert($('memories-query').dispatchEvent(new KeyboardEvent('keydown', {key:'Tab',bubbles:true,cancelable:true})), 'Debug preserves native Tab navigation');
+  assert($('memories-query').dispatchEvent(new KeyboardEvent('keydown', {key:'+',ctrlKey:true,bubbles:true,cancelable:true})), 'Debug preserves browser shortcuts');
+  document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape',bubbles:true,cancelable:true}));
+  assert(!document.body.classList.contains('debug-ids') && document.activeElement === $('btn-debug'), 'Escape exits Debug and restores button focus');
   assert(!document.querySelector('.debug-id-label') && !$('memories-list').querySelector('.debug-focus'), 'Debug cleanup removes overlay and selection');
   assert($('memories-filter-resolution').textContent.includes('<locking> → optimistic-lock、lock'), 'semantic accepted values shown');
   assert($('memories-filter-resolution').textContent.includes('absent 未找到匹配值'), 'none explained');

@@ -213,6 +213,13 @@ try {
   await waitFor(() => $('detail-modal').style.display === 'flex', 'time area opens detail');
   Array.from($('detail-actions').children).find(el => el.textContent === 'Close').click();
   assert($('memory-row-1-namespace').textContent === '空间：a', 'namespace has explicit group label');
+  $('memory-row-1').scrollIntoView({block:'center'});
+  for (const id of ['memory-row-1-date', 'memory-row-1-namespace', 'memory-row-1-category-1', 'memory-row-1-keyword-1']) {
+    const node = $(id), box = node.getBoundingClientRect();
+    const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    assert(hit && (hit === node || node.contains(hit)), 'hover reaches metadata rather than row button: ' + id);
+    assert(Boolean(hit.closest('[title]')?.title), 'hover target has full value tooltip: ' + id);
+  }
   assert($('memory-row-1-categories').querySelectorAll('.memory-category-chip').length === 3
     && $('memory-row-1-keywords').querySelectorAll('.memory-keyword-chip').length === 5, 'categories display three and keywords five independently');
   assert(!$('memory-row-1-category-more') && $('memory-row-1-keyword-more').textContent === '+1', 'overflow reflects independent limits');

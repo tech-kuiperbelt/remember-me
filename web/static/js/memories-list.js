@@ -45,7 +45,10 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
     const node = el('div', 'memory-tags-popover');
     node.id = trigger.id + '-popover';
     node.setAttribute('role', 'dialog'); node.setAttribute('aria-label', '全部' + label); node.tabIndex = -1;
-    for (const tag of tags) node.append(el('span', 'memory-chip', tag.dimension + ': ' + tag.value));
+    for (const tag of tags) {
+      const chip = el('span', 'memory-chip', tag.dimension + ': ' + tag.value);
+      chip.title = tag.value; node.append(chip);
+    }
     document.body.append(node);
     const box = trigger.getBoundingClientRect();
     node.style.left = Math.max(8, Math.min(box.left, window.innerWidth - node.offsetWidth - 8)) + 'px';

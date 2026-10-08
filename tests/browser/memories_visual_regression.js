@@ -37,6 +37,22 @@ async function runMemoriesVisualScenario(scenario) {
   assert(innerWidth>=1024,'acceptance CSS width at least 1024');
   assert(document.documentElement.scrollWidth<=innerWidth,'no document horizontal overflow');
   assert($('content').scrollWidth<=$('content').clientWidth+1,'no workspace horizontal overflow');
+  for (const row of $('memories-list').querySelectorAll('.memory-row')) {
+    const footer = row.querySelector('.memory-row-footer').getBoundingClientRect();
+    const date = row.querySelector('.memory-row-time').getBoundingClientRect();
+    for (const group of row.querySelectorAll('.memory-tag-group')) {
+      const box = group.getBoundingClientRect();
+      assert(box.left >= footer.left - 1 && box.right <= date.left - 11, 'tag group stays inside metadata area');
+      for (const chip of group.querySelectorAll('.memory-chip')) {
+        const rect = chip.getBoundingClientRect(), style = getComputedStyle(chip);
+        assert(rect.left >= box.left - 1 && rect.right <= box.right + 1
+          && rect.top >= box.top - 1 && rect.bottom <= box.bottom + 1, 'chip stays inside its group');
+        if (!chip.classList.contains('memory-tags-more')) {
+          assert(rect.width - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) >= 31, 'chip retains readable text width');
+        }
+      }
+    }
+  }
   for(const id of ['memories-query','memories-search-mode','memories-search-submit','memories-search-clear','memories-sort','memories-advanced-apply']) {
     const node=$(id),box=node.getBoundingClientRect();
     if(!box.width)continue;

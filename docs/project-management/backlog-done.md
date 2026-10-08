@@ -2,6 +2,8 @@
 
 本文件归档已完成的项目待办。详细实现记录保留在 git 提交和项目变更日志中。
 
+- [50.5] Memory List（2026-10-08 用户确认完成并授权提交）：浏览分页、共用筛选、时间过滤、三模式搜索与 Top-K 本地分页、列表卡片与区域 ID 已完成。最终 review 修复长标签挤压／越界、日期与标签悬停命中、Debug 键盘及原生控件隔离；浏览器矩阵 79/79、真实 Chrome 复核通过。下一阶段为 Memory Detail，前端整体路线仍开放。详见[总体记录](plans/50.5-memories-workspace.md)和[修复验收](plans/50.5.9-memories-search-modes.md)。
+
 - [50.5.9] Memories 三模式搜索前端（2026-10-02 实现、验收并经用户确认，随本次提交归档）：接入 Semantic／Lexical／Anchor 单选模式、独立参数草稿和已应用值，共享筛选／时间条件、请求版本保护及 Top-K 本地分页；按后台相关性顺序展示原始分数，仅 Semantic 展示筛选映射。最终布局为搜索输入与按钮在第一行，模式控件在公共筛选行右侧，内边距 6px、34px 高度与 Search 一致。浏览器矩阵 79/79、接口回归 58 passed、真实服务三模式只读验证通过；最终布局定向回归通过。详见 [实施记录](plans/50.5.9-memories-search-modes.md)。
 
 - [50.5.7] SQLite 共享连接并发卡死修复（2026-10-02 实现并验证，commit d7248d9）：根因是共享 `sqlite3` 连接的 `RLock` 保护不完整——`get()` 无锁、`_row_to_dict()` 补查向量无锁、`list_memories`/`get_unsynced_records`/`_search_fts` 锁外转换，遇到带 `memory_timestamp_us` UDF 的时间过滤语句时形成 SQLite 连接互斥锁与 Python GIL 交叉等待。修复仅收紧锁范围（不改 schema/API/事务语义）：`get` 全程持锁、`_row_to_dict` 自锁兜底、上述三处转换纳入查询锁、`get_keyword_vocabulary` 补锁，并加锁契约注释与构造期前提标注。新增 `tests/test_storage_concurrency.py` 5 项（确定性连接代理锁门禁、常开子进程 4×300 时间过滤列表、profile/plain 混合并发，20s 栈 dump + 30s 硬超时）。运行时猴补未加锁路径复现 4 线程 15s 全卡死；全量 **794 passed**（基线 789 + 新增 5）；重启加载修复后只读并发 smoke 5 轮 ×4 并发 **20/20 成功、0 失败**（最大 0.111s）。详见 [`plans/50.5.7-sqlite-concurrency-lock-fix.md`](plans/50.5.7-sqlite-concurrency-lock-fix.md)。

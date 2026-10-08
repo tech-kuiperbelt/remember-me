@@ -18,6 +18,38 @@ export function showError(id, error) {
 }
 
 let debugLabel = null;
+const debugControl = 'button, input, textarea, select, a, summary, [contenteditable], [role="button"], [role="radio"]';
+
+function stopDebugAction(event) {
+  event.preventDefault(); event.stopImmediatePropagation();
+}
+
+function onDebugPointerDown(event) {
+  if (event.target.closest('#btn-debug') || event.button !== 0) return;
+  // Stop native controls before focus, selection or a dropdown changes state.
+  if (event.target.closest(debugControl)) stopDebugAction(event);
+}
+
+function onDebugKeyDown(event) {
+  if (event.key === 'Escape') {
+    stopDebugAction(event); toggleDebug(); $('btn-debug').focus(); return;
+  }
+  if (event.target.closest('#btn-debug')) return;
+  // Tab and browser shortcuts keep their native behavior, but never reach
+  // application key handlers. beforeinput guards editing shortcuts separately.
+  event.stopImmediatePropagation();
+  if (event.key !== 'Tab' && !event.ctrlKey && !event.metaKey && event.target.closest(debugControl)) {
+    event.preventDefault();
+  }
+}
+
+function onDebugEdit(event) {
+  stopDebugAction(event);
+}
+
+const debugEvents = {click: onDebugClick, mouseover: onDebugHover, scroll: hideDebugLabel,
+  pointerdown: onDebugPointerDown, mousedown: onDebugPointerDown, keydown: onDebugKeyDown,
+  beforeinput: onDebugEdit, submit: onDebugEdit};
 
 function showDebugLabel(element) {
   if (!debugLabel || !element) return;
@@ -47,14 +79,10 @@ export function toggleDebug() {
     debugLabel.className = 'debug-id-label';
     debugLabel.hidden = true;
     document.body.append(debugLabel);
-    document.addEventListener('click', onDebugClick, true);
-    document.addEventListener('mouseover', onDebugHover, true);
-    document.addEventListener('scroll', hideDebugLabel, true);
+    for (const [type, handler] of Object.entries(debugEvents)) document.addEventListener(type, handler, true);
     window.addEventListener('resize', hideDebugLabel);
   } else {
-    document.removeEventListener('click', onDebugClick, true);
-    document.removeEventListener('mouseover', onDebugHover, true);
-    document.removeEventListener('scroll', hideDebugLabel, true);
+    for (const [type, handler] of Object.entries(debugEvents)) document.removeEventListener(type, handler, true);
     window.removeEventListener('resize', hideDebugLabel);
     debugLabel?.remove(); debugLabel = null;
     document.querySelectorAll('.debug-focus').forEach(el => el.classList.remove('debug-focus'));
