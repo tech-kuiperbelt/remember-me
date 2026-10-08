@@ -97,7 +97,7 @@ def test_memory_update_text_with_summary(service, mocked):
     assert result == {"success": True}
     mocked["storage"].update.assert_called_once_with(
         "abc", text="new text", embedding=[0.1, 0.2, 0.3], metadata=None,
-        namespace=None, summary="new summary",
+        namespace=None, summary="new summary", clear_summary=False,
     )
 
 
@@ -118,8 +118,32 @@ def test_memory_update_summary_only(service, mocked):
 
     mocked["storage"].update.assert_called_once_with(
         "abc", text=None, embedding=None, metadata=None, namespace=None,
-        summary="corrected",
+        summary="corrected", clear_summary=False,
     )
+
+
+def test_memory_update_clear_summary_passes_none_and_flag(service, mocked):
+    mocked["storage"].update.return_value = True
+
+    result = service.memory_update("abc", text="new text", clear_summary=True)
+
+    assert result == {"success": True}
+    mocked["storage"].update.assert_called_once_with(
+        "abc", text="new text", embedding=[0.1, 0.2, 0.3], metadata=None,
+        namespace=None, summary=None, clear_summary=True,
+    )
+
+
+def test_memory_update_clear_summary_requires_boolean(service, mocked):
+    with pytest.raises(TypeError):
+        service.memory_update("abc", clear_summary=1)
+    mocked["storage"].update.assert_not_called()
+
+
+def test_memory_update_clear_summary_rejects_non_empty_summary(service, mocked):
+    with pytest.raises(ValueError):
+        service.memory_update("abc", summary="caller summary", clear_summary=True)
+    mocked["storage"].update.assert_not_called()
 
 
 def test_memory_update_metadata_only_preserves_summary(service, mocked):

@@ -305,6 +305,21 @@ def test_health_check_detects_drift_with_zero_pending(tmp_path, fake_emb):
         dual.stop()
 
 
+def test_clear_summary_syncs_null_to_replica(tmp_path, fake_emb):
+    """Clear summary reaches primary and is drained to the NDJSON replica as null."""
+    primary = SQLiteStorage(":memory:")
+    memory_id = primary.add("第一句。第二句。", fake_emb, summary="原始摘要")["id"]
+    replica_path = tmp_path / "r.jsonl"
+    dual = DualStorage(primary, NDJSONReplica(str(replica_path)), start_background=False)
+    try:
+        assert dual.update(memory_id, clear_summary=True) is True
+        assert primary.get(memory_id)["summary"] is None
+        dual.force_sync()
+        assert _lines(replica_path)[-1]["summary"] is None
+    finally:
+        dual.stop()
+
+
 def test_background_startup_syncs_pending_before_health_check(
         tmp_path, fake_emb, monkeypatch):
     audit_record = MagicMock()

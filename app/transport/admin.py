@@ -548,12 +548,16 @@ class AdminAPI:
     @_maps_domain_errors
     async def handle_update_memory(self, request: Request):
         mid = request.path_params.get("memory_id")
-        body = await _request_object(request, required=(), string_fields=("text",))
+        body = await _request_object(request, required=(), string_fields=("text", "summary"))
         logger.info("PUT /api/memories/%s", mid)
+        # An explicit blank string is the only way to clear the summary; null or
+        # omitted keeps the existing derive/preserve policy.
+        summary = body.get("summary")
+        clear_summary = isinstance(summary, str) and not summary.strip()
         result = await self._run(lambda: self.service.memory_update(
             mid, body.get("text"), body.get("metadata"),
-            body.get("namespace"), body.get("summary"),
-            body.get("confirm_codes")), write=True)
+            body.get("namespace"), None if clear_summary else summary,
+            body.get("confirm_codes"), clear_summary=clear_summary), write=True)
         if not result["success"]:
             return error_response(404, "Not found")
         return json_response(result)

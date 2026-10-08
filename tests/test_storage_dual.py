@@ -70,10 +70,12 @@ def test_dual_import_records_delegates_to_primary(dual, mock_primary):
 
 def test_dual_update_delete_clear_delegate(dual, mock_primary):
     """update/delete/clear all delegate to primary."""
-    dual.update("id1", text="new")
+    dual.update("id1", text="new", clear_summary=True)
     dual.delete("id2")
     dual.clear(namespace="ns1")
-    assert mock_primary.update.call_count == 1
+    mock_primary.update.assert_called_once_with(
+        "id1", "new", None, None, None, None,
+        index_embeddings=None, clear_summary=True)
     assert mock_primary.delete.call_count == 1
     assert mock_primary.clear.call_count == 1
 

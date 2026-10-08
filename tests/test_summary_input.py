@@ -3,12 +3,13 @@
 import asyncio
 import json
 import sys
+import time
 from unittest.mock import MagicMock
 
 import pytest
 
 from app.embedding.embed import EmbeddingInputTooLong
-from app.domain.summary_policy import derive_summary, normalize_summary
+from app.domain.summary_policy import derive_summary, normalize_summary, summary_for_update
 from tests.conftest import frontend_source
 
 
@@ -53,6 +54,31 @@ def test_storage_update_summary_policy(storage, fake_emb):
     assert storage.get(mid)["summary"] == "新正文第一句。"
     storage.update(mid, summary="  corrected\nsummary ")
     assert storage.get(mid)["summary"] == "corrected\nsummary"
+
+
+def test_summary_for_update_clear_summary_wins_over_text_change():
+    assert summary_for_update("old body", "original", "new body", None,
+                              clear_summary=True) is None
+    assert summary_for_update("old body", "original", "new body", None) == "new body"
+
+
+def test_storage_update_clear_summary_is_not_rederived(storage, fake_emb):
+    mid = storage.add("old body", fake_emb, summary="original summary")["id"]
+
+    storage.update(mid, text="新正文第一句。第二句。", embedding=fake_emb,
+                   clear_summary=True)
+
+    assert storage.get(mid)["summary"] is None
+
+
+def test_storage_update_summary_only_clear_keeps_body(storage, fake_emb):
+    mid = storage.add("old body", fake_emb, summary="original summary")["id"]
+
+    storage.update(mid, clear_summary=True)
+
+    record = storage.get(mid)
+    assert record["summary"] is None
+    assert record["text"] == "old body"
 
 
 def test_recovery_insert_preserves_null_summary(storage, fake_emb):
@@ -110,7 +136,128 @@ def test_http_update_passes_summary(monkeypatch, admin):
     )))
     assert response.status_code == 200
     assert json.loads(response.body) == {"success": True}
-    update.assert_called_once_with("abc", "new body", None, None, "new summary", None)
+    update.assert_called_once_with("abc", "new body", None, None, "new summary", None,
+                                  clear_summary=False)
+
+
+@pytest.mark.parametrize("summary", ["", "   ", " \n "])
+def test_http_update_blank_summary_requests_clear(monkeypatch, summary, admin):
+    update = MagicMock(return_value={"success": True})
+    monkeypatch.setattr(admin.service, "memory_update", update)
+    response = asyncio.run(admin.handle_update_memory(_Request(
+        {"text": "new body", "summary": summary}, memory_id="abc"
+    )))
+    assert response.status_code == 200
+    update.assert_called_once_with("abc", "new body", None, None, None, None,
+                                  clear_summary=True)
+
+
+@pytest.mark.parametrize("summary", [123, False, ["x"], {"a": 1}])
+def test_http_update_non_string_summary_is_400(monkeypatch, summary, admin):
+    update = MagicMock(return_value={"success": True})
+    monkeypatch.setattr(admin.service, "memory_update", update)
+    response = asyncio.run(admin.handle_update_memory(_Request(
+        {"summary": summary}, memory_id="abc"
+    )))
+    assert response.status_code == 400
+    assert json.loads(response.body)["response_code"] == "invalid_request"
+    update.assert_not_called()
+
+
+def test_http_update_clear_summary_persists_null(admin, service):
+    """Admin blank summary clears; a later text edit with "" does not re-derive."""
+    from app.service import _prepare_for_llm
+
+    record = service.memory_add("第一句。第二句。", summary="原始摘要")
+    mid = record["id"]
+    assert service.memory_get(mid)["summary"] == "原始摘要"
+
+    response = asyncio.run(admin.handle_update_memory(_Request({"summary": ""}, memory_id=mid)))
+    assert response.status_code == 200
+    assert service.memory_get(mid)["summary"] is None
+
+    response = asyncio.run(admin.handle_update_memory(_Request(
+        {"text": "全新正文第一句。第二句。", "summary": ""}, memory_id=mid)))
+    assert response.status_code == 200
+    assert service.memory_get(mid)["summary"] is None
+    # The stored value stays null, but the LLM-facing shape still derives a lead.
+    shaped = _prepare_for_llm([service.memory_get(mid)])
+    assert shaped[0]["summary"] == "全新正文第一句。"
+    assert "text" not in shaped[0]
+
+
+@pytest.mark.parametrize("summary,text,expected", [
+    ("omitted", None, "original"),
+    ("omitted", "新正文第一句。第二句。", "新正文第一句。"),
+    ("null", None, "original"),
+    ("null", "新正文第一句。第二句。", "新正文第一句。"),
+    ("blank", None, None),
+    ("blank", "新正文第一句。第二句。", None),
+])
+def test_http_update_summary_matrix(admin, service, summary, text, expected):
+    """HTTP omitted/null/blank x unchanged/changed body resolve per the contract."""
+    record = service.memory_add("old body", summary="original")
+    mid = record["id"]
+    body = {}
+    if text is not None:
+        body["text"] = text
+    if summary == "null":
+        body["summary"] = None
+    elif summary == "blank":
+        body["summary"] = ""
+    response = asyncio.run(admin.handle_update_memory(_Request(body, memory_id=mid)))
+    assert response.status_code == 200
+    assert service.memory_get(mid)["summary"] == expected
+
+
+def test_http_update_clear_summary_uses_new_time_for_sort_and_filter(admin, service):
+    """Clearing the summary is a normal update: it reorders and refilters by new time."""
+    older = service.memory_add("older body", summary="older summary")["id"]
+    time.sleep(0.01)
+    newer = service.memory_add("newer body", summary="newer summary")["id"]
+    clear_at = service.memory_get(older)["updated_at"]
+    newer_time = service.memory_get(newer)["updated_at"]
+
+    # Default descending updated_at order puts the most recently written first.
+    order = lambda: [row["id"] for row in
+                     service.memory_list_page(sort_by="updated_at")["items"]]
+    assert order() == [newer, older]
+
+    time.sleep(0.01)
+    response = asyncio.run(admin.handle_update_memory(_Request({"summary": ""}, memory_id=older)))
+    assert response.status_code == 200
+    after = service.memory_get(older)["updated_at"]
+    assert after > clear_at
+
+    # Clearing bumps updated_at, so the older record moves to the top.
+    assert order() == [older, newer]
+    # The new time drives exclusive-range filters: only the cleared record is
+    # strictly newer than the record created right before it.
+    assert [row["id"] for row in service.memory_list_page(updated_after=newer_time)["items"]] == [older]
+    assert [row["id"] for row in service.memory_list_page(updated_before=after)["items"]] == [newer]
+
+
+def test_http_update_anchors_roundtrip_echo_and_omission(admin, service):
+    """Admin GET returns stored anchors; body change echoes preserve order, omission clears."""
+    anchors = ["MemoryService", "handle_update_memory", "get_details"]
+    mid = service.memory_add("old body", metadata={"anchors": anchors})["id"]
+
+    def get_anchors():
+        response = asyncio.run(admin.handle_get_memory(_Request(None, memory_id=mid)))
+        assert response.status_code == 200
+        return json.loads(response.body)["metadata"].get("anchors")
+
+    assert get_anchors() == anchors
+
+    response = asyncio.run(admin.handle_update_memory(_Request(
+        {"text": "new body", "metadata": {"anchors": anchors}}, memory_id=mid)))
+    assert response.status_code == 200
+    assert get_anchors() == anchors
+
+    response = asyncio.run(admin.handle_update_memory(_Request(
+        {"text": "totally different body"}, memory_id=mid)))
+    assert response.status_code == 200
+    assert get_anchors() in (None, [])
 
 
 @pytest.mark.parametrize("handler,body", [

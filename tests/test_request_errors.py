@@ -50,6 +50,7 @@ def test_bad_json_objects(handler, req, admin):
     ('handle_add_memory', {}), ('handle_search_memories', {}),
     ('handle_add_memory', {'text':None}), ('handle_search_memories', {'query':42}),
     ('handle_update_memory', {'metadata':[]}), ('handle_update_memory', {'text':42}),
+    ('handle_update_memory', {'summary':42}),
 ])
 def test_required_fields_and_types(handler, body, admin):
     assert invoke(getattr(admin, handler), Request(body))[1]['response_code'] == 'invalid_request'

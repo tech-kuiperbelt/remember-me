@@ -6,7 +6,7 @@
 
 ### 前端工作
 
-- [50] 前端重构与 UI 调整：模块拆分、桌面布局、主题基础、Shell 视觉及 Memory List 已完成。2026-10-08 用户确认列表阶段收尾，浏览／共用筛选／时间过滤／Semantic、Lexical、Anchor 搜索／列表视觉与 review 修复均已落地；最终浏览器矩阵 79/79、真实 Chrome 复核通过。列表归档见 [50.5 总体记录](plans/50.5-memories-workspace.md)及 [50.5.9 修复记录](plans/50.5.9-memories-search-modes.md)。**下一阶段：Memory Detail**，待明确详情展示与交互方案后实施。前端路线仍开放，布局稳定后的结构复核继续保留，详见[路线图](plans/50-frontend-refactoring-and-ui-roadmap.md)。
+- [50] 前端重构与 UI 调整：模块拆分、桌面布局、主题基础、Shell 视觉及 Memory List 已完成。2026-10-08 用户确认列表阶段收尾，浏览／共用筛选／时间过滤／Semantic、Lexical、Anchor 搜索／列表视觉与 review 修复均已落地；最终浏览器矩阵 79/79、真实 Chrome 复核通过。列表归档见 [50.5 总体记录](plans/50.5-memories-workspace.md)及 [50.5.9 修复记录](plans/50.5.9-memories-search-modes.md)。**当前阶段：Memory Detail**，设计已确认并拆为 [50.6.1 后端契约](plans/50.6.1-memory-detail-backend.md)与 [50.6.2 前端实施](plans/50.6.2-memory-detail-frontend.md)。后端已实施、全量回归通过，并经用户重启加载后只读在线验收；前端尚未实施，真实保存联调待前端完成。前端路线仍开放，布局稳定后的结构复核继续保留，详见[路线图](plans/50-frontend-refactoring-and-ui-roadmap.md)。
 
 ### 其他开放项
 

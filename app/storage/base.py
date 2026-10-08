@@ -139,7 +139,8 @@ class MemoryStorage(ABC):
                metadata: Optional[dict] = None,
                namespace: Optional[str] = None,
                summary: Optional[str] = None,
-               index_embeddings: Optional[dict] = None) -> bool: ...
+               index_embeddings: Optional[dict] = None,
+               *, clear_summary: bool = False) -> bool: ...
 
     @abstractmethod
     def get_details(self, memory_ids: list[str]) -> dict[str, Any]:

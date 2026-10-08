@@ -394,10 +394,10 @@ class DualStorage(MemoryStorage):
                                     index_embeddings=index_embeddings)
 
     def update(self, memory_id, text=None, embedding=None, metadata=None, namespace=None, summary=None,
-               index_embeddings=None):
+               index_embeddings=None, *, clear_summary=False):
         with self._lock:
             return self.primary.update(memory_id, text, embedding, metadata, namespace, summary,
-                                       index_embeddings=index_embeddings)
+                                       index_embeddings=index_embeddings, clear_summary=clear_summary)
 
     def missing_index_value_embeddings(self, *args, **kwargs):
         return self.primary.missing_index_value_embeddings(*args, **kwargs)

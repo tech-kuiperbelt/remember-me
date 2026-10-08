@@ -54,8 +54,15 @@ def summary_for_add(text: str, summary) -> str:
 
 
 def summary_for_update(existing_text: str, existing_summary: str | None,
-                       new_text: str | None, summary) -> str | None:
-    """Resolve summary policy for an update performed under the storage lock."""
+                       new_text: str | None, summary, *,
+                       clear_summary: bool = False) -> str | None:
+    """Resolve summary policy for an update performed under the storage lock.
+
+    ``clear_summary`` is an explicit Admin-only clear signal; it wins over the
+    text-change fallback so a cleared summary is not re-derived.
+    """
+    if clear_summary:
+        return None
     supplied = normalize_summary(summary)
     if supplied is not None:
         return supplied

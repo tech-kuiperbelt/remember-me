@@ -135,7 +135,7 @@
   候选过滤，不改变记忆文本余弦分。
 - **`domain/categories.py`**：20 个种子分类词表、归一化与上限（每记忆 ≤3）。
 - **`domain/namespace_policy.py`**：命名空间格式/保留字/存在性规则与异常类型。
-- **`domain/summary_policy.py`**：无模型摘要回退（调用方摘要优先；缺失时取首句/首行；空白等价更新保留旧摘要）。
+- **`domain/summary_policy.py`**：无模型摘要回退（调用方摘要优先；缺失时取首句/首行；空白等价更新保留旧摘要）。Admin PUT 的显式空白摘要走 `clear_summary` 例外，直接清空而不回退派生。
 
 ### 2.6 审计与运维
 
@@ -179,7 +179,10 @@ handle_call_tool("add")
 
 `memory_update` 语义：`text` 省略则保留原文与旧向量；`metadata` 浅合并（新键覆盖旧键）；
 `namespace` 省略表示不改，显式值须已存在或确认。`summary` 经 `summary_for_update`
-处理（文本未变/空白等价 → 保留旧摘要）。写入同样重建索引值与索引值向量。
+处理（文本未变/空白等价 → 保留旧摘要）。**例外**：Admin HTTP PUT 显式提交空白
+`summary`（`""`/纯空白）表示清空（存 null，即使同时改正文也不派生），经内部
+keyword-only `clear_summary` 透传到摘要策略与存储；MCP、Add、导入/恢复沿用原策略，
+`null`/省略仍表示沿用。写入同样重建索引值与索引值向量。
 
 ### 3.3 写：`delete` / `clear`
 

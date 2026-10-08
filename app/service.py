@@ -500,7 +500,12 @@ class MemoryService:
                       metadata: dict | None = None,
                       namespace: str | None = None,
                       summary: str | None = None,
-                      confirm_codes: list | None = None) -> dict:
+                      confirm_codes: list | None = None,
+                      *, clear_summary: bool = False) -> dict:
+        # ``clear_summary`` is an internal capability (Admin-only explicit blank
+        # summary); it is not part of the public HTTP/MCP schema.
+        if not isinstance(clear_summary, bool):
+            raise TypeError("clear_summary must be a boolean")
         # Blank/omitted namespace means "leave unchanged"; an explicit namespace
         # must be an existing one unless the caller confirms its creation.
         if namespace is not None and not isinstance(namespace, str):
@@ -509,11 +514,13 @@ class MemoryService:
         if target_ns is not None:
             target_ns = self.check_namespace(target_ns, confirm_codes)
         summary = _normalize_summary(summary)
+        if clear_summary and summary is not None:
+            raise ValueError("clear_summary cannot be combined with a non-empty summary")
         # Validate caller anchors before embedding or any storage work.
         metadata = _apply_anchors_to_metadata(metadata)
-        logger.info("update: id=%s has_text=%s has_metadata=%s has_ns=%s has_summary=%s",
+        logger.info("update: id=%s has_text=%s has_metadata=%s has_ns=%s has_summary=%s clear_summary=%s",
                     memory_id, text is not None, metadata is not None,
-                    target_ns is not None, summary is not None)
+                    target_ns is not None, summary is not None, clear_summary)
         try:
             if text is not None:
                 embedding = self.embed(text)
@@ -526,7 +533,7 @@ class MemoryService:
             write_kwargs = {"index_embeddings": index_embeddings} if index_embeddings else {}
             ok = self.storage.update(memory_id, text=text, embedding=embedding,
                                 metadata=metadata, namespace=target_ns,
-                                summary=summary,
+                                summary=summary, clear_summary=clear_summary,
                                 **write_kwargs)
             logger.info("update: %s", "ok" if ok else "not found")
             out = {"success": ok}

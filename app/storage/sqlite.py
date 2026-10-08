@@ -1614,7 +1614,7 @@ class SQLiteStorage(SQLitePrimaryStorage):
             return self._row_to_dict(row) if row else None
 
     def update(self, memory_id, text=None, embedding=None, metadata=None, namespace=None, summary=None,
-               index_embeddings=None):
+               index_embeddings=None, *, clear_summary=False):
         with self._lock:
             existing = self.get(memory_id)
             if not existing:
@@ -1637,7 +1637,7 @@ class SQLiteStorage(SQLitePrimaryStorage):
                 ns = namespace if namespace is not None else existing["namespace"]
                 summ = summary_for_update(
                     existing["text"], existing.get("summary"),
-                    new_text, summary,
+                    new_text, summary, clear_summary=clear_summary,
                 )
                 self.conn.execute(
                     "UPDATE memories SET text = ?, embedding = ?, metadata = ?, "
