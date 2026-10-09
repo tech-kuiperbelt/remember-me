@@ -182,6 +182,24 @@ try {
     assert(!$('detail-debug')&&$('edit-text'),'create has no Debug button and still works');
     $('btn-detail-close').click();result.textContent='PASS: Debug disabled across global, detail, edit and create';
   }
+  else if (scenario === 'search-functional') {
+    await waitFor(() => $('memories-namespace')?.options.length > 1 && $('memories-list').getAttribute('aria-busy') === 'false', 'search bootstrap');
+    await runMemoriesSearchRegression();
+    result.textContent = 'PASS: search dropdown functional regression';
+  }
+  else if (scenario.startsWith('search-layout-')) {
+    await waitFor(() => $('memories-list').getAttribute('aria-busy') === 'false', 'search layout bootstrap');
+    if ($('app-shell').classList.contains('sidebar-collapsed') !== (innerWidth <= 390)) $('nav').click();
+    const field=$('memories-search-input').getBoundingClientRect(), mode=$('memories-search-mode').getBoundingClientRect(), query=$('memories-query').getBoundingClientRect();
+    const actions=['memories-search-submit','memories-search-clear'].map(id=>$(id).getBoundingClientRect());
+    assert(Math.abs(field.height-44)<1 && Math.abs(mode.width-112)<1, 'integrated search dimensions');
+    assert(mode.right<=query.left+1 && query.width>=80, 'mode precedes usable query field');
+    assert(field.left>=0 && field.right<=innerWidth && actions.every(box=>box.left>=0 && box.right<=innerWidth), 'search controls fit viewport');
+    assert(innerWidth<=768 ? actions.every(box=>box.top>=field.bottom) : actions.every(box=>Math.abs(box.top+box.height/2-field.top-field.height/2)<3), 'responsive search action placement');
+    assert(!$('memories-filter-row').contains($('memories-search-mode')) && !$('memories-mode-semantic'), 'filters have no mode buttons');
+    assert($('content').scrollWidth <= $('content').clientWidth+1, 'no workspace horizontal overflow');
+    result.textContent='PASS: '+scenario;
+  }
   else if (await runCreateScenario(scenario) || await runDetailScenario(scenario) || await runMemoriesVisualScenario(scenario) || await runThemeScenario(scenario)) { /* theme scenario finished */ }
   else {
 

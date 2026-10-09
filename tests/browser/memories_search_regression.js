@@ -34,11 +34,11 @@ async function runMemoriesSearchRegression() {
   assert(document.querySelector('.debug-id-label').textContent === 'memory-row-1-title', 'Debug identifies row title');
   $('memory-row-1-open').click();
   assert($('detail-modal').style.display === 'none' && $('memories-list').textContent === originalList, 'Debug inspection does not open detail or change content');
-  const modeBeforeDebug = document.querySelector('#memories-search-mode [aria-checked="true"]').id;
+  const modeBeforeDebug = $('memories-search-mode').value;
   for (const key of ['ArrowRight', 'ArrowLeft', 'Home', 'End', 'Enter', ' ']) {
-    $('memories-mode-semantic').dispatchEvent(new KeyboardEvent('keydown', {key, bubbles:true, cancelable:true}));
+    $('memories-search-mode').dispatchEvent(new KeyboardEvent('keydown', {key, bubbles:true, cancelable:true}));
   }
-  assert(document.querySelector('#memories-search-mode [aria-checked="true"]').id === modeBeforeDebug
+  assert($('memories-search-mode').value === modeBeforeDebug
     && $('memories-list').textContent === originalList, 'Debug blocks mode keyboard actions and rerender');
   $('memories-query').focus();
   assert(!$('memories-query').dispatchEvent(new InputEvent('beforeinput', {inputType:'insertText',data:'x',bubbles:true,cancelable:true})), 'Debug prevents editing before value changes');
@@ -85,7 +85,7 @@ async function runMemoriesSearchRegression() {
   $('memories-threshold').value = '0'; submit($('memories-advanced-form')); await ready();
 
   // Modes retain independent raw drafts and applied parameters; public scope is shared.
-  const modeButton = name => $('memories-mode-' + name);
+  const selectMode = name => { $('memories-search-mode').value=name; fire($('memories-search-mode'),'change'); };
   const allSearchCalls = () => S.calls.filter(c => c.url.startsWith('/api/memories/search'));
   const lastBody = () => JSON.parse(allSearchCalls().at(-1).body);
   const bm25 = records.map((row, i) => ({...row, score: i === 0 ? 1e-9 : 2.123456789}));
@@ -101,7 +101,7 @@ async function runMemoriesSearchRegression() {
   document.querySelector('[data-keyword="cache"]').click(); await ready();
   $('memories-k').value='bad'; $('memories-threshold').value='NaN';
   $('memories-updated-after').value='2021-01-01T00:00:00'; query('unsubmitted');
-  S.resetCalls(); modeButton('lexical').click(); await ready();
+  S.resetCalls(); selectMode('lexical'); await ready();
   assert(allSearchCalls()[0].url.endsWith('/lexical') && lastBody().query==='A' && lastBody().k===10
     && !('min_score' in lastBody()) && !('threshold' in lastBody()) && !('include_resolution' in lastBody()), 'Lexical route and default applied parameters');
   assert(lastBody().namespace==='a' && lastBody().categories[0]==='design' && lastBody().keywords[0]==='cache'
@@ -116,25 +116,25 @@ async function runMemoriesSearchRegression() {
     $('memories-threshold').value=bad; S.resetCalls(); submit($('memories-advanced-form'));
     assert(!allSearchCalls().length && document.activeElement===$('memories-threshold'), 'invalid BM25 focuses field: '+bad);
   }
-  $('memories-threshold').value='-1'; S.resetCalls(); modeButton('anchor').click(); await ready();
+  $('memories-threshold').value='-1'; S.resetCalls(); selectMode('anchor'); await ready();
   assert(allSearchCalls()[0].url.endsWith('/anchor') && lastBody().k===10 && !('min_score' in lastBody()), 'Anchor defaults isolated');
   assert($('memory-row-1-score').textContent === 'Anchor 0.000'
     && $('memory-row-1-score').title === 'Anchor 1e-9', 'Anchor three decimals with full score tooltip');
   $('memories-k').value='7'; $('memories-threshold').value='1e-8'; submit($('memories-advanced-form')); await ready();
   assert(lastBody().k===7 && lastBody().min_score===1e-8, 'Anchor independent applied values');
-  modeButton('lexical').click(); await ready();
+  selectMode('lexical'); await ready();
   assert(lastBody().k===13 && lastBody().min_score===2 && $('memories-threshold').value==='-1', 'invalid raw draft retained without application');
   $('memories-threshold').value=''; submit($('memories-advanced-form')); await ready();
   assert(!('min_score' in lastBody()), 'blank BM25 floor omitted');
   $('memories-reset').click(); await ready();
   assert(lastBody().k===13 && lastBody().query==='A' && !lastBody().namespace && !$('memories-updated-after').value, 'Reset retains mode parameters and query');
-  modeButton('semantic').click(); await ready();
+  selectMode('semantic'); await ready();
   assert(lastBody().k===25 && lastBody().threshold===0 && $('memories-k').value==='bad' && $('memories-threshold').value==='NaN', 'Semantic applied and invalid draft retained');
   $('memories-k').value='25'; $('memories-threshold').value='0';
   // Response contracts are validated before rows render; Retry keeps applied mode parameters.
   for (const name of ['lexical','anchor']) {
     S.setOverride(url => url.endsWith('/'+name) ? json({items:bm25}) : undefined);
-    modeButton(name).click(); await ready();
+    selectMode(name); await ready();
     assert($('memories-list').textContent.includes('Invalid search response'), 'terms envelope rejected: '+name);
     S.setOverride(url => url.endsWith('/'+name) ? json([{...bm25[0],score:'1e-9'}]) : undefined);
     [...$('memories-list').querySelectorAll('button')].find(b=>b.textContent==='Retry').click(); await ready();
@@ -144,29 +144,28 @@ async function runMemoriesSearchRegression() {
     assert(allSearchCalls().length===1 && lastBody().query==='A' && lastBody().k===(name==='lexical'?13:7), 'Retry keeps terms mode applied values');
   }
   S.setOverride(url => url === '/api/memories/search' ? json({items:records,filter_resolution:null}) : undefined);
-  modeButton('semantic').click(); await ready();
+  selectMode('semantic'); await ready();
   // Old mode success/failure cannot replace a new mode or restore mappings.
   for(const failure of [false,true]) {
     let old;
     S.setOverride(url => url === '/api/memories/search' ? new Promise(resolve=>{old=resolve;})
       : url.startsWith('/api/memories/search/') ? json(bm25) : undefined);
     $('btn-refresh').click(); await waitFor(()=>old,'pending mode response');
-    modeButton('anchor').click();
+    selectMode('anchor');
     assert(!$('memories-list').querySelector('.memory-search-score'), 'mode loading clears old scores');
     await ready(); old(failure ? json({detail:'stale mode failure'},500) : json({items:records,filter_resolution:mapped})); await settle(25);
     assert($('memories-list').textContent.includes('Anchor 0.000') && !$('memories-filter-resolution').textContent, 'stale mode response ignored');
     S.setOverride(url => url === '/api/memories/search' ? json({items:records,filter_resolution:null}) : undefined);
-    modeButton('semantic').click(); await ready();
+    selectMode('semantic'); await ready();
   }
   $('memories-search-clear').click(); await ready(); S.resetCalls();
-  const key = (name, value) => modeButton(name).dispatchEvent(new KeyboardEvent('keydown',{key:value,bubbles:true,cancelable:true}));
-  modeButton('semantic').focus(); key('semantic','ArrowLeft');
-  assert(modeButton('anchor').getAttribute('aria-checked')==='true' && document.activeElement===modeButton('anchor'), 'arrow wrap and focus');
-  key('anchor','Home'); key('semantic','End'); key('anchor','ArrowRight'); key('semantic',' '); key('semantic','Enter');
+  $('memories-search-mode').focus();
+  for (const name of ['anchor','semantic','lexical','semantic','semantic']) selectMode(name);
   assert(!allSearchCalls().length && !pageCalls().length, 'Browse switches and same selection do not request');
-  assert([...$('memories-search-mode').children].filter(n=>n.tabIndex===0).length===1, 'single Tab stop');
+  assert($('memories-search-mode').tagName === 'SELECT' && $('memories-search-mode').tabIndex === 0
+    && document.activeElement === $('memories-search-mode'), 'native select keeps one focusable control');
   $('btn-debug').click();
-  for(const id of ['memories-search-mode','memories-mode-semantic','memories-mode-lexical','memories-mode-anchor','memories-threshold-label','memories-threshold-help']) {
+  for(const id of ['memories-search-mode','memories-search-input','memories-threshold-label','memories-threshold-help']) {
     $(id).dispatchEvent(new MouseEvent('mouseover', {bubbles:true}));
     assert(document.querySelector('.debug-id-label').textContent === id, 'Debug ID: '+id);
   }

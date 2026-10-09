@@ -176,6 +176,12 @@ def run_case(profile, label, window_size, scale, shot_dir, query, theme=None, zo
     url = f'http://127.0.0.1:{port}/admin/console?smoke=' + query
     if theme:
         url += '&theme=' + theme
+    if query.startswith('search-layout-'):
+        from tests.chrome_viewport import run_viewport
+        width, height = map(int, window_size.split(','))
+        result = run_viewport(url, profile, width, height, shot)
+        shot.with_suffix('.json').write_text(json.dumps(result, indent=2) + '\n')
+        return subprocess.CompletedProcess([], 0, '<pre id="smoke-result">' + result['text'] + '</pre>', ''), shot
     cmd = ['google-chrome', '--headless', '--no-sandbox', '--disable-gpu',
            '--disable-dev-shm-usage', '--no-first-run', '--no-default-browser-check',
            '--user-data-dir=' + profile, '--window-size=' + window_size,
@@ -219,7 +225,9 @@ def run_case(profile, label, window_size, scale, shot_dir, query, theme=None, zo
 
 
 def selected(label):
-    # Optional single scenario for debugging; the default still runs the full matrix.
+    # Select one scenario or a related group; the default runs the full matrix.
+    if len(sys.argv) == 3 and sys.argv[1] == '--case-prefix':
+        return label.startswith(sys.argv[2])
     return len(sys.argv) == 1 or sys.argv[1:] == ['--case', label]
 
 
@@ -242,6 +250,18 @@ try:
         else tempfile.TemporaryDirectory(prefix='remember-ui-shots-')
     with tempfile.TemporaryDirectory(prefix='keyword-chrome-') as profile, _shots_ctx as shots:
         failures = []
+        search_cases = [('search-functional', '1280,800', 'light')]
+        search_cases += [(f'search-layout-{width}-{scheme}', f'{width},900', scheme)
+                         for width in (390, 768, 1024, 1440) for scheme in ('light', 'dark')]
+        for label, size, scheme in search_cases:
+            if not selected(label):
+                continue
+            proc, shot = run_case(profile, label, size, '1', shots, label, theme=scheme)
+            ok, text = check(proc)
+            print(('PASS ' if ok else 'FAIL ') + label + ' -> ' + str(shot) +
+                  ('' if ok else ' :: ' + (text or proc.stderr[-400:])), flush=True)
+            if not ok:
+                failures.append(label)
         for window_size in VIEWPORTS:
             for scale in SCALES:
                 label = window_size.replace(',', 'x') + '@' + scale

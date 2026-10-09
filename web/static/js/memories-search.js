@@ -4,7 +4,7 @@ import { $ } from './core.js';
 export function createMemoriesSearch({onInput, onSubmit, onClear, onApply, onMode}) {
   let searching = false, composing = false;
   let mode = 'semantic';
-  const modes = ['semantic', 'lexical', 'anchor'];
+  const modeSelect = $('memories-search-mode');
   const drafts = {semantic: {k: '10', score: '0'}, lexical: {k: '10', score: ''}, anchor: {k: '10', score: ''}};
   const query = $('memories-query');
   const ids = ['memories-k', 'memories-threshold', 'memories-updated-after', 'memories-updated-before'];
@@ -52,21 +52,7 @@ export function createMemoriesSearch({onInput, onSubmit, onClear, onApply, onMod
     }
     return options;
   }
-  for (const [index, name] of modes.entries()) {
-    const button = $('memories-mode-' + name);
-    button.onclick = () => onMode(name);
-    button.onkeydown = event => {
-      let target;
-      if (['ArrowRight', 'ArrowDown'].includes(event.key)) target = (index + 1) % modes.length;
-      if (['ArrowLeft', 'ArrowUp'].includes(event.key)) target = (index + modes.length - 1) % modes.length;
-      if (event.key === 'Home') target = 0;
-      if (event.key === 'End') target = modes.length - 1;
-      if (target !== undefined) {
-        event.preventDefault(); onMode(modes[target]); $('memories-mode-' + modes[target]).focus();
-      }
-      if ([' ', 'Enter'].includes(event.key)) { event.preventDefault(); onMode(name); }
-    };
-  }
+  modeSelect.onchange = () => onMode(modeSelect.value);
   query.oncompositionstart = () => { composing = true; };
   query.oncompositionend = () => { composing = false; onInput(query.value); updateClear(); };
   query.oninput = () => {
@@ -91,10 +77,7 @@ export function createMemoriesSearch({onInput, onSubmit, onClear, onApply, onMod
       $('memories-k').value = drafts[mode].k; $('memories-threshold').value = drafts[mode].score;
       ['memories-k', 'memories-threshold'].forEach(id => error(id, ''));
     }
-    for (const name of modes) {
-      const button = $('memories-mode-' + name), selected = name === mode;
-      button.setAttribute('aria-checked', String(selected)); button.tabIndex = selected ? 0 : -1;
-    }
+    modeSelect.value = mode;
     $('memories-threshold-label').textContent = mode === 'semantic' ? '最低相似度' : '最低相关性分数';
     $('memories-threshold-help').textContent = mode === 'semantic' ? '仅搜索时生效 · 0–1' : '留空不限 · BM25 无统一范围';
     searching = Boolean(state.submittedQuery);

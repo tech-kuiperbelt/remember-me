@@ -21,7 +21,7 @@ async function runMemoriesVisualScenario(scenario) {
   $('btn-refresh').click(); await waitFor(()=>$('memories-list').getAttribute('aria-busy')==='false','visual browse');
   if(['-search','-lexical','-anchor'].some(mode=>scenario.includes(mode))) {
     if(scenario.endsWith('-lexical') || scenario.endsWith('-anchor')) {
-      $('memories-mode-'+scenario.split('-').at(-1)).click(); $('memories-advanced').open=true;
+      $('memories-search-mode').value=scenario.split('-').at(-1); fire($('memories-search-mode'),'change'); $('memories-advanced').open=true;
     }
     $('memories-query').value='搜索输入 '+long.repeat(5); fire($('memories-query'),'input'); submit($('memories-search-form'));
     await waitFor(()=>$('memories-list').querySelector('.memory-search-score'),'visual search');
@@ -35,7 +35,7 @@ async function runMemoriesVisualScenario(scenario) {
     for(let i=0;i<20;i++) document.querySelector('[data-keyword]:not(:disabled)').click();
     await waitFor(()=>$('memories-list').getAttribute('aria-busy')==='false','visual selected keywords');
   }
-  assert(innerWidth>=1024,'acceptance CSS width at least 1024');
+  assert(innerWidth>=390,'acceptance CSS width at least 390');
   assert(document.documentElement.scrollWidth<=innerWidth,'no document horizontal overflow');
   assert($('content').scrollWidth<=$('content').clientWidth+1,'no workspace horizontal overflow');
   for (const row of $('memories-list').querySelectorAll('.memory-row')) {
@@ -59,11 +59,15 @@ async function runMemoriesVisualScenario(scenario) {
     if(!box.width)continue;
     assert(box.left>=0 && box.right<=innerWidth,'control fits horizontally: '+id);
   }
-  const searchBoxes=['memories-query','memories-search-submit','memories-search-clear'].map(id=>$(id).getBoundingClientRect());
-  assert(Math.max(...searchBoxes.map(b=>b.top+b.height/2))-Math.min(...searchBoxes.map(b=>b.top+b.height/2))<3,'search controls stay on one line');
-  const modeBox=$('memories-search-mode').getBoundingClientRect(), filterBox=$('memories-filters').getBoundingClientRect(), rowBox=$('memories-filter-row').getBoundingClientRect();
-  assert(Math.abs(modeBox.top-filterBox.top)<2 && Math.abs(modeBox.right-rowBox.right)<2,'mode aligns right on filter row');
-  assert(modeBox.top>=Math.max(...searchBoxes.map(b=>b.bottom)),'mode is below search form');
+  const inputBox=$('memories-search-input').getBoundingClientRect(), queryBox=$('memories-query').getBoundingClientRect();
+  const modeBox=$('memories-search-mode').getBoundingClientRect();
+  assert(Math.abs(inputBox.height-44)<1 && Math.abs(modeBox.width-112)<1,'integrated search dimensions');
+  assert(modeBox.left>=inputBox.left && modeBox.right<=queryBox.left+1 && Math.abs(modeBox.top-queryBox.top)<2,'mode precedes query inside search field');
+  assert(!$('memories-filter-row').contains($('memories-search-mode')) && !$('memories-mode-semantic'),'old mode buttons removed from filters');
+  const actionBoxes=['memories-search-submit','memories-search-clear'].map(id=>$(id).getBoundingClientRect());
+  assert(Math.abs(actionBoxes[0].top-actionBoxes[1].top)<2,'search action buttons share a row');
+  if(innerWidth<=768) assert(actionBoxes[0].top>=inputBox.bottom,'narrow actions wrap below integrated field');
+  else assert(Math.abs(actionBoxes[0].top+actionBoxes[0].height/2-(inputBox.top+inputBox.height/2))<3,'desktop search stays on one line');
   const popup=document.querySelector('.memory-filter-popover');
   if(popup) {
     const box=popup.getBoundingClientRect();

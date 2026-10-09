@@ -67,17 +67,19 @@
       <h2 id="memories-title">Memories</h2>
     </div>
     <form id="memories-search-form" class="memories-search-form" novalidate>
-      <input id="memories-query" type="search" aria-label="Search memories" placeholder="Search memories…">
+      <div id="memories-search-input" class="memories-search-input">
+        <select id="memories-search-mode" aria-label="搜索模式">
+          <option value="semantic">Semantic</option>
+          <option value="lexical">Lexical</option>
+          <option value="anchor">Anchor</option>
+        </select>
+        <input id="memories-query" type="search" aria-label="Search memories" placeholder="Search memories…">
+      </div>
       <button id="memories-search-submit" class="btn btn-primary" type="submit">Search</button>
       <button id="memories-search-clear" class="btn btn-outline" type="button" disabled>Clear search</button>
     </form>
     <div id="memories-filter-row" class="memories-filter-row">
       <div class="memories-filters" id="memories-filters" aria-label="记忆筛选"></div>
-      <div id="memories-search-mode" class="memories-search-mode" role="radiogroup" aria-label="搜索模式">
-        <button id="memories-mode-semantic" type="button" role="radio" aria-checked="true" tabindex="0">Semantic</button>
-        <button id="memories-mode-lexical" type="button" role="radio" aria-checked="false" tabindex="-1">Lexical</button>
-        <button id="memories-mode-anchor" type="button" role="radio" aria-checked="false" tabindex="-1">Anchor</button>
-      </div>
     </div>
     <details id="memories-advanced" class="memories-advanced">
       <summary>Advanced</summary>

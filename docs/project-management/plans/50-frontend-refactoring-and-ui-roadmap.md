@@ -65,6 +65,10 @@
 
 ## 第三阶段：布局稳定后的结构复核
 
+2026-10-09 搜索模式下拉（用户验收并授权提交）：按用户认可的方案，将 Semantic／Lexical／Anchor 三按钮改为搜索框左侧原生 select，保留 `memories-search-mode` ID；共用 44px 高的一体边框，模式区 112px；原生 select 保留交互，使用主题色箭头并与右侧分隔线留出约 12px 间距。下面筛选行只保留 Namespace／Categories／Keywords。窗口 ≤768px 时搜索框独占一行，Search／Clear search 换到下一行。现有模式切换请求、独立参数草稿、查询草稿、公共筛选、清空与 Debug 行为保持，无后端修改。
+
+验证：search-functional 通过，覆盖三模式请求、独立参数／未提交草稿、旧响应、错误恢复与 Debug；390／768／1024／1440px × Light／Dark 共 8 项布局场景通过（390px 手动折叠侧栏，其他尺寸展开）。采用 CDP pipe 明确设置 CSS 视口并核对实际尺寸，避免 Chrome 命令行 390px 窗口初始视口被限制为 500px 导致误判；临时截图在 `/tmp/remember-search-dropdown/`。最终箭头间距调整后 search-functional 与 8 项布局场景复验通过，用户确认并要求提交。1024px 浅色 Browse 与深色 Anchor 的压力布局场景通过；JS 语法、git diff --check 通过。未运行完整浏览器矩阵／全量 pytest，未重启生产服务。
+
 2026-10-09 列表与抽屉微调：列表新增 Anchors 标签组，保留大小写和顺序，最多展示 3 项，超出显示 `+N` 并沿用全部标签弹层；新增入口改为加号，位于 Sort 右侧同行；移除列表 Clear Namespace 入口及跳转绑定，配置维护区的 Clear 保持原样。详情 More 菜单增加 Copy summary，位于 Copy content 上方，无摘要时禁用。详情／新增抽屉增加右侧滑入（240ms）、滑出（200ms）及遮罩淡入淡出；遵循减少动态效果偏好，关闭期间抽屉不可交互，重新打开取消旧动画，防止迟到关闭隐藏新会话。用户确认并要求提交。
 
 本轮验证：1024px 浅色 Browse、深色 Anchor 搜索定向浏览器通过（标签数量、大小写、缺失值、弹层、焦点与边界）；按钮移动及列表 Clear 移除后复跑浅色 Browse 通过；最终 detail-functional、create-functional 通过，覆盖关闭动画完成及关闭后立即重新打开；修改的 JS 语法检查、git diff --check 通过。未运行完整浏览器矩阵或全量 pytest。早期旧 1024x768@1 场景在引用已移除的详情控件处失败，未计作通过，随后采用当前列表验收与详情／新增专项验证。未重启生产服务。
