@@ -1,26 +1,43 @@
 // Shared create/update form; the drawer owns requests, dirty state and focus.
 import { $ } from './core.js';
-import { getNamespaces, getCategories, getCategoryState } from './store.js';
+import { getNamespaces, getDefaultNamespace, getCategories, getCategoryState } from './store.js';
 import { normalizeAnchors } from './detail-model.js';
 import { renderMarkdown } from './markdown.js';
 import { createValuePickers } from './memory-value-picker.js';
+import { createNamespacePicker } from './namespace-picker.js';
 const node = (tag, id, text, cls = '') => { const el = document.createElement(tag); if (id) el.id = id; if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
 function button(id, text, action, cls = 'btn-outline') { const el=node('button',id,text,'btn btn-sm '+cls);el.type='button';el.onclick=action;return el; }
 function field(id,title,content) {const section=node('section',id,undefined,'detail-section');section.append(node('h2',id+'-label',title),content);return section;}
 export function renderDetailEditor({body, draft, creating, validate, showError, technical, retryCategories, onRetryDefault}) {
   let picker;
+  let namespacePicker;
   let preview = false;
+  let refreshNamespaces = () => {};
   const updatePicker = () => picker?.update(draft,{namespaces:getNamespaces(),categories:getCategories(),categoryState:getCategoryState()});
   const status = node('p','detail-error','', 'text-danger'); status.hidden = true; status.setAttribute('role','alert'); body.append(status);
   for (const [key,label] of [['namespace','Namespace'],['summary','Summary']]) {
     const input = node(key === 'namespace' ? 'input' : 'textarea','edit-'+key); input.value = draft[key];
     const section = field('detail-edit-'+key,label,input); section.querySelector('h2').replaceWith(Object.assign(node('label','detail-edit-'+key+'-label',label),{htmlFor:input.id}));
-    input.oninput = () => { draft[key] = input.value; if(key === 'namespace') {input.dataset.touched='true';updatePicker();} validate(); }; body.append(section);
+    input.oninput = () => { draft[key] = input.value; if(key === 'namespace') {namespacePicker?.close();input.dataset.touched='true';updatePicker();} validate(); }; body.append(section);
     if(key === 'summary' && creating) section.append(node('p','detail-summary-hint','留空将从正文生成摘要。','text-muted'));
     if(key === 'namespace' && creating) {
       const hint=node('p','detail-default-namespace-status','','text-muted'); hint.setAttribute('role','status'); section.append(hint,button('detail-default-namespace-retry','Retry default Namespace',onRetryDefault));
     }
-    if(key === 'namespace') { input.setAttribute('list','detail-namespaces'); const list = node('datalist','detail-namespaces'); getNamespaces().forEach(ns=>list.append(Object.assign(node('option'),{value:ns}))); section.append(list); }
+    if(key === 'namespace') {
+      const control=node('div','detail-namespace-control',undefined,'detail-namespace-control');
+      input.replaceWith(control); control.append(input); input.autocomplete='off';
+      namespacePicker=createNamespacePicker({control,input,onOpen:()=>picker?.close(),onChoose:value=>{
+        input.value=value;input.dispatchEvent(new Event('input',{bubbles:true}));
+      }});
+      const initialNamespace=draft.namespace;
+      refreshNamespaces = () => {
+        const configured=getDefaultNamespace();
+        const values=[...new Set([...getNamespaces(), initialNamespace,
+          configured.status==='ready' ? configured.value : ''].filter(value=>typeof value==='string'&&value.trim()))];
+        namespacePicker.update(values);
+      };
+      refreshNamespaces();
+    }
   }
   const text = node('textarea','edit-text'); text.value = draft.text; text.spellcheck = false; text.setAttribute('aria-label','Content Markdown source');
   const rendered = node('div','detail-preview',undefined,'detail-markdown'); rendered.hidden = true;
@@ -76,5 +93,11 @@ export function renderDetailEditor({body, draft, creating, validate, showError, 
     input.oninput=()=>{draft.extraMetadata=input.value;validate();};
     extra.append(node('p','detail-extra-metadata-hint','JSON 对象；分类、关键词和锚点请使用上方字段。','text-muted'),input); body.append(extra);
   } else body.append(technical());
-  validate(); return picker;
+  validate(); return {...picker,
+    update(...args) { picker.update(...args); refreshNamespaces(); },
+    isOpen:()=>namespacePicker.isOpen()||picker.isOpen(),
+    focusRoot:()=>namespacePicker.focusRoot()||picker.focusRoot(),
+    close(restore=false) { if(namespacePicker.isOpen())namespacePicker.close(restore);else picker.close(restore); },
+    destroy() { namespacePicker.destroy();picker.destroy(); },
+  };
 }

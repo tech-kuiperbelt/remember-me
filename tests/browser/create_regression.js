@@ -18,6 +18,13 @@ async function runCreateScenario(scenario) {
   assert(!$('detail-technical')&&$('detail-debug')&&$('detail-save').disabled,'create identity hidden and empty body blocked');
   assert($('detail-summary-hint').textContent.includes('留空'),'automatic summary explained');
   assert(!$('detail-default-namespace-retry').getClientRects().length,'loaded default hides retry button visually');
+  if(scenario==='create-functional') {
+    $('detail-namespace-select').click();
+    const option=[...$('detail-namespace-options').querySelectorAll('[role=option]')].find(option=>option.dataset.namespace==='a');
+    assert(option,'create lists existing namespaces despite filled default');option.click();
+    assert($('edit-namespace').value==='a','create namespace dropdown updates draft');
+    type('edit-namespace','configured-project');
+  }
   if(scenario!=='create-functional') {
     type('edit-text','# New memory\n\nDraft with **Markdown**.');
     if(scenario.includes('-preview-'))$('detail-preview-mode').click();

@@ -2,6 +2,8 @@
 
 本文件归档已完成的项目待办。详细实现记录保留在 git 提交和项目变更日志中。
 
+- [50] Namespace 下拉与窗口边界修复（2026-10-09 用户最终验收并授权提交）：编辑／新建共用可输入 Namespace 和完整候选 listbox，动态刷新候选并保留草稿；统一 Memories 风格，弹出列表与输入框等宽、窗口内定位、按空间上下展开，长列表内部滚动。包含键盘选择、焦点和关闭清理，沿用现有保存／未知空间确认，无后端改动。功能、新建、Debug 及桌面／窄屏浏览器验证通过，含真实隔离 Namespace-only 保存。随本次提交归档，详情见[前端路线图](plans/50-frontend-refactoring-and-ui-roadmap.md)。
+
 - [50] UI Debug 启动开关（2026-10-09 用户实测通过并授权提交）：新增 `--debug`，默认隐藏顶部及新建／明细／编辑抽屉 Debug 入口并禁止开启元素检查；传参显示按钮，仍手动切换。启动标志经 Admin HTML 传递，不写配置、不改变日志级别，Restart 保留参数。54 项后端测试与 debug-disabled／detail-functional／create-functional 三个浏览器场景通过；启动说明已同步 AGENTS、README 和[运维手册](../operations/runbook.md)。随本次提交归档。
 
 - [50.7] Memories 新增抽屉（2026-10-09 用户验收并授权提交）：移除独立 Add 页面，新增复用详情抽屉与共享表单，支持配置默认 Namespace、自定义 metadata、重复记录和 POST 成功后仅重试 GET；Debug 入口移到顶部，允许明细导航；Edit／Preview 改为标准标签页与键盘导航。新增阶段浏览器 137/137、后端定向 94 项通过；最终反馈调整后定向浏览器与提交前后端复验通过，详细范围见 [50.7 实施记录](plans/50.7-memory-create-drawer.md)。随本次提交归档，生产未重启。

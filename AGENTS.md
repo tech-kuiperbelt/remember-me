@@ -188,6 +188,8 @@ python tests/run_admin_browser.py
 
 Memories uses one right-side drawer for create/view/edit; the standalone Add page and add.js were removed. detail.js owns the session and requests, detail-editor.js renders the shared form, and detail-model.js owns separate create/update payloads. Admin-only GET /api/stats exposes default_namespace from Settings; MCP Stats is unchanged. Create omits blank summary to derive it, preserves custom metadata JSON outside managed dimensions, and handles created=false as an untouched existing record. A successful POST followed by failed GET may only retry GET. See docs/project-management/plans/50.7-memory-create-drawer.md.
 
+Namespace uses the editable `edit-namespace` input plus the `detail-namespace-select` button and `detail-namespace-options` listbox for the complete existing vocabulary and configured default. `namespace-picker.js` owns popup positioning, keyboard selection and cleanup; the popup aligns with the input, clamps to the viewport and opens above when needed. Registry updates refresh options without replacing drafts. Selection follows the same input validation/dirty/candidate refresh path as typing; unknown namespaces retain the existing save-time confirmation contract.
+
 ## Memory usage protocol
 
 Follow the global memory protocol rules in `~/.config/opencode/AGENTS.md`.

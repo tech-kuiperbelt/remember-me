@@ -5,6 +5,9 @@ async function runDetailScenario(scenario) {
   const router=await import('/admin/console/static/js/router.js');
   const model=await import('/admin/console/static/js/detail-model.js');
   const markdown=await import('/admin/console/static/js/markdown.js');
+  const store=await import('/admin/console/static/js/store.js');
+  const namespaceOptions=()=>[...$('detail-namespace-options').querySelectorAll('[role=option]')];
+  const chooseNamespace=value=>{if(!$('detail-namespace-options'))$('detail-namespace-select').click();namespaceOptions().find(option=>option.dataset.namespace===value).click();};
   const make=id=>({id,namespace:'a',summary:null,text:'# Detail heading\n\n**Bold** and [safe](https://example.com) [bad](javascript:alert(1))\n\n![remote](https://example.com/never-load.png)\n\n<img src=x onerror=alert(1)>\n\n```js\nMemoryService.update()\n```\n\n| Key | Value |\n| --- | --- |\n| name | test |',metadata:{categories:['design'],keywords:Array.from({length:24},(_,i)=>'keyword'+i),anchors:['MemoryService','handle_update_memory','get_details'],custom:{retain:true}},created_at:'2026-01-01T00:00:00Z',updated_at:'2026-02-01T00:00:00Z'});
   const records=new Map(['detail-a','detail-b'].map(id=>[id,make(id)]));
   let getFailure=false,putFailure=false,deleteFailure=false,namespaceReject=false,held=null;
@@ -39,6 +42,13 @@ async function runDetailScenario(scenario) {
   assert(document.querySelector('.memory-row').getBoundingClientRect().width===rowWidth,'background scrollbar and list width preserved');
   if(scenario!=='detail-functional') {
     if(scenario.includes('-edit')||scenario.includes('-preview')||scenario.includes('-confirm')){$('detail-edit').click();type('edit-text',records.get('detail-a').text+'\n\nUnsaved draft');}
+    if(scenario.includes('-edit')) {
+      $('detail-namespace-select').click();
+      await settle();assert($('detail-namespace-options'),'namespace list remains open after focus settles');
+      const popup=$('detail-namespace-options').getBoundingClientRect(), control=$('detail-namespace-control').getBoundingClientRect();
+      assert(popup.left>=0&&popup.right<=innerWidth&&popup.top>=0&&popup.bottom<=innerHeight,'namespace popup remains inside viewport');
+      assert(Math.abs(popup.right-control.right)<2,'namespace popup aligns with input right edge');
+    }
     if(scenario.includes('-preview'))$('detail-preview-mode').click();
     if(scenario.includes('-confirm'))$('btn-detail-close').click();
     const expectedWidth=Math.min(innerWidth,Math.max(640,Math.min(innerWidth*0.6,1040)));
@@ -65,6 +75,26 @@ async function runDetailScenario(scenario) {
   const copyLabel=codeCopy.textContent;codeCopy.click();assert(codeCopy.textContent===copyLabel&&codeCopy.classList.contains('debug-focus'),'Debug selects ID without copying code');
   escape();assert(document.activeElement===$('detail-debug')&&$('detail-panel').getBoundingClientRect().width===box.width,'debug exit and stable layout');
   $('detail-edit').click();assert(document.activeElement===$('edit-namespace')&&$('detail-save').disabled,'clean edit focuses Namespace: focus='+document.activeElement?.id+', disabled='+$('detail-save').disabled+', error='+$('detail-error').textContent);
+  const knownNamespaces=[...store.getNamespaces()];
+  $('detail-namespace-select').click();
+  store.setNamespaces([...knownNamespaces,'namespace-choice',...Array.from({length:30},(_,i)=>'namespace-long-candidate-'+i)]);
+  assert(namespaceOptions().some(option=>option.dataset.namespace==='namespace-choice')&&$('edit-namespace').value==='a','live namespace candidates update without filtering current value');
+  const popupBox=$('detail-namespace-options').getBoundingClientRect();
+  assert(popupBox.left>=8&&popupBox.right<=innerWidth-8,'open namespace list is bounded by viewport');
+  assert($('detail-namespace-options').scrollHeight>$('detail-namespace-options').clientHeight,'long namespace list scrolls inside bounded popup');
+  escape();assert(!$('detail-namespace-options')&&document.activeElement===$('detail-namespace-select')&&detail.isOpen(),'Escape closes only namespace list');
+  const dropdown=$('detail-namespace-select'), rect=dropdown.getBoundingClientRect();
+  assert(document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2)===dropdown,'namespace dropdown is reachable');
+  dropdown.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true,cancelable:true}));
+  $('detail-namespace-options').dispatchEvent(new KeyboardEvent('keydown',{key:'End',bubbles:true,cancelable:true}));
+  assert(document.activeElement===namespaceOptions().at(-1),'namespace list supports keyboard navigation');
+  chooseNamespace('namespace-choice');
+  assert($('edit-namespace').value==='namespace-choice'&&!$('detail-save').disabled&&document.activeElement===$('edit-namespace'),'dropdown selection updates draft and enables Save');
+  $('detail-cancel').click();assert(records.get('detail-a').namespace==='a','cancel leaves namespace unchanged');
+  store.setNamespaces(knownNamespaces);$('detail-edit').click();
+  $('detail-debug').click();
+  assert(!$('detail-namespace-select').dispatchEvent(new PointerEvent('pointerdown',{button:0,bubbles:true,cancelable:true})),'Debug blocks namespace dropdown');
+  escape();
   const source=$('edit-text').value;textSelection();
   function textSelection(){ $('edit-text').setSelectionRange(3,12);$('edit-text').scrollTop=20; }
   assert($('detail-content-modes').getAttribute('role')==='tablist'&&$('detail-source-mode').getAttribute('aria-selected')==='true','content uses selected Edit tab');
@@ -117,6 +147,16 @@ async function runDetailScenario(scenario) {
     assert(S.calls.filter(c=>c.method==='PUT'&&c.url.endsWith(created.id)).length===1,'real UI one PUT');
     $('detail-edit').click();type('edit-summary','stored summary');$('detail-save').click();await waitFor(()=>$('detail-edit'),'real summary save');assert($('detail-summary-value').textContent==='stored summary','real summary persisted');
     $('detail-edit').click();type('edit-summary','');$('detail-save').click();await waitFor(()=>$('detail-edit'),'real clear summary');authoritative=await call('/memories/'+created.id);assert(authoritative.summary===null,'real explicit clear stored null');
+    const stats=await call('/stats');store.setNamespaces(stats.namespaces);
+    $('detail-edit').click();const targetNamespace=stats.default_namespace;
+    $('detail-namespace-select').click();
+    assert(namespaceOptions().some(option=>option.dataset.namespace===targetNamespace),'real configured default is selectable');
+    chooseNamespace(targetNamespace);
+    S.resetCalls();$('detail-save').click();await waitFor(()=>$('detail-edit'),'real namespace save');
+    authoritative=await call('/memories/'+created.id);
+    assert(authoritative.namespace===targetNamespace&&authoritative.text==='MemoryService detail integration changed'&&authoritative.summary===null&&authoritative.metadata.custom==='preserved','dropdown namespace persists without changing content or metadata');
+    const namespaceWrites=S.calls.filter(c=>c.method==='PUT'&&c.url.endsWith(created.id));
+    assert(namespaceWrites.length===1&&JSON.stringify(JSON.parse(namespaceWrites[0].body))===JSON.stringify({namespace:targetNamespace}),'namespace selection sends only namespace');
     $('detail-more').click();$('detail-delete').click();$('detail-confirm-delete').click();await waitFor(()=>!detail.isOpen(),'real delete');
     const gone=await S.realFetch('/api/memories/'+created.id);assert(gone.status===404,'real deletion confirmed');
   } finally {
