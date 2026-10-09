@@ -1,3 +1,102 @@
+async function runSearchWrapRegression() {
+  const bar=document.querySelector('.memories-search-bar');
+  const ready=async()=>{await waitFor(()=>$('memories-list').getAttribute('aria-busy')==='false','filter result');await settle(60);};
+  await ready();
+  $('memories-categories').click();await waitFor(()=>document.querySelector('[data-value="design"]'),'category');
+  document.querySelector('[data-value="design"]').click();await ready();
+  assert(!bar.classList.contains('filters-wrapped'),'one short category remains inline');
+  assert($('memories-categories-popover'),'selection keeps category menu open');
+  document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+  const words=Array.from({length:5},(_,i)=>'word-'+i+'-'+('long-中英混合-'.repeat(8)));
+  S.setOverride(url=>url==='/api/keywords/query' ? json({results:[{total:5,items:words.map(keyword=>({keyword,count:1}))}]}) : undefined);
+  $('memories-keywords').click();$('memories-keywords-query').value='word';fire($('memories-keywords-query'),'input');
+  await waitFor(()=>document.querySelector('[data-keyword]:not(:disabled)'),'keyword suggestions');
+  for(let i=0;i<5;i++) {
+    document.querySelector('[data-keyword]:not(:disabled)').click();await ready();
+  }
+  assert(bar.classList.contains('filters-wrapped'),'large selected group wraps');
+  const query=$('memories-search-input').getBoundingClientRect();
+  const group=$('memories-filter-row').getBoundingClientRect();
+  assert(group.top>=query.bottom,'whole filter group starts on next row');
+  for(const id of ['memories-namespace-control','memories-category-control','memories-keyword-control','memories-reset']) {
+    assert($(id).getBoundingClientRect().top>=group.top,'no filter remains on previous row: '+id);
+  }
+  const pop=$('memories-keywords-popover'), popBox=pop.getBoundingClientRect();
+  assert(pop && popBox.left>=0 && popBox.right<=innerWidth && popBox.top>=0 && popBox.bottom<=innerHeight,'open menu follows layout');
+  document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+  $('memories-reset').click();await ready();
+  assert(!bar.classList.contains('filters-wrapped'),'Reset restores inline filters');
+  assert(!$('page-memories').querySelector('.memories-search-measure'),'measurement copies removed');
+  assert(document.querySelectorAll('[id="memories-categories"]').length===1,'no duplicate measurement IDs');
+  // Same selection must wrap only when its measured minimum width exceeds the bar.
+  $('memories-categories').click();document.querySelector('[data-value="design"]').click();await ready();
+  document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+  $('memories-keywords').click();$('memories-keywords-query').value='word';fire($('memories-keywords-query'),'input');
+  await waitFor(()=>document.querySelector('[data-keyword]:not(:disabled)'),'boundary keywords');
+  for(let i=0;i<2;i++) { document.querySelector('[data-keyword]:not(:disabled)').click();await ready(); }
+  document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+  const buttons=['memories-search-submit','memories-search-clear','memories-advanced-toggle'].reduce((sum,id)=>sum+$(id).getBoundingClientRect().width,0);
+  const boundary=320+parseFloat(bar.style.getPropertyValue('--search-filters-width'))+buttons+48;
+  assert(boundary>=1202 && boundary<bar.parentElement.clientWidth-2,'boundary fixture lies in wide layout');
+  {
+    bar.style.width=(boundary+2)+'px';await settle(80);assert(!bar.classList.contains('filters-wrapped'),'group fits just above boundary');
+    bar.style.width=(boundary-2)+'px';await settle(80);assert(bar.classList.contains('filters-wrapped'),'group wraps just below boundary '+JSON.stringify({boundary,width:bar.getBoundingClientRect().width,filters:bar.style.getPropertyValue('--search-filters-width'),query:bar.style.getPropertyValue('--search-query-width'),buttons:['memories-search-submit','memories-search-clear','memories-advanced-toggle'].map(id=>$(id).getBoundingClientRect().width)}));
+    await settle(120);assert(bar.classList.contains('filters-wrapped'),'boundary is stable');
+    bar.style.width=(boundary+2)+'px';await settle(80);assert(!bar.classList.contains('filters-wrapped'),'growing restores inline group');
+  }
+  bar.style.removeProperty('width');$('memories-reset').click();await ready();S.reset();
+}
+
+async function checkSearchLayout() {
+  const field=$('memories-search-input').getBoundingClientRect(), mode=$('memories-search-mode').getBoundingClientRect(), query=$('memories-query').getBoundingClientRect();
+  const workspace=document.querySelector('.memories-workspace').getBoundingClientRect();
+  const controls=['memories-search-submit','memories-search-clear','memories-advanced-toggle','memories-namespace','memories-categories','memories-keywords'];
+  assert(Math.abs(field.height-40)<1 && Math.abs(mode.width-112)<1,'search dimensions');
+  assert(mode.right<=query.left+1 && query.width>=80,'mode precedes usable query');
+  assert(document.querySelector('.memories-search-icon').getAttribute('aria-hidden')==='true','decorative search icon');
+  for(const id of controls) {
+    const box=$(id).getBoundingClientRect();
+    assert(box.left>=workspace.left-1 && box.right<=workspace.right+1,'control fits workspace: '+id);
+    assert(Math.abs(box.height-40)<1 || id==='memories-namespace','uniform control height: '+id);
+  }
+  const actions=['memories-search-submit','memories-search-clear'].map(id=>$(id).getBoundingClientRect());
+  assert(workspace.width<640 ? actions.every(box=>box.top>=field.bottom) : actions.every(box=>Math.abs(box.top-field.top)<2),'responsive actions');
+  if(workspace.width>=1200) for(const id of controls) assert(Math.abs($(id).getBoundingClientRect().top-field.top)<2,'wide one-line search: '+id);
+  if(workspace.width>=1200) {
+    assert(field.width>=319.5 && field.width<=480.5,'wide search field is capped at 480px');
+    assert(Math.abs(actions[0].left-field.right-8)<1 && Math.abs(actions[1].left-actions[0].right-8)<1,'search buttons immediately follow query');
+    assert(Math.abs($('memories-filter-row').getBoundingClientRect().left-actions[1].right-24)<1,'search and filters separated by 24px');
+  }
+  assert($('content').scrollWidth<=$('content').clientWidth+1,'workspace does not overflow');
+  assert($('memories-advanced').hidden,'Advanced initially collapsed');
+  const before=$('memories-count').getBoundingClientRect().top;
+  S.resetCalls();setAdvancedOpen(true);await settle();
+  assert($('memories-advanced-toggle').getAttribute('aria-expanded')==='true','expanded state');
+  assert($('memories-count').getBoundingClientRect().top>before+60,'Advanced pushes results down');
+  for(const id of ['memories-k','memories-threshold','memories-updated-after','memories-updated-before','memories-advanced-apply']) {
+    const box=$(id).getBoundingClientRect();assert(box.width>0 && box.left>=workspace.left-1 && box.right<=workspace.right+1,'Advanced input fits: '+id);
+  }
+  const count=$('memories-count').getBoundingClientRect(), sort=$('memories-sort').getBoundingClientRect();
+  assert(count.top>field.bottom && sort.top>field.bottom,'independent result toolbar');
+  $('memories-updated-after').focus();setAdvancedOpen(false);
+  assert(document.activeElement===$('memories-advanced-toggle') && $('memories-advanced').hidden,'collapse hides fields and restores focus');
+  assert(!S.calls.some(call=>call.url.startsWith('/api/memories')),'expansion does not request memories');
+  // Both popovers remain independently positioned within the viewport.
+  for(const id of ['memories-categories','memories-keywords']) {
+    $(id).click();await settle(60);
+    const pop=document.querySelector('.memory-filter-popover'), box=pop.getBoundingClientRect();
+    assert(box.left>=0 && box.right<=innerWidth && box.top>=0 && box.bottom<=innerHeight,'popover fits viewport');
+    document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+  }
+  // A long native Namespace option must not expand the main bar.
+  const option=document.createElement('option');option.value='long-layout';option.textContent='Namespace-中英混合-'.repeat(8);
+  $('memories-namespace').append(option);$('memories-namespace').value=option.value;
+  await settle();assert($('content').scrollWidth<=$('content').clientWidth+1,'long namespace remains bounded');
+  $('memories-namespace').value='';option.remove();
+  // Show the expanded state in the review screenshot.
+  setAdvancedOpen(true);document.activeElement?.blur();await settle();
+}
+
 async function runMemoriesSearchRegression() {
   const query = value => { $('memories-query').value = value; fire($('memories-query'), 'input'); };
   const search = value => { query(value); submit($('memories-search-form')); };
@@ -186,7 +285,7 @@ async function runMemoriesSearchRegression() {
   stale(json({detail:'old failure'},500)); await settle(20);
   assert($('memories-list').querySelector('.memory-row') && !$('memories-filter-resolution').textContent, 'old failure cannot overwrite Browse');
   S.reset();
-  $('memories-advanced').open = true;
+  setAdvancedOpen(true);
   $('memories-updated-after').value = '2020-01-01T00:00:00';
   $('memories-updated-before').value = '2019-01-01T00:00:00'; S.resetCalls(); submit($('memories-advanced-form'));
   assert($('memories-updated-before').getAttribute('aria-invalid') === 'true' && !pageCalls().length, 'invalid time range rejected');
@@ -243,5 +342,5 @@ async function runMemoriesSearchRegression() {
   const {switchPage} = await import('/admin/console/static/js/router.js');
   assert(switchPage('search') === false && $('page-memories').classList.contains('active'), 'retired route preserves page');
   S.reset(); $('memories-search-clear').click(); await ready();
-  $('memories-k').value = '10'; $('memories-threshold').value = '0'; $('memories-advanced').open = false;
+  $('memories-k').value = '10'; $('memories-threshold').value = '0'; setAdvancedOpen(false);
 }

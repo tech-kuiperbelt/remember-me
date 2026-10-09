@@ -7,6 +7,13 @@ export function createMemoriesSearch({onInput, onSubmit, onClear, onApply, onMod
   const modeSelect = $('memories-search-mode');
   const drafts = {semantic: {k: '10', score: '0'}, lexical: {k: '10', score: ''}, anchor: {k: '10', score: ''}};
   const query = $('memories-query');
+  const advanced = $('memories-advanced'), advancedToggle = $('memories-advanced-toggle');
+  function setAdvancedOpen(open) {
+    if (!open && advanced.contains(document.activeElement)) advancedToggle.focus();
+    advanced.hidden = !open;
+    advancedToggle.setAttribute('aria-expanded', String(open));
+  }
+  advancedToggle.onclick = () => setAdvancedOpen(advanced.hidden);
   const ids = ['memories-k', 'memories-threshold', 'memories-updated-after', 'memories-updated-before'];
   function error(id, message) {
     const field = $(id), output = $(id + '-error');
@@ -45,7 +52,7 @@ export function createMemoriesSearch({onInput, onSubmit, onClear, onApply, onMod
       invalid('memories-updated-before', '结束时间必须晚于开始时间');
     }
     if (errors.length) {
-      $('memories-advanced').open = true;
+      setAdvancedOpen(true);
       // A retained invalid search draft must remain correctable from Browse.
       if (search) $('memories-k').disabled = $('memories-threshold').disabled = false;
       $(errors[0]).focus(); return null;

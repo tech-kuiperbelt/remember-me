@@ -177,10 +177,11 @@ def run_case(profile, label, window_size, scale, shot_dir, query, theme=None, zo
     url = f'http://127.0.0.1:{port}/admin/console?smoke=' + query
     if theme:
         url += '&theme=' + theme
-    if query.startswith(('search-layout-', 'cards-')):
+    if query.startswith(('search-layout-', 'search-wrap-', 'cards-')):
         from tests.chrome_viewport import run_viewport
         width, height = map(int, window_size.split(','))
-        result = run_viewport(url, profile, width, height, shot)
+        result = run_viewport(url, profile, width, height, shot,
+                              verify_search_keyboard=query == "search-layout-1920-light")
         shot.with_suffix('.json').write_text(json.dumps(result, indent=2) + '\n')
         return subprocess.CompletedProcess([], 0, '<pre id="smoke-result">' + result['text'] + '</pre>', ''), shot
     cmd = ['google-chrome', '--headless', '--no-sandbox', '--disable-gpu',
@@ -263,13 +264,16 @@ try:
                   ('' if ok else ' :: ' + (text or proc.stderr[-400:])), flush=True)
             if not ok:
                 failures.append(label)
-        search_cases = [('search-functional', '1280,800', 'light')]
-        search_cases += [(f'search-layout-{width}-{scheme}', f'{width},900', scheme)
-                         for width in (390, 768, 1024, 1440) for scheme in ('light', 'dark')]
-        for label, size, scheme in search_cases:
+        search_cases = [('search-functional', '1280,800', 'light', 1),
+                        ('search-wrap-functional', '1920,1080', 'light', 1)]
+        search_cases += [(f'search-layout-{width}-{scheme}', f'{width},900', scheme, 1)
+                         for width in (390, 768, 1024, 1440, 1920) for scheme in ('light', 'dark')]
+        search_cases += [(f'search-zoom-{zoom}-{scheme}', '1920,1080', scheme, zoom)
+                         for zoom in (1, 1.25) for scheme in ('light', 'dark')]
+        for label, size, scheme, zoom in search_cases:
             if not selected(label):
                 continue
-            proc, shot = run_case(profile, label, size, '1', shots, label, theme=scheme)
+            proc, shot = run_case(profile, label, size, '1', shots, label, theme=scheme, zoom=zoom)
             ok, text = check(proc)
             print(('PASS ' if ok else 'FAIL ') + label + ' -> ' + str(shot) +
                   ('' if ok else ' :: ' + (text or proc.stderr[-400:])), flush=True)
@@ -340,6 +344,8 @@ try:
                       for mode in ('browse', 'search')]
         acceptance += [(f'acceptance-1024x768-{scheme}-expanded-{popover}', '1024,768', scheme, 1)
                        for scheme in ('light', 'dark') for popover in ('categories', 'keywords')]
+        acceptance += [(f'acceptance-1920x1080-{scheme}-expanded-keywords', '1920,1080', scheme, 1)
+                       for scheme in ('light', 'dark')]
         acceptance += [(f'acceptance-zoom-{zoom}-{scheme}-expanded-{mode}', '1920,1080', scheme, zoom)
                        for zoom in (1, 1.25, 1.5) for scheme in ('light', 'dark')
                        for mode in ('browse', 'search')]

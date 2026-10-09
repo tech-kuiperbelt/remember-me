@@ -7,7 +7,7 @@ import subprocess
 import time
 
 
-def run_viewport(url, profile, width, height, screenshot):
+def run_viewport(url, profile, width, height, screenshot, verify_search_keyboard=False):
     incoming, writer = os.pipe()
     reader, outgoing = os.pipe()
 
@@ -65,6 +65,44 @@ def run_viewport(url, profile, width, height, screenshot):
             raise TimeoutError('UI result')
         if result['width'] != width or result['height'] != height:
             raise AssertionError('Unexpected CSS viewport: ' + str(result))
+        if verify_search_keyboard:
+            def evaluate(expression):
+                return call('Runtime.evaluate', {'expression': expression, 'returnByValue': True}, session)['result'].get('value')
+
+            def key(name, code, virtual):
+                call('Input.dispatchKeyEvent', {'type': 'keyDown', 'key': name,
+                     'code': code, 'windowsVirtualKeyCode': virtual,
+                     'text': '\r' if name == 'Enter' else '',
+                     'unmodifiedText': '\r' if name == 'Enter' else ''}, session)
+                call('Input.dispatchKeyEvent', {'type': 'keyUp', 'key': name,
+                     'code': code, 'windowsVirtualKeyCode': virtual}, session)
+
+            evaluate("document.getElementById('memories-query').value='cache';document.getElementById('memories-query').dispatchEvent(new Event('input',{bubbles:true}));window.__smoke.resetCalls();document.getElementById('memories-query').focus()")
+            key('Enter', 'Enter', 13)
+            deadline = time.monotonic() + 8
+            while time.monotonic() < deadline:
+                if evaluate("!!document.querySelector('.memory-search-score')"):
+                    break
+                time.sleep(.05)
+            else:
+                raise AssertionError('Native Enter did not submit: ' + str(evaluate("({calls:window.__smoke.calls,active:document.activeElement.id,query:document.getElementById('memories-query').value,errors:[...document.querySelectorAll('[aria-invalid=true]')].map(e=>e.id),text:document.getElementById('memories-list').textContent.slice(0,200)})")))
+            if evaluate("window.__smoke.calls.filter(c=>c.url==='/api/memories/search').length") != 1:
+                raise AssertionError('Native Enter must issue exactly one search')
+            evaluate("document.getElementById('memories-search-mode').focus()")
+            for expected in ('memories-query', 'memories-search-submit', 'memories-search-clear',
+                             'memories-namespace', 'memories-categories',
+                             'memories-keywords', 'memories-advanced-toggle'):
+                key('Tab', 'Tab', 9)
+                actual = evaluate('document.activeElement.id')
+                if actual != expected:
+                    raise AssertionError('Search keyboard order: expected ' + expected + ', got ' + str(actual))
+            key('Enter', 'Enter', 13)
+            if not evaluate("document.getElementById('memories-advanced').hidden"):
+                raise AssertionError('Native Enter must collapse Advanced')
+            key('Enter', 'Enter', 13)
+            if evaluate("document.getElementById('memories-advanced').hidden"):
+                raise AssertionError('Native Enter must reopen Advanced')
+            evaluate('document.activeElement.blur()')
         screenshot.write_bytes(base64.b64decode(call('Page.captureScreenshot', {'format': 'png'}, session)['data']))
         return result
     finally:

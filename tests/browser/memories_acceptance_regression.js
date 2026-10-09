@@ -120,7 +120,7 @@ async function runMemoriesAcceptanceRegression() {
   } finally {
     S.reset(); $('memories-search-clear').click();
     if (!$('memories-reset').hidden) $('memories-reset').click();
-    $('memories-k').value='10'; $('memories-advanced').open=false;
+    $('memories-k').value='10'; setAdvancedOpen(false);
     await ready();
   }
 }

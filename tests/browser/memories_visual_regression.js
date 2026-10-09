@@ -21,11 +21,11 @@ async function runMemoriesVisualScenario(scenario) {
   $('btn-refresh').click(); await waitFor(()=>$('memories-list').getAttribute('aria-busy')==='false','visual browse');
   if(['-search','-lexical','-anchor'].some(mode=>scenario.includes(mode))) {
     if(scenario.endsWith('-lexical') || scenario.endsWith('-anchor')) {
-      $('memories-search-mode').value=scenario.split('-').at(-1); fire($('memories-search-mode'),'change'); $('memories-advanced').open=true;
+      $('memories-search-mode').value=scenario.split('-').at(-1); fire($('memories-search-mode'),'change'); setAdvancedOpen(true);
     }
     $('memories-query').value='搜索输入 '+long.repeat(5); fire($('memories-query'),'input'); submit($('memories-search-form'));
     await waitFor(()=>$('memories-list').querySelector('.memory-search-score'),'visual search');
-  } else $('memories-advanced').open=true;
+  } else setAdvancedOpen(true);
   if(scenario.endsWith('-categories')) {
     $('memories-categories').click(); await waitFor(()=>document.querySelector('.memory-category-option'),'visual categories');
   }
@@ -61,12 +61,12 @@ async function runMemoriesVisualScenario(scenario) {
   }
   const inputBox=$('memories-search-input').getBoundingClientRect(), queryBox=$('memories-query').getBoundingClientRect();
   const modeBox=$('memories-search-mode').getBoundingClientRect();
-  assert(Math.abs(inputBox.height-44)<1 && Math.abs(modeBox.width-112)<1,'integrated search dimensions');
+  assert(Math.abs(inputBox.height-40)<1 && Math.abs(modeBox.width-112)<1,'integrated search dimensions');
   assert(modeBox.left>=inputBox.left && modeBox.right<=queryBox.left+1 && Math.abs(modeBox.top-queryBox.top)<2,'mode precedes query inside search field');
   assert(!$('memories-filter-row').contains($('memories-search-mode')) && !$('memories-mode-semantic'),'old mode buttons removed from filters');
   const actionBoxes=['memories-search-submit','memories-search-clear'].map(id=>$(id).getBoundingClientRect());
   assert(Math.abs(actionBoxes[0].top-actionBoxes[1].top)<2,'search action buttons share a row');
-  if(innerWidth<=768) assert(actionBoxes[0].top>=inputBox.bottom,'narrow actions wrap below integrated field');
+  if(document.querySelector('.memories-workspace').clientWidth<640) assert(actionBoxes[0].top>=inputBox.bottom,'narrow actions wrap below integrated field');
   else assert(Math.abs(actionBoxes[0].top+actionBoxes[0].height/2-(inputBox.top+inputBox.height/2))<3,'desktop search stays on one line');
   const popup=document.querySelector('.memory-filter-popover');
   if(popup) {

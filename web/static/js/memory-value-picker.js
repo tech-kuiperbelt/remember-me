@@ -272,5 +272,5 @@ export function createValuePickers({root, onChange, onReset = () => {}, onRetryC
   const resize = () => close(), scroll = () => close();
   document.addEventListener('click', outside); document.addEventListener('keydown', keyboard);
   window.addEventListener('resize', resize); document.getElementById('content').addEventListener('scroll', scroll);
-  return {update, close, isOpen: () => Boolean(popup), focusRoot: () => popup?.node, destroy() { close(); document.removeEventListener('click', outside); document.removeEventListener('keydown', keyboard); window.removeEventListener('resize', resize); document.getElementById('content').removeEventListener('scroll', scroll); }};
+  return {update, close, reposition: position, isOpen: () => Boolean(popup), focusRoot: () => popup?.node, destroy() { close(); document.removeEventListener('click', outside); document.removeEventListener('keydown', keyboard); window.removeEventListener('resize', resize); document.getElementById('content').removeEventListener('scroll', scroll); }};
 }

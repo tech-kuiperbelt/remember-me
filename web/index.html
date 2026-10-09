@@ -66,23 +66,29 @@
     <div class="memories-heading">
       <h2 id="memories-title">Memories</h2>
     </div>
-    <form id="memories-search-form" class="memories-search-form" novalidate>
-      <div id="memories-search-input" class="memories-search-input">
-        <select id="memories-search-mode" aria-label="搜索模式">
-          <option value="semantic">Semantic</option>
-          <option value="lexical">Lexical</option>
-          <option value="anchor">Anchor</option>
-        </select>
-        <input id="memories-query" type="search" aria-label="Search memories" placeholder="Search memories…">
-      </div>
-      <button id="memories-search-submit" class="btn btn-primary" type="submit">Search</button>
+    <div class="memories-search-bar">
+      <form id="memories-search-form" class="memories-search-form" novalidate>
+        <div id="memories-search-input" class="memories-search-input">
+          <select id="memories-search-mode" aria-label="搜索模式">
+            <option value="semantic">Semantic</option>
+            <option value="lexical">Lexical</option>
+            <option value="anchor">Anchor</option>
+          </select>
+          <svg class="memories-search-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg>
+          <input id="memories-query" type="search" aria-label="Search memories" placeholder="Search memories…">
+        </div>
+      </form>
+      <button id="memories-search-submit" class="btn btn-primary" type="submit" form="memories-search-form">Search</button>
       <button id="memories-search-clear" class="btn btn-outline" type="button" disabled>Clear search</button>
-    </form>
-    <div id="memories-filter-row" class="memories-filter-row">
-      <div class="memories-filters" id="memories-filters" aria-label="记忆筛选"></div>
+      <div id="memories-filter-row" class="memories-filter-row">
+        <div class="memories-filters" id="memories-filters" aria-label="记忆筛选"></div>
+      </div>
+      <button id="memories-advanced-toggle" class="btn btn-outline" type="button" aria-expanded="false" aria-controls="memories-advanced">
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M4 17h16"/><path d="M9 4v6M15 14v6"/></svg>
+        <span>Advanced</span><svg class="memories-advanced-chevron" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m3 4.5 3 3 3-3"/></svg>
+      </button>
     </div>
-    <details id="memories-advanced" class="memories-advanced">
-      <summary>Advanced</summary>
+    <div id="memories-advanced" class="memories-advanced" hidden>
       <form id="memories-advanced-form" class="memories-advanced-fields" novalidate>
         <label>Top-K <input id="memories-k" type="text" inputmode="numeric" value="10"><span id="memories-k-error" class="text-danger"></span><small>仅搜索时生效</small></label>
         <label><span id="memories-threshold-label">最低相似度</span><input id="memories-threshold" type="text" inputmode="decimal" value="0" aria-describedby="memories-threshold-help"><span id="memories-threshold-error" class="text-danger"></span><small id="memories-threshold-help">仅搜索时生效 · 0–1</small></label>
@@ -90,7 +96,7 @@
         <label>Updated before <input id="memories-updated-before" type="datetime-local" step="1"><span id="memories-updated-before-error" class="text-danger"></span><small>浏览与搜索均生效</small></label>
         <button id="memories-advanced-apply" class="btn btn-outline" type="submit">Apply</button>
       </form>
-    </details>
+    </div>
     <div class="memories-result-header">
       <span id="memories-count" tabindex="-1" role="status">Loading...</span>
       <div class="memories-result-actions">

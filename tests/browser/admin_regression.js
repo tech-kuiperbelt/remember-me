@@ -13,6 +13,8 @@ const json = (data, status = 200) => new Response(JSON.stringify(data),
 const fire = (el, type) => el.dispatchEvent(new Event(type, {bubbles: true, cancelable: true}));
 const submit = form => form.requestSubmit();
 
+function setAdvancedOpen(open) { if ($('memories-advanced').hidden === open) $('memories-advanced-toggle').click(); }
+
 async function waitFor(check, label, timeout = 8000) {
   const start = Date.now();
   for (;;) {
@@ -73,7 +75,7 @@ async function runThemeScenario(scenario) {
         $('memories-query').value = 'cache'; fire($('memories-query'), 'input'); submit($('memories-search-form'));
         await waitFor(() => $('memories-list').querySelector('.memory-search-score'), 'search score');
       }
-      if (advancedOnly) $('memories-advanced').open = true;
+      if (advancedOnly) setAdvancedOpen(true);
       assert(document.documentElement.scrollWidth <= innerWidth, 'workspace fits viewport');
       if (filtersOnly) {
         $('memories-categories').click();
@@ -185,22 +187,19 @@ try {
   else if (scenario.startsWith('cards-')) {
     await runCardsScenario(scenario);
   }
+  else if (scenario === 'search-wrap-functional') {
+    await waitFor(() => $('memories-namespace')?.options.length > 1 && $('memories-list').getAttribute('aria-busy') === 'false', 'wrap bootstrap');
+    await runSearchWrapRegression();result.textContent='PASS: measured filter wrapping';
+  }
   else if (scenario === 'search-functional') {
     await waitFor(() => $('memories-namespace')?.options.length > 1 && $('memories-list').getAttribute('aria-busy') === 'false', 'search bootstrap');
     await runMemoriesSearchRegression();
     result.textContent = 'PASS: search dropdown functional regression';
   }
-  else if (scenario.startsWith('search-layout-')) {
+  else if ((scenario.startsWith('search-layout-') || scenario.startsWith('search-zoom-'))) {
     await waitFor(() => $('memories-list').getAttribute('aria-busy') === 'false', 'search layout bootstrap');
     if ($('app-shell').classList.contains('sidebar-collapsed') !== (innerWidth <= 390)) $('nav').click();
-    const field=$('memories-search-input').getBoundingClientRect(), mode=$('memories-search-mode').getBoundingClientRect(), query=$('memories-query').getBoundingClientRect();
-    const actions=['memories-search-submit','memories-search-clear'].map(id=>$(id).getBoundingClientRect());
-    assert(Math.abs(field.height-44)<1 && Math.abs(mode.width-112)<1, 'integrated search dimensions');
-    assert(mode.right<=query.left+1 && query.width>=80, 'mode precedes usable query field');
-    assert(field.left>=0 && field.right<=innerWidth && actions.every(box=>box.left>=0 && box.right<=innerWidth), 'search controls fit viewport');
-    assert(innerWidth<=768 ? actions.every(box=>box.top>=field.bottom) : actions.every(box=>Math.abs(box.top+box.height/2-field.top-field.height/2)<3), 'responsive search action placement');
-    assert(!$('memories-filter-row').contains($('memories-search-mode')) && !$('memories-mode-semantic'), 'filters have no mode buttons');
-    assert($('content').scrollWidth <= $('content').clientWidth+1, 'no workspace horizontal overflow');
+    await checkSearchLayout();
     result.textContent='PASS: '+scenario;
   }
   else if (await runCreateScenario(scenario) || await runDetailScenario(scenario) || await runMemoriesVisualScenario(scenario) || await runThemeScenario(scenario)) { /* theme scenario finished */ }

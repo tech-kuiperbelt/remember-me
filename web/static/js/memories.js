@@ -6,6 +6,7 @@ import { createMemoriesData } from './memories-data.js';
 import { createMemoriesList } from './memories-list.js';
 import { createMemoriesSearch } from './memories-search.js';
 import { createMemoriesFilters } from './memories-filters.js';
+import { createMemoriesSearchLayout } from './memories-search-layout.js';
 
 let data;
 let filters;
@@ -41,6 +42,8 @@ function resetFilters() {
 export function mount({openMemory = () => {}, openCreate = () => {}, retryCategories = () => {}, isDetailOpen = () => false, onDetailSelection = () => {}} = {}) {
   filters = createMemoriesFilters({root: $('memories-filters'),
     onChange: changes => data.change(changes), onReset: resetFilters, onRetryCategories: retryCategories});
+  createMemoriesSearchLayout({bar: document.querySelector('.memories-search-bar'),
+    onLayout: () => filters.reposition()});
   searchControls = createMemoriesSearch({onInput: value => data.input(value),
     onMode: mode => data.setMode(mode),
     onSubmit: options => data.submit(options), onClear: () => data.clearSearch(), onApply: options => data.change(options)});
