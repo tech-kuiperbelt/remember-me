@@ -59,6 +59,10 @@
 
 用户确认采用右侧模态抽屉，支持摘要清空、Anchors 编辑、分类／关键词新增，Markdown 图片以文字和链接展示。设计已拆为两份实施文档：[50.6.1 后端契约](50.6.1-memory-detail-backend.md)与 [50.6.2 前端实施](50.6.2-memory-detail-frontend.md)。后端文档定义公共接口契约；后端已加载，前端已完成隔离真实接口联调。后端已实施：Admin PUT 显式空白摘要清空、anchors 回传／清除契约、Dual→NDJSON null 同步；全量 pytest 852 passed，用户重启加载后只读在线验收通过（数字摘要→400 invalid_request，GET 详情返回 anchors，无生产写入）。前端已实施，见 [50.6.3 编程与实施记录](50.6.3-memory-detail-coding-plan.md)：响应式模态抽屉（60vw，下限 640px、上限 1040px）、安全 Markdown、六字段编辑、Preview、未保存保护、PUT→GET 和删除；浏览器矩阵 112/112、真实只读 Chrome 和隔离 Admin／SQLite 保存／清空联调通过。后端完成、前端完成及隔离联调验收均已记录，review 未发现明确回归，用户已授权提交；随本次提交归档，未重启生产服务。Memory List 保持完成。
 
+## 下一阶段：Memories 新增抽屉
+
+用户明确新增不使用独立页面；已移除 Add Memory 导航与旧页面，在 Memories 增加 New Memory 入口，复用详情抽屉和表单，创建成功转为详情。默认 Namespace、摘要自动生成、自定义 metadata 保留、重复记录处理和验收见 [50.7 实施计划](50.7-memory-create-drawer.md)。新增阶段 137/137 浏览器矩阵、94 项后端定向与真实服务只读复核通过；2026-10-09 完成 Debug 入口与 Edit／Preview 标签页反馈调整，末轮定向验证见实施记录。用户已验收并明确授权提交，随本次提交归档，生产未重启。运行服务在用户重启加载 Stats 的 default_namespace 字段前，All 下需要手动填写 Namespace。
+
 ## 第三阶段：布局稳定后的结构复核
 
 主要页面与功能组织稳定后，检查剩余重复代码、状态耦合和交互一致性。

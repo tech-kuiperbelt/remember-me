@@ -117,9 +117,11 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
       footer, metadata, namespace, date: time})) node.id = rowId + '-' + region;
     if (stamp) open.setAttribute('aria-label', '查看记忆：' + title + '，更新于 ' + formatTime(stamp));
     footer.append(metadata, time); content.append(footer);
-    const detailArrow = el('span', 'memory-row-detail-arrow', '›');
+    const detailArrow = el('button', 'memory-row-detail-arrow', '›');
     detailArrow.id = rowId + '-detail-arrow';
-    detailArrow.setAttribute('aria-hidden', 'true');
+    detailArrow.type = 'button'; detailArrow.dataset.debugNavigation = '';
+    detailArrow.setAttribute('aria-label', '查看记忆明细：' + title);
+    detailArrow.onclick = () => onOpen(memory.id);
     item.append(open, icon, content, detailArrow);
     item.addEventListener('click', event => {
       if (!event.target.closest('button')) onOpen(memory.id);

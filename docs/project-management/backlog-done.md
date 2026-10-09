@@ -2,6 +2,8 @@
 
 本文件归档已完成的项目待办。详细实现记录保留在 git 提交和项目变更日志中。
 
+- [50.7] Memories 新增抽屉（2026-10-09 用户验收并授权提交）：移除独立 Add 页面，新增复用详情抽屉与共享表单，支持配置默认 Namespace、自定义 metadata、重复记录和 POST 成功后仅重试 GET；Debug 入口移到顶部，允许明细导航；Edit／Preview 改为标准标签页与键盘导航。新增阶段浏览器 137/137、后端定向 94 项通过；最终反馈调整后定向浏览器与提交前后端复验通过，详细范围见 [50.7 实施记录](plans/50.7-memory-create-drawer.md)。随本次提交归档，生产未重启。
+
 - [50.5] Memory List（2026-10-08 用户确认完成并授权提交）：浏览分页、共用筛选、时间过滤、三模式搜索与 Top-K 本地分页、列表卡片与区域 ID 已完成。最终 review 修复长标签挤压／越界、日期与标签悬停命中、Debug 键盘及原生控件隔离；浏览器矩阵 79/79、真实 Chrome 复核通过。后续 Memory Detail 实现与验证进度见 [50.6.3](plans/50.6.3-memory-detail-coding-plan.md)，详情 review 已完成，前端整体路线仍开放。详见[总体记录](plans/50.5-memories-workspace.md)和[修复验收](plans/50.5.9-memories-search-modes.md)。
 - [50.6] Memory Detail（2026-10-08 用户授权提交）：响应式抽屉、安全 Markdown、六字段编辑、Preview、离开保护、PUT→GET 与删除已完成；后端提交 `0056c8b`，前端随 `Implement responsive Memory Detail drawer and editing workflow` 归档。完整矩阵 112/112、隔离接口联调和只读浏览器验证已有通过记录，宽屏调整后三项回归通过。review 未发现明确回归，独立浏览器复验受沙箱限制。详见 [50.6.3](plans/50.6.3-memory-detail-coding-plan.md)。
 

@@ -22,6 +22,19 @@ async function runDetailScenario(scenario) {
   const escape=()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
   const writes=()=>S.calls.filter(c=>c.method==='PUT'&&c.url.includes('/detail-'));
   const rowWidth=document.querySelector('.memory-row').getBoundingClientRect().width;
+  if(scenario==='detail-functional') {
+    $('btn-debug').click();
+    const arrow=document.querySelector('.memory-row-detail-arrow'), rect=arrow.getBoundingClientRect();
+    const target=document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2);
+    assert(target===arrow,'detail arrow is reachable in Debug');target.click();
+    await waitFor(()=>$('detail-edit'),'open detail while Debug is active');
+    assert(document.body.classList.contains('debug-ids')&&$('detail-debug').getAttribute('aria-pressed')==='true','opening detail retains Debug');
+    assert($('detail-actions').contains($('detail-debug'))&&!$('detail-technical').open,'Debug visible with technical details collapsed');
+    $('detail-technical-toggle').click();assert($('detail-technical').open,'technical details expand in Debug');
+    $('detail-edit').click();assert(!$('edit-text'),'Debug still blocks editing');
+    $('btn-detail-close').click();assert(!detail.isOpen()&&document.body.classList.contains('debug-ids'),'close detail retains Debug');
+    $('btn-debug').click();
+  }
   await open('detail-a');
   assert(document.querySelector('.memory-row').getBoundingClientRect().width===rowWidth,'background scrollbar and list width preserved');
   if(scenario!=='detail-functional') {
@@ -40,7 +53,9 @@ async function runDetailScenario(scenario) {
   assert(![...$('detail-content-markdown').querySelectorAll('a')].some(a=>a.href.startsWith('javascript:')),'unsafe links removed');
   assert($('detail-keywords-expand').textContent==='+19','keyword preview count');$('detail-keywords-expand').click();assert($('detail-keywords-24'),'all keywords expanded');
   const ids=[...$('detail-modal').querySelectorAll('[id]')].map(n=>n.id);assert(new Set(ids).size===ids.length,'unique region IDs');
-  $('detail-technical').open=true;const box=$('detail-panel').getBoundingClientRect();$('detail-debug').click();assert($('detail-debug').getAttribute('aria-pressed')==='true','shared debug state');
+  assert($('detail-actions').contains($('detail-debug'))&&!$('detail-technical').open,'drawer Debug is always in header');
+  const box=$('detail-panel').getBoundingClientRect();$('detail-debug').click();assert($('detail-debug').getAttribute('aria-pressed')==='true','shared debug state');
+  $('detail-technical-toggle').click();assert($('detail-technical').open,'Debug allows technical expansion');
   const codeCopy=$('detail-content-markdown-code-block-1-copy');
   assert(codeCopy&&[...$('detail-content-markdown').querySelectorAll('*')].every(el=>el.id),'Markdown elements and code copy have IDs');
   for(const id of ['detail-summary-value','detail-content-markdown-code-block-1-copy','detail-id-value']) {
@@ -49,9 +64,15 @@ async function runDetailScenario(scenario) {
   }
   const copyLabel=codeCopy.textContent;codeCopy.click();assert(codeCopy.textContent===copyLabel&&codeCopy.classList.contains('debug-focus'),'Debug selects ID without copying code');
   escape();assert(document.activeElement===$('detail-debug')&&$('detail-panel').getBoundingClientRect().width===box.width,'debug exit and stable layout');
-  $('detail-edit').click();assert(document.activeElement===$('edit-namespace')&&$('detail-save').disabled,'clean edit focuses Namespace');
+  $('detail-edit').click();assert(document.activeElement===$('edit-namespace')&&$('detail-save').disabled,'clean edit focuses Namespace: focus='+document.activeElement?.id+', disabled='+$('detail-save').disabled+', error='+$('detail-error').textContent);
   const source=$('edit-text').value;textSelection();
   function textSelection(){ $('edit-text').setSelectionRange(3,12);$('edit-text').scrollTop=20; }
+  assert($('detail-content-modes').getAttribute('role')==='tablist'&&$('detail-source-mode').getAttribute('aria-selected')==='true','content uses selected Edit tab');
+  $('detail-source-mode').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,cancelable:true}));
+  assert(document.activeElement===$('detail-preview-mode')&&$('detail-preview-mode').getAttribute('aria-selected')==='true'&&$('detail-source-panel').hidden&&!$('detail-preview').hidden,'Right arrow selects and focuses Preview');
+  $('detail-preview-mode').dispatchEvent(new KeyboardEvent('keydown',{key:'Home',bubbles:true,cancelable:true}));
+  assert(document.activeElement===$('detail-source-mode')&&$('detail-preview-mode').tabIndex===-1&&!$('detail-source-panel').hidden,'Home returns to Edit with one tab stop');
+  assert($('edit-text').value===source&&$('edit-text').selectionStart===3&&$('edit-text').selectionEnd===12,'keyboard tabs preserve source and selection');
   $('detail-preview-mode').click();assert($('detail-preview').querySelector('h1'),'preview draft');$('detail-source-mode').click();assert($('edit-text').value===source&&$('edit-text').selectionStart===3&&$('edit-text').selectionEnd===12,'source and selection survive preview');
   type('edit-text',source+' changed');assert(!$('detail-save').disabled,'dirty enables save');
   $('btn-detail-close').click();assert($('detail-confirm-cancel')&&document.activeElement===$('detail-confirm-cancel'),'safe discard default');$('detail-confirm-cancel').click();assert($('edit-text').value.endsWith(' changed'),'keep draft');

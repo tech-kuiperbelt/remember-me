@@ -8,7 +8,6 @@ import { switchPage, register, bindNav, setLeaveGuard } from './router.js';
 import * as detail from './detail.js';
 import * as memories from './memories.js';
 import * as keywords from './keywords.js';
-import * as add from './add.js';
 import * as stats from './stats.js';
 import * as ops from './ops.js';
 import * as audit from './audit.js';
@@ -28,11 +27,10 @@ function mountAll() {
   detail.mount({retryCategories: stats.loadStats});
   setLeaveGuard(detail.requestLeave);
   memories.mount({ preselectClearNamespace: ops.preselectClearNamespace,
-    openMemory: detail.openMemory, isDetailOpen: detail.isOpen, onDetailSelection: detail.onSelectionChanged, retryCategories: stats.loadStats });
+    openMemory: detail.openMemory, openCreate: detail.openCreate, isDetailOpen: detail.isOpen, onDetailSelection: detail.onSelectionChanged, retryCategories: stats.loadStats });
   keywords.mount({ showKeyword: (keyword, namespace) => {
     switchPage('memories', () => memories.prepareKeywordBrowse(keyword, namespace));
   } });
-  add.mount();
   stats.mount();
   ops.mount();
   audit.mount();
@@ -43,7 +41,6 @@ function mountAll() {
 
 function registerPages() {
   register('memories', { onShow: memories.loadMemories, onHide: memories.hide });
-  register('add', { onShow: () => {} });
   register('keywords', { onShow: () => keywords.loadKeywords(true) });
   register('stats', { onShow: stats.loadStats });
   register('ops', { onShow: ops.loadOpsPage });

@@ -844,7 +844,7 @@ class AdminAPI:
     async def handle_stats(self, request: Request):
         logger.info("GET /api/stats")
         stats = await self._run(lambda: self.service.memory_stats())
-        return json_response(stats)
+        return json_response({**stats, "default_namespace": self.service.settings.DEFAULT_NAMESPACE})
 
     @_maps_domain_errors
     async def handle_sync(self, request: Request):

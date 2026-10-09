@@ -11,6 +11,7 @@ export function register(id, { onShow, onHide }) {
 }
 
 export function switchPage(name, prepare = () => {}) {
+  if(name === 'add')name = 'memories';
   if (!pages.has(name) || !$('page-' + name)) return false;
   return leaveGuard(() => { prepare(); showPage(name); });
 }

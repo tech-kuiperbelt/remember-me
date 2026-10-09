@@ -176,6 +176,10 @@ python tests/run_admin_browser.py
 - The docker-compose.yml uses external images (`mem0/openmemory-mcp`, `mem0/openmemory-ui`) — unrelated to this local code.
 - **Whenever adding or modifying an MCP tool, audit must be considered.** Checklist: ① add its definition in `app/transport/tool_definitions.py`; ② add a `ToolSpec` entry (handler, read/write, search, namespace mode, hint) in `app/transport/tools.py`; ③ declare its audit policy in `app/audit.py` `AUDIT_EVENTS` + `PARAM_POLICIES`/`RESULT_POLICIES`; ④ keep tool description and hint consistent; ⑤ update the tool list in `app/read_me.md` so the `/read-me` guide stays accurate. Do not add a tool that is invisible to the audit journal.
 
+## Admin create/detail UI
+
+Memories uses one right-side drawer for create/view/edit; the standalone Add page and add.js were removed. detail.js owns the session and requests, detail-editor.js renders the shared form, and detail-model.js owns separate create/update payloads. Admin-only GET /api/stats exposes default_namespace from Settings; MCP Stats is unchanged. Create omits blank summary to derive it, preserves custom metadata JSON outside managed dimensions, and handles created=false as an untouched existing record. A successful POST followed by failed GET may only retry GET. See docs/project-management/plans/50.7-memory-create-drawer.md.
+
 ## Memory usage protocol
 
 Follow the global memory protocol rules in `~/.config/opencode/AGENTS.md`.

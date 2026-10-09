@@ -19,13 +19,14 @@ export function showError(id, error) {
 
 let debugLabel = null;
 const debugControl = 'button, input, textarea, select, a, summary, [contenteditable], [role="button"], [role="radio"]';
+const debugNavigation = '[data-debug-toggle], [data-debug-navigation]';
 
 function stopDebugAction(event) {
   event.preventDefault(); event.stopImmediatePropagation();
 }
 
 function onDebugPointerDown(event) {
-  if (event.target.closest('[data-debug-toggle]') || event.button !== 0) return;
+  if (event.target.closest(debugNavigation) || event.button !== 0) return;
   // Stop native controls before focus, selection or a dropdown changes state.
   if (event.target.closest(debugControl)) stopDebugAction(event);
 }
@@ -33,10 +34,10 @@ function onDebugPointerDown(event) {
 function onDebugKeyDown(event) {
   if (event.key === 'Escape') {
     stopDebugAction(event); toggleDebug(); const modal = $('detail-modal');
-    const trigger = document.querySelector('#detail-technical[open] [data-debug-toggle]');
+    const trigger = [...document.querySelectorAll('#detail-panel [data-debug-toggle]')].find(el => el.getClientRects().length && !el.closest('[inert]'));
     (modal.style.display === 'flex' ? trigger || $('btn-detail-close') : $('btn-debug')).focus(); return;
   }
-  if (event.target.closest('[data-debug-toggle]')) return;
+  if (event.target.closest(debugNavigation)) return;
   // Tab may reach the drawer focus trap; editing and business shortcuts remain
   // blocked. beforeinput separately guards text changes.
   if (event.key !== 'Tab') event.stopImmediatePropagation();
@@ -92,7 +93,7 @@ export function toggleDebug() {
 }
 
 function onDebugClick(e) {
-  if (e.target.closest('[data-debug-toggle]')) return;
+  if (e.target.closest(debugNavigation)) return;
   e.preventDefault(); e.stopImmediatePropagation();
   const el = e.target.closest('[id]');
   if (!el || !document.body.classList.contains('debug-ids')) {

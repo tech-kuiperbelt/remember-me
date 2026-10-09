@@ -65,6 +65,7 @@ checks += '\n' + (ROOT / 'tests/browser/memories_search_regression.js').read_tex
 checks += '\n' + (ROOT / 'tests/browser/memories_acceptance_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/memories_visual_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/detail_regression.js').read_text()
+checks += '\n' + (ROOT / 'tests/browser/create_regression.js').read_text()
 HEAD_SCRIPT = '<script>' + harness + '</script>'
 BODY_SCRIPT = '<script type="module">' + checks + '</script>'
 
@@ -319,7 +320,10 @@ try:
                   ('' if ok else ' :: ' + (text or proc.stderr[-400:])), flush=True)
             if not ok:
                 failures.append(label)
-        detail_cases = [('detail-functional', '1280,800', 'light')]
+        detail_cases = [('detail-functional', '1280,800', 'light'), ('create-functional', '1280,800', 'light')]
+        detail_cases += [(f'create-{size.replace(',', 'x')}-{mode}-{scheme}',size,scheme)
+                         for size in ('390,844','1024,768','1440,900','1920,1080')
+                         for mode in ('edit','preview','confirm') for scheme in ('light','dark')]
         detail_cases += [(f'detail-{size.replace(",", "x")}-{mode}-{scheme}', size, scheme)
                          for size in ('1024,768', '1280,800', '1440,900', '390,844')
                          for mode in ('view', 'edit', 'preview', 'confirm')

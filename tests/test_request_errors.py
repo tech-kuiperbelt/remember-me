@@ -25,6 +25,16 @@ def invoke(handler, req):
     return response.status_code, json.loads(response.body)
 
 
+def test_admin_stats_exposes_configured_default_only_in_admin(admin, monkeypatch):
+    from dataclasses import replace
+    monkeypatch.setattr(admin.service, 'settings', replace(admin.service.settings,
+                        DEFAULT_NAMESPACE='project-not-default'))
+    status, data = invoke(admin.handle_stats, Request())
+    assert status == 200
+    assert data['default_namespace'] == 'project-not-default'
+    assert 'default_namespace' not in admin.service.memory_stats()
+
+
 @pytest.mark.parametrize('field', ['limit', 'offset'])
 def test_list_bad_numbers(field, admin):
     status, data = invoke(admin.handle_list_memories, Request(params={field:'abc'}))

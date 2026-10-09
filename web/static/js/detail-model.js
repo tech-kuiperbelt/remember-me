@@ -58,3 +58,32 @@ export function buildUpdatePayload(memory, draft) {
   if (Object.keys(metadata).length) payload.metadata = metadata;
   return payload;
 }
+
+export function createNewDraft(namespace = '') {
+  return {...createDraft({namespace}), extraMetadata: ''};
+}
+export function parseExtraMetadata(raw) {
+  const metadata = raw.trim() ? JSON.parse(raw) : {};
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) throw new Error('其他 metadata 必须是 JSON 对象');
+  if (['categories', 'keywords', 'anchors'].some(key => Object.hasOwn(metadata, key))) throw new Error('categories、keywords、anchors 请使用上方专门字段');
+  return metadata;
+}
+export function validateCreateDraft(draft) {
+  const errors = validateDraft(draft, null);
+  if (!trimValue(draft.text)) errors.text = '请输入正文';
+  try { parseExtraMetadata(draft.extraMetadata); } catch(e) { errors.metadata = e.message; }
+  return errors;
+}
+export function isCreateDirty(initial, draft) {
+  return isDirty({namespace: initial.namespace, text: initial.text, summary: initial.summary,
+    metadata: {categories: initial.categories, keywords: initial.keywords, anchors: initial.anchors}}, draft)
+    || trimValue(initial.extraMetadata) !== trimValue(draft.extraMetadata);
+}
+export function buildCreatePayload(draft) {
+  const metadata = {...parseExtraMetadata(draft.extraMetadata)};
+  for (const key of ['categories','keywords']) if(draft[key].length) metadata[key] = normalizeValues(draft[key]);
+  if(draft.anchors.length) metadata.anchors = normalizeAnchors(draft.anchors);
+  const payload = {text: draft.text, namespace: trimValue(draft.namespace), metadata};
+  if(trimValue(draft.summary)) payload.summary = trimValue(draft.summary);
+  return payload;
+}

@@ -3,10 +3,10 @@ import { $, formatTime, deriveSummary } from './core.js';
 import { api, isNamespaceNotFound, confirmNamespaceCreation } from './api.js';
 import { toast, toggleDebug } from './ui.js';
 import { getNamespaces, getCategories, getCategoryState, onCategoriesChanged, onNamespacesChanged,
-  emitMemoriesChanged, emitStatsChanged } from './store.js';
-import { createDraft, isDirty, validateDraft, buildUpdatePayload, normalizeAnchors } from './detail-model.js';
+  getDefaultNamespace, onDefaultNamespaceChanged, getMaintenance, onMaintenanceChanged, emitMemoriesChanged, emitStatsChanged } from './store.js';
+import { createDraft, isDirty, validateDraft, buildUpdatePayload, createNewDraft, validateCreateDraft, isCreateDirty, buildCreatePayload } from './detail-model.js';
 import { renderMarkdown, copyText } from './markdown.js';
-import { createValuePickers } from './memory-value-picker.js';
+import { renderDetailEditor } from './detail-editor.js';
 
 let state = 'closed', memory = null, draft = null, selected = null, version = 0;
 let picker = null, pending = null, confirmation = null, menu = null, preview = false;
@@ -14,7 +14,10 @@ let onClose = null, priorFocus = null, background = null, retryCategories = () =
 const listeners = new Set();
 const busy = () => ['saving', 'reloading', 'deleting'].includes(state);
 const editing = () => ['edit', 'saving'].includes(state);
-const dirty = () => state === 'edit' && memory && draft && isDirty(memory, draft);
+let mode = 'detail', initialDraft = null, duplicateId = null, created = false;
+const hasChanges = () => draft && (mode === 'create' ? isCreateDirty(initialDraft, draft) : memory && isDirty(memory,draft));
+const draftErrors = () => mode === 'create' ? validateCreateDraft(draft) : validateDraft(draft,memory);
+const dirty = () => state === 'edit' && hasChanges();
 const node = (tag, id, text, cls = '') => { const el = document.createElement(tag); if (id) el.id = id; if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
 function button(id, text, action, cls = 'btn-outline') {
   const el = node('button', id, text, 'btn btn-sm ' + cls); el.type = 'button'; el.onclick = action; return el;
@@ -54,6 +57,7 @@ export function openMemory(id, options = {}) {
   return requestLeave(() => startOpen(id, options));
 }
 function startOpen(id, options) {
+  mode='detail'; created=false; duplicateId=null; initialDraft=null;
   priorFocus = document.activeElement; onClose = options.onClose || null;
   background = {inert: $('app-shell').inert, overflow: document.body.style.overflow, contentOverflow: $('content').style.overflow};
   $('app-shell').inert = true; document.body.style.overflow = 'hidden';
@@ -74,26 +78,27 @@ async function readMemory(afterSave = false) {
   updateProtection();
 }
 function header() {
-  const title = memory ? deriveSummary(memory.summary || memory.text) || 'Memory Detail' : 'Memory Detail';
+  const title = mode === 'create' ? 'New Memory' : memory ? deriveSummary(memory.summary || memory.text) || 'Memory Detail' : 'Memory Detail';
   $('detail-title').textContent = title; $('detail-title').title = title;
   $('detail-subtitle').textContent = memory ? memory.namespace + ' · ' + (formatTime(memory.updated_at) || '—') : '';
   $('detail-subtitle').title = memory?.updated_at || '';
   const actions = $('detail-actions'); actions.replaceChildren();
   if (editing()) {
-    actions.append(button('detail-cancel', 'Cancel', () => { destroyTransient(); draft = null; state = 'view'; render(); updateProtection(); $('detail-edit').focus(); }), button('detail-save', 'Save changes', save, 'btn-primary'),button('detail-copy-draft','Copy draft',()=>copy(draft.text)));
+    actions.append(button('detail-cancel', 'Cancel', () => { if(mode==='create'){requestLeave();return;} destroyTransient(); draft = null; state = 'view'; render(); updateProtection(); $('detail-edit').focus(); }), button('detail-save', mode==='create' ? 'Create memory' : 'Save changes', save, 'btn-primary'),button('detail-copy-draft','Copy draft',()=>copy(draft.text)));
   } else if (state === 'view') {
     actions.append(button('detail-edit', 'Edit', edit), button('detail-more', 'More ▾', showMenu));
     $('detail-more').setAttribute('aria-haspopup', 'menu'); $('detail-more').setAttribute('aria-expanded', 'false');
   }
+  actions.append(debugButton());
   $('btn-detail-close').disabled = busy();
 }
 function render(error = '') {
   destroyTransient(); header(); const body = $('detail-body'); body.replaceChildren();
   if (['loading','reloading','deleting'].includes(state)) {
-    const status = node('p', 'detail-status', state === 'loading' ? 'Loading memory…' : state === 'deleting' ? 'Deleting…' : '已保存，正在刷新详情…', 'text-muted'); status.setAttribute('role','status'); body.append(status); return;
+    const status = node('p', 'detail-status', state === 'loading' ? 'Loading memory…' : state === 'deleting' ? 'Deleting…' : created ? '已创建，正在加载详情…' : '已保存，正在刷新详情…', 'text-muted'); status.setAttribute('role','status'); body.append(status); return;
   }
   if (['load-error','saved-error','not-found'].includes(state)) {
-    const message = node('p','detail-status',state === 'saved-error' ? '已保存，详情刷新失败：' + error : state === 'not-found' ? '该记忆已不存在' : '详情加载失败：' + error,'text-danger'); message.setAttribute('role','alert'); body.append(message);
+    const message = node('p','detail-status',state === 'saved-error' ? (created ? '已创建，详情加载失败：' : '已保存，详情刷新失败：') + error : state === 'not-found' ? '该记忆已不存在' : '详情加载失败：' + error,'text-danger'); message.setAttribute('role','alert'); body.append(message);
     if (state !== 'not-found') body.append(button('detail-retry','Retry',()=>readMemory(state === 'saved-error'))); return;
   }
   if (editing()) renderEditor(body); else renderView(body);
@@ -116,60 +121,37 @@ function renderView(body) {
 }
 function technical() {
   const details = node('details','detail-technical',undefined,'detail-technical'); const summary=node('summary','detail-technical-toggle','Technical details'); summary.tabIndex=0; details.append(summary);
+  summary.dataset.debugNavigation='';
   const list = node('dl','detail-technical-values');
   for (const [label,value] of [['ID',memory.id],['Created',memory.created_at],['Updated',memory.updated_at]]) { list.append(node('dt','detail-'+label.toLowerCase()+'-label',label),node('dd','detail-'+label.toLowerCase()+'-value',value || '—')); }
   const metadata = node('pre','detail-metadata',JSON.stringify(memory.metadata || {},null,2));
-  const debug = button('detail-debug','Debug',()=>toggleDebug()); debug.dataset.debugToggle = ''; debug.setAttribute('aria-pressed',String(document.body.classList.contains('debug-ids')));
-  details.append(list,metadata,button('detail-copy-id','Copy ID',()=>copy(memory.id)),debug); return details;
+  details.append(list,metadata,button('detail-copy-id','Copy ID',()=>copy(memory.id))); return details;
 }
-function edit() { draft = createDraft(memory); preview = false; state = 'edit'; render(); updateProtection(); $('edit-namespace').focus(); }
+function edit() { created=false; draft = createDraft(memory); preview = false; state = 'edit'; render(); updateProtection(); $('edit-namespace').focus(); }
 function updatePicker() { picker?.update(draft,{namespaces:getNamespaces(),categories:getCategories(),categoryState:getCategoryState()}); }
 function renderEditor(body) {
-  const status = node('p','detail-error','', 'text-danger'); status.hidden = true; status.setAttribute('role','alert'); body.append(status);
-  for (const [key,label] of [['namespace','Namespace'],['summary','Summary']]) {
-    const input = node(key === 'namespace' ? 'input' : 'textarea','edit-'+key); input.value = draft[key];
-    const section = field('detail-edit-'+key,label,input); section.querySelector('h2').replaceWith(Object.assign(node('label','detail-edit-'+key+'-label',label),{htmlFor:input.id}));
-    input.oninput = () => { draft[key] = input.value; if(key === 'namespace') updatePicker(); validate(); }; body.append(section);
-    if(key === 'namespace') { input.setAttribute('list','detail-namespaces'); const list = node('datalist','detail-namespaces'); getNamespaces().forEach(ns=>list.append(Object.assign(node('option'),{value:ns}))); section.append(list); }
-  }
-  const text = node('textarea','edit-text'); text.value = draft.text; text.spellcheck = false; text.setAttribute('aria-label','Content Markdown source');
-  const rendered = node('div','detail-preview',undefined,'detail-markdown'); rendered.hidden = true;
-  const modes = node('div','detail-content-modes');
-  const editButton = button('detail-source-mode','Edit',()=>setPreview(false));
-  const previewButton = button('detail-preview-mode','Preview',()=>setPreview(true));
-  modes.append(editButton,previewButton); const section = field('detail-edit-content','Content',modes); section.append(text,rendered); body.append(section);
-  let sourcePosition = null;
-  function setPreview(next) {
-    if(next && !preview) sourcePosition = {start:text.selectionStart,end:text.selectionEnd,direction:text.selectionDirection,top:text.scrollTop,left:text.scrollLeft};
-    preview = next; if(next) renderMarkdown(rendered,draft.text); text.hidden=next; rendered.hidden=!next; editButton.setAttribute('aria-pressed',String(!next)); previewButton.setAttribute('aria-pressed',String(next));
-    if(!next && sourcePosition) { text.setSelectionRange(sourcePosition.start,sourcePosition.end,sourcePosition.direction); text.scrollTop=sourcePosition.top; text.scrollLeft=sourcePosition.left; }
-  }
-  setPreview(false); text.oninput = () => { draft.text=text.value; validate(); };
-  const pickerRoot = node('div','detail-pickers'); body.append(field('detail-edit-tags','Categories & Keywords',pickerRoot));
-  picker = createValuePickers({root:pickerRoot,idPrefix:'detail-picker',container:$('detail-panel'),maxSelected:{categories:3,keywords:Infinity},allowCreate:true,onRetryCategories:retryCategories,
-    onChange:changes=>{ Object.assign(draft,changes); updatePicker(); validate(); }}); updatePicker();
-  const anchors = node('div','detail-anchor-values',undefined,'detail-tags'), input = node('input','detail-anchor-input'); input.placeholder='添加锚点'; input.setAttribute('aria-label','New anchor');
-  const add = button('detail-anchor-add','Add',()=>{
-    const value = normalizeAnchors([input.value])[0];
-    if (!value || Array.from(value).length > 128 || draft.anchors.length >= 5) { showError('最多 5 个锚点，每项 1–128 个字符'); return; }
-    if (!normalizeAnchors(draft.anchors).some(existing=>existing===value || (/^[\x00-\x7f]*$/.test(existing) && existing.toLowerCase()===value.toLowerCase()))) draft.anchors.push(value); input.value=''; paintAnchors(); validate();
-  });
-  input.onkeydown=e=>{ if(e.key==='Enter'&&!e.isComposing){e.preventDefault();add.click();} };
-  function paintAnchors() { anchors.replaceChildren(...draft.anchors.map((value,index)=>button('detail-anchor-'+(index+1),String(value)+' ×',()=>{draft.anchors.splice(index,1);paintAnchors();validate();}))); }
-  paintAnchors(); const anchorSection = field('detail-edit-anchors','Anchors',anchors); anchorSection.append(input,add,node('p','detail-anchor-hint','修改正文后，请检查锚点是否仍然准确。','text-muted')); body.append(anchorSection,technical()); validate();
+  picker = renderDetailEditor({body, draft, creating: mode === 'create', validate, showError, technical, retryCategories, onRetryDefault: retryCategories});
+  updateDefaultHint();
 }
+
 function showError(message) { const el=$('detail-error'); if(el){el.hidden=!message;el.textContent=message;} else toast(message,'error'); }
 function validate() {
-  const errors = validateDraft(draft,memory); showError(Object.values(errors).join('；'));
-  $('detail-save').disabled = busy() || !isDirty(memory,draft) || Object.keys(errors).length > 0;
+  const errors = draftErrors(); showError(Object.values(errors).join('；'));
+  updateSaveAvailability();
   updateProtection();
+}
+function updateSaveAvailability() {
+  if(state!=='edit')return;
+  $('detail-save').disabled = (mode==='create' ? getMaintenance()?.state !== 'normal' : !hasChanges()) || Object.keys(draftErrors()).length > 0;
 }
 function lock(value) {
   $('detail-panel').querySelectorAll('button,input,textarea,select').forEach(el=>el.disabled=value);
   if(!value && state==='edit') validate(); updateProtection();
 }
 async function save() {
-  if(state!=='edit'||!isDirty(memory,draft)||Object.keys(validateDraft(draft,memory)).length) return;
+  if(state!=='edit'||Object.keys(draftErrors()).length) return;
+  if(mode==='create'){await createMemory();return;}
+  if(!hasChanges())return;
   picker?.close(); closeMenu(); state='saving'; lock(true); showError(''); const id=selected, request=version, payload=buildUpdatePayload(memory,draft);
   try {
     try { await api('/memories/'+encodeURIComponent(id),{method:'PUT',body:JSON.stringify(payload)}); }
@@ -203,6 +185,8 @@ export function mount(options = {}) {
   $('btn-detail-close').onclick=()=>requestLeave();
   $('detail-modal').onclick=event=>{if(event.target===event.currentTarget)requestLeave();};
   onCategoriesChanged(updatePicker);onNamespacesChanged(updatePicker);
+  onDefaultNamespaceChanged(updateDefaultHint);
+  onMaintenanceChanged(updateSaveAvailability);
   document.addEventListener('click',event=>{if(menu&&!event.composedPath().includes(menu)&&!event.composedPath().includes($('detail-more')))closeMenu();});
   document.addEventListener('keydown',event=>{
     if(!isOpen()||event.isComposing||event.defaultPrevented)return;
@@ -219,4 +203,54 @@ export function mount(options = {}) {
     const first=controls[0],last=controls.at(-1);
     if(!root.contains(document.activeElement)||(event.shiftKey&&document.activeElement===first)||(!event.shiftKey&&document.activeElement===last)){event.preventDefault();(event.shiftKey?last:first)?.focus();}
   });
+}
+
+function debugButton() {
+  const debug=button('detail-debug','Debug',()=>toggleDebug());debug.dataset.debugToggle='';
+  debug.setAttribute('aria-pressed',String(document.body.classList.contains('debug-ids')));return debug;
+}
+export function openCreate(namespace = '', options = {}) {
+  return requestLeave(() => {
+    mode='create';created=false;duplicateId=null;memory=null;
+    priorFocus=document.activeElement;onClose=options.onClose || null;
+    background={inert:$('app-shell').inert,overflow:document.body.style.overflow,contentOverflow:$('content').style.overflow};
+    $('app-shell').inert=true;document.body.style.overflow='hidden';
+    const configured=getDefaultNamespace();
+    draft=createNewDraft(namespace || (configured.status==='ready' ? configured.value : ''));
+    initialDraft=structuredClone(draft);select(null);state='edit';++version;
+    $('detail-modal').style.display='flex';render();$('edit-namespace').focus();
+  });
+}
+function updateDefaultHint() {
+  if(mode!=='create'||state!=='edit')return;
+  const configured=getDefaultNamespace(), input=$('edit-namespace');
+  if(configured.status==='ready' && !draft.namespace && !initialDraft.namespace && input && !input.dataset.touched) {
+    draft.namespace=configured.value;initialDraft.namespace=configured.value;input.value=configured.value;updatePicker();validate();
+  }
+  const hint=$('detail-default-namespace-status'), retry=$('detail-default-namespace-retry');
+  if(hint) hint.textContent=configured.status==='ready' ? '' : configured.status==='error' ? '默认 Namespace 加载失败，可手动输入或重试。' : '正在加载默认 Namespace，也可手动输入。';
+  if(retry)retry.hidden=configured.status!=='error';
+}
+async function createMemory() {
+  if(getMaintenance()?.state!=='normal')return;
+  picker?.close();closeMenu();duplicateId=null;$('detail-duplicate')?.remove();
+  state='saving';lock(true);showError('');const request=version,payload=buildCreatePayload(draft);
+  try {
+    let result;
+    try {result=await api('/memories',{method:'POST',body:JSON.stringify(payload)});}
+    catch(e) {if(!isNamespaceNotFound(e))throw e;if(!confirmNamespaceCreation(e)){state='edit';lock(false);return;}result=await api('/memories',{method:'POST',body:JSON.stringify({...payload,confirm_codes:['namespace_not_found']})});}
+    if(request!==version)return;
+    if(!result || typeof result.id!=='string' || typeof result.created!=='boolean')throw new Error('创建响应不完整，写入结果未确认，请先核对记录');
+    if(!result.created) {
+      duplicateId=result.id;state='edit';lock(false);
+      const notice=node('div','detail-duplicate');notice.setAttribute('role','status');
+      notice.append(node('p','detail-duplicate-message','相同正文的记忆已存在，本次摘要和 metadata 未写入。继续修改草稿，或查看已有记忆。'),button('detail-view-existing','View existing memory',()=>openMemory(duplicateId,{onClose})));
+      $('detail-body').prepend(notice);return;
+    }
+    created=true;mode='detail';select(result.id);draft=null;state='reloading';
+    emitMemoriesChanged();emitStatsChanged();toast('Memory created');await readMemory(true);
+  } catch(e) {
+    if(request!==version)return;state='edit';lock(false);
+    showError(!e.status ? '写入结果未确认，请核对记录后重试。'+e.message : e.message);
+  }
 }

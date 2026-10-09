@@ -48,3 +48,13 @@ export function emitMemoriesChanged() { memoriesListeners.forEach(fn => fn()); }
 
 export function onStatsChanged(fn) { statsListeners.add(fn); }
 export function emitStatsChanged() { statsListeners.forEach(fn => fn()); }
+
+// Admin-only configured default, distinct from the live namespace vocabulary.
+let defaultNamespace = {status: 'idle', value: null, error: null};
+const defaultNamespaceListeners = new Set();
+export function getDefaultNamespace() { return {...defaultNamespace}; }
+export function setDefaultNamespace(status, value = null, error = null) {
+  defaultNamespace = {status, value, error};
+  defaultNamespaceListeners.forEach(fn => fn());
+}
+export function onDefaultNamespaceChanged(fn) { defaultNamespaceListeners.add(fn); }

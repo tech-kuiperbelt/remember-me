@@ -3,17 +3,19 @@
 import { $, escapeHtml, formatBytes } from './core.js';
 import { api } from './api.js';
 import { showError } from './ui.js';
-import { setNamespaces, setCategories, setCategoryState, onStatsChanged } from './store.js';
+import { setNamespaces, setCategories, setCategoryState, setDefaultNamespace, onStatsChanged } from './store.js';
 import { switchPage } from './router.js';
 
 let version = 0;
 export async function loadStats() {
   const request = ++version;
   setCategoryState('loading');
+  setDefaultNamespace('loading');
   $('stats-content').innerHTML = '<div class="loading">Loading...</div>';
   try {
     const s = await api('/stats');
     if (request !== version) return;
+    setDefaultNamespace(typeof s.default_namespace === 'string' && s.default_namespace.trim() ? 'ready' : 'error', s.default_namespace || null, new Error('无法获取默认 Namespace，请手动输入或重试'));
     const compact = s.ndjson_compact;
     const integrity = s.replica_integrity || {};
     const automaticHealth = s.ndjson_health_check;
@@ -79,6 +81,7 @@ export async function loadStats() {
   } catch(e) {
     if (request !== version) return;
     setCategoryState('error', e);
+    setDefaultNamespace('error', null, e);
     showError('stats-content', e);
   }
 }

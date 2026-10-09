@@ -6,7 +6,7 @@
 
 ### 前端工作
 
-- [50] 前端重构与 UI 调整：模块拆分、桌面布局、主题基础、Shell 视觉、Memory List 及 Memory Detail 已完成。详情的完整浏览器矩阵 112/112、隔离 Admin／SQLite 联调与真实服务只读复核已有通过记录，宽屏调整后三项定向回归通过。独立代码 review 未发现明确回归，reviewer 的浏览器复验受沙箱 socket 限制。用户已授权提交，完成记录见 [50.6.3](plans/50.6.3-memory-detail-coding-plan.md)。**当前待办：后续页面调整及布局稳定后的结构复核**，见[路线图](plans/50-frontend-refactoring-and-ui-roadmap.md)。
+- [50] 前端重构与 UI 调整：模块拆分、桌面布局、主题基础、Shell 视觉、Memory List、Memory Detail 及 [50.7 新增抽屉](plans/50.7-memory-create-drawer.md) 已完成。2026-10-09 完成 Debug 入口和 Edit／Preview 标签页反馈调整，用户验收并授权提交；验证范围见各实施记录。**当前待办：后续页面调整及布局稳定后的结构复核**，见[路线图](plans/50-frontend-refactoring-and-ui-roadmap.md)。
 
 ### 其他开放项
 

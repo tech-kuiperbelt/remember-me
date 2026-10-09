@@ -40,10 +40,6 @@
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
           <span class="nav-label">Memories</span>
         </button>
-        <button id="nav-add" class="nav-item" data-page="add">
-          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-          <span class="nav-label">Add Memory</span>
-        </button>
         <button id="nav-keywords" class="nav-item" data-page="keywords">
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h10M4 17h7"/></svg>
           <span class="nav-label">Keywords</span>
@@ -69,7 +65,10 @@
   <section class="memories-workspace" aria-labelledby="memories-title">
     <div class="memories-heading">
       <h2 id="memories-title">Memories</h2>
-      <button id="btn-clear-ns" class="btn btn-outline btn-sm" disabled>Clear Namespace</button>
+      <div id="memories-heading-actions" class="memories-heading-actions">
+        <button id="memories-create" class="btn btn-primary btn-sm" type="button">New Memory</button>
+        <button id="btn-clear-ns" class="btn btn-outline btn-sm" disabled>Clear Namespace</button>
+      </div>
     </div>
     <form id="memories-search-form" class="memories-search-form" novalidate>
       <input id="memories-query" type="search" aria-label="Search memories" placeholder="Search memories…">
@@ -105,30 +104,6 @@
 </div>
 
 <!-- Add -->
-<div class="page" id="page-add">
-  <div class="card">
-    <div class="card-header">Add New Memory</div>
-    <div class="card-body">
-      <form id="form-add">
-        <div class="form-group">
-          <label>Text *</label>
-          <textarea id="add-text" required></textarea>
-        </div>
-        <div class="form-group">
-          <label>Metadata (JSON)</label>
-          <textarea id="add-metadata" placeholder='e.g. {"source": "chat", "tags": ["important"]}'></textarea>
-        </div>
-        <div class="form-group">
-          <label>Namespace</label>
-          <input id="add-ns" value="default">
-        </div>
-        <button id="btn-add-submit" class="btn btn-primary" type="submit">Add Memory</button>
-      </form>
-    </div>
-  </div>
-</div>
-
-<!-- Stats -->
 <div class="page" id="page-keywords">
   <div class="card">
     <div class="card-header">Keywords</div>
@@ -406,7 +381,7 @@
     <header id="detail-header" class="detail-header">
       <div id="detail-heading" class="detail-heading"><strong id="detail-title">Memory Detail</strong><div id="detail-subtitle" class="text-muted"></div></div>
       <div id="detail-actions" class="detail-actions"></div>
-      <button id="btn-detail-close" class="btn btn-sm btn-outline" aria-label="Close memory detail">✕</button>
+      <button id="btn-detail-close" data-debug-navigation class="btn btn-sm btn-outline" aria-label="Close memory detail">✕</button>
     </header>
     <div id="detail-body" class="detail-body"></div>
   </div>

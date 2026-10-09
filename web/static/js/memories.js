@@ -26,6 +26,7 @@ function updateFilters(state = data.snapshot()) {
 }
 
 function updateClear() {
+  $('memories-create').disabled = getMaintenance()?.state !== 'normal';
   $('btn-clear-ns').disabled = !data.snapshot().namespace || getMaintenance()?.state !== 'normal';
 }
 
@@ -40,7 +41,7 @@ function resetFilters() {
   $('memories-namespace').focus();
 }
 
-export function mount({preselectClearNamespace = () => {}, openMemory = () => {}, retryCategories = () => {}, isDetailOpen = () => false, onDetailSelection = () => {}} = {}) {
+export function mount({preselectClearNamespace = () => {}, openMemory = () => {}, openCreate = () => {}, retryCategories = () => {}, isDetailOpen = () => false, onDetailSelection = () => {}} = {}) {
   filters = createMemoriesFilters({root: $('memories-filters'),
     onChange: changes => data.change(changes), onReset: resetFilters, onRetryCategories: retryCategories});
   searchControls = createMemoriesSearch({onInput: value => data.input(value),
@@ -74,6 +75,11 @@ export function mount({preselectClearNamespace = () => {}, openMemory = () => {}
       focusId = null;
     }
   });
+  $('memories-create').onclick = () => {
+    if(getMaintenance()?.state !== 'normal')return;
+    filters.close();view.closeTags();
+    openCreate(data.snapshot().namespace,{onClose:()=> $('memories-create').focus()});
+  };
   $('memories-sort').addEventListener('change', event => data.change({sort: event.target.value}));
   $('btn-clear-ns').addEventListener('click', () => {
     const ns = data.snapshot().namespace;

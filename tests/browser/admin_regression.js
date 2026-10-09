@@ -132,7 +132,7 @@ async function runThemeScenario(scenario) {
     }
 
     // Manual override applies immediately without saving or reloading.
-    $('add-text').value = 'theme-kept';
+    $('memories-query').value = 'theme-kept';
     const workArea = document.querySelector('.content');
     workArea.scrollTop = 120;
     const priorScroll = workArea.scrollTop;
@@ -144,7 +144,7 @@ async function runThemeScenario(scenario) {
     select.value = 'light'; select.dispatchEvent(new Event('change', {bubbles: true}));
     await settle();
     assert(document.documentElement.dataset.theme === 'light', 'manual light applies');
-    assert($('add-text').value === 'theme-kept', 'theme switch preserves form content');
+    assert($('memories-query').value === 'theme-kept', 'theme switch preserves form content');
     assert(workArea.scrollTop === priorScroll, 'theme switch preserves scroll position');
     const bodyBg = getComputedStyle(document.body).backgroundColor;
     const panel = getComputedStyle(document.querySelector('.card')).backgroundColor;
@@ -168,7 +168,7 @@ async function runThemeScenario(scenario) {
 
 try {
   const scenario = new URLSearchParams(location.search).get('smoke') || '';
-  if (await runDetailScenario(scenario) || await runMemoriesVisualScenario(scenario) || await runThemeScenario(scenario)) { /* theme scenario finished */ }
+  if (await runCreateScenario(scenario) || await runDetailScenario(scenario) || await runMemoriesVisualScenario(scenario) || await runThemeScenario(scenario)) { /* theme scenario finished */ }
   else {
 
   // The real page bootstraps from the real backend; wait for the first load.
@@ -566,7 +566,7 @@ try {
   assert(!document.querySelector('.nav button[data-page="keywords"]').hasAttribute('aria-current'), 'aria-current cleared');
 
   // Blank-nav collapse: accessible state, persistence, menu routing and form content preserved.
-  $('add-text').value = 'draft-kept';
+  $('memories-query').value = 'draft-kept';
   $('btn-refresh').focus();
   const nav = $('nav');
   assert(nav.getAttribute('aria-label').includes('已展开'), 'sidebar starts expanded');
@@ -582,7 +582,7 @@ try {
   memBtn.focus();
   assert(!$('nav-tooltip').hidden && $('nav-tooltip').textContent === 'Memories', 'collapsed nav tooltip appears on keyboard focus');
   assert(memBtn.getAttribute('aria-describedby') === 'nav-tooltip', 'collapsed tooltip is announced');
-  assert($('add-text').value === 'draft-kept', 'collapse preserves form content');
+  assert($('memories-query').value === 'draft-kept', 'collapse preserves form content');
   assert(localStorage.getItem('remember-me.sidebar.collapsed.v1') === 'true', 'collapse persisted');
   memBtn.click();
   await settle();
