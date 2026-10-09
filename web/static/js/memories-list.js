@@ -72,7 +72,16 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
     open.setAttribute('aria-label', '查看记忆：' + title);
     open.title = title;
     open.onclick = () => onOpen(memory.id);
-    const icon = el('span', 'memory-row-icon', '▤'); icon.setAttribute('aria-hidden', 'true');
+    const icon = el('span', 'memory-row-icon'); icon.setAttribute('aria-hidden', 'true');
+    const documentIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    documentIcon.setAttribute('viewBox', '0 0 24 24');
+    documentIcon.setAttribute('width', '18'); documentIcon.setAttribute('height', '18');
+    documentIcon.setAttribute('fill', 'none'); documentIcon.setAttribute('stroke', 'currentColor');
+    documentIcon.setAttribute('stroke-width', '1.6'); documentIcon.setAttribute('stroke-linecap', 'round');
+    documentIcon.setAttribute('stroke-linejoin', 'round'); documentIcon.setAttribute('focusable', 'false');
+    const documentPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    documentPath.setAttribute('d', 'M8 3h6l4 4v11a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3Z M9 10h5 M9 14h3');
+    documentIcon.append(documentPath); icon.append(documentIcon);
     const content = el('div', 'memory-row-content');
     const heading = el('div', 'memory-row-title', title); heading.title = title;
     const summary = el('div', 'memory-row-summary', preview || '\u00a0');

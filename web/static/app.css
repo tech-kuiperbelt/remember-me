@@ -136,7 +136,7 @@ input[type="checkbox"],progress{accent-color:var(--accent-solid)}
 .memory-row:focus-within{background:var(--bg-selected)}
 .memory-open{position:absolute;inset:0;width:100%;height:100%;border:0;background:transparent;cursor:pointer;z-index:1;border-radius:8px}
 .memory-open:focus-visible{outline:2px solid var(--accent);outline-offset:-3px}
-.memory-row-icon{font-size:22px;line-height:24px;color:var(--text-muted);flex-shrink:0;pointer-events:none}
+.memory-row-icon{display:flex;align-items:center;justify-content:center;width:22px;height:24px;color:var(--text-muted);flex-shrink:0;pointer-events:none}
 .memory-row-content{flex:1;min-width:0;pointer-events:none}
 .memory-row-title{font-size:16px;font-weight:600;line-height:24px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:24px}
 .memory-row-summary{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;font-size:13px;line-height:20px;color:var(--text-secondary);margin-top:6px;overflow:hidden;overflow-wrap:anywhere;padding-right:24px}
