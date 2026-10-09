@@ -21,7 +21,7 @@ async function runMemoriesSearchRegression() {
   assert($('memories-count').textContent === '本次搜索 25 条 · 最多 25 条', 'Top-K count not full inventory');
   assert($('memories-list').textContent.includes('Semantic 0.99'), 'raw cosine not probability');
   const regionIds = ['memory-row-1', 'memory-row-1-open', 'memory-row-1-title',
-    'memory-row-1-summary', 'memory-row-1-footer', 'memory-row-1-score', 'memory-row-1-date'];
+    'memory-row-1-summary', 'memory-row-1-footer', 'memory-row-1-score', 'memory-row-1-date'].filter(id => $(id));
   const geometry = id => {
     const box = $(id).getBoundingClientRect();
     return [box.x, box.y, box.width, box.height];

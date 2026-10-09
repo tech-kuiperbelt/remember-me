@@ -182,6 +182,9 @@ try {
     assert(!$('detail-debug')&&$('edit-text'),'create has no Debug button and still works');
     $('btn-detail-close').click();result.textContent='PASS: Debug disabled across global, detail, edit and create';
   }
+  else if (scenario.startsWith('cards-')) {
+    await runCardsScenario(scenario);
+  }
   else if (scenario === 'search-functional') {
     await waitFor(() => $('memories-namespace')?.options.length > 1 && $('memories-list').getAttribute('aria-busy') === 'false', 'search bootstrap');
     await runMemoriesSearchRegression();
@@ -252,16 +255,9 @@ try {
     assert(hit && (hit === node || node.contains(hit)), 'hover reaches metadata rather than row button: ' + id);
     assert(Boolean(hit.closest('[title]')?.title), 'hover target has full value tooltip: ' + id);
   }
-  assert($('memory-row-1-categories').querySelectorAll('.memory-category-chip').length === 3
-    && $('memory-row-1-keywords').querySelectorAll('.memory-keyword-chip').length === 5, 'categories display three and keywords five independently');
-  assert(!$('memory-row-1-category-more') && $('memory-row-1-keyword-more').textContent === '+1', 'overflow reflects independent limits');
-  $('memory-row-1-keyword-more').click();
-  assert(document.querySelector('.memory-tags-popover')?.textContent.includes('overflow')
-    && !document.querySelector('.memory-tags-popover').textContent.includes('verification'), 'keyword overflow exposes all keywords only');
-  assert($('detail-modal').style.display !== 'flex', 'tag overflow does not open detail');
-  document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
-  assert(!document.querySelector('.memory-tags-popover'), 'Escape closes tags');
-  assert(document.activeElement.classList.contains('memory-tags-more'), 'Escape restores tag focus');
+  const rowTags=[...$('memory-row-1-metadata').querySelectorAll('.memory-category-chip,.memory-keyword-chip')];
+  const hiddenTags=rowTags.filter(chip=>!chip.getClientRects().length).length;
+  assert($('memory-row-1-tags-more').hidden===!hiddenTags, 'overflow follows actual card space');
   $('memories-sort').value = 'created_at'; fire($('memories-sort'), 'change');
   await waitFor(() => $('memories-list').querySelector('.memory-row-title')?.textContent === 'Browse 40', 'global sort');
   $('memories-sort').value = 'updated_at'; fire($('memories-sort'), 'change');

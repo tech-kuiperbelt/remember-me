@@ -38,21 +38,21 @@ async function runMemoriesVisualScenario(scenario) {
   assert(innerWidth>=390,'acceptance CSS width at least 390');
   assert(document.documentElement.scrollWidth<=innerWidth,'no document horizontal overflow');
   assert($('content').scrollWidth<=$('content').clientWidth+1,'no workspace horizontal overflow');
+  await settle(50);
   for (const row of $('memories-list').querySelectorAll('.memory-row')) {
-    const footer = row.querySelector('.memory-row-footer').getBoundingClientRect();
-    const date = row.querySelector('.memory-row-time').getBoundingClientRect();
-    for (const group of row.querySelectorAll('.memory-tag-group')) {
-      const box = group.getBoundingClientRect();
-      assert(box.left >= footer.left - 1 && box.right <= date.left - 11, 'tag group stays inside metadata area');
-      for (const chip of group.querySelectorAll('.memory-chip')) {
-        const rect = chip.getBoundingClientRect(), style = getComputedStyle(chip);
-        assert(rect.left >= box.left - 1 && rect.right <= box.right + 1
-          && rect.top >= box.top - 1 && rect.bottom <= box.bottom + 1, 'chip stays inside its group');
-        if (!chip.classList.contains('memory-tags-more')) {
-          assert(rect.width - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) >= 31, 'chip retains readable text width');
-        }
-      }
+    const metadata=row.querySelector('.memory-row-metadata'), box=metadata.getBoundingClientRect();
+    const date=row.querySelector('.memory-row-time').getBoundingClientRect();
+    assert(box.height<=54.5 && box.right<=date.left-11, 'metadata stays in two rows beside date');
+    const chips=[...metadata.querySelectorAll('.memory-category-chip,.memory-keyword-chip,.memory-anchor-chip')];
+    const visible=chips.filter(chip=>chip.getClientRects().length);
+    const more=metadata.querySelector('.memory-tags-more');
+    const hidden=chips.length-visible.length;
+    assert(more.hidden === !hidden && (!hidden || more.textContent==='+'+hidden), 'unified overflow count matches actual visible tags');
+    for(const chip of visible) {
+      const rect=chip.getBoundingClientRect();
+      assert(rect.left>=box.left-1 && rect.right<=box.right+1 && rect.bottom<=box.bottom+1, 'whole visible chip fits metadata');
     }
+    assert(row.querySelector('.memory-row-detail-arrow').tabIndex===-1, 'arrow avoids duplicate Tab stop');
   }
   for(const id of ['memories-query','memories-search-mode','memories-search-submit','memories-search-clear','memories-sort','memories-advanced-apply']) {
     const node=$(id),box=node.getBoundingClientRect();
@@ -74,19 +74,8 @@ async function runMemoriesVisualScenario(scenario) {
     assert(box.left>=0 && box.right<=innerWidth && box.top>=0 && box.bottom<=innerHeight,'popover fits viewport');
     assert(popup.scrollWidth<=popup.clientWidth+1,'popover content has no horizontal overflow');
   }
-  assert($('memory-row-1-anchors').querySelectorAll('.memory-anchor-chip').length === 3
-    && $('memory-row-1-anchor-more').textContent === '+2', 'anchors display three with remaining count');
   assert($('memory-row-1-anchor-1').textContent === 'MemoryService', 'anchors preserve case and order');
   assert(!$('memory-row-2-anchors'), 'absent anchors omit the group');
-  $('memory-row-1-anchor-more').click();
-  const anchorPopover=document.querySelector('.memory-tags-popover');
-  assert(anchorPopover?.querySelectorAll('.memory-chip').length === 5
-    && anchorPopover.textContent.includes('BGE-M3') && !anchorPopover.textContent.includes('keyword:'), 'anchor overflow shows all anchors only');
-  assert($('detail-modal').style.display !== 'flex', 'anchor overflow does not open detail');
-  const anchorBox=anchorPopover.getBoundingClientRect();
-  assert(anchorBox.left>=0 && anchorBox.right<=innerWidth && anchorBox.top>=0 && anchorBox.bottom<=innerHeight, 'anchor popover fits viewport');
-  document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}));
-  assert(!document.querySelector('.memory-tags-popover') && document.activeElement === $('memory-row-1-anchor-more'), 'anchor popover closes and restores focus');
   result.textContent='PASS: desktop acceptance '+scenario;
   return true;
 }

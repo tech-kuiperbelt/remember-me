@@ -28,7 +28,7 @@ function updateCreate() {
 }
 
 export function loadMemories() { return data.refresh(); }
-export function hide() { filters.close(); view.closeTags(); focusId = null; }
+export function hide() { filters.close(); focusId = null; }
 export function prepareKeywordBrowse(keyword, namespace) {
   hide(); searchControls.clearDates(); data.prepareKeywordBrowse(keyword, namespace);
 }
@@ -46,12 +46,12 @@ export function mount({openMemory = () => {}, openCreate = () => {}, retryCatego
     onSubmit: options => data.submit(options), onClear: () => data.clearSearch(), onApply: options => data.change(options)});
   view = createMemoriesList({root: $('memories-list'), pagination: $('memories-pagination'),
     count: $('memories-count'),
-    onOpen: id => { filters.close(); view.closeTags(); openMemory(id, {onClose: () => restoreFocus(id)}); },
+    onOpen: id => { filters.close(); openMemory(id, {onClose: () => restoreFocus(id)}); },
     onPage: page => data.change({page}, false),
     onPageSize: pageSize => data.change({pageSize}),
     onRetry: () => data.refresh(),
     onAll: () => data.change({namespace: ''}), onReset: resetFilters, onClearSearch: () => { data.clearSearch(); $('memories-query').focus(); }});
-  onDetailSelection(id => view.setSelected(id));
+  onDetailSelection(id => view.markRecent(id));
   let savedScroll = null;
   data = createMemoriesData(state => {
     focusId = activeRow() || focusId;
@@ -74,13 +74,13 @@ export function mount({openMemory = () => {}, openCreate = () => {}, retryCatego
   });
   $('memories-create').onclick = () => {
     if(getMaintenance()?.state !== 'normal')return;
-    filters.close();view.closeTags();
+    filters.close();
     openCreate(data.snapshot().namespace,{onClose:()=> $('memories-create').focus()});
   };
   $('memories-sort').addEventListener('change', event => data.change({sort: event.target.value}));
   onNamespacesChanged(() => updateFilters());
   onCategoriesChanged(() => updateFilters());
   onMaintenanceChanged(updateCreate);
-  onMemoriesChanged(() => data.refresh());
+  onMemoriesChanged(change => { if (change?.deletedId) view.clearRecent(change.deletedId); data.refresh(); });
   updateFilters(); updateCreate();
 }

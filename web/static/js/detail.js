@@ -205,7 +205,7 @@ function showConfirm(kind,title,text,cancelLabel,acceptLabel,accept) {
 async function remove() {
   if(state==='deleting')return;
   state='deleting'; updateProtection(); confirmation.querySelectorAll('button').forEach(el=>el.disabled=true);
-  try { await api('/memories/'+encodeURIComponent(selected),{method:'DELETE'}); closeNow(); emitMemoriesChanged();emitStatsChanged();toast('Memory deleted'); }
+  try { const deletedId=selected; await api('/memories/'+encodeURIComponent(deletedId),{method:'DELETE'}); closeNow(); emitMemoriesChanged({deletedId});emitStatsChanged();toast('Memory deleted'); }
   catch(e) { state='view'; updateProtection();confirmation.querySelectorAll('button').forEach(el=>el.disabled=false); $('detail-confirm-error').textContent=e.status===404?'该记忆已不存在，关闭后刷新列表核对。':e.message; }
 }
 export function mount(options = {}) {

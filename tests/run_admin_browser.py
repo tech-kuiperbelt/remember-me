@@ -65,6 +65,7 @@ checks += '\n' + (ROOT / 'tests/browser/memories_filters_regression.js').read_te
 checks += '\n' + (ROOT / 'tests/browser/memories_search_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/memories_acceptance_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/memories_visual_regression.js').read_text()
+checks += '\n' + (ROOT / 'tests/browser/cards_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/detail_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/create_regression.js').read_text()
 HEAD_SCRIPT = '<script>' + harness + '</script>'
@@ -176,7 +177,7 @@ def run_case(profile, label, window_size, scale, shot_dir, query, theme=None, zo
     url = f'http://127.0.0.1:{port}/admin/console?smoke=' + query
     if theme:
         url += '&theme=' + theme
-    if query.startswith('search-layout-'):
+    if query.startswith(('search-layout-', 'cards-')):
         from tests.chrome_viewport import run_viewport
         width, height = map(int, window_size.split(','))
         result = run_viewport(url, profile, width, height, shot)
@@ -250,6 +251,18 @@ try:
         else tempfile.TemporaryDirectory(prefix='remember-ui-shots-')
     with tempfile.TemporaryDirectory(prefix='keyword-chrome-') as profile, _shots_ctx as shots:
         failures = []
+        card_cases = [('cards-functional', '1440,900', 'light')]
+        card_cases += [(f'cards-layout-{width}-{scheme}', f'{width},900', scheme)
+                       for width in (390, 768, 1024, 1440) for scheme in ('light', 'dark')]
+        for label, size, scheme in card_cases:
+            if not selected(label):
+                continue
+            proc, shot = run_case(profile, label, size, '1', shots, label, theme=scheme)
+            ok, text = check(proc)
+            print(('PASS ' if ok else 'FAIL ') + label + ' -> ' + str(shot) +
+                  ('' if ok else ' :: ' + (text or proc.stderr[-400:])), flush=True)
+            if not ok:
+                failures.append(label)
         search_cases = [('search-functional', '1280,800', 'light')]
         search_cases += [(f'search-layout-{width}-{scheme}', f'{width},900', scheme)
                          for width in (390, 768, 1024, 1440) for scheme in ('light', 'dark')]

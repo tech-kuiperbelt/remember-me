@@ -44,7 +44,7 @@ export function setMaintenance(state) {
 export function onMaintenanceChanged(fn) { maintenanceListeners.add(fn); }
 
 export function onMemoriesChanged(fn) { memoriesListeners.add(fn); }
-export function emitMemoriesChanged() { memoriesListeners.forEach(fn => fn()); }
+export function emitMemoriesChanged(change) { memoriesListeners.forEach(fn => fn(change)); }
 
 export function onStatsChanged(fn) { statsListeners.add(fn); }
 export function emitStatsChanged() { statsListeners.forEach(fn => fn()); }
