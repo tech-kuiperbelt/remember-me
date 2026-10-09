@@ -7,6 +7,7 @@ cd /path/to/remember-me
 source .venv/bin/activate
 python -m app.server              # HTTP mode (default, config port or 1314)
 python -m app.server --stdio       # subprocess stdin/stdout
+python -m app.server --debug       # show all Admin UI Debug buttons (HTTP mode)
 python -m app.server --data-dir /path/to/data  # config is <DIR>/config.jsonc
 ```
 
@@ -15,6 +16,13 @@ sources the gitignored, host-specific `.env` (embedding provider and model
 cache) if present. The configured provider must match the active embedding
 profile in the data directory's `memories.db`, otherwise startup fails and requires an offline
 `app.embedding_cli reindex`/`activate`.
+
+Admin UI Debug buttons are hidden and element inspection is disabled by default.
+Pass `--debug` (for example `bin/start.sh --debug`) to make the global and
+create/detail drawer buttons available; inspection still requires clicking a
+button. This flag is not persisted in config.jsonc, does not change logging or
+MCP tools, and is retained by the UI's Restart Server action. It has no UI effect
+in stdio mode.
 
 Data directory selection: `--data-dir` > `MEMORY_DATA_DIR` > the OS per-user default
 (Linux `~/.remember-me/`, Windows `%LOCALAPPDATA%\remember-me\` with a `~/AppData/Local`

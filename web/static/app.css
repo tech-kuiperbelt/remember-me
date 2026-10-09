@@ -192,6 +192,7 @@ pre.json{background:var(--bg-code);padding:12px;border-radius:6px;font-size:12px
 .modal-overlay{position:fixed;inset:0;z-index:100;background:var(--overlay);display:flex;align-items:center;justify-content:center}
 .modal-panel{background:var(--bg-elevated);border-radius:12px;box-shadow:var(--shadow-modal)}
 .debug-ids [id]{outline:1px dashed #e53935;outline-offset:1px}
+[data-debug-toggle][hidden]{display:none}
 .debug-ids .memory-row [id]{pointer-events:auto;cursor:crosshair}
 .debug-ids .memory-row .memory-open{pointer-events:none}
 .debug-id-label{position:fixed;max-width:calc(100vw - 8px);overflow:hidden;text-overflow:ellipsis;font-size:11px;background:#e53935;color:#fff;padding:3px 6px;border-radius:4px;z-index:10000;font-family:monospace;line-height:1.2;white-space:nowrap;pointer-events:none}

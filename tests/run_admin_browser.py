@@ -50,7 +50,8 @@ class BrowserProvider(FakeProvider):
 
 service = MemoryService(Settings.from_env(),
     SQLiteStorage(':memory:', embedding_spec=EmbeddingSpec('test','smoke',2).as_dict()), BrowserProvider())
-admin = AdminAPI(service)
+debug_disabled = sys.argv[1:] == ['--case', 'debug-disabled']
+admin = AdminAPI(service, debug=not debug_disabled)
 service.embed_query = lambda _: [1.,0.]
 words = ['cache', 'cache clear', 'rare_id'] + ['word%03d' % i for i in range(60)]
 for i, word in enumerate(words):
@@ -320,6 +321,17 @@ try:
                   ('' if ok else ' :: ' + (text or proc.stderr[-400:])), flush=True)
             if not ok:
                 failures.append(label)
+        if selected('debug-disabled'):
+            previous_debug = admin.debug
+            admin.debug = False
+            try:
+                proc, shot = run_case(profile, 'debug-disabled', '1280,800', '1', shots, 'debug-disabled')
+                ok, text = check(proc)
+                print(('PASS ' if ok else 'FAIL ') + 'debug-disabled -> ' + str(shot) + ('' if ok else ' :: ' + (text or proc.stderr[-400:])), flush=True)
+                if not ok:
+                    failures.append('debug-disabled')
+            finally:
+                admin.debug = previous_debug
         detail_cases = [('detail-functional', '1280,800', 'light'), ('create-functional', '1280,800', 'light')]
         detail_cases += [(f'create-{size.replace(',', 'x')}-{mode}-{scheme}',size,scheme)
                          for size in ('390,844','1024,768','1440,900','1920,1080')

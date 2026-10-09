@@ -3,7 +3,7 @@
 // cross-page navigation callbacks, so feature modules never import each other.
 
 import { $ } from './core.js';
-import { toggleDebug } from './ui.js';
+import { debugEnabled, toggleDebug } from './ui.js';
 import { switchPage, register, bindNav, setLeaveGuard } from './router.js';
 import * as detail from './detail.js';
 import * as memories from './memories.js';
@@ -36,7 +36,8 @@ function mountAll() {
   audit.mount();
   clear.mount();
   $('btn-refresh').addEventListener('click', refreshStats);
-  $('btn-debug').addEventListener('click', toggleDebug);
+  $('btn-debug').hidden = !debugEnabled();
+  if (debugEnabled()) $('btn-debug').addEventListener('click', toggleDebug);
 }
 
 function registerPages() {

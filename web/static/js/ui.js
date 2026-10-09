@@ -2,6 +2,8 @@
 
 import { $ } from './core.js';
 
+export const debugEnabled = () => document.documentElement.dataset.uiDebug === 'true';
+
 export function toast(msg, type = 'success') {
   const t = document.createElement('div');
   t.className = 'toast ' + type;
@@ -74,6 +76,7 @@ function hideDebugLabel() {
 }
 
 export function toggleDebug() {
+  if (!debugEnabled()) return;
   document.body.classList.toggle('debug-ids');
   const on = document.body.classList.contains('debug-ids');
   document.querySelectorAll('[data-debug-toggle]').forEach(el => el.setAttribute('aria-pressed', String(on)));

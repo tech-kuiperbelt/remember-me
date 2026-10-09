@@ -168,7 +168,21 @@ async function runThemeScenario(scenario) {
 
 try {
   const scenario = new URLSearchParams(location.search).get('smoke') || '';
-  if (await runCreateScenario(scenario) || await runDetailScenario(scenario) || await runMemoriesVisualScenario(scenario) || await runThemeScenario(scenario)) { /* theme scenario finished */ }
+  if (scenario === 'debug-disabled') {
+    await waitFor(()=>$('memories-list').getAttribute('aria-busy')==='false','initial list');
+    const ui=await import('/admin/console/static/js/ui.js');
+    assert(!ui.debugEnabled()&&getComputedStyle($('btn-debug')).display==='none','global Debug hidden without startup flag');
+    ui.toggleDebug();$('btn-debug').click();
+    assert(!document.body.classList.contains('debug-ids')&&!document.querySelector('.debug-id-label'),'disabled Debug cannot be activated');
+    document.querySelector('.memory-row-detail-arrow').click();
+    await waitFor(()=>$('detail-edit'),'detail loaded');
+    assert(!$('detail-debug'),'detail has no Debug button');
+    $('detail-edit').click();assert(!$('detail-debug')&&$('edit-text'),'edit has no Debug button and still works');
+    $('btn-detail-close').click();$('memories-create').click();
+    assert(!$('detail-debug')&&$('edit-text'),'create has no Debug button and still works');
+    $('btn-detail-close').click();result.textContent='PASS: Debug disabled across global, detail, edit and create';
+  }
+  else if (await runCreateScenario(scenario) || await runDetailScenario(scenario) || await runMemoriesVisualScenario(scenario) || await runThemeScenario(scenario)) { /* theme scenario finished */ }
   else {
 
   // The real page bootstraps from the real backend; wait for the first load.

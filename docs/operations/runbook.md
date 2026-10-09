@@ -25,6 +25,11 @@
 
 ## 启动和关闭
 
+Admin 界面的所有 Debug 按钮默认隐藏，元素检查不可启用。需要微调界面时使用
+`bin/start.sh --debug`（或 `python -m app.server --debug`）：显示顶部及新增／明细抽屉
+的 Debug 按钮，再点击按钮开启元素 ID 检查。该参数不写入 `config.jsonc`、不调整日志级别，
+Restart Server 保留原启动参数；不带 `--debug` 重新启动即可隐藏入口。stdio 模式没有界面效果。
+
 从仓库根目录运行 `bin/start.sh`。Ops 页面执行任何运维动作前，先点 **Enter
 Maintenance**；此时普通记忆写入暂停，查询继续。动作完成后点 **Exit Maintenance**。
 Restart Server 和 Shut Down Server 也要求先进入维护状态。需要执行独立 CLI 时，

@@ -1,7 +1,7 @@
 // Owns one drawer session. Draft policy, Markdown and candidates have separate owners.
 import { $, formatTime, deriveSummary } from './core.js';
 import { api, isNamespaceNotFound, confirmNamespaceCreation } from './api.js';
-import { toast, toggleDebug } from './ui.js';
+import { toast, debugEnabled, toggleDebug } from './ui.js';
 import { getNamespaces, getCategories, getCategoryState, onCategoriesChanged, onNamespacesChanged,
   getDefaultNamespace, onDefaultNamespaceChanged, getMaintenance, onMaintenanceChanged, emitMemoriesChanged, emitStatsChanged } from './store.js';
 import { createDraft, isDirty, validateDraft, buildUpdatePayload, createNewDraft, validateCreateDraft, isCreateDirty, buildCreatePayload } from './detail-model.js';
@@ -89,7 +89,7 @@ function header() {
     actions.append(button('detail-edit', 'Edit', edit), button('detail-more', 'More ▾', showMenu));
     $('detail-more').setAttribute('aria-haspopup', 'menu'); $('detail-more').setAttribute('aria-expanded', 'false');
   }
-  actions.append(debugButton());
+  if (debugEnabled()) actions.append(debugButton());
   $('btn-detail-close').disabled = busy();
 }
 function render(error = '') {

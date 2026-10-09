@@ -2,6 +2,8 @@
 
 本文件归档已完成的项目待办。详细实现记录保留在 git 提交和项目变更日志中。
 
+- [50] UI Debug 启动开关（2026-10-09 用户实测通过并授权提交）：新增 `--debug`，默认隐藏顶部及新建／明细／编辑抽屉 Debug 入口并禁止开启元素检查；传参显示按钮，仍手动切换。启动标志经 Admin HTML 传递，不写配置、不改变日志级别，Restart 保留参数。54 项后端测试与 debug-disabled／detail-functional／create-functional 三个浏览器场景通过；启动说明已同步 AGENTS、README 和[运维手册](../operations/runbook.md)。随本次提交归档。
+
 - [50.7] Memories 新增抽屉（2026-10-09 用户验收并授权提交）：移除独立 Add 页面，新增复用详情抽屉与共享表单，支持配置默认 Namespace、自定义 metadata、重复记录和 POST 成功后仅重试 GET；Debug 入口移到顶部，允许明细导航；Edit／Preview 改为标准标签页与键盘导航。新增阶段浏览器 137/137、后端定向 94 项通过；最终反馈调整后定向浏览器与提交前后端复验通过，详细范围见 [50.7 实施记录](plans/50.7-memory-create-drawer.md)。随本次提交归档，生产未重启。
 
 - [50.5] Memory List（2026-10-08 用户确认完成并授权提交）：浏览分页、共用筛选、时间过滤、三模式搜索与 Top-K 本地分页、列表卡片与区域 ID 已完成。最终 review 修复长标签挤压／越界、日期与标签悬停命中、Debug 键盘及原生控件隔离；浏览器矩阵 79/79、真实 Chrome 复核通过。后续 Memory Detail 实现与验证进度见 [50.6.3](plans/50.6.3-memory-detail-coding-plan.md)，详情 review 已完成，前端整体路线仍开放。详见[总体记录](plans/50.5-memories-workspace.md)和[修复验收](plans/50.5.9-memories-search-modes.md)。

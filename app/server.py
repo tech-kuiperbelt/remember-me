@@ -190,7 +190,7 @@ def _read_me_base(port, scope):
     return f"http://127.0.0.1:{resolved}"
 
 
-def create_http_app(runtime, *, port=None, local_only=None):
+def create_http_app(runtime, *, port=None, local_only=None, debug=False):
     """Own runtime lifespan; all transports bind the same explicit service."""
     from contextlib import asynccontextmanager
     from app.transport.admin import create_admin_routes
@@ -302,7 +302,7 @@ def create_http_app(runtime, *, port=None, local_only=None):
                             Route("/mcp", StreamableHTTPEndpoint()),
                             Route("/read-me", ReadMeEndpoint(), methods=["GET"]),
                             Mount("/messages/", app=sse.handle_post_message)] +
-                    create_admin_routes(runtime=runtime), lifespan=lifespan)
+                    create_admin_routes(runtime=runtime, debug=debug), lifespan=lifespan)
     app.state.runtime = runtime
 
     def close_connections():
@@ -404,6 +404,8 @@ async def main(argv=None):
     from app.runtime import create_runtime
     from app.config.configuration import activate_environment
     parser = argparse.ArgumentParser(description="Memory MCP Server")
+    parser.add_argument("--debug", action="store_true",
+                        help="Show Admin UI Debug buttons for inspecting element IDs (HTTP mode)")
     parser.add_argument("--data-dir", help="Data directory; defaults to the per-user OS data directory "
                                           "and contains config.jsonc")
     transport = parser.add_mutually_exclusive_group()
@@ -424,7 +426,7 @@ async def main(argv=None):
     else:
         port = settings.PORT if args.port is None else args.port
         host = resolve_bind_host(settings)
-        app = create_http_app(runtime, port=port, local_only=settings.LOCAL_ONLY)
+        app = create_http_app(runtime, port=port, local_only=settings.LOCAL_ONLY, debug=args.debug)
         logger.info("HTTP listening on %s:%s (%s)", host, port,
                     "local-only" if settings.LOCAL_ONLY else "LAN-accessible")
         config = uvicorn.Config(app, host=host, port=port, log_level="info")
