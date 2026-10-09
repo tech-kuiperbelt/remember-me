@@ -20,7 +20,7 @@ async function runDetailScenario(scenario) {
     }
     return undefined;
   });
-  const open=async id=>{detail.openMemory(id);await waitFor(()=>$('detail-edit'),'detail read');};
+  const open=async id=>{detail.openMemory(id);await waitFor(()=>$('detail-edit'),'detail read');await waitFor(() => !$('detail-panel').getAnimations().length, 'drawer entrance finished');};
   const type=(id,value)=>{$(id).value=value;fire($(id),'input');};
   const escape=()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
   const writes=()=>S.calls.filter(c=>c.method==='PUT'&&c.url.includes('/detail-'));
@@ -39,6 +39,17 @@ async function runDetailScenario(scenario) {
     $('btn-debug').click();
   }
   await open('detail-a');
+  if(scenario==='detail-functional') {
+    const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+    detail.requestLeave();
+    assert(!detail.isOpen() && $('detail-modal').inert, 'closing drawer cannot receive interaction');
+    assert(reduced || $('detail-panel').getAnimations().length === 1, 'close plays a slide animation');
+    await open('detail-b');
+    assert($('detail-modal').style.display === 'flex' && !$('detail-modal').inert && $('detail-id-value').textContent === 'detail-b', 'reopening cancels stale close animation');
+    detail.requestLeave();
+    await waitFor(() => $('detail-modal').style.display === 'none', 'drawer hides after exit animation');
+    await open('detail-a');
+  }
   assert(document.querySelector('.memory-row').getBoundingClientRect().width===rowWidth,'background scrollbar and list width preserved');
   if(scenario!=='detail-functional') {
     if(scenario.includes('-edit')||scenario.includes('-preview')||scenario.includes('-confirm')){$('detail-edit').click();type('edit-text',records.get('detail-a').text+'\n\nUnsaved draft');}

@@ -84,7 +84,8 @@ input[type="checkbox"],progress{accent-color:var(--accent-solid)}
 .memories-workspace{min-width:0}
 .memories-heading,.memories-result-header{display:flex;align-items:center;justify-content:space-between;gap:16px}
 .memories-heading{margin-bottom:20px}
-.memories-heading-actions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px}
+.memories-result-actions{display:flex;align-items:center;gap:12px;margin-left:auto}
+#memories-create{width:38px;height:38px;padding:0;flex-shrink:0;font-size:24px;line-height:1}
 .memories-heading h2{margin:0;font-size:24px;line-height:32px;font-weight:600}
 .memories-filter-row{display:flex;align-items:flex-start;gap:16px;margin-bottom:18px}
 .memories-filter-row .memories-filters{flex:1;min-width:0;margin-bottom:0}

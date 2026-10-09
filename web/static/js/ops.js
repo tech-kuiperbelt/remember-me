@@ -57,10 +57,6 @@ export async function loadOpsPage() {
   $('migrate-result').textContent = '';
 }
 
-export function preselectClearNamespace(ns) {
-  $('clear-ns').value = ns;
-}
-
 // Derive the display status and control availability from a /api/maintenance
 // snapshot. Priority: request failure/unparseable -> sticky action error ->
 // model_not_ready -> maintenance -> normal. Gating mirrors the server authority

@@ -65,10 +65,6 @@
   <section class="memories-workspace" aria-labelledby="memories-title">
     <div class="memories-heading">
       <h2 id="memories-title">Memories</h2>
-      <div id="memories-heading-actions" class="memories-heading-actions">
-        <button id="memories-create" class="btn btn-primary btn-sm" type="button">New Memory</button>
-        <button id="btn-clear-ns" class="btn btn-outline btn-sm" disabled>Clear Namespace</button>
-      </div>
     </div>
     <form id="memories-search-form" class="memories-search-form" novalidate>
       <input id="memories-query" type="search" aria-label="Search memories" placeholder="Search memories…">
@@ -95,7 +91,10 @@
     </details>
     <div class="memories-result-header">
       <span id="memories-count" tabindex="-1" role="status">Loading...</span>
-      <label>Sort <select id="memories-sort"><option value="updated_at">Updated time ↓</option><option value="created_at">Created time ↓</option></select></label>
+      <div class="memories-result-actions">
+        <label>Sort <select id="memories-sort"><option value="updated_at">Updated time ↓</option><option value="created_at">Created time ↓</option></select></label>
+        <button id="memories-create" class="btn btn-primary" type="button" aria-label="New Memory" title="New Memory"><span aria-hidden="true">+</span></button>
+      </div>
     </div>
     <div id="memories-filter-resolution" class="memories-filter-resolution" role="status" aria-live="polite"></div>
     <div id="memories-list" class="memory-list" aria-busy="true"></div>

@@ -8,8 +8,8 @@ function el(tag, className, text) {
   return node;
 }
 const clean = value => String(value || '').trim().replace(/\s+/g, ' ');
-const values = raw => Array.isArray(raw)
-  ? [...new Set(raw.filter(v => typeof v === 'string').map(v => v.trim().toLowerCase()).filter(Boolean))] : [];
+const values = (raw, preserveCase = false) => Array.isArray(raw)
+  ? [...new Set(raw.filter(v => typeof v === 'string').map(v => preserveCase ? v.trim() : v.trim().toLowerCase()).filter(Boolean))] : [];
 
 function memoryDate(memory) {
   for (const stamp of [memory.updated_at, memory.created_at]) {
@@ -91,8 +91,8 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
     const namespace = el('div', 'memory-tag-group memory-namespace'); namespace.title = memory.namespace || '';
     namespace.append(el('span', 'memory-group-label', '空间：'), el('span', 'memory-chip memory-namespace-value', memory.namespace || '—'));
     metadata.append(namespace);
-    for (const [field, dimension, label, limit] of [['categories', 'category', '分类', 3], ['keywords', 'keyword', '关键词', 5]]) {
-      const tags = values(memory.metadata?.[field]).map(value => ({dimension, value}));
+    for (const [field, dimension, label, limit] of [['categories', 'category', '分类', 3], ['keywords', 'keyword', '关键词', 5], ['anchors', 'anchor', '锚点', 3]]) {
+      const tags = values(memory.metadata?.[field], field === 'anchors').map(value => ({dimension, value}));
       if (!tags.length) continue;
       const group = el('div', 'memory-tag-group'); group.id = rowId + '-' + field;
       group.append(el('span', 'memory-group-label', label + '：'));

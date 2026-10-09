@@ -1,9 +1,7 @@
 // Memories assembly: state/rendering stay in dedicated modules.
 import { $ } from './core.js';
-import { toast } from './ui.js';
 import { getNamespaces, getCategories, getCategoryState, getMaintenance, onNamespacesChanged,
   onCategoriesChanged, onMaintenanceChanged, onMemoriesChanged } from './store.js';
-import { switchPage } from './router.js';
 import { createMemoriesData } from './memories-data.js';
 import { createMemoriesList } from './memories-list.js';
 import { createMemoriesSearch } from './memories-search.js';
@@ -25,9 +23,8 @@ function updateFilters(state = data.snapshot()) {
   filters.update(state, {namespaces: getNamespaces(), categories: getCategories(), categoryState: getCategoryState()});
 }
 
-function updateClear() {
+function updateCreate() {
   $('memories-create').disabled = getMaintenance()?.state !== 'normal';
-  $('btn-clear-ns').disabled = !data.snapshot().namespace || getMaintenance()?.state !== 'normal';
 }
 
 export function loadMemories() { return data.refresh(); }
@@ -41,7 +38,7 @@ function resetFilters() {
   $('memories-namespace').focus();
 }
 
-export function mount({preselectClearNamespace = () => {}, openMemory = () => {}, openCreate = () => {}, retryCategories = () => {}, isDetailOpen = () => false, onDetailSelection = () => {}} = {}) {
+export function mount({openMemory = () => {}, openCreate = () => {}, retryCategories = () => {}, isDetailOpen = () => false, onDetailSelection = () => {}} = {}) {
   filters = createMemoriesFilters({root: $('memories-filters'),
     onChange: changes => data.change(changes), onReset: resetFilters, onRetryCategories: retryCategories});
   searchControls = createMemoriesSearch({onInput: value => data.input(value),
@@ -60,7 +57,7 @@ export function mount({preselectClearNamespace = () => {}, openMemory = () => {}
     focusId = activeRow() || focusId;
     const content = $('content');
     if (state.status === 'loading' && savedScroll === null) { savedScroll = content.scrollTop; $('memories-list').style.minHeight = $('memories-list').offsetHeight + 'px'; }
-    view.render(state); updateFilters(state); searchControls.update(state); updateClear();
+    view.render(state); updateFilters(state); searchControls.update(state); updateCreate();
     const sort = $('memories-sort'), searching = Boolean(state.submittedQuery);
     const options = searching ? [['relevance', 'Relevance']]
       : [['updated_at', 'Updated time ↓'], ['created_at', 'Created time ↓']];
@@ -81,17 +78,9 @@ export function mount({preselectClearNamespace = () => {}, openMemory = () => {}
     openCreate(data.snapshot().namespace,{onClose:()=> $('memories-create').focus()});
   };
   $('memories-sort').addEventListener('change', event => data.change({sort: event.target.value}));
-  $('btn-clear-ns').addEventListener('click', () => {
-    const ns = data.snapshot().namespace;
-    if (!ns || getMaintenance()?.state !== 'normal') return;
-    switchPage('ops', () => {
-      preselectClearNamespace(ns);
-      toast('Enter maintenance mode, then use Clear in Ops.', 'info');
-    });
-  });
   onNamespacesChanged(() => updateFilters());
   onCategoriesChanged(() => updateFilters());
-  onMaintenanceChanged(updateClear);
+  onMaintenanceChanged(updateCreate);
   onMemoriesChanged(() => data.refresh());
-  updateFilters(); updateClear();
+  updateFilters(); updateCreate();
 }

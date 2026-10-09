@@ -2,6 +2,8 @@
 
 本文件归档已完成的项目待办。详细实现记录保留在 git 提交和项目变更日志中。
 
+- [50] Memories 列表与抽屉微调（2026-10-09 用户授权提交）：列表增加最多 3 项 Anchors 及 `+N` 弹层；新建按钮改为 Sort 右侧加号，移除列表 Clear Namespace 入口；详情菜单增加 Copy summary，抽屉增加滑入／滑出与遮罩动画，支持减少动态效果偏好及快速重开。列表浅色 Browse／深色 Anchor 搜索、详情与新增专项浏览器验证通过；未运行完整矩阵或全量 pytest。随本次提交归档，详情见[前端路线图](plans/50-frontend-refactoring-and-ui-roadmap.md)。
+
 - [50] Namespace 下拉与窗口边界修复（2026-10-09 用户最终验收并授权提交）：编辑／新建共用可输入 Namespace 和完整候选 listbox，动态刷新候选并保留草稿；统一 Memories 风格，弹出列表与输入框等宽、窗口内定位、按空间上下展开，长列表内部滚动。包含键盘选择、焦点和关闭清理，沿用现有保存／未知空间确认，无后端改动。功能、新建、Debug 及桌面／窄屏浏览器验证通过，含真实隔离 Namespace-only 保存。随本次提交归档，详情见[前端路线图](plans/50-frontend-refactoring-and-ui-roadmap.md)。
 
 - [50] UI Debug 启动开关（2026-10-09 用户实测通过并授权提交）：新增 `--debug`，默认隐藏顶部及新建／明细／编辑抽屉 Debug 入口并禁止开启元素检查；传参显示按钮，仍手动切换。启动标志经 Admin HTML 传递，不写配置、不改变日志级别，Restart 保留参数。54 项后端测试与 debug-disabled／detail-functional／create-functional 三个浏览器场景通过；启动说明已同步 AGENTS、README 和[运维手册](../operations/runbook.md)。随本次提交归档。

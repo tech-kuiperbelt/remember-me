@@ -26,7 +26,7 @@ function mountAll() {
   theme.mount();
   detail.mount({retryCategories: stats.loadStats});
   setLeaveGuard(detail.requestLeave);
-  memories.mount({ preselectClearNamespace: ops.preselectClearNamespace,
+  memories.mount({
     openMemory: detail.openMemory, openCreate: detail.openCreate, isDetailOpen: detail.isOpen, onDetailSelection: detail.onSelectionChanged, retryCategories: stats.loadStats });
   keywords.mount({ showKeyword: (keyword, namespace) => {
     switchPage('memories', () => memories.prepareKeywordBrowse(keyword, namespace));

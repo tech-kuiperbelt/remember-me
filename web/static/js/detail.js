@@ -11,6 +11,32 @@ import { renderDetailEditor } from './detail-editor.js';
 let state = 'closed', memory = null, draft = null, selected = null, version = 0;
 let picker = null, pending = null, confirmation = null, menu = null, preview = false;
 let onClose = null, priorFocus = null, background = null, retryCategories = () => {};
+let drawerAnimations = [];
+function animateDrawer(open) {
+  drawerAnimations.forEach(animation => animation.cancel());
+  drawerAnimations = [];
+  const overlay = $('detail-modal'), panel = $('detail-panel');
+  overlay.inert = !open;
+  overlay.style.pointerEvents = open ? '' : 'none';
+  if (open) overlay.style.display = 'flex';
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (!open) overlay.style.display = 'none';
+    return;
+  }
+  const options = {duration: open ? 240 : 200, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'both'};
+  const animations = [
+    panel.animate([{transform: open ? 'translateX(100%)' : 'translateX(0)'},
+      {transform: open ? 'translateX(0)' : 'translateX(100%)'}], options),
+    overlay.animate([{opacity: open ? 0 : 1}, {opacity: open ? 1 : 0}], options)
+  ];
+  drawerAnimations = animations;
+  Promise.all(animations.map(animation => animation.finished)).then(() => {
+    if (drawerAnimations !== animations) return;
+    if (!open) overlay.style.display = 'none';
+    animations.forEach(animation => animation.cancel());
+    drawerAnimations = [];
+  }).catch(() => {});
+}
 const listeners = new Set();
 const busy = () => ['saving', 'reloading', 'deleting'].includes(state);
 const editing = () => ['edit', 'saving'].includes(state);
@@ -38,7 +64,7 @@ function closeMenu() { menu?.remove(); menu = null; $('detail-more')?.setAttribu
 function closeNow() {
   $('detail-body').inert=false; $('detail-header').inert=false;
   ++version; destroyTransient(); confirmation?.remove(); confirmation = null; pending = null;
-  state = 'closed'; select(null); updateProtection(); $('detail-modal').style.display = 'none';
+  state = 'closed'; select(null); updateProtection(); animateDrawer(false);
   if (background) { $('app-shell').inert = background.inert; document.body.style.overflow = background.overflow; $('content').style.overflow = background.contentOverflow; background = null; }
   const callback = onClose; onClose = null;
   if (callback) callback(); else if (priorFocus?.isConnected) priorFocus.focus();
@@ -61,7 +87,7 @@ function startOpen(id, options) {
   priorFocus = document.activeElement; onClose = options.onClose || null;
   background = {inert: $('app-shell').inert, overflow: document.body.style.overflow, contentOverflow: $('content').style.overflow};
   $('app-shell').inert = true; document.body.style.overflow = 'hidden';
-  state = 'loading'; memory = draft = null; select(id); $('detail-modal').style.display = 'flex'; render(); $('btn-detail-close').focus();
+  state = 'loading'; memory = draft = null; select(id); animateDrawer(true); render(); $('btn-detail-close').focus();
   readMemory();
 }
 async function readMemory(afterSave = false) {
@@ -164,8 +190,10 @@ async function copy(text) { try { await copyText(text); toast('Copied!'); } catc
 function showMenu() {
   if(menu){closeMenu();return;}
   menu=node('div','detail-menu',undefined,'detail-menu'); menu.setAttribute('role','menu');
-  menu.append(button('detail-copy','Copy content',()=>{closeMenu();copy(memory.text);}),button('detail-delete','Delete',()=>{closeMenu();showConfirm('delete','Delete this memory?',deriveSummary(memory.summary || memory.text)+'\n'+memory.id,'Cancel','Delete',remove);},'btn-danger'));
-  $('detail-panel').append(menu); $('detail-more').setAttribute('aria-expanded','true'); menu.firstChild.focus();
+  const copySummary=button('detail-copy-summary','Copy summary',()=>{closeMenu();copy(memory.summary);});
+  copySummary.disabled=!memory.summary;
+  menu.append(copySummary,button('detail-copy','Copy content',()=>{closeMenu();copy(memory.text);}),button('detail-delete','Delete',()=>{closeMenu();showConfirm('delete','Delete this memory?',deriveSummary(memory.summary || memory.text)+'\n'+memory.id,'Cancel','Delete',remove);},'btn-danger'));
+  $('detail-panel').append(menu); $('detail-more').setAttribute('aria-expanded','true'); menu.querySelector('button:not(:disabled)').focus();
 }
 function dismissConfirm() { confirmation?.remove(); confirmation=null; pending=null; $('detail-body').inert=false; $('detail-header').inert=false; $('btn-detail-close').focus(); }
 function showConfirm(kind,title,text,cancelLabel,acceptLabel,accept) {
@@ -218,7 +246,7 @@ export function openCreate(namespace = '', options = {}) {
     const configured=getDefaultNamespace();
     draft=createNewDraft(namespace || (configured.status==='ready' ? configured.value : ''));
     initialDraft=structuredClone(draft);select(null);state='edit';++version;
-    $('detail-modal').style.display='flex';render();$('edit-namespace').focus();
+    animateDrawer(true);render();$('edit-namespace').focus();
   });
 }
 function updateDefaultHint() {

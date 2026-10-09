@@ -6,7 +6,8 @@ async function runMemoriesVisualScenario(scenario) {
   const words=Array.from({length:20},(_,i)=>'keyword-'+i+'-'+long);
   const rows=Array.from({length:21},(_,i)=>({id:'visual-'+i,namespace:long,
     summary:'长标题 Long memory summary '+long.repeat(3),text:'Different preview 正文预览 '+long.repeat(8),
-    metadata:{categories:['design','architecture','api'],keywords:words},score:.91,
+    metadata:{categories:['design','architecture','api'],keywords:words,
+      anchors:i === 0 ? ['MemoryService', 'EMBED_MODEL', 'SQLiteStorage', 'NamespaceNotFound', 'BGE-M3'] : []},score:.91,
     updated_at:'2026-01-01T00:00:00.000200+00:00'}));
   const mapping={keywords:words.map(input=>({input,match_type:'semantic',matches:[{value:input+'-resolved',accepted:true}]}))};
   S.setOverride(url=>{
@@ -69,6 +70,19 @@ async function runMemoriesVisualScenario(scenario) {
     assert(box.left>=0 && box.right<=innerWidth && box.top>=0 && box.bottom<=innerHeight,'popover fits viewport');
     assert(popup.scrollWidth<=popup.clientWidth+1,'popover content has no horizontal overflow');
   }
+  assert($('memory-row-1-anchors').querySelectorAll('.memory-anchor-chip').length === 3
+    && $('memory-row-1-anchor-more').textContent === '+2', 'anchors display three with remaining count');
+  assert($('memory-row-1-anchor-1').textContent === 'MemoryService', 'anchors preserve case and order');
+  assert(!$('memory-row-2-anchors'), 'absent anchors omit the group');
+  $('memory-row-1-anchor-more').click();
+  const anchorPopover=document.querySelector('.memory-tags-popover');
+  assert(anchorPopover?.querySelectorAll('.memory-chip').length === 5
+    && anchorPopover.textContent.includes('BGE-M3') && !anchorPopover.textContent.includes('keyword:'), 'anchor overflow shows all anchors only');
+  assert($('detail-modal').style.display !== 'flex', 'anchor overflow does not open detail');
+  const anchorBox=anchorPopover.getBoundingClientRect();
+  assert(anchorBox.left>=0 && anchorBox.right<=innerWidth && anchorBox.top>=0 && anchorBox.bottom<=innerHeight, 'anchor popover fits viewport');
+  document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}));
+  assert(!document.querySelector('.memory-tags-popover') && document.activeElement === $('memory-row-1-anchor-more'), 'anchor popover closes and restores focus');
   result.textContent='PASS: desktop acceptance '+scenario;
   return true;
 }
