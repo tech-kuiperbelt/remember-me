@@ -71,7 +71,7 @@ async function runCardsScenario(scenario) {
     const open=async trigger=>{
       S.resetCalls(); trigger.click(); await waitFor(()=>$('detail-edit'),'detail from card');
       assert(S.calls.filter(call=>call.url==='/api/memories/card-0').length===1,'one detail request per action');
-      assert($('detail-keywords-values').querySelectorAll('.badge').length>0,'hidden tags available in existing detail');
+      assert($('detail-keywords-values').querySelectorAll('.detail-tag-keywords').length>0,'hidden tags available in existing detail');
       $('btn-detail-close').click(); await waitFor(()=>$('detail-modal').style.display==='none','drawer exit');
       assert(!detail.isOpen(),'detail closes normally');
       assert($('memory-row-1').classList.contains('is-recent'),'closing detail retains recent marker');

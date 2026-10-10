@@ -16,6 +16,8 @@ async function runCreateScenario(scenario) {
   store.setDefaultNamespace('ready','configured-project');open();
   assert($('detail-title').textContent==='New Memory'&&$('edit-namespace').value==='configured-project','configured default used');
   assert(!$('detail-technical')&&$('detail-debug')&&$('detail-save').disabled,'create identity hidden and empty body blocked');
+  assert(!$('detail-extra-metadata-input')&&!$('detail-extra-metadata'),'Create has no raw JSON editor');
+  assert($('detail-error').hidden && !$('detail-field-error-text').textContent,'Create initially has no red validation');
   assert($('detail-summary-hint').textContent.includes('留空'),'automatic summary explained');
   assert(!$('detail-default-namespace-retry').getClientRects().length,'loaded default hides retry button visually');
   if(scenario==='create-functional') {
@@ -45,11 +47,8 @@ async function runCreateScenario(scenario) {
   $('detail-debug').click();$('edit-text').dispatchEvent(new MouseEvent('mouseover',{bubbles:true}));
   assert(document.querySelector('.debug-id-label').textContent==='edit-text','create Debug labels');
   escape();assert(document.activeElement===$('detail-debug'),'create Debug exit focus');
-  type('edit-text','  ');assert($('detail-save').disabled,'whitespace body blocked');
-  type('edit-text','# draft');type('detail-extra-metadata-input','[]');assert($('detail-save').disabled,'metadata object required');
-  type('detail-extra-metadata-input','{"anchors":[]}');assert($('detail-save').disabled,'managed metadata conflict');
-  type('detail-extra-metadata-input','{"source":"browser","custom":{"keep":true}}');
-  assert(!$('detail-save').disabled,'valid metadata accepted');
+  type('edit-text','  ');fire($('edit-text'),'blur');assert($('detail-field-error-text').textContent==='请输入正文'&&$('edit-text').getAttribute('aria-invalid')==='true','blur shows local Content error');assert($('detail-save').disabled,'whitespace body blocked');
+  type('edit-text','# draft');assert(!$('detail-field-error-text').textContent,'correcting Content clears error');assert(!$('detail-save').disabled,'valid dedicated fields accepted');
   $('detail-preview-mode').click();assert($('detail-preview').querySelector('h1'),'create preview');$('detail-source-mode').click();assert($('edit-text').value==='# draft','preview retains source');
   $('detail-cancel').click();assert($('detail-confirm'),'dirty cancel guarded');$('detail-confirm-cancel').click();assert($('edit-text').value==='# draft','keep draft');
   const unload=new Event('beforeunload',{cancelable:true});window.dispatchEvent(unload);assert(unload.defaultPrevented,'create unload guard');
@@ -79,7 +78,7 @@ async function runCreateScenario(scenario) {
   duplicate=false;getFailure=true;S.resetCalls();$('detail-save').click();$('detail-save').click();await waitFor(()=>$('detail-retry'),'created GET error');
   assert(posts().length===1&&$('detail-status').textContent.includes('已创建')&&!$('edit-text'),'created error clears editor');
   assert(memoryEvents===1&&statsEvents===1,'one change notification after created, none after duplicate');
-  const payload=JSON.parse(posts()[0].body);assert(!Object.hasOwn(payload,'summary')&&payload.metadata.custom.keep,'summary omitted and custom metadata retained');
+  const payload=JSON.parse(posts()[0].body);assert(!Object.hasOwn(payload,'summary')&&Object.keys(payload.metadata).length===0,'summary omitted and no raw metadata editor payload');
   getFailure=false;$('detail-retry').click();await waitFor(()=>$('detail-edit'),'created GET retry');assert(posts().length===1&&$('detail-id-value').textContent===record.id,'GET retry does not POST');
   $('btn-detail-close').click();assert(document.activeElement===$('memories-create'),'created close returns entry');
   // Exact applied Namespace overrides configured default; other filters stay out.
@@ -87,12 +86,12 @@ async function runCreateScenario(scenario) {
   router.switchPage('add');assert($('page-memories').classList.contains('active')&&!detail.isOpen(),'legacy route falls back without create');
   // Real POST -> GET -> duplicate -> DELETE on the isolated Admin/SQLite service.
   S.reset();S.freezeMaintenance();store.setMaintenance({state:'normal'});store.setDefaultNamespace('ready','default');detail.openCreate('a',{onClose:()=>$('memories-create').focus()});
-  type('edit-text','Create browser integration unique body');type('detail-extra-metadata-input','{"source":"create-integration"}');
+  type('edit-text','Create browser integration unique body');
   $('detail-anchor-input').value='CreateAnchor';$('detail-anchor-add').click();S.resetCalls();$('detail-save').click();await waitFor(()=>$('detail-edit'),'real create');
   const id=$('detail-id-value').textContent;
   try {
     const response=await S.realFetch('/api/memories/'+id);const saved=await response.json();
-    assert(response.ok&&saved.namespace==='a'&&saved.summary&&saved.metadata.source==='create-integration'&&saved.metadata.anchors[0]==='CreateAnchor','real created fields and auto summary');
+    assert(response.ok&&saved.namespace==='a'&&saved.summary&&!Object.hasOwn(saved.metadata,'source')&&saved.metadata.anchors[0]==='CreateAnchor','real created fields and auto summary');
     assert(posts().length===1,'real single POST');$('btn-detail-close').click();
     detail.openCreate('a');type('edit-text',saved.text);type('edit-summary','Do not overwrite');$('detail-save').click();await waitFor(()=>$('detail-duplicate'),'real duplicate');
     const after=await (await S.realFetch('/api/memories/'+id)).json();assert(after.summary===saved.summary,'real duplicate untouched');discard();

@@ -110,6 +110,15 @@ export function createValuePickers({root, onChange, onReset = () => {}, onRetryC
     node.append(label, selected, body); container.append(node);
     popup = {kind, trigger, node, input, selected, body};
     trigger.setAttribute('aria-expanded', 'true'); trigger.setAttribute('aria-controls', node.id);
+    if(allowCreate) input.onkeydown = event => {
+      if(event.key!=='Enter'||event.isComposing)return;
+      event.preventDefault();event.stopPropagation();
+      const query=input.value.trim().toLowerCase();
+      if(!query || normalize(state[kind]).includes(query) || state[kind].length>=cap(kind))return;
+      const existing=kind==='categories' ? normalize(Object.keys(registry.categories)).includes(query) : suggestions.some(item=>item.keyword===query);
+      if(existing) onChange({[kind]:[...state[kind],query]});
+      else node.querySelector('[id="'+prefix+'-'+kind+'-create"]')?.click();
+    };
     input.oninput = () => kind === 'categories' ? renderCategories() : resetSuggestions();
     if (kind === 'categories') renderCategories();
     else { renderSelected(); resetSuggestions(); }

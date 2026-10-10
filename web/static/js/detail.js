@@ -7,11 +7,13 @@ import { getNamespaces, getCategories, getCategoryState, onCategoriesChanged, on
 import { createDraft, isDirty, validateDraft, buildUpdatePayload, createNewDraft, validateCreateDraft, isCreateDirty, buildCreatePayload } from './detail-model.js';
 import { renderMarkdown, copyText } from './markdown.js';
 import { renderDetailEditor } from './detail-editor.js';
+import { renderTechnicalDetails } from './detail-technical.js';
 
 let state = 'closed', memory = null, draft = null, selected = null, version = 0;
 let picker = null, pending = null, confirmation = null, menu = null, preview = false;
 let onClose = null, priorFocus = null, background = null, retryCategories = () => {};
 let drawerAnimations = [];
+let touchedFields = new Set();
 function animateDrawer(open) {
   drawerAnimations.forEach(animation => animation.cancel());
   drawerAnimations = [];
@@ -74,7 +76,7 @@ export function requestLeave(action = closeNow) {
   if (!dirty()) { if (isOpen()) closeNow(); action === closeNow || action(); return true; }
   if (pending) return false;
   pending = action;
-  showConfirm('discard', 'Discard changes?', '未保存的修改将丢失。', 'Keep editing', 'Discard changes', () => {
+  showConfirm('discard', 'Discard changes?', '未保存的修改将丢失。', 'Continue editing', 'Discard changes', () => {
     const next = pending; pending = null; dismissConfirm(); closeNow(); if (next !== closeNow) next();
   });
   return false;
@@ -112,7 +114,7 @@ function header() {
   if (editing()) {
     actions.append(button('detail-cancel', 'Cancel', () => { if(mode==='create'){requestLeave();return;} destroyTransient(); draft = null; state = 'view'; render(); updateProtection(); $('detail-edit').focus(); }), button('detail-save', mode==='create' ? 'Create memory' : 'Save changes', save, 'btn-primary'),button('detail-copy-draft','Copy draft',()=>copy(draft.text)));
   } else if (state === 'view') {
-    actions.append(button('detail-edit', 'Edit', edit), button('detail-more', 'More ▾', showMenu));
+    actions.append(button('detail-edit', 'Edit', edit, 'btn-primary'), button('detail-more', 'More ▾', showMenu));
     $('detail-more').setAttribute('aria-haspopup', 'menu'); $('detail-more').setAttribute('aria-expanded', 'false');
   }
   if (debugEnabled()) actions.append(debugButton());
@@ -131,40 +133,41 @@ function render(error = '') {
 }
 function tags(kind, values) {
   const wrap = node('div', 'detail-' + kind + '-values', undefined, 'detail-tags');
-  const paint = expanded => {
-    wrap.replaceChildren(); const shown = kind === 'keywords' && !expanded ? values.slice(0,5) : values;
-    shown.forEach((value,i) => { const tag = node('span','detail-' + kind + '-' + (i+1),typeof value === 'string' ? value : JSON.stringify(value),'badge kw'); wrap.append(tag); });
-    if (!values.length) wrap.append(node('span', 'detail-' + kind + '-empty', '无', 'text-muted'));
-    if (kind === 'keywords' && values.length > 5) wrap.append(button('detail-keywords-expand',expanded ? '收起' : '+' + (values.length-5),()=>paint(!expanded)));
-  }; paint(false); return wrap;
+  values.forEach((value,i) => wrap.append(node('span','detail-'+kind+'-'+(i+1),typeof value==='string' ? value : JSON.stringify(value),'detail-tag detail-tag-'+kind)));
+  if (!values.length) wrap.append(node('span','detail-'+kind+'-empty','—','text-muted'));
+  return wrap;
 }
 function renderView(body) {
-  body.append(field('detail-summary','Summary',node('div','detail-summary-value',memory.summary || '无摘要',memory.summary ? 'detail-plain' : 'text-muted')));
+  body.append(field('detail-summary','Summary',node('div','detail-summary-value',memory.summary || '—',memory.summary ? 'detail-plain' : 'text-muted')));
   const content = node('div','detail-content-markdown',undefined,'detail-markdown'); renderMarkdown(content,memory.text);
   body.append(field('detail-content','Content',content));
   for (const kind of ['categories','keywords','anchors']) body.append(field('detail-'+kind,kind[0].toUpperCase()+kind.slice(1),tags(kind,Array.isArray(memory.metadata?.[kind]) ? memory.metadata[kind] : [])));
   body.append(technical());
 }
-function technical() {
-  const details = node('details','detail-technical',undefined,'detail-technical'); const summary=node('summary','detail-technical-toggle','Technical details'); summary.tabIndex=0; details.append(summary);
-  summary.dataset.debugNavigation='';
-  const list = node('dl','detail-technical-values');
-  for (const [label,value] of [['ID',memory.id],['Created',memory.created_at],['Updated',memory.updated_at]]) { list.append(node('dt','detail-'+label.toLowerCase()+'-label',label),node('dd','detail-'+label.toLowerCase()+'-value',value || '—')); }
-  const metadata = node('pre','detail-metadata',JSON.stringify(memory.metadata || {},null,2));
-  details.append(list,metadata,button('detail-copy-id','Copy ID',()=>copy(memory.id))); return details;
-}
+function technical() { return renderTechnicalDetails(memory); }
 function edit() { created=false; draft = createDraft(memory); preview = false; state = 'edit'; render(); updateProtection(); $('edit-namespace').focus(); }
 function updatePicker() { picker?.update(draft,{namespaces:getNamespaces(),categories:getCategories(),categoryState:getCategoryState()}); }
 function renderEditor(body) {
+  touchedFields = new Set();
   picker = renderDetailEditor({body, draft, creating: mode === 'create', validate, showError, technical, retryCategories, onRetryDefault: retryCategories});
   updateDefaultHint();
 }
 
 function showError(message) { const el=$('detail-error'); if(el){el.hidden=!message;el.textContent=message;} else toast(message,'error'); }
-function validate() {
-  const errors = draftErrors(); showError(Object.values(errors).join('；'));
-  updateSaveAvailability();
-  updateProtection();
+function validate(key, reveal = false) {
+  const errors = draftErrors();
+  if (key && reveal) touchedFields.add(key);
+  if (!key && reveal) Object.keys(errors).forEach(field => touchedFields.add(field));
+  if (key) showError('');
+  for (const field of ['namespace','summary','text','categories','keywords','anchors']) {
+    const message = touchedFields.has(field) ? errors[field] || '' : '';
+    const output = $('detail-field-error-' + field);
+    if (output) { output.textContent = message; output.hidden = !message; }
+    const control = $({text:'edit-text',categories:'detail-picker-categories',keywords:'detail-picker-keywords',anchors:'detail-anchor-input'}[field] || 'edit-' + field);
+    control?.setAttribute('aria-invalid', String(Boolean(message)));
+  }
+  updateSaveAvailability(); updateProtection();
+  return errors;
 }
 function updateSaveAvailability() {
   if(state!=='edit')return;
@@ -172,10 +175,14 @@ function updateSaveAvailability() {
 }
 function lock(value) {
   $('detail-panel').querySelectorAll('button,input,textarea,select').forEach(el=>el.disabled=value);
+  const saveButton=$('detail-save');
+  if(saveButton) saveButton.textContent=value ? (mode==='create' ? 'Creating…' : 'Saving…') : (mode==='create' ? 'Create memory' : 'Save changes');
   if(!value && state==='edit') validate(); updateProtection();
 }
 async function save() {
-  if(state!=='edit'||Object.keys(draftErrors()).length) return;
+  if(state!=='edit')return;
+  const errors=validate(null,true);
+  if(Object.keys(errors).length) { $({text:'edit-text',categories:'detail-picker-categories',keywords:'detail-picker-keywords',anchors:'detail-anchor-input'}[Object.keys(errors)[0]] || 'edit-'+Object.keys(errors)[0])?.focus(); return; }
   if(mode==='create'){await createMemory();return;}
   if(!hasChanges())return;
   picker?.close(); closeMenu(); state='saving'; lock(true); showError(''); const id=selected, request=version, payload=buildUpdatePayload(memory,draft);

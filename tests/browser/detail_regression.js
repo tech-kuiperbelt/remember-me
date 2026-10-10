@@ -10,12 +10,13 @@ async function runDetailScenario(scenario) {
   const chooseNamespace=value=>{if(!$('detail-namespace-options'))$('detail-namespace-select').click();namespaceOptions().find(option=>option.dataset.namespace===value).click();};
   const make=id=>({id,namespace:'a',summary:null,text:'# Detail heading\n\n**Bold** and [safe](https://example.com) [bad](javascript:alert(1))\n\n![remote](https://example.com/never-load.png)\n\n<img src=x onerror=alert(1)>\n\n```js\nMemoryService.update()\n```\n\n| Key | Value |\n| --- | --- |\n| name | test |',metadata:{categories:['design'],keywords:Array.from({length:24},(_,i)=>'keyword'+i),anchors:['MemoryService','handle_update_memory','get_details'],custom:{retain:true}},created_at:'2026-01-01T00:00:00Z',updated_at:'2026-02-01T00:00:00Z'});
   const records=new Map(['detail-a','detail-b'].map(id=>[id,make(id)]));
+  let holdPut=false, releasePut=null;
   let getFailure=false,putFailure=false,deleteFailure=false,namespaceReject=false,held=null;
   S.setOverride((url,init)=>{
     if(url.startsWith('/api/memories/detail-')){
       const id=url.split('/').pop(),method=init?.method||'GET';
       if(method==='GET') { if(held) return new Promise(resolve=>{held(resolve);held=null;}); if(getFailure) return json({detail:'reread failed'},503); return records.has(id)?json(records.get(id)):json({detail:'missing'},404); }
-      if(method==='PUT') { if(putFailure)return json({detail:'write refused'},503); const payload=JSON.parse(init.body);if(namespaceReject&&!payload.confirm_codes)return json({detail:'unknown',response_code:'namespace_not_found',response_meta:{requested_namespace:payload.namespace}},400); const row=records.get(id); records.set(id,{...row,...payload,summary:payload.summary===''?null:payload.summary??row.summary,metadata:{...row.metadata,...payload.metadata}});return json({success:true}); }
+      if(method==='PUT') { if(holdPut) return new Promise(resolve=>{releasePut=()=>{holdPut=false;const payload=JSON.parse(init.body),row=records.get(id);records.set(id,{...row,...payload,summary:payload.summary===''?null:payload.summary??row.summary,metadata:{...row.metadata,...payload.metadata}});resolve(json({success:true}));};}); if(putFailure)return json({detail:'write refused'},503); const payload=JSON.parse(init.body);if(namespaceReject&&!payload.confirm_codes)return json({detail:'unknown',response_code:'namespace_not_found',response_meta:{requested_namespace:payload.namespace}},400); const row=records.get(id); records.set(id,{...row,...payload,summary:payload.summary===''?null:payload.summary??row.summary,metadata:{...row.metadata,...payload.metadata}});return json({success:true}); }
       if(method==='DELETE'){if(deleteFailure)return json({detail:'delete refused'},503); records.delete(id);return json({success:true});}
     }
     return undefined;
@@ -68,11 +69,23 @@ async function runDetailScenario(scenario) {
     assert($('app-shell').inert,'modal background inert');
     result.textContent='PASS: '+scenario;return true;
   }
-  assert($('detail-summary-value').textContent==='无摘要','null summary displayed faithfully');
+  assert($('detail-summary-value').textContent==='—','null summary displayed faithfully');
   assert(!$('detail-score')&&!$('detail-content-markdown').querySelector('img,script,iframe,svg,[style],[onerror]'),'no resource-loading or unsafe Markdown');
   assert($('detail-content-markdown').querySelector('strong')&&$('detail-content-markdown').querySelector('.detail-code button')&&$('detail-content-markdown').querySelector('.detail-table'),'Markdown grammar and controlled actions');
   assert(![...$('detail-content-markdown').querySelectorAll('a')].some(a=>a.href.startsWith('javascript:')),'unsafe links removed');
-  assert($('detail-keywords-expand').textContent==='+19','keyword preview count');$('detail-keywords-expand').click();assert($('detail-keywords-24'),'all keywords expanded');
+  assert(!$('detail-keywords-expand')&&$('detail-keywords-24'),'all keywords visible without truncation');
+  assert($('detail-categories-1').classList.contains('detail-tag-categories')&&$('detail-anchors-1').classList.contains('detail-tag-anchors'),'distinct metadata semantics');
+  assert($('detail-created-value').title===records.get('detail-a').created_at&&/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test($('detail-created-value').textContent),'local time and raw ISO tooltip');
+  assert($('detail-metadata').textContent===JSON.stringify(records.get('detail-a').metadata,null,2)&&$('detail-copy-metadata'),'highlighted JSON retains complete original data');
+  $('detail-technical').open=true;
+  assert($('detail-metadata').getBoundingClientRect().height<=240 && $('detail-metadata').scrollHeight>$('detail-metadata').clientHeight,'raw JSON caps at 240px and scrolls');
+  const clipboardDescriptor=Object.getOwnPropertyDescriptor(navigator,'clipboard');const copied=[];
+  Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async value=>copied.push(value)}});
+  $('detail-copy-id').click();await settle();$('detail-copy-metadata').click();await settle();
+  assert(copied[0]==='detail-a'&&copied[1]===JSON.stringify(records.get('detail-a').metadata,null,2),'copies complete ID and raw JSON');
+  assert($('detail-copy-id').textContent==='✓'&&$('detail-copy-metadata').textContent==='✓','copy has inline feedback');
+  if(clipboardDescriptor)Object.defineProperty(navigator,'clipboard',clipboardDescriptor);else delete navigator.clipboard;
+  $('detail-technical').open=false;
   const ids=[...$('detail-modal').querySelectorAll('[id]')].map(n=>n.id);assert(new Set(ids).size===ids.length,'unique region IDs');
   assert($('detail-actions').contains($('detail-debug'))&&!$('detail-technical').open,'drawer Debug is always in header');
   const box=$('detail-panel').getBoundingClientRect();$('detail-debug').click();assert($('detail-debug').getAttribute('aria-pressed')==='true','shared debug state');
@@ -86,6 +99,21 @@ async function runDetailScenario(scenario) {
   const copyLabel=codeCopy.textContent;codeCopy.click();assert(codeCopy.textContent===copyLabel&&codeCopy.classList.contains('debug-focus'),'Debug selects ID without copying code');
   escape();assert(document.activeElement===$('detail-debug')&&$('detail-panel').getBoundingClientRect().width===box.width,'debug exit and stable layout');
   $('detail-edit').click();assert(document.activeElement===$('edit-namespace')&&$('detail-save').disabled,'clean edit focuses Namespace: focus='+document.activeElement?.id+', disabled='+$('detail-save').disabled+', error='+$('detail-error').textContent);
+  assert(!$('detail-extra-metadata-input'),'Edit has no raw JSON editor');
+  const originalSummary=$('edit-summary').value, originalText=$('edit-text').value;
+  type('edit-summary','line\n'.repeat(40));assert($('edit-summary').getBoundingClientRect().height<=130&&$('edit-summary').scrollHeight>$('edit-summary').clientHeight,'Summary caps and scrolls');
+  type('edit-summary',originalSummary);assert($('edit-summary').getBoundingClientRect().height===64,'Summary shrinks to two lines');
+  type('edit-text','line\n'.repeat(150));assert($('edit-text').getBoundingClientRect().height===500,'Content caps at 500px');
+  $('detail-preview-mode').click();assert($('detail-preview').getBoundingClientRect().height===500,'Preview uses same height');
+  $('detail-source-mode').click();type('edit-text',originalText);assert($('detail-save').disabled,'restoring source leaves clean draft');
+  $('detail-picker-categories').click();type('detail-picker-categories-query','api');
+  $('detail-picker-categories-query').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
+  assert($('detail-picker-selected-categories').textContent.includes('api')&&!writes().length,'category Enter adds without saving');
+  escape();$('detail-cancel').click();$('detail-edit').click();
+  type('detail-anchor-input','');$('detail-anchor-add').click();assert(!$('detail-field-error-anchors').hidden,'anchor Add error is local');
+  type('detail-anchor-input','MixedCaseAPI');$('detail-anchor-input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
+  assert($('detail-anchor-values').textContent.includes('MixedCaseAPI')&&$('detail-field-error-anchors').hidden,'anchor Enter preserves case and clears error');
+  $('detail-cancel').click();$('detail-edit').click();
   const knownNamespaces=[...store.getNamespaces()];
   $('detail-namespace-select').click();
   store.setNamespaces([...knownNamespaces,'namespace-choice',...Array.from({length:30},(_,i)=>'namespace-long-candidate-'+i)]);
@@ -119,8 +147,8 @@ async function runDetailScenario(scenario) {
   $('btn-detail-close').click();assert($('detail-confirm-cancel')&&document.activeElement===$('detail-confirm-cancel'),'safe discard default');$('detail-confirm-cancel').click();assert($('edit-text').value.endsWith(' changed'),'keep draft');
   const composing=new KeyboardEvent('keydown',{key:'Escape',isComposing:true,bubbles:true,cancelable:true});document.dispatchEvent(composing);assert(!$('detail-confirm'),'IME Escape ignored');
   router.switchPage('keywords');assert($('detail-confirm'),'navigation guarded');router.switchPage('stats');$('detail-confirm-discard').click();assert($('page-keywords').classList.contains('active')&&!detail.isOpen(),'first pending navigation runs once');router.switchPage('memories');
-  await open('detail-a');$('detail-edit').click();type('edit-text',source+' saved');S.resetCalls();$('detail-save').click();$('detail-save')?.click();await waitFor(()=>$('detail-edit'),'save and GET');
-  assert(writes().length===1,'one PUT');const payload=JSON.parse(writes()[0].body);assert(payload.summary===''&&JSON.stringify(payload.metadata.anchors)===JSON.stringify(records.get('detail-a').metadata.anchors),'body sends blank summary and original ordered anchors');assert($('detail-summary-value').textContent==='无摘要'&&records.get('detail-a').metadata.custom.retain,'null stored and unknown metadata retained');
+  await open('detail-a');$('detail-edit').click();type('edit-text',source+' saved');holdPut=true;S.resetCalls();$('detail-save').click();$('detail-save')?.click();await waitFor(()=>releasePut,'held PUT');assert($('detail-save').disabled&&$('detail-save').textContent==='Saving…','Saving label and duplicate prevention');escape();$('detail-modal').click();$('btn-detail-close').click();assert(detail.isOpen()&&!$('detail-confirm'),'busy ignores all dismissal paths');releasePut();await waitFor(()=>$('detail-edit'),'save and GET');
+  assert(writes().length===1,'one PUT');const payload=JSON.parse(writes()[0].body);assert(payload.summary===''&&JSON.stringify(payload.metadata.anchors)===JSON.stringify(records.get('detail-a').metadata.anchors),'body sends blank summary and original ordered anchors');assert($('detail-summary-value').textContent==='—'&&records.get('detail-a').metadata.custom.retain,'null stored and unknown metadata retained');
   $('detail-edit').click();type('edit-summary','new summary');getFailure=true;S.resetCalls();$('detail-save').click();await waitFor(()=>$('detail-retry'),'saved reload error');assert($('detail-status').textContent.includes('已保存')&&!$('edit-text'),'saved error is read only');getFailure=false;$('detail-retry').click();await waitFor(()=>$('detail-edit'),'retry GET');assert(writes().length===1&&$('detail-summary-value').textContent==='new summary','retry never repeats PUT');
   $('detail-edit').click();type('edit-summary','');putFailure=true;$('detail-save').click();await waitFor(()=>$('detail-error').textContent.includes('write refused'),'PUT error');assert($('edit-summary').value===''&&!$('detail-save').disabled,'failed write retains draft');putFailure=false;$('detail-cancel').click();assert($('detail-summary-value').textContent==='new summary','cancel returns confirmed view');
   $('detail-edit').click();type('edit-namespace','new-space');namespaceReject=true;const originalConfirm=window.confirm;window.confirm=()=>false;$('detail-save').click();await waitFor(()=>$('detail-save')&&!$('detail-save').disabled,'namespace confirmation cancel');assert($('edit-namespace').value==='new-space','namespace cancel retains draft');window.confirm=originalConfirm;namespaceReject=false;$('detail-cancel').click();
@@ -129,7 +157,7 @@ async function runDetailScenario(scenario) {
   type('edit-namespace','not-yet-created'); $('detail-picker-keywords').click();
   S.resetCalls(); type('detail-picker-keywords-query','new-keyword'); await settle(350);
   assert(!S.calls.some(c=>c.url==='/api/keywords/query'),'unknown namespace skips scoped keyword request');
-  $('detail-picker-keywords-create').click(); assert(!$('detail-save').disabled,'explicit new keyword allowed above 20');
+  $('detail-picker-keywords-query').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true})); assert(!$('detail-save').disabled,'explicit new keyword allowed above 20');
   escape(); assert(!$('detail-picker-keywords-popover')&&detail.isOpen(),'Escape closes picker first');
   const leaving=new Event('beforeunload',{cancelable:true});window.dispatchEvent(leaving);assert(leaving.defaultPrevented,'dirty registers unload guard');
   $('detail-cancel').click();const cleanUnload=new Event('beforeunload',{cancelable:true});window.dispatchEvent(cleanUnload);assert(!cleanUnload.defaultPrevented,'cancel removes unload guard');
@@ -152,7 +180,7 @@ async function runDetailScenario(scenario) {
   const created=await call('/memories','POST',{namespace:'a',text:'MemoryService detail integration',summary:'initial summary',metadata:{categories:['design'],keywords:['cache'],anchors:['MemoryService','handle_update_memory','get_details'],custom:'preserved'}});
   try {
     await call('/memories/'+created.id,'PUT',{summary:''});
-    await open(created.id); assert($('detail-summary-value').textContent==='无摘要','real GET null summary');
+    await open(created.id); assert($('detail-summary-value').textContent==='—','real GET null summary');
     $('detail-edit').click();type('edit-text','MemoryService detail integration changed');S.resetCalls();$('detail-save').click();await waitFor(()=>$('detail-edit'),'real body save');
     let authoritative=await call('/memories/'+created.id);assert(authoritative.summary===null&&authoritative.metadata.anchors.join()==='MemoryService,handle_update_memory,get_details'&&authoritative.metadata.custom==='preserved','real storage preserves null and anchors');
     assert(S.calls.filter(c=>c.method==='PUT'&&c.url.endsWith(created.id)).length===1,'real UI one PUT');

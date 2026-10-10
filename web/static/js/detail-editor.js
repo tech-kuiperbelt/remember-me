@@ -14,11 +14,26 @@ export function renderDetailEditor({body, draft, creating, validate, showError, 
   let preview = false;
   let refreshNamespaces = () => {};
   const updatePicker = () => picker?.update(draft,{namespaces:getNamespaces(),categories:getCategories(),categoryState:getCategoryState()});
+  let contentHeight = 240;
+  function resize(input, min, max) {
+    if (input.hidden || !input.isConnected) return;
+    const scroll = input.scrollTop;
+    input.style.height = 'auto';
+    const height = Math.max(min, Math.min(max, input.scrollHeight + 2));
+    input.style.height = height + 'px'; input.scrollTop = scroll;
+    return height;
+  }
+  function fieldError(section, key, control) {
+    const error=node('p','detail-field-error-'+key,'','detail-field-error');error.hidden=true;
+    section.append(error);control?.setAttribute('aria-describedby',error.id);
+    if(control) control.onblur=()=>validate(key,true);
+  }
   const status = node('p','detail-error','', 'text-danger'); status.hidden = true; status.setAttribute('role','alert'); body.append(status);
   for (const [key,label] of [['namespace','Namespace'],['summary','Summary']]) {
     const input = node(key === 'namespace' ? 'input' : 'textarea','edit-'+key); input.value = draft[key];
     const section = field('detail-edit-'+key,label,input); section.querySelector('h2').replaceWith(Object.assign(node('label','detail-edit-'+key+'-label',label),{htmlFor:input.id}));
-    input.oninput = () => { draft[key] = input.value; if(key === 'namespace') {namespacePicker?.close();input.dataset.touched='true';updatePicker();} validate(); }; body.append(section);
+    input.oninput = () => { draft[key] = input.value; if(key==='summary')resize(input,64,130); if(key === 'namespace') {namespacePicker?.close();input.dataset.touched='true';updatePicker();} validate(key); }; fieldError(section,key,input); body.append(section);
+    if(key==='summary'){input.rows=2;input.placeholder='Summary (optional)';}
     if(key === 'summary' && creating) section.append(node('p','detail-summary-hint','留空将从正文生成摘要。','text-muted'));
     if(key === 'namespace' && creating) {
       const hint=node('p','detail-default-namespace-status','','text-muted'); hint.setAttribute('role','status'); section.append(hint,button('detail-default-namespace-retry','Retry default Namespace',onRetryDefault));
@@ -53,7 +68,8 @@ export function renderDetailEditor({body, draft, creating, validate, showError, 
   rendered.tabIndex=0;
   modes.append(editButton,previewButton);
   const editor = node('div','detail-content-editor',undefined,'detail-content-editor'); editor.append(modes,source,rendered);
-  body.append(field('detail-edit-content','Content',editor));
+  const contentSection=field('detail-edit-content','Content',editor);fieldError(contentSection,'text',text);body.append(contentSection);
+  text.placeholder='Enter memory content in Markdown…';
   modes.onkeydown = event => {
     if(event.isComposing || event.target.disabled) return;
     const tabs=[editButton,previewButton], index=tabs.indexOf(event.target);
@@ -68,36 +84,44 @@ export function renderDetailEditor({body, draft, creating, validate, showError, 
   let sourcePosition = null;
   function setPreview(next) {
     if(next && !preview) sourcePosition = {start:text.selectionStart,end:text.selectionEnd,direction:text.selectionDirection,top:text.scrollTop,left:text.scrollLeft};
-    preview = next; if(next) renderMarkdown(rendered,draft.text); source.hidden=next; text.hidden=next; rendered.hidden=!next;
+    preview = next; if(next) { renderMarkdown(rendered,draft.text);rendered.style.height=contentHeight+'px'; } source.hidden=next; text.hidden=next; rendered.hidden=!next;
     editButton.setAttribute('aria-selected',String(!next)); previewButton.setAttribute('aria-selected',String(next));
     editButton.tabIndex=next?-1:0; previewButton.tabIndex=next?0:-1;
+    if(!next) contentHeight=resize(text,240,500)||contentHeight;
     if(!next && sourcePosition) { text.setSelectionRange(sourcePosition.start,sourcePosition.end,sourcePosition.direction); text.scrollTop=sourcePosition.top; text.scrollLeft=sourcePosition.left; }
   }
-  setPreview(false); text.oninput = () => { draft.text=text.value; validate(); };
+  setPreview(false); text.oninput = () => { draft.text=text.value; contentHeight=resize(text,240,500)||contentHeight; validate('text'); };
   const pickerRoot = node('div','detail-pickers'); body.append(field('detail-edit-tags','Categories & Keywords',pickerRoot));
   picker = createValuePickers({root:pickerRoot,idPrefix:'detail-picker',container:$('detail-panel'),maxSelected:{categories:3,keywords:Infinity},allowCreate:true,onRetryCategories:retryCategories,
-    onChange:changes=>{ Object.assign(draft,changes); updatePicker(); validate(); }}); updatePicker();
+    onChange:changes=>{ Object.assign(draft,changes); updatePicker(); validate(Object.keys(changes)[0],true); }}); updatePicker();
+  for(const key of ['categories','keywords'])fieldError($('detail-edit-tags'),key,$('detail-picker-'+key));
   const anchors = node('div','detail-anchor-values',undefined,'detail-tags'), input = node('input','detail-anchor-input'); input.placeholder='添加锚点'; input.setAttribute('aria-label','New anchor');
   const add = button('detail-anchor-add','Add',()=>{
     const value = normalizeAnchors([input.value])[0];
-    if (!value || Array.from(value).length > 128 || draft.anchors.length >= 5) { showError('最多 5 个锚点，每项 1–128 个字符'); return; }
-    if (!normalizeAnchors(draft.anchors).some(existing=>existing===value || (/^[\x00-\x7f]*$/.test(existing) && existing.toLowerCase()===value.toLowerCase()))) draft.anchors.push(value); input.value=''; paintAnchors(); validate();
+    if (!value || Array.from(value).length > 128 || draft.anchors.length >= 5) { input.focus();const error=$('detail-field-error-anchors');error.textContent='最多 5 个锚点，每项 1–128 个字符';error.hidden=false;input.setAttribute('aria-invalid','true');return; }
+    if (!normalizeAnchors(draft.anchors).some(existing=>existing===value || (/^[\x00-\x7f]*$/.test(existing) && existing.toLowerCase()===value.toLowerCase()))) draft.anchors.push(value); input.value=''; paintAnchors(); validate('anchors',true);
   });
+  input.oninput=()=>{const error=$('detail-field-error-anchors');error.textContent='';error.hidden=true;input.setAttribute('aria-invalid','false');};
   input.onkeydown=e=>{ if(e.key==='Enter'&&!e.isComposing){e.preventDefault();add.click();} };
-  function paintAnchors() { anchors.replaceChildren(...draft.anchors.map((value,index)=>button('detail-anchor-'+(index+1),String(value)+' ×',()=>{draft.anchors.splice(index,1);paintAnchors();validate();}))); }
-  paintAnchors(); const anchorSection = field('detail-edit-anchors','Anchors',anchors); anchorSection.append(input,add,node('p','detail-anchor-hint','修改正文后，请检查锚点是否仍然准确。','text-muted')); body.append(anchorSection);
-  if(creating) {
-    const extra=node('details','detail-extra-metadata',undefined,'detail-technical');
-    const toggle=node('summary','detail-extra-metadata-toggle','其他 metadata'); toggle.dataset.debugNavigation=''; extra.append(toggle);
-    const input=node('textarea','detail-extra-metadata-input'); input.value=draft.extraMetadata; input.setAttribute('aria-label','Other metadata JSON');
-    input.oninput=()=>{draft.extraMetadata=input.value;validate();};
-    extra.append(node('p','detail-extra-metadata-hint','JSON 对象；分类、关键词和锚点请使用上方字段。','text-muted'),input); body.append(extra);
-  } else body.append(technical());
+  function paintAnchors() { anchors.replaceChildren(...draft.anchors.map((value,index)=>button('detail-anchor-'+(index+1),String(value)+' ×',()=>{draft.anchors.splice(index,1);paintAnchors();validate('anchors',true);}))); }
+  paintAnchors(); const anchorSection = field('detail-edit-anchors','Anchors',anchors); anchorSection.append(input,add,node('p','detail-anchor-hint','修改正文后，请检查锚点是否仍然准确。','text-muted')); fieldError(anchorSection,'anchors',input);body.append(anchorSection);
+  if(!creating) body.append(technical());
+  let lastWidth = 0;
+  function resizeFields() {
+    resize($('edit-summary'),64,130);
+    if(!preview) contentHeight=resize(text,240,500)||contentHeight;
+    else rendered.style.height=contentHeight+'px';
+  }
+  const observer=new ResizeObserver(entries=>{
+    const width=entries[0].contentRect.width;
+    if(width!==lastWidth){lastWidth=width;resizeFields();}
+  });
+  observer.observe(body);document.fonts?.addEventListener('loadingdone',resizeFields);resizeFields();
   validate(); return {...picker,
     update(...args) { picker.update(...args); refreshNamespaces(); },
     isOpen:()=>namespacePicker.isOpen()||picker.isOpen(),
     focusRoot:()=>namespacePicker.focusRoot()||picker.focusRoot(),
     close(restore=false) { if(namespacePicker.isOpen())namespacePicker.close(restore);else picker.close(restore); },
-    destroy() { namespacePicker.destroy();picker.destroy(); },
+    destroy() { observer.disconnect();document.fonts?.removeEventListener('loadingdone',resizeFields);namespacePicker.destroy();picker.destroy(); },
   };
 }
