@@ -185,6 +185,23 @@ class MemoryStorage(ABC):
     @abstractmethod
     def get_stats(self) -> dict[str, Any]: ...
 
+    @abstractmethod
+    def get_metadata_stats(self, namespace: Optional[str] = None) -> dict[str, Any]:
+        """Read-only aggregate of live metadata usage in one scope.
+
+        ``namespace=None`` means all namespaces; otherwise the scope is that
+        single namespace. Only live records (``deleted=0``) count, and only via
+        the derived relation tables, so historical ``index_values`` with no live
+        association are invisible.
+
+        Returns the scope's live-memory total, the global live namespace
+        distribution, and per-dimension ``categories``/``keywords``/``anchors``
+        ``{unique_count, covered_memories, top:[{value,count}]}``. Implementations
+        must compute the whole result from a single consistent read snapshot;
+        percentages are left to the caller.
+        """
+        raise NotImplementedError
+
     # -- business index and lifecycle surface used by Service/IndexValueResolver --
 
     @abstractmethod

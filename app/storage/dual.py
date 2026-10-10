@@ -480,6 +480,10 @@ class DualStorage(MemoryStorage):
     def list_namespaces(self, *args, **kwargs):
         return self.primary.list_namespaces(*args, **kwargs)
 
+    def get_metadata_stats(self, namespace=None):
+        """Scoped metadata aggregate from the primary; no replica scan."""
+        return self.primary.get_metadata_stats(namespace)
+
     def live_memory_ids(self):
         return self.primary.live_memory_ids()
 

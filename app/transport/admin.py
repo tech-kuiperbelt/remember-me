@@ -851,6 +851,17 @@ class AdminAPI:
         return json_response({**stats, "default_namespace": self.service.settings.DEFAULT_NAMESPACE})
 
     @_maps_domain_errors
+    async def handle_stats_metadata(self, request: Request):
+        logger.info("GET /api/stats/metadata")
+        params = request.query_params
+        if set(params.keys()) - {"namespace"} or len(params.getlist("namespace")) > 1:
+            raise InvalidRequest("unsupported query parameters")
+        namespace = params.get("namespace")
+        result = await self._run(
+            lambda: self.service.memory_metadata_stats(namespace=namespace))
+        return json_response(result)
+
+    @_maps_domain_errors
     async def handle_sync(self, request: Request):
         logger.info("POST /api/sync")
         if self.runtime is not None:
@@ -934,6 +945,7 @@ class AdminAPI:
         _Route("/api/memories/{memory_id}", ("DELETE",), "handle_delete_memory", "write"),
         _Route("/api/keywords/query", ("POST",), "handle_keywords", "read", errors="none"),
         _Route("/api/stats", ("GET",), "handle_stats", "read"),
+        _Route("/api/stats/metadata", ("GET",), "handle_stats_metadata", "read"),
         _Route("/api/storage-paths", ("GET",), "handle_storage_paths", "exempt"),
         _Route("/api/import", ("POST",), "handle_import_memories", "exempt", errors="none"),
         _Route("/api/import/{import_id}", ("GET",), "handle_import_status", "read"),

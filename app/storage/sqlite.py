@@ -1978,6 +1978,70 @@ class SQLiteStorage(SQLitePrimaryStorage):
             "path": self.path,
         }
 
+    def get_metadata_stats(self, namespace=None):
+        """Single-snapshot aggregate of live metadata usage (see base contract).
+
+        All queries share one ``SAVEPOINT`` read snapshot, so the scope total,
+        every dimension's distinct/coverage and Top 100 come from the same
+        database state. The lock is released before the caller assembles ratios.
+
+        The per-dimension association scan is driven from ``memories`` (narrowed
+        by the namespace index when scoped) and materialized first. Without that
+        barrier SQLite flips the scoped Top query to an ``index_values``-first
+        plan, which is quadratic for a high-cardinality dimension in one large
+        namespace.
+        """
+        dimensions_names = ("categories", "keywords", "anchors")
+        scope_clause = " AND m.namespace = ?" if namespace is not None else ""
+        scope_params = [namespace] if namespace is not None else []
+        scoped = (
+            "WITH scoped(value, memory_id) AS MATERIALIZED ("
+            "SELECT iv.value AS value, m.id AS memory_id "
+            "FROM memories m "
+            "JOIN memory_index_values link ON link.memory_id = m.id "
+            "JOIN index_values iv ON iv.id = link.index_value_id "
+            "WHERE iv.dimension = ? AND m.deleted = 0" + scope_clause + ") "
+        )
+        with self._lock:
+            # SAVEPOINT also composes with callers that already own a transaction.
+            self.conn.execute("SAVEPOINT metadata_stats")
+            try:
+                ns_rows = self.conn.execute(
+                    "SELECT namespace, COUNT(*) AS cnt FROM memories "
+                    "WHERE deleted = 0 GROUP BY namespace ORDER BY namespace"
+                ).fetchall()
+                namespace_live = {r["namespace"]: r["cnt"] for r in ns_rows}
+                total = (namespace_live.get(namespace, 0) if namespace is not None
+                         else sum(namespace_live.values()))
+                dimensions = {}
+                for dimension in dimensions_names:
+                    summary = self.conn.execute(
+                        scoped + "SELECT COUNT(DISTINCT value) AS uniq, "
+                        "COUNT(DISTINCT memory_id) AS covered FROM scoped",
+                        [dimension, *scope_params],
+                    ).fetchone()
+                    top_rows = self.conn.execute(
+                        scoped + "SELECT value, COUNT(DISTINCT memory_id) AS cnt "
+                        "FROM scoped GROUP BY value ORDER BY cnt DESC, value ASC LIMIT 100",
+                        [dimension, *scope_params],
+                    ).fetchall()
+                    dimensions[dimension] = {
+                        "unique_count": summary["uniq"],
+                        "covered_memories": summary["covered"],
+                        "top": [{"value": r["value"], "count": r["cnt"]} for r in top_rows],
+                    }
+            except BaseException:
+                self.conn.execute("ROLLBACK TO metadata_stats")
+                raise
+            finally:
+                self.conn.execute("RELEASE metadata_stats")
+        return {
+            "scope": namespace,
+            "total_memories": total,
+            "namespace_live": namespace_live,
+            "dimensions": dimensions,
+        }
+
     def active_embedding_profile(self):
         return self._active_profile_id
 

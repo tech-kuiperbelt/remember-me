@@ -29,6 +29,7 @@ EXPECTED_ORDER = [
     ("/api/memories/{memory_id}", ("DELETE",)),
     ("/api/keywords/query", ("POST",)),
     ("/api/stats", ("GET",)),
+    ("/api/stats/metadata", ("GET",)),
     ("/api/storage-paths", ("GET",)),
     ("/api/import", ("POST",)),
     ("/api/import/{import_id}", ("GET",)),

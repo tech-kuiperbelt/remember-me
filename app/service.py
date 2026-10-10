@@ -653,6 +653,55 @@ class MemoryService:
             logger.error("stats failed: %s", e, exc_info=True)
             raise
 
+    def memory_metadata_stats(self, namespace=None) -> dict:
+        """Read-only scoped metadata statistics for the Stats workspace.
+
+        ``namespace=None`` means All. A provided namespace is validated
+        independently of :meth:`check_namespace` — a blank value is rejected
+        rather than resolved to the default — and existence is judged against
+        the same read snapshot the aggregate came from.
+        """
+        if namespace is not None:
+            if not isinstance(namespace, str):
+                raise InvalidNamespace("namespace must be a string")
+            normalized = namespace.strip()
+            if not normalized:
+                raise InvalidNamespace("namespace must not be blank")
+            namespace = validate_namespace_name(normalized)
+        stats = self.storage.get_metadata_stats(namespace)
+        namespace_live = stats.get("namespace_live") or {}
+        default_namespace = self.settings.DEFAULT_NAMESPACE
+        known = sorted(set(namespace_live) | {default_namespace})
+        if namespace is not None and namespace not in known:
+            raise NamespaceNotFound(namespace, known)
+        total = stats["total_memories"]
+        if namespace is None:
+            distribution = [
+                {"name": name, "count": count}
+                for name, count in sorted(namespace_live.items(),
+                                          key=lambda item: (-item[1], item[0]))
+            ]
+        else:
+            count = namespace_live.get(namespace, 0)
+            distribution = [{"name": namespace, "count": count}] if count else []
+        dimensions = {}
+        for name, dimension in stats["dimensions"].items():
+            covered = dimension["covered_memories"]
+            dimensions[name] = {
+                "unique_count": dimension["unique_count"],
+                "covered_memories": covered,
+                "coverage_ratio": (covered / total) if total else 0,
+                "top": dimension["top"],
+            }
+        return {
+            "scope": {"namespace": namespace},
+            "total_memories": total,
+            "namespace_options": known,
+            "default_namespace": default_namespace,
+            "namespace_distribution": distribution,
+            "dimensions": dimensions,
+        }
+
     def memory_export_full(self, destination: str) -> dict:
         try:
             return self.storage.export_full_snapshot(destination)
