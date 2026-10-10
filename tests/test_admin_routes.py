@@ -30,6 +30,7 @@ EXPECTED_ORDER = [
     ("/api/keywords/query", ("POST",)),
     ("/api/stats", ("GET",)),
     ("/api/stats/metadata", ("GET",)),
+    ("/api/stats/retrieval", ("GET",)),
     ("/api/storage-paths", ("GET",)),
     ("/api/import", ("POST",)),
     ("/api/import/{import_id}", ("GET",)),

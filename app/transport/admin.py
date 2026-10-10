@@ -21,9 +21,14 @@ from app.operations.calls import INLINE_RUNNER, ServiceClosing
 from app.embedding.embed import EmbeddingInputTooLong
 from app.domain.lexical import LexicalQueryError
 from app.domain.anchors import InvalidAnchors
-from app.domain.namespace_policy import NamespaceNotFound, InvalidNamespace
+from app.domain.namespace_policy import (NamespaceNotFound, InvalidNamespace,
+                                         normalize_namespace, validate_namespace_name)
 from app.storage.jsonl_transfer import safe_filename_part, unlink_quietly
 from app.operations.maintenance import MaintenanceRejected
+from app.operations.retrieval_stats import (SUPPORTED_DAYS, RetrievalStatsReadError,
+                                            TimezoneDatabaseUnavailable, UnknownTimezone,
+                                            collect_retrieval_stats, journal_paths,
+                                            resolve_timezone)
 from app.config.configuration import PROJECT_ROOT
 
 logger = logging.getLogger("admin")
@@ -862,6 +867,59 @@ class AdminAPI:
         return json_response(result)
 
     @_maps_domain_errors
+    async def handle_stats_retrieval(self, request: Request):
+        logger.info("GET /api/stats/retrieval")
+        params = request.query_params
+        allowed = {"days", "timezone", "namespace"}
+        if set(params.keys()) - allowed:
+            raise InvalidRequest("unsupported query parameters")
+        for key in allowed:
+            if len(params.getlist(key)) > 1:
+                raise InvalidRequest(f"duplicate parameter: {key}")
+        days_raw = params.get("days", "7")
+        try:
+            days = int(days_raw)
+        except (TypeError, ValueError):
+            raise InvalidRequest("days must be 7, 30 or 90")
+        if days not in SUPPORTED_DAYS:
+            raise InvalidRequest("days must be 7, 30 or 90")
+        tz_raw = params.get("timezone")
+        if tz_raw is None or not tz_raw.strip():
+            raise InvalidRequest("timezone is required")
+        namespace_raw = params.get("namespace") if "namespace" in params else None
+
+        def work():
+            # Timezone resolution and namespace existence both touch the tz
+            # database / storage, so they run in the worker (inside the runtime
+            # admission gate), never on the event loop.
+            tz = resolve_timezone(tz_raw)
+            namespace = None
+            if namespace_raw is not None:
+                namespace = normalize_namespace(namespace_raw)
+                if namespace is None:
+                    raise InvalidNamespace("namespace must not be blank")
+                validate_namespace_name(namespace)
+                known = self.service.known_namespaces()
+                if namespace not in known:
+                    raise NamespaceNotFound(namespace, known)
+            path, max_files = journal_paths(self.audit)
+            return collect_retrieval_stats(path, max_files, days=days, tz=tz,
+                                           namespace=namespace)
+
+        try:
+            result = await self._run(work)
+        except TimezoneDatabaseUnavailable:
+            return error_response(503, "timezone database is unavailable",
+                                  code="timezone_database_unavailable")
+        except UnknownTimezone:
+            return error_response(400, f"unknown timezone: {tz_raw}",
+                                  code="invalid_timezone")
+        except RetrievalStatsReadError:
+            logger.error("retrieval stats read failed", exc_info=True)
+            return error_response(500, "audit history could not be read")
+        return json_response(result)
+
+    @_maps_domain_errors
     async def handle_sync(self, request: Request):
         logger.info("POST /api/sync")
         if self.runtime is not None:
@@ -946,6 +1004,7 @@ class AdminAPI:
         _Route("/api/keywords/query", ("POST",), "handle_keywords", "read", errors="none"),
         _Route("/api/stats", ("GET",), "handle_stats", "read"),
         _Route("/api/stats/metadata", ("GET",), "handle_stats_metadata", "read"),
+        _Route("/api/stats/retrieval", ("GET",), "handle_stats_retrieval", "read"),
         _Route("/api/storage-paths", ("GET",), "handle_storage_paths", "exempt"),
         _Route("/api/import", ("POST",), "handle_import_memories", "exempt", errors="none"),
         _Route("/api/import/{import_id}", ("GET",), "handle_import_status", "read"),
