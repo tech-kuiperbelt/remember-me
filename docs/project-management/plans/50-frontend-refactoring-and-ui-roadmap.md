@@ -100,3 +100,12 @@ Stats 后续克制精修已完成：统一字体行高、Overview 5／3／2 等�
 第一阶段完成以现有行为保持、资源加载正常和浏览器回归通过为依据。
 后续 UI 调整按用户提出的需求逐项验收；整条路线的结束时间和最终页面方案
 待需求明确后确定。
+
+
+2026-10-10 Statistics 双视图实施完成、待用户验收：新增 Retrieval 三指标、日／周趋势、模式排名及 −10..10 反馈；共享全局 Namespace 候选，移除 Stats 局部刷新，仅站内保留状态，Data notes 仅 `--debug`。Memory Stats 25 项、Retrieval 43 项场景及真实键盘操作、Search／Card／Detail／Create 功能回归通过；另修复隐藏 Memories 请求覆盖共享滚动的竞态。未改后端、未提交、未重启生产；详见 [53.4 Coding Plan 与实施记录](53.4-stats-retrieval-ui-coding-plan.md)。
+
+2026-10-10 用户 mockup 复核后的指定精修：切换选中层级、五指标图标与身份色、粗圆环及扇区占比、Namespace 列标题、Unique Count／Coverage 分隔和 Top 同行、摘要细粒度 Debug ID 已调整。详情及验证记录见 53.4 第 6 节，待用户复核，未提交。
+
+Stats 最终 mockup 对照复核：统一 Overview 字号与图标尺寸、面板标题、比例条粗细、宽卡片同行条形图、轻量 Top 边框；阴影仅保留浮动提示，完整验证范围与尺寸表见 53.4 第 7 节。待用户复核，未提交。
+
+2026-10-10 用户最终验收并明确授权 commit：53.4 Statistics 双视图与本轮 mockup 精修、十星正负评分、有效评分说明及 LLM/MCP 标注已完成，归档至 backlog-done，随本次提交保存代码、设计包、测试和实施记录。前文待验收／未提交为迭代记录，以本条为最终状态。后端未改，生产未重启。

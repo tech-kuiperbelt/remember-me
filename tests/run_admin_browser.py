@@ -50,7 +50,7 @@ class BrowserProvider(FakeProvider):
 
 service = MemoryService(Settings.from_env(),
     SQLiteStorage(':memory:', embedding_spec=EmbeddingSpec('test','smoke',2).as_dict()), BrowserProvider())
-debug_disabled = sys.argv[1:] == ['--case', 'debug-disabled']
+debug_disabled = sys.argv[1:] in (['--case', 'debug-disabled'], ['--case', 'retrieval-debug-disabled'])
 admin = AdminAPI(service, debug=not debug_disabled)
 service.embed_query = lambda _: [1.,0.]
 words = ['cache', 'cache clear', 'rare_id'] + ['word%03d' % i for i in range(60)]
@@ -69,6 +69,7 @@ checks += '\n' + (ROOT / 'tests/browser/cards_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/detail_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/create_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/stats_regression.js').read_text()
+checks += '\n' + (ROOT / 'tests/browser/retrieval_regression.js').read_text()
 HEAD_SCRIPT = '<script>' + harness + '</script>'
 BODY_SCRIPT = '<script type="module">' + checks + '</script>'
 
@@ -178,12 +179,13 @@ def run_case(profile, label, window_size, scale, shot_dir, query, theme=None, zo
     url = f'http://127.0.0.1:{port}/admin/console?smoke=' + query
     if theme:
         url += '&theme=' + theme
-    if query.startswith(('search-layout-', 'search-wrap-', 'cards-', 'stats-layout-')):
+    if query.startswith(('search-layout-', 'search-wrap-', 'cards-', 'stats-layout-', 'retrieval-layout-')):
         from tests.chrome_viewport import run_viewport
         width, height = map(int, window_size.split(','))
         result = run_viewport(url, profile, width, height, shot,
                               verify_search_keyboard=query == "search-layout-1920-light",
-                              verify_stats_keyboard=query == "stats-layout-1460-all-light")
+                              verify_stats_keyboard=query == "stats-layout-1460-all-light",
+                              verify_retrieval_keyboard=query == "retrieval-layout-1460-7-light")
         shot.with_suffix('.json').write_text(json.dumps(result, indent=2) + '\n')
         return subprocess.CompletedProcess([], 0, '<pre id="smoke-result">' + result['text'] + '</pre>', ''), shot
     cmd = ['google-chrome', '--headless', '--no-sandbox', '--disable-gpu',
@@ -254,6 +256,14 @@ try:
         else tempfile.TemporaryDirectory(prefix='remember-ui-shots-')
     with tempfile.TemporaryDirectory(prefix='keyword-chrome-') as profile, _shots_ctx as shots:
         failures = []
+        retrieval_cases = [('retrieval-functional', '1440,800', 'light'), ('retrieval-debug-disabled', '1280,800', 'light'), ('retrieval-reload', '1280,800', 'light')]
+        retrieval_cases += [(f'retrieval-layout-{width}-{mode}-{scheme}', f'{width},1000', scheme) for width in (390,820,1120,1460) for mode in ('7','30','90','empty','nofeedback') for scheme in ('light','dark')]
+        for label, size, scheme in retrieval_cases:
+            if not selected(label): continue
+            proc, shot = run_case(profile, label, size, '1', shots, label, theme=scheme)
+            ok, output = check(proc)
+            print(('PASS ' if ok else 'FAIL ') + label + ' -> ' + str(shot) + ('' if ok else ' :: ' + output), flush=True)
+            if not ok: failures.append(label)
         stats_cases = [('stats-functional', '1440,700', 'light')]
         stats_cases += [(f'stats-layout-{width}-{mode}-{scheme}', f'{width},900', scheme)
                         for width in (390, 820, 1120, 1460)

@@ -64,7 +64,8 @@ export function mount({openMemory = () => {}, openCreate = () => {}, retryCatego
   data = createMemoriesData(state => {
     focusId = activeRow() || focusId;
     const content = $('content');
-    if (state.status === 'loading' && savedScroll === null) { savedScroll = content.scrollTop; $('memories-list').style.minHeight = $('memories-list').offsetHeight + 'px'; }
+    const visible = $('page-memories').classList.contains('active');
+    if (visible && state.status === 'loading' && savedScroll === null) { savedScroll = content.scrollTop; $('memories-list').style.minHeight = $('memories-list').offsetHeight + 'px'; }
     view.render(state); updateFilters(state); searchControls.update(state); updateCreate();
     const sort = $('memories-sort'), searching = Boolean(state.submittedQuery);
     const options = searching ? [['relevance', 'Relevance']]
@@ -73,7 +74,7 @@ export function mount({openMemory = () => {}, openCreate = () => {}, retryCatego
       sort.replaceChildren(...options.map(([value, label]) => new Option(label, value))); sort.dataset.mode = String(searching);
     }
     sort.value = state.sort; sort.disabled = searching;
-    if (state.status !== 'loading' && savedScroll !== null) { $('memories-list').style.minHeight = ''; content.scrollTop = savedScroll; savedScroll = null; }
+    if (state.status !== 'loading' && savedScroll !== null) { $('memories-list').style.minHeight = ''; if (visible)content.scrollTop = savedScroll; savedScroll = null; }
     if (state.status !== 'loading' && focusId && $('page-memories').classList.contains('active')) {
       // Refetch replaces the focused row; restore by identity, not DOM position.
       if (!isDetailOpen() && document.activeElement === document.body) restoreFocus(focusId);

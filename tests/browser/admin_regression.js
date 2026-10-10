@@ -203,7 +203,7 @@ try {
     await checkSearchLayout();
     result.textContent='PASS: '+scenario;
   }
-  else if (await runStatsScenario(scenario) || await runCreateScenario(scenario) || await runDetailScenario(scenario) || await runMemoriesVisualScenario(scenario) || await runThemeScenario(scenario)) { /* theme scenario finished */ }
+  else if (await runRetrievalScenario(scenario) || await runStatsScenario(scenario) || await runCreateScenario(scenario) || await runDetailScenario(scenario) || await runMemoriesVisualScenario(scenario) || await runThemeScenario(scenario)) { /* theme scenario finished */ }
   else {
 
   // The real page bootstraps from the real backend; wait for the first load.

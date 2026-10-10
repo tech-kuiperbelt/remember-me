@@ -7,7 +7,7 @@ import subprocess
 import time
 
 
-def run_viewport(url, profile, width, height, screenshot, verify_search_keyboard=False, verify_stats_keyboard=False):
+def run_viewport(url, profile, width, height, screenshot, verify_search_keyboard=False, verify_stats_keyboard=False, verify_retrieval_keyboard=False):
     incoming, writer = os.pipe()
     reader, outgoing = os.pipe()
 
@@ -65,7 +65,7 @@ def run_viewport(url, profile, width, height, screenshot, verify_search_keyboard
             raise TimeoutError('UI result')
         if result['width'] != width or result['height'] != height:
             raise AssertionError('Unexpected CSS viewport: ' + str(result))
-        if verify_search_keyboard or verify_stats_keyboard:
+        if verify_search_keyboard or verify_stats_keyboard or verify_retrieval_keyboard:
             def evaluate(expression):
                 return call('Runtime.evaluate', {'expression': expression, 'returnByValue': True}, session)['result'].get('value')
 
@@ -80,8 +80,8 @@ def run_viewport(url, profile, width, height, screenshot, verify_search_keyboard
         if verify_stats_keyboard:
             evaluate("document.getElementById('stats-namespace').focus();window.__smoke.resetCalls()")
             key('Tab', 'Tab', 9)
-            if evaluate('document.activeElement.id') != 'btn-stats-refresh':
-                raise AssertionError('Stats selector must Tab to Refresh')
+            if evaluate('document.activeElement.id') != 'stats-tab-memory':
+                raise AssertionError('Stats selector must Tab to the active Memory tab')
             key('Tab', 'Tab', 9)
             if not evaluate("document.activeElement.matches('.stats-namespace-row') && document.activeElement.matches(':focus-visible')"):
                 raise AssertionError('Namespace row must have visible native keyboard focus')
@@ -133,6 +133,39 @@ def run_viewport(url, profile, width, height, screenshot, verify_search_keyboard
             else:
                 raise AssertionError('Stats return after rank keyboard drilldown did not finish')
             evaluate("document.getElementById('stats-categories-top-5').click();document.activeElement.blur();document.getElementById('content').scrollTop=0")
+        if verify_retrieval_keyboard:
+            def ready(panel):
+                deadline = time.monotonic() + 8
+                while time.monotonic() < deadline:
+                    if evaluate("document.getElementById('stats-content').getAttribute('aria-busy')==='false' && !!document.getElementById('" + panel + "')"):
+                        return
+                    time.sleep(.05)
+                raise AssertionError('Stats native keyboard transition did not finish: ' + panel)
+
+            evaluate("document.getElementById('stats-tab-retrieval').focus()")
+            key('ArrowLeft', 'ArrowLeft', 37)
+            ready('stats-overview')
+            if evaluate('document.activeElement.id') != 'stats-tab-memory':
+                raise AssertionError('Left arrow must activate and focus Memory tab')
+            key('ArrowRight', 'ArrowRight', 39)
+            ready('stats-retrieval-overview')
+            if evaluate('document.activeElement.id') != 'stats-tab-retrieval':
+                raise AssertionError('Right arrow must activate and focus Retrieval tab')
+            evaluate("document.querySelector('.stats-trend-svg').focus()")
+            key('End', 'End', 35)
+            if not evaluate("!document.querySelector('.stats-trend-tooltip').hidden && document.querySelector('.stats-trend-tooltip').textContent.includes('2026-10-10')"):
+                raise AssertionError('Native End must inspect last trend bucket')
+            key('Escape', 'Escape', 27)
+            if not evaluate("document.querySelector('.stats-trend-tooltip').hidden"):
+                raise AssertionError('Native Escape must dismiss tooltip')
+            evaluate("document.getElementById('stats-days-30').focus()")
+            key('Enter', 'Enter', 13)
+            ready('stats-retrieval-overview')
+            if not evaluate("document.getElementById('stats-days-30').getAttribute('aria-pressed')==='true' && document.querySelectorAll('.stats-trend table tr').length===31"):
+                raise AssertionError('Native Enter must select 30 days')
+            evaluate("document.getElementById('stats-days-7').click()")
+            ready('stats-retrieval-overview')
+            evaluate("document.activeElement.blur();document.getElementById('content').scrollTop=0")
         if verify_search_keyboard:
             evaluate("document.getElementById('memories-query').value='cache';document.getElementById('memories-query').dispatchEvent(new Event('input',{bubbles:true}));window.__smoke.resetCalls();document.getElementById('memories-query').focus()")
             key('Enter', 'Enter', 13)

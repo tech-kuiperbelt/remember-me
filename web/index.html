@@ -139,10 +139,21 @@
     <div class="stats-heading-controls">
       <label for="stats-namespace">Namespace</label>
       <select id="stats-namespace"><option value="">All Namespaces</option></select>
-      <button id="btn-stats-refresh" class="btn btn-outline">Refresh</button>
     </div>
   </div>
-  <div id="stats-content" aria-busy="false"></div>
+  <div class="stats-view-controls">
+    <div class="stats-view-switch" role="tablist" aria-label="Statistics view">
+      <button id="stats-tab-memory" type="button" role="tab" aria-selected="true" aria-controls="stats-content">Memory</button>
+      <button id="stats-tab-retrieval" type="button" role="tab" aria-selected="false" aria-controls="stats-content" tabindex="-1">LLM Retrieval</button>
+    </div>
+    <div id="stats-days" class="stats-days" role="group" aria-label="Retrieval period" hidden>
+      <button id="stats-days-7" type="button" aria-pressed="true">7 Days</button>
+      <button id="stats-days-30" type="button" aria-pressed="false">30 Days</button>
+      <button id="stats-days-90" type="button" aria-pressed="false">90 Days</button>
+    </div>
+  </div>
+  <p id="stats-options-status" class="stats-options-status" role="status"></p>
+  <div id="stats-content" role="tabpanel" aria-labelledby="stats-tab-memory" aria-busy="false"></div>
 </div>
 
 <!-- Ops (运维) -->
