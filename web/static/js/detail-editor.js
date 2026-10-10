@@ -91,10 +91,13 @@ export function renderDetailEditor({body, draft, creating, validate, showError, 
     if(!next && sourcePosition) { text.setSelectionRange(sourcePosition.start,sourcePosition.end,sourcePosition.direction); text.scrollTop=sourcePosition.top; text.scrollLeft=sourcePosition.left; }
   }
   setPreview(false); text.oninput = () => { draft.text=text.value; contentHeight=resize(text,240,500)||contentHeight; validate('text'); };
-  const pickerRoot = node('div','detail-pickers'); body.append(field('detail-edit-tags','Categories & Keywords',pickerRoot));
+  const pickerRoot = node('div','detail-pickers'); body.append(pickerRoot);
   picker = createValuePickers({root:pickerRoot,idPrefix:'detail-picker',container:$('detail-panel'),maxSelected:{categories:3,keywords:Infinity},allowCreate:true,onRetryCategories:retryCategories,
     onChange:changes=>{ Object.assign(draft,changes); updatePicker(); validate(Object.keys(changes)[0],true); }}); updatePicker();
-  for(const key of ['categories','keywords'])fieldError($('detail-edit-tags'),key,$('detail-picker-'+key));
+  for(const [key,title] of [['categories','Categories'],['keywords','Keywords']]) {
+    const section=field('detail-edit-'+key,title,$('detail-picker-'+(key==='categories'?'category':'keyword')+'-control'));
+    pickerRoot.append(section);fieldError(section,key,$('detail-picker-'+key));
+  }
   const anchors = node('div','detail-anchor-values',undefined,'detail-tags'), input = node('input','detail-anchor-input'); input.placeholder='添加锚点'; input.setAttribute('aria-label','New anchor');
   const add = button('detail-anchor-add','Add',()=>{
     const value = normalizeAnchors([input.value])[0];

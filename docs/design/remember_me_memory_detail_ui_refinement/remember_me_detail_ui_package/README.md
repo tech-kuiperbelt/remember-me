@@ -20,3 +20,5 @@ The conceptual mockup changes some example data/navigation and omits existing co
 ## 用户最终边界（2026-10-09）
 
 Edit／Create 均不提供原始 metadata JSON 编辑；Create 仅六个专用字段，已有其他 metadata 保留并只读展示。Summary 仍可留空。效果图里的 Other metadata 输入和必填星号不采用。
+
+2026-10-10 补充确认：Create／Edit 的 Categories、Keywords、Anchors 拆成三个平级独立字段，始终纵向排列，统一标题、对齐和 24px 间距，保留现有选择及添加方式。

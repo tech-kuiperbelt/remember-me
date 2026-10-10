@@ -31,7 +31,8 @@
 - 空字段：View 中显示 `—` 以利检查完整性；本规则仅作用于读取视图，不影响数据存储。
 
 ## 4. Edit / Create 表单
-- 现有顺序不变：Namespace → Summary → Content → Categories & Keywords → Anchors；Edit 保留只读 Technical details。
+- 字段顺序：Namespace → Summary → Content → Categories → Keywords → Anchors；Edit 保留只读 Technical details。
+- Categories、Keywords、Anchors 为三个平级独立字段，每项独占一行，标题样式、左侧对齐与 24px 字段间距一致；宽屏也不并排，不添加外层分组标题或卡片。Create／Edit 共用此布局，保留各自输入方式。
 - Summary：自动增高多行输入框，默认 2 行，最多 5 行，之后内部滚动；Create/Edit 共用相同样式；保留现有 Summary 校验规则。
 - Content：保留原 Edit / Preview tabs；编辑容器默认约 240px，随内容增长最多 500px，超出内部滚动；两个 tab 遵循相同高度约束，尽量避免切换跳动。
 - Preview 只读，实时展示当前**未保存**的内容；与 View 共用 Markdown 渲染规则。切换 tabs 不丢失输入，并尽量恢复编辑光标、选区和滚动位置；不增加所见即所得编辑。

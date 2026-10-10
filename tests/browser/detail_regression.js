@@ -22,6 +22,15 @@ async function runDetailScenario(scenario) {
     return undefined;
   });
   const open=async id=>{detail.openMemory(id);await waitFor(()=>$('detail-edit'),'detail read');await waitFor(() => !$('detail-panel').getAnimations().length, 'drawer entrance finished');};
+  const assertMetadataLayout=()=>{
+    const sections=['categories','keywords','anchors'].map(key=>$('detail-edit-'+key));
+    assert(!$('detail-edit-tags')&&sections.every(Boolean),'three separate metadata fields');
+    assert(sections.map(section=>section.querySelector('h2').textContent).join(',')==='Categories,Keywords,Anchors','peer metadata headings');
+    const boxes=sections.map(section=>section.getBoundingClientRect());
+    assert(boxes.every(box=>Math.abs(box.left-boxes[0].left)<1),'metadata fields align left');
+    assert(boxes.slice(1).every((box,i)=>Math.abs(box.top-boxes[i].bottom-24)<1),'metadata fields stack with 24px spacing');
+    for(const key of ['categories','keywords'])assert($('detail-edit-'+key).contains($('detail-picker-'+key))&&$('detail-edit-'+key).contains($('detail-field-error-'+key)),'picker and error belong to '+key);
+  };
   const type=(id,value)=>{$(id).value=value;fire($(id),'input');};
   const escape=()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
   const writes=()=>S.calls.filter(c=>c.method==='PUT'&&c.url.includes('/detail-'));
@@ -53,7 +62,7 @@ async function runDetailScenario(scenario) {
   }
   assert(document.querySelector('.memory-row').getBoundingClientRect().width===rowWidth,'background scrollbar and list width preserved');
   if(scenario!=='detail-functional') {
-    if(scenario.includes('-edit')||scenario.includes('-preview')||scenario.includes('-confirm')){$('detail-edit').click();type('edit-text',records.get('detail-a').text+'\n\nUnsaved draft');}
+    if(scenario.includes('-edit')||scenario.includes('-preview')||scenario.includes('-confirm')){$('detail-edit').click();assertMetadataLayout();type('edit-text',records.get('detail-a').text+'\n\nUnsaved draft');}
     if(scenario.includes('-edit')) {
       $('detail-namespace-select').click();
       await settle();assert($('detail-namespace-options'),'namespace list remains open after focus settles');
@@ -98,7 +107,7 @@ async function runDetailScenario(scenario) {
   }
   const copyLabel=codeCopy.textContent;codeCopy.click();assert(codeCopy.textContent===copyLabel&&codeCopy.classList.contains('debug-focus'),'Debug selects ID without copying code');
   escape();assert(document.activeElement===$('detail-debug')&&$('detail-panel').getBoundingClientRect().width===box.width,'debug exit and stable layout');
-  $('detail-edit').click();assert(document.activeElement===$('edit-namespace')&&$('detail-save').disabled,'clean edit focuses Namespace: focus='+document.activeElement?.id+', disabled='+$('detail-save').disabled+', error='+$('detail-error').textContent);
+  $('detail-edit').click();assertMetadataLayout();assert(document.activeElement===$('edit-namespace')&&$('detail-save').disabled,'clean edit focuses Namespace: focus='+document.activeElement?.id+', disabled='+$('detail-save').disabled+', error='+$('detail-error').textContent);
   assert(!$('detail-extra-metadata-input'),'Edit has no raw JSON editor');
   const originalSummary=$('edit-summary').value, originalText=$('edit-text').value;
   type('edit-summary','line\n'.repeat(40));assert($('edit-summary').getBoundingClientRect().height<=130&&$('edit-summary').scrollHeight>$('edit-summary').clientHeight,'Summary caps and scrolls');

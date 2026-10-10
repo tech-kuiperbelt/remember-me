@@ -5,6 +5,15 @@ async function runCreateScenario(scenario) {
   const store=await import('/admin/console/static/js/store.js');
   const router=await import('/admin/console/static/js/router.js');
   S.freezeMaintenance();store.setMaintenance({state:'normal'});
+  const assertMetadataLayout=()=>{
+    const sections=['categories','keywords','anchors'].map(key=>$('detail-edit-'+key));
+    assert(!$('detail-edit-tags')&&sections.every(Boolean),'three separate metadata fields');
+    assert(sections.map(section=>section.querySelector('h2').textContent).join(',')==='Categories,Keywords,Anchors','peer metadata headings');
+    const boxes=sections.map(section=>section.getBoundingClientRect());
+    assert(boxes.every(box=>Math.abs(box.left-boxes[0].left)<1),'metadata fields align left');
+    assert(boxes.slice(1).every((box,i)=>Math.abs(box.top-boxes[i].bottom-24)<1),'metadata fields stack with 24px spacing');
+    for(const key of ['categories','keywords'])assert($('detail-edit-'+key).contains($('detail-picker-'+key))&&$('detail-edit-'+key).contains($('detail-field-error-'+key)),'picker and error belong to '+key);
+  };
   const type=(id,value)=>{$(id).value=value;fire($(id),'input');};
   const escape=()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
   const open=()=>{$('memories-create').focus();$('memories-create').click();};
@@ -14,6 +23,7 @@ async function runCreateScenario(scenario) {
   store.onMemoriesChanged(()=>memoryEvents++);store.onStatsChanged(()=>statsEvents++);
   assert(!$('page-add')&&!$('nav-add'),'independent Add page removed');
   store.setDefaultNamespace('ready','configured-project');open();
+  assertMetadataLayout();
   assert($('detail-title').textContent==='New Memory'&&$('edit-namespace').value==='configured-project','configured default used');
   assert(!$('detail-technical')&&$('detail-debug')&&$('detail-save').disabled,'create identity hidden and empty body blocked');
   assert(!$('detail-extra-metadata-input')&&!$('detail-extra-metadata'),'Create has no raw JSON editor');

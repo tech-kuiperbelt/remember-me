@@ -22,6 +22,7 @@
 
 ## Phase 3 — Edit/Create form
 - Auto-resize Summary 2–5 lines; Content editor 240–500px; keep tabs, Markdown and draft intact on tab switch.
+- Metadata layout: Categories, Keywords, Anchors are independent peer sections, vertically stacked at every width, with matching headings, left alignment and 24px gaps; each field owns its validation message. Reuse one picker instance and existing control IDs.
 - Metadata controls: Enter/Add for categories, keywords, anchors; isolate Enter from form submission, preserve established anchors backend semantics.
 - Do not provide raw JSON editing in Edit or Create. Remove Create Other metadata input; preserve existing extra metadata through the unchanged update contract and show it read-only in Technical details.
 - Defer initial required errors until touched/blurred or submit; respect backend schema and error rules.
