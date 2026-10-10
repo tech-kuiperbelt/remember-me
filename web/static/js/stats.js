@@ -1,99 +1,82 @@
-// stats.js — storage statistics page.
-
-import { $, escapeHtml, formatBytes } from './core.js';
+// Scoped Statistics state and lifecycle; global candidate refresh stays separate.
+import { $ } from './core.js';
 import { api } from './api.js';
-import { showError } from './ui.js';
-import { setNamespaces, setCategories, setCategoryState, setDefaultNamespace, onStatsChanged } from './store.js';
-import { switchPage } from './router.js';
-
-let version = 0;
-export async function loadStats() {
-  const request = ++version;
-  setCategoryState('loading');
-  setDefaultNamespace('loading');
-  $('stats-content').innerHTML = '<div class="loading">Loading...</div>';
-  try {
-    const s = await api('/stats');
-    if (request !== version) return;
-    setDefaultNamespace(typeof s.default_namespace === 'string' && s.default_namespace.trim() ? 'ready' : 'error', s.default_namespace || null, new Error('无法获取默认 Namespace，请手动输入或重试'));
-    const compact = s.ndjson_compact;
-    const integrity = s.replica_integrity || {};
-    const automaticHealth = s.ndjson_health_check;
-    const embeddingStorage = s.embedding_storage || {};
-    const embeddingProfiles = s.embedding_profile || {};
-    const activeProfile = embeddingProfiles.active || s.embed_profile || '-';
-    const configuredProfile = s.embed_profile || '-';
-    const profileState = activeProfile === configuredProfile ? 'active/configured' : 'active differs from configured';
-    const profileHtml = Array.isArray(embeddingProfiles.profiles) && embeddingProfiles.profiles.length ? `
-      <div class="detail-field"><div class="label">Embedding Profiles</div><div class="value">${embeddingProfiles.profiles.map(p =>
-        `<span class="badge" style="margin:2px">${escapeHtml(p.status)} · ${escapeHtml(p.provider)}/${escapeHtml(p.model)} · ${escapeHtml(p.dimension)}d · ${escapeHtml(p.dtype || '-')} · ${escapeHtml(p.vector_count || 0)} vectors</span>`
-      ).join(' ')}</div></div>
-    ` : '';
-    const ollamaHtml = s.embed_provider === 'ollama' ? `
-      <div class="detail-field"><div class="label">Ollama URL</div><div class="value">${escapeHtml(s.ollama_base_url || '-')}</div></div>
-    ` : '';
-    const compactHtml = compact ? `
-      <div class="detail-field"><div class="label">NDJSON Compact</div><div class="value">${compact.last_result || 'not yet checked'}</div></div>
-      <div class="detail-field"><div class="label">Last Check</div><div class="value">${compact.last_check_at || '-'}</div></div>
-      <div class="detail-field"><div class="label">Last Compact</div><div class="value">${compact.last_compact_at || '-'}</div></div>
-      <div class="detail-field"><div class="label">Last Reclaimed</div><div class="value">${formatBytes(compact.last_reclaimed_bytes || 0)} (${((compact.last_reclaimable_ratio || 0) * 100).toFixed(1)}%)</div></div>
-      <div class="detail-field"><div class="label">Next Check Due</div><div class="value">${compact.next_due_at || '-'}</div></div>
-      ${compact.last_error ? `<div class="detail-field"><div class="label">Compact Error</div><div class="value">${escapeHtml(compact.last_error)}</div></div>` : ''}
-    ` : '';
-    const replicaHealthHtml = s.backend === 'dual' ? `
-      <div class="detail-field"><div class="label">Replica Health</div><div class="value"><span class="badge ${s.in_sync ? 'badge-success' : 'badge-danger'}">${s.in_sync ? 'IN SYNC' : 'OUT OF SYNC'}</span></div></div>
-      ${!s.in_sync ? '<div class="detail-field"><div class="label">Recovery Action</div><div class="value text-danger">Run Full Export below to perform a verified Full Sync. The service will not repair replica drift automatically.</div></div>' : ''}
-      <div class="detail-field"><div class="label">Pending</div><div class="value">${escapeHtml(s.pending ?? '-')}</div></div>
-      <div class="detail-field"><div class="label">Replica Integrity</div><div class="value">Missing ${escapeHtml(integrity.missing ?? '-')} · Extra ${escapeHtml(integrity.extra ?? '-')} · Corrupt Lines ${escapeHtml(integrity.corrupt_lines ?? '-')}</div></div>
-      <div class="detail-field"><div class="label">Live Check</div><div class="value">${escapeHtml(integrity.checked_at || '-')}</div></div>
-      ${integrity.error ? `<div class="detail-field"><div class="label">Health Error</div><div class="value text-danger">${escapeHtml(integrity.error)}</div></div>` : ''}
-      ${automaticHealth ? `
-        <div class="detail-field"><div class="label">Last Automatic Check</div><div class="value">${escapeHtml(automaticHealth.last_result || '-')} · ${escapeHtml(automaticHealth.last_check_at || '-')} · trigger ${escapeHtml(automaticHealth.last_trigger || '-')}</div></div>
-        <div class="detail-field"><div class="label">Next Automatic Check</div><div class="value">${escapeHtml(automaticHealth.next_due_at || '-')}</div></div>
-        ${automaticHealth.last_error ? `<div class="detail-field"><div class="label">Automatic Check Error</div><div class="value text-danger">${escapeHtml(automaticHealth.last_error)}</div></div>` : ''}
-      ` : '<div class="detail-field"><div class="label">Automatic Check</div><div class="value">Not run yet</div></div>'}
-    ` : '';
-    $('stats-content').innerHTML = `
-      <div class="detail-field"><div class="label">Total Memories</div><div class="value" style="font-size:28px;font-weight:700">${s.total}</div></div>
-      <div class="detail-field"><div class="label">Backend</div><div class="value">${s.backend}</div></div>
-      <div class="detail-field"><div class="label">Storage Path</div><div class="value">${s.path}</div></div>
-      ${replicaHealthHtml}
-      <div class="detail-field"><div class="label">Embedding Provider</div><div class="value">${escapeHtml(s.embed_provider || '-')}</div></div>
-      <div class="detail-field"><div class="label">Embedding Model</div><div class="value">${escapeHtml(s.embed_model || '-')}</div></div>
-      <div class="detail-field"><div class="label">Embedding Shape</div><div class="value">${escapeHtml(s.embed_dimension || '-')}d · ${escapeHtml(s.embed_dtype || embeddingStorage.write_dtype || '-')}</div></div>
-      <div class="detail-field"><div class="label">Active Profile</div><div class="value">${escapeHtml(activeProfile)} · ${escapeHtml(profileState)}</div></div>
-      <div class="detail-field"><div class="label">Active Embedding Storage</div><div class="value">${embeddingStorage.count || 0} vectors · ${formatBytes(embeddingStorage.bytes || 0)} · ${escapeHtml(Object.entries(embeddingStorage.formats || {}).map(([format, count]) => `${format} × ${count}`).join(', ') || '-')}</div></div>
-      ${profileHtml}
-      ${ollamaHtml}
-      <div class="detail-field"><div class="label">Namespaces (${Object.keys(s.namespace_counts || {}).length})</div><div class="value">${renderNamespaceCounts(s.namespace_counts)}</div></div>
-      <div class="detail-field"><div class="label">Keywords (${s.keyword_total || 0})</div><div class="value"><button class="btn btn-outline" data-goto="keywords">Browse keywords</button></div></div>
-      ${compactHtml}
-      <div style="margin-top:16px">
-        <button id="btn-stats-refresh" class="btn btn-sm btn-outline">Refresh</button>
-      </div>
-    `;
-    const browse = $('stats-content').querySelector('[data-goto="keywords"]');
-    if (browse) browse.addEventListener('click', () => switchPage('keywords'));
-    $('btn-stats-refresh').addEventListener('click', loadStats);
-    // Update the shared namespace/category registries; pages react through store subscriptions.
-    setNamespaces(s.namespaces || [], s.namespace_counts || {});
-    setCategories(s.category_counts || {});
-  } catch(e) {
-    if (request !== version) return;
-    setCategoryState('error', e);
-    setDefaultNamespace('error', null, e);
-    showError('stats-content', e);
+import { onStatsChanged } from './store.js';
+import { refreshStatsRegistry } from './stats-registry.js';
+import { renderStats, renderStatsStatus } from './stats-view.js';
+const keys = ['categories', 'keywords', 'anchors'];
+const state = {namespace: null, top: {categories: 5, keywords: 5, anchors: 5}, scroll: {categories: 0, keywords: 0, anchors: 0}, pageScroll: 0};
+let active = false, version = 0, data = null, options = [], drilldown = () => {};
+function capture() {
+  if (!data || !active) return;
+  state.pageScroll = $('content').scrollTop;
+  for (const key of keys) { const list = $('stats-'+key+'-ranking'); if (list)state.scroll[key] = list.scrollTop; }
+}
+function restore() {
+  for (const key of keys) { const list = $('stats-'+key+'-ranking'); if (list)list.scrollTop = state.scroll[key]; }
+  $('content').scrollTop = state.pageScroll;
+}
+function updateOptions() {
+  const select = $('stats-namespace');
+  const names = [...new Set([...options, ...(state.namespace === null ? [] : [state.namespace])])].sort();
+  select.replaceChildren(new Option('All Namespaces', ''), ...names.map(name => new Option(name, name)));
+  select.value = state.namespace === null ? '' : state.namespace;
+}
+function paint() {
+  renderStats($('stats-content'), data, state, {
+    onNamespace(namespace) { capture(); drilldown('namespace', namespace, namespace); },
+    onTop(key, value) {
+      capture(); state.top[key] = value; state.scroll[key] = 0; paint(); restore();
+      $('stats-'+key+'-top-'+value).focus({preventScroll: true});
+    },
+    onDrilldown(key, value) { capture(); drilldown(key, value, state.namespace); },
+  });
+}
+function validate(s, scope) {
+  if (!s || s.scope?.namespace !== scope || !Number.isSafeInteger(s.total_memories) || s.total_memories < 0 ||
+      !Array.isArray(s.namespace_options) || s.namespace_options.some(n => typeof n !== 'string' || !n.trim()) ||
+      !Array.isArray(s.namespace_distribution) || s.namespace_distribution.some(n => typeof n.name !== 'string' || !Number.isSafeInteger(n.count) || n.count <= 0))throw new Error('Invalid statistics response');
+  for (const key of keys) {
+    const d = s.dimensions?.[key];
+    if (!d || !Number.isSafeInteger(d.unique_count) || d.unique_count < 0 || !Number.isSafeInteger(d.covered_memories) || d.covered_memories < 0 || d.covered_memories > s.total_memories ||
+        !Number.isFinite(d.coverage_ratio) || d.coverage_ratio < 0 || d.coverage_ratio > 1 || !Array.isArray(d.top) || d.top.length > 100 ||
+        d.top.some(n => typeof n.value !== 'string' || !Number.isSafeInteger(n.count) || n.count <= 0 || n.count > s.total_memories))throw new Error('Invalid statistics response');
   }
 }
-
-function renderNamespaceCounts(counts) {
-  if (!counts || !Object.keys(counts).length) return '<span class="text-muted">(none)</span>';
-  const total = Object.values(counts).reduce((a, b) => a + b, 0);
-  return Object.entries(counts).map(([ns, n]) =>
-    '<span class="badge ns" style="margin:2px">' + escapeHtml(ns) + ' · ' + n + '</span>'
-  ).join(' ') + `<span class="text-muted" style="font-size:12px;margin-left:8px">total ${total}</span>`;
+async function refresh(preserve = true) {
+  if (!active) return;
+  if (preserve)capture();
+  const request = ++version, scope = state.namespace;
+  data = null; $('stats-content').setAttribute('aria-busy', 'true'); $('btn-stats-refresh').disabled = true;
+  renderStatsStatus($('stats-content'), 'Loading statistics…', false);
+  try {
+    const params = new URLSearchParams(); if (scope !== null)params.set('namespace', scope);
+    const s = await api('/stats/metadata' + (params.size ? '?' + params : ''));
+    if (request !== version || !active) return;
+    validate(s, scope); data = s; options = s.namespace_options; updateOptions(); paint(); restore();
+  } catch (error) {
+    if (request !== version || !active) return;
+    const known = error.payload?.response_meta?.known_namespaces;
+    if (Array.isArray(known)) { options = known; updateOptions(); }
+    renderStatsStatus($('stats-content'), 'Unable to load statistics: ' + error.message, true, () => refresh(false), () => selectNamespace(null));
+  } finally {
+    if (request === version && active) { $('stats-content').setAttribute('aria-busy', 'false'); $('btn-stats-refresh').disabled = false; }
+  }
 }
-
-export function mount() {
+function selectNamespace(namespace) {
+  if (namespace === state.namespace) return;
+  state.namespace = namespace; state.pageScroll = 0; keys.forEach(key => state.scroll[key] = 0);
+  updateOptions(); $('content').scrollTop = 0; refresh(false);
+}
+// Compatibility entry for initialization, registry retry and global Refresh.
+export function loadStats() {
+  return Promise.all([refreshStatsRegistry(), active ? refresh() : Promise.resolve()]);
+}
+export function show() { active = true; updateOptions(); return refresh(false); }
+export function hide() { capture(); active = false; ++version; }
+export function mount({onDrilldown = () => {}} = {}) {
+  drilldown = onDrilldown;
+  $('stats-namespace').onchange = () => selectNamespace($('stats-namespace').value || null);
+  $('btn-stats-refresh').onclick = () => refresh();
   onStatsChanged(loadStats);
 }

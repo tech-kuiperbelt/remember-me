@@ -132,5 +132,16 @@ export function createMemoriesData(onChange) {
       updatedAfter: '', updatedBefore: '', items: [], total: 0, status: 'idle', error: null,
       filterResolution: null, totalKind: 'exact'}); emit();
   }
-  return {snapshot, refresh, change, setMode, resetFilters, input, submit, clearSearch, prepareKeywordBrowse};
+  function prepareMetadataDrilldown(dimension, value, namespace) {
+    if (!['namespace', 'categories', 'keywords', 'anchors'].includes(dimension)) return;
+    if (dimension === 'keywords') { prepareKeywordBrowse(value, namespace); return; }
+    ++version; collection = [];
+    const anchor = dimension === 'anchors';
+    if (anchor) state.searchParams.anchor = {k: 10, minScore: null};
+    assign({inputQuery: anchor ? value : '', submittedQuery: anchor ? value : '', namespace: namespace || '',
+      categories: dimension === 'categories' ? [value] : [], keywords: [], updatedAfter: '', updatedBefore: '',
+      ...(anchor ? {searchMode: 'anchor'} : {}), items: [], total: 0, status: 'idle', error: null,
+      filterResolution: null, totalKind: anchor ? 'top_k_results' : 'exact'}); emit();
+  }
+  return {snapshot, refresh, change, setMode, resetFilters, input, submit, clearSearch, prepareKeywordBrowse, prepareMetadataDrilldown};
 }

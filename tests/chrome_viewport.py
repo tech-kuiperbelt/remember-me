@@ -7,7 +7,7 @@ import subprocess
 import time
 
 
-def run_viewport(url, profile, width, height, screenshot, verify_search_keyboard=False):
+def run_viewport(url, profile, width, height, screenshot, verify_search_keyboard=False, verify_stats_keyboard=False):
     incoming, writer = os.pipe()
     reader, outgoing = os.pipe()
 
@@ -65,7 +65,7 @@ def run_viewport(url, profile, width, height, screenshot, verify_search_keyboard
             raise TimeoutError('UI result')
         if result['width'] != width or result['height'] != height:
             raise AssertionError('Unexpected CSS viewport: ' + str(result))
-        if verify_search_keyboard:
+        if verify_search_keyboard or verify_stats_keyboard:
             def evaluate(expression):
                 return call('Runtime.evaluate', {'expression': expression, 'returnByValue': True}, session)['result'].get('value')
 
@@ -77,6 +77,63 @@ def run_viewport(url, profile, width, height, screenshot, verify_search_keyboard
                 call('Input.dispatchKeyEvent', {'type': 'keyUp', 'key': name,
                      'code': code, 'windowsVirtualKeyCode': virtual}, session)
 
+        if verify_stats_keyboard:
+            evaluate("document.getElementById('stats-namespace').focus();window.__smoke.resetCalls()")
+            key('Tab', 'Tab', 9)
+            if evaluate('document.activeElement.id') != 'btn-stats-refresh':
+                raise AssertionError('Stats selector must Tab to Refresh')
+            key('Tab', 'Tab', 9)
+            if not evaluate("document.activeElement.matches('.stats-namespace-row') && document.activeElement.matches(':focus-visible')"):
+                raise AssertionError('Namespace row must have visible native keyboard focus')
+            key('Enter', 'Enter', 13)
+            deadline = time.monotonic() + 8
+            while time.monotonic() < deadline:
+                if evaluate("document.getElementById('page-memories').classList.contains('active') && document.getElementById('memories-list').getAttribute('aria-busy')==='false'"):
+                    break
+                time.sleep(.05)
+            else:
+                raise AssertionError('Native Enter must drill down Namespace')
+            if evaluate("window.__smoke.calls.filter(c=>c.url.startsWith('/api/memories/page?')).length") != 1:
+                raise AssertionError('Keyboard Namespace drilldown must issue one request')
+            call('Runtime.evaluate', {'expression': "import('/admin/console/static/js/router.js').then(router=>router.switchPage('stats'))", 'awaitPromise': True}, session)
+            deadline = time.monotonic() + 8
+            while time.monotonic() < deadline:
+                if evaluate("document.getElementById('stats-content').getAttribute('aria-busy')==='false' && !!document.getElementById('stats-overview')"):
+                    break
+                time.sleep(.05)
+            else:
+                raise AssertionError('Stats keyboard return did not finish')
+            evaluate("document.getElementById('stats-categories-top-5').focus();window.__smoke.resetCalls()")
+            key('Tab', 'Tab', 9)
+            key('Enter', 'Enter', 13)
+            if not evaluate("document.activeElement.id==='stats-categories-top-30' && document.activeElement.getAttribute('aria-pressed')==='true'"):
+                raise AssertionError('Native Top activation must retain focus')
+            if evaluate("window.__smoke.calls.filter(c=>c.url.startsWith('/api/stats/metadata')).length"):
+                raise AssertionError('Keyboard Top activation must not fetch')
+            key('Tab', 'Tab', 9)
+            key('Tab', 'Tab', 9)
+            if not evaluate("document.activeElement.matches('.stats-rank-row') && document.activeElement.matches(':focus-visible')"):
+                raise AssertionError('Rank row must accept visible native keyboard focus')
+            key('Enter', 'Enter', 13)
+            deadline = time.monotonic() + 8
+            while time.monotonic() < deadline:
+                if evaluate("document.getElementById('page-memories').classList.contains('active') && document.getElementById('memories-list').getAttribute('aria-busy')==='false'"):
+                    break
+                time.sleep(.05)
+            else:
+                raise AssertionError('Native Enter must drill down ranked category')
+            if evaluate("window.__smoke.calls.filter(c=>c.url.startsWith('/api/memories/page?') && new URL(c.url,location.origin).searchParams.get('categories')==='design').length") != 1:
+                raise AssertionError('Keyboard rank drilldown must issue one exact category request')
+            call('Runtime.evaluate', {'expression': "import('/admin/console/static/js/router.js').then(router=>router.switchPage('stats'))", 'awaitPromise': True}, session)
+            deadline = time.monotonic() + 8
+            while time.monotonic() < deadline:
+                if evaluate("document.getElementById('stats-content').getAttribute('aria-busy')==='false' && !!document.getElementById('stats-overview')"):
+                    break
+                time.sleep(.05)
+            else:
+                raise AssertionError('Stats return after rank keyboard drilldown did not finish')
+            evaluate("document.getElementById('stats-categories-top-5').click();document.activeElement.blur();document.getElementById('content').scrollTop=0")
+        if verify_search_keyboard:
             evaluate("document.getElementById('memories-query').value='cache';document.getElementById('memories-query').dispatchEvent(new Event('input',{bubbles:true}));window.__smoke.resetCalls();document.getElementById('memories-query').focus()")
             key('Enter', 'Enter', 13)
             deadline = time.monotonic() + 8

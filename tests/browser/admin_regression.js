@@ -59,7 +59,8 @@ async function runThemeScenario(scenario) {
     }
 
     if (filtersError) {
-      await waitFor(() => $('stats-content').textContent.includes('Initial Stats failure'), 'initial stats error');
+      const registry = await import('/admin/console/static/js/store.js');
+      await waitFor(() => registry.getCategoryState().status === 'error', 'initial stats registry error');
       $('memories-categories').click();
       assert($('memories-categories-popover').textContent.includes('Initial Stats failure'), 'category initial error visible');
       assert(!document.querySelector('.memory-category-option'), 'initial failure is not an empty vocabulary');
@@ -202,7 +203,7 @@ try {
     await checkSearchLayout();
     result.textContent='PASS: '+scenario;
   }
-  else if (await runCreateScenario(scenario) || await runDetailScenario(scenario) || await runMemoriesVisualScenario(scenario) || await runThemeScenario(scenario)) { /* theme scenario finished */ }
+  else if (await runStatsScenario(scenario) || await runCreateScenario(scenario) || await runDetailScenario(scenario) || await runMemoriesVisualScenario(scenario) || await runThemeScenario(scenario)) { /* theme scenario finished */ }
   else {
 
   // The real page bootstraps from the real backend; wait for the first load.
@@ -348,7 +349,7 @@ try {
   const specialStats = {total: 64, backend: 'sqlite', path: 'x', namespaces: ['a', special],
                         namespace_counts: {a: 63, [special]: 1}, keyword_total: 63};
   S.setOverride(url => url === '/api/stats' ? json(specialStats) : undefined);
-  document.querySelector('.nav button[data-page="stats"]').click();
+  (await import('/admin/console/static/js/stats.js')).loadStats();
   await waitFor(() => Array.from($('memories-namespace').options).some(o => o.value === special), 'special namespace option');
   S.setOverride(url => {
     if (url === '/api/stats') return json(specialStats);
@@ -423,9 +424,9 @@ try {
   assert(!$('memories-list').querySelector('img'), 'literal search error safe');
   S.reset(); $('memories-search-clear').click();
 
-  S.setOverride(url => url === '/api/stats' ? json({detail: special}, 500) : undefined);
+  S.setOverride(url => url.startsWith('/api/stats/metadata') ? json({detail: special}, 500) : undefined);
   document.querySelector('.nav button[data-page="stats"]').click();
-  await waitFor(() => $('stats-content').textContent === 'Error: ' + special, 'literal error stats-content');
+  await waitFor(() => $('stats-content').textContent.includes('Unable to load statistics: ' + special), 'literal error stats-content');
   assert(!$('stats-content').querySelector('img'), 'literal error stats-content safe');
   S.reset();
 

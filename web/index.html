@@ -134,10 +134,15 @@
 </div>
 
 <div class="page" id="page-stats">
-  <div class="card">
-    <div class="card-header">Storage Statistics</div>
-    <div class="card-body" id="stats-content"><div class="loading">Loading...</div></div>
+  <div class="stats-heading">
+    <h2>Statistics</h2>
+    <div class="stats-heading-controls">
+      <label for="stats-namespace">Namespace</label>
+      <select id="stats-namespace"><option value="">All Namespaces</option></select>
+      <button id="btn-stats-refresh" class="btn btn-outline">Refresh</button>
+    </div>
   </div>
+  <div id="stats-content" aria-busy="false"></div>
 </div>
 
 <!-- Ops (运维) -->

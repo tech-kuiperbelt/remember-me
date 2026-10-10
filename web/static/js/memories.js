@@ -33,6 +33,11 @@ export function hide() { filters.close(); focusId = null; }
 export function prepareKeywordBrowse(keyword, namespace) {
   hide(); searchControls.clearDates(); data.prepareKeywordBrowse(keyword, namespace);
 }
+export function prepareMetadataDrilldown(dimension, value, namespace) {
+  hide(); searchControls.clearDates();
+  data.prepareMetadataDrilldown(dimension, value, namespace);
+  if (dimension === 'anchors')searchControls.resetAnchorDraft();
+}
 function resetFilters() {
   filters.close();
   searchControls.clearDates(); data.resetFilters();

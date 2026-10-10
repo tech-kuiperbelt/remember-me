@@ -96,5 +96,12 @@ export function createMemoriesSearch({onInput, onSubmit, onClear, onApply, onMod
     $('memories-updated-after').value = $('memories-updated-before').value = '';
     ids.filter(id => id.includes('updated')).forEach(id => error(id, ''));
   }
-  return {update, clearDates};
+  function resetAnchorDraft() {
+    drafts.anchor = {k: '10', score: ''};
+    if (mode === 'anchor') {
+      $('memories-k').value = '10'; $('memories-threshold').value = '';
+      ['memories-k', 'memories-threshold'].forEach(id => error(id, ''));
+    }
+  }
+  return {update, clearDates, resetAnchorDraft};
 }

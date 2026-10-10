@@ -31,7 +31,9 @@ function mountAll() {
   keywords.mount({ showKeyword: (keyword, namespace) => {
     switchPage('memories', () => memories.prepareKeywordBrowse(keyword, namespace));
   } });
-  stats.mount();
+  stats.mount({onDrilldown: (dimension, value, namespace) => {
+    switchPage('memories', () => memories.prepareMetadataDrilldown(dimension, value, namespace));
+  }});
   ops.mount();
   audit.mount();
   clear.mount();
@@ -43,7 +45,7 @@ function mountAll() {
 function registerPages() {
   register('memories', { onShow: memories.loadMemories, onHide: memories.hide });
   register('keywords', { onShow: () => keywords.loadKeywords(true) });
-  register('stats', { onShow: stats.loadStats });
+  register('stats', { onShow: stats.show, onHide: stats.hide });
   register('ops', { onShow: ops.loadOpsPage });
   register('audit', { onShow: audit.loadAudit });
 }
