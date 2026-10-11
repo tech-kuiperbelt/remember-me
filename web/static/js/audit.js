@@ -7,7 +7,7 @@ import { createNamespacePicker } from './namespace-picker.js';
 import { createDrawerAnimator } from './drawer-motion.js';
 import { presentAudit } from './audit-presentation.js';
 
-let version = 0, events = [], picker, opened = false, background, priorFocus;
+let version = 0, events = [], eventKeys = [], recent = null, picker, opened = false, background, priorFocus;
 const animate = createDrawerAnimator($('audit-modal'), $('audit-panel'));
 function updateNamespaces() {
   picker?.update([...new Set([...getNamespaces(), ...events.map(ev => ev.namespace).filter(Boolean)])].sort());
@@ -34,10 +34,27 @@ export async function loadAudit() {
     if (request === version) list.setAttribute('aria-busy', 'false');
   }
 }
+// Audit has no event ID. Match the immutable event snapshot, not its list position.
+function eventIdentity(event) {
+  return JSON.stringify(event, (_key, value) => value && typeof value === 'object' && !Array.isArray(value)
+    ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value);
+}
+function markRecent(key) {
+  if (key) recent = key;
+  $('audit-list').querySelectorAll('.audit-row').forEach((row, i) => {
+    const candidate = eventKeys[i];
+    row.classList.toggle('is-recent', Boolean(recent && candidate && recent.identity === candidate.identity && recent.occurrence === candidate.occurrence));
+  });
+}
 function render() {
   const list = $('audit-list');
   if (!events.length) { list.innerHTML = '<div class="empty-state">暂无审计记录</div>'; return; }
+  const occurrences = new Map();
+  eventKeys = [];
   list.innerHTML = events.map((ev, i) => {
+    const identity = eventIdentity(ev), occurrence = occurrences.get(identity) || 0;
+    occurrences.set(identity, occurrence + 1);
+    eventKeys.push({identity, occurrence});
     const row = 'audit-row-' + (i + 1), view = presentAudit(ev);
     const cell = (name, label, content, cls = '') => `<div id="${row}-${name}" class="audit-cell audit-cell-${name} ${cls}"><span class="audit-cell-label">${label}</span><span class="audit-cell-value">${esc(content)}</span></div>`;
     return `<article id="${row}" class="memory-row audit-row">
@@ -50,9 +67,11 @@ function render() {
       <button id="${row}-detail" class="audit-row-open" aria-label="查看 ${esc(ev.tool || 'Audit')} 详情"><span class="memory-row-detail-arrow" aria-hidden="true">›</span></button>
     </article>`;
   }).join('');
-  list.querySelectorAll('.audit-row-open').forEach((button, i) => button.onclick = () => openDetail(events[i]));
+  list.querySelectorAll('.audit-row-open').forEach((button, i) => button.onclick = () => openDetail(events[i], eventKeys[i]));
+  markRecent();
 }
-function openDetail(event) {
+function openDetail(event, key) {
+  markRecent(key);
   picker.close(); priorFocus = document.activeElement;
   background = {inert: $('app-shell').inert, overflow: document.body.style.overflow};
   $('app-shell').inert = true; document.body.style.overflow = 'hidden';

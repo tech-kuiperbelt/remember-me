@@ -39,6 +39,8 @@ async function runAuditRegression(scenario) {
   await waitFor(() => $('audit-list').getAttribute('aria-busy') === 'false', 'typed namespace');
   assert(S.calls.some(call => call.url.includes('namespace=older-space')), 'arbitrary namespace supported');
   const trigger = $('audit-row-1-detail'); trigger.focus(); trigger.click();
+  assert($('audit-row-1').classList.contains('is-recent'), 'opened event marked as last viewed');
+  assert(getComputedStyle($('audit-row-1'), '::before').width === '2px', 'same blue line as Memory');
   assert($('audit-json').textContent === JSON.stringify(event, null, 2), 'pretty JSON retains all returned fields');
   assert(!$('audit-json').querySelector('script'), 'JSON is text');
   assert($('app-shell').inert && document.activeElement === $('btn-audit-close'), 'modal locks background and focuses close');
@@ -46,6 +48,9 @@ async function runAuditRegression(scenario) {
   assert(document.activeElement === $('audit-json'), 'focus stays in drawer');
   document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true, cancelable: true}));
   assert(!$('app-shell').inert && document.activeElement === trigger, 'Escape restores focus');
+  $('audit-row-2-detail').focus();
+  assert($('audit-row-1').classList.contains('is-recent'), 'focus on another row retains last viewed');
+  trigger.focus();
   await waitFor(() => $('audit-modal').style.display === 'none', 'close motion');
   trigger.click(); $('btn-audit-close').click(); trigger.click();
   await settle(260); assert($('audit-modal').style.display === 'flex', 'rapid reopen survives cancelled motion');
@@ -64,6 +69,18 @@ async function runAuditRegression(scenario) {
     router.switchPage('memories');
     assert(!$('app-shell').inert && $('audit-modal').inert, 'page leave releases drawer background');
     $('nav-audit').click(); await waitFor(() => $('audit-row-2'), 'return to Audit');
+    const inserted = {...event, ts:'2026-10-11T02:00:00Z'};
+    S.setOverride(url => url.startsWith('/api/audit?') ? json([inserted, event, error]) : undefined);
+    $('btn-audit-refresh').click(); await waitFor(() => $('audit-row-3'), 'new event prepended');
+    assert(!$('audit-row-1').classList.contains('is-recent') && $('audit-row-2').classList.contains('is-recent'), 'last viewed follows event across refresh');
+    $('audit-row-3-detail').click(); $('btn-audit-close').click();
+    assert($('audit-row-3').classList.contains('is-recent') && !$('audit-row-2').classList.contains('is-recent'), 'newly viewed event replaces marker');
+    S.setOverride(url => url.startsWith('/api/audit?') ? json([inserted]) : undefined);
+    $('btn-audit-refresh').click(); await waitFor(() => $('audit-list').getAttribute('aria-busy') === 'false', 'viewed event filtered away');
+    assert(!document.querySelector('#audit-list .is-recent'), 'missing event does not mark another row');
+    S.setOverride(url => url.startsWith('/api/audit?') ? json([inserted, {...error}]) : undefined);
+    $('btn-audit-refresh').click(); await waitFor(() => $('audit-row-2'), 'viewed event restored');
+    assert($('audit-row-2').classList.contains('is-recent'), 'restored event retains last viewed');
     let resolveOld;
     S.setOverride(url => {
       if (!url.startsWith('/api/audit?')) return;
