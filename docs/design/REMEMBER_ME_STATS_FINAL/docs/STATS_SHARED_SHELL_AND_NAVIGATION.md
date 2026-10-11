@@ -44,7 +44,7 @@ Memory view reads the existing completed metadata stats API. Retrieval view uses
 
 - Remove the local Stats Refresh button; use the existing toolbar Refresh for the active subview, retaining preferences.
 - Shared Namespace options come from the existing global registry plus configured default, independent of loading Memory. Scoped responses never mutate global candidates.
-- Data notes appear only when launched with `--debug`, using the existing startup flag. Diagnostic counts describe the global retained-audit scan. Ordinary mode still displays API errors and Retry.
+- Data notes appear only when Debug is enabled in configuration (save then refresh the page). Diagnostic counts describe the global retained-audit scan. Ordinary mode still displays API errors and Retry.
 
 User-approved label clarification: the Retrieval tab is displayed as **LLM Retrieval**, while internal view keys and API paths remain unchanged. Add the compact source caption **MCP search activity and reported feedback** beside the date/time context. This indicates the intended LLM retrieval use and the actual MCP data source; Admin search remains excluded.
 

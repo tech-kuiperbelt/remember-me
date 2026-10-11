@@ -39,4 +39,4 @@ No new sidebar navigation, no user account/header search, no extra Memory activi
 
 - Remove the local Stats Refresh button; use the existing toolbar Refresh for the active subview, retaining preferences.
 - Shared Namespace options come from the existing global registry plus configured default, independent of loading Memory. Scoped responses never mutate global candidates.
-- Data notes appear only when launched with `--debug`, using the existing startup flag. Diagnostic counts describe the global retained-audit scan. Ordinary mode still displays API errors and Retry.
+- Data notes appear only when Debug is enabled in configuration (save then refresh the page). Diagnostic counts describe the global retained-audit scan. Ordinary mode still displays API errors and Retry.

@@ -52,6 +52,7 @@ config_debug_case = sys.argv[1:] == ['--case', 'config-debug']
 browser_runtime = None
 if config_debug_case:
     from app.runtime import Runtime
+    (Path(work.name) / 'config.jsonc').write_text('{"debug":true}')
     browser_runtime = Runtime(Settings.from_config(work.name, create=True),
                               provider_factory=lambda **_: BrowserProvider(), configure_logging=False)
     browser_runtime.start()
@@ -60,7 +61,7 @@ else:
     service = MemoryService(Settings.from_env(),
         SQLiteStorage(':memory:', embedding_spec=EmbeddingSpec('test','smoke',2).as_dict()), BrowserProvider())
 debug_disabled = sys.argv[1:] in (['--case', 'debug-disabled'], ['--case', 'retrieval-debug-disabled'])
-admin = AdminAPI(runtime=browser_runtime, debug=True) if config_debug_case else AdminAPI(service, debug=not debug_disabled)
+admin = AdminAPI(runtime=browser_runtime) if config_debug_case else AdminAPI(service, debug=not debug_disabled)
 service.embed_query = lambda _: [1.,0.]
 words = ['cache', 'cache clear', 'rare_id'] + ['word%03d' % i for i in range(60)]
 for i, word in enumerate(words):

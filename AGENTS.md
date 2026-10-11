@@ -7,7 +7,6 @@ cd /path/to/remember-me
 source .venv/bin/activate
 python -m app.server              # HTTP mode (default, config port or 1314)
 python -m app.server --stdio       # subprocess stdin/stdout
-python -m app.server --debug       # show all Admin UI Debug buttons (HTTP mode)
 python -m app.server --data-dir /path/to/data  # config is <DIR>/config.jsonc
 ```
 
@@ -17,15 +16,13 @@ cache) if present. The configured provider must match the active embedding
 profile in the data directory's `memories.db`, otherwise startup fails and requires an offline
 `app.embedding_cli reindex`/`activate`.
 
-Admin UI Debug mode defaults off. Enable it through the configuration page
-(`debug: true` in config.jsonc; save then refresh the page) or launch with
-`--debug` (for example `bin/start.sh --debug`). Both show global/create/detail
-Debug buttons, Audit navigation and Stats diagnostic entries; element inspection
-still requires clicking a Debug button. `--debug` enables only the startup state:
-the configuration page can turn it off for the current process. Restart Server
-retains the original arguments, so a retained `--debug` enables it again at startup.
-The flag itself is not persisted; the configuration setting is. Neither changes
-logging or MCP tools, and neither has a UI effect in stdio mode.
+Admin UI Debug mode defaults off and is controlled only by configuration
+(`debug: true` in config.jsonc, or enable it on the configuration page and save
+then refresh). This shows global/create/detail Debug buttons, Audit navigation
+and Stats diagnostic entries; element inspection still requires clicking a Debug
+button. Restart Server reloads the saved configuration. The `--debug` startup
+option is no longer supported. Debug does not change logging or MCP tools and
+has no UI effect in stdio mode.
 
 Data directory selection: `--data-dir` > `MEMORY_DATA_DIR` > the OS per-user default
 (Linux `~/.remember-me/`, Windows `%LOCALAPPDATA%\remember-me\` with a `~/AppData/Local`
@@ -211,7 +208,7 @@ Memory records should contain only a short pointer to these files and a compact 
 
 ## Audit UI
 
-Audit navigation and its frontend route are enabled only in effective Debug mode (config or startup flag); the API is unchanged. `audit.js` owns compact Memory-style rows, an editable Namespace picker and a read-only JSON drawer displaying the returned event snapshot. Namespace candidates combine the shared live registry and currently loaded audit events; arbitrary historical names remain editable. `namespace-picker.js` accepts optional ID prefix/popup container with unchanged Memory defaults. `drawer-motion.js` shares the existing Memory/Audit slide and fade animation (240ms open, 200ms close; reduced-motion aware). See `docs/project-management/plans/50.9-audit-ui-refinement.md`.
+Audit navigation and its frontend route are enabled only in configuration-controlled Debug mode; the API is unchanged. `audit.js` owns compact Memory-style rows, an editable Namespace picker and a read-only JSON drawer displaying the returned event snapshot. Namespace candidates combine the shared live registry and currently loaded audit events; arbitrary historical names remain editable. `namespace-picker.js` accepts optional ID prefix/popup container with unchanged Memory defaults. `drawer-motion.js` shares the existing Memory/Audit slide and fade animation (240ms open, 200ms close; reduced-motion aware). See `docs/project-management/plans/50.9-audit-ui-refinement.md`.
 
 `audit-presentation.js` derives list summaries and business outcomes from the bounded audit payload without querying memories or changing events. Audit columns align at container widths >=1100px, with labeled cards below. The Result column shows only the original call status (ok/error/etc.); counts, business outcomes and errors are available in the JSON drawer. Add/update bodies and summaries are absent by design. See `docs/project-management/plans/50.9.1-audit-list-key-information.md`.
 

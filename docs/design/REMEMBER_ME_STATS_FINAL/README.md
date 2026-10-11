@@ -27,4 +27,4 @@ Backend Retrieval API is implemented in commit `7d36d2c`. The UI uses its accept
 
 Approved coding plan and implementation record: [53.4 Statistics dual view](../../project-management/plans/53.4-stats-retrieval-ui-coding-plan.md).
 
-Confirmed follow-up decisions supersede earlier descriptions: no F5 state restoration; global toolbar Refresh only; Namespace candidates use the global registry plus configured default; Data notes is available only with server `--debug`.
+Confirmed follow-up decisions supersede earlier descriptions: no F5 state restoration; global toolbar Refresh only; Namespace candidates use the global registry plus configured default; Data notes is available only when Debug is enabled in configuration.

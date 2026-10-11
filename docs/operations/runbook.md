@@ -28,9 +28,9 @@
 Admin Debug 模式默认关闭。配置页勾选“启用 Debug 模式”并保存，刷新页面后显示
 顶部及新增／明细抽屉的 Debug 按钮、Audit 导航和 Stats 诊断入口；点击 Debug
 按钮才开启元素 ID 检查。配置持久保存为 `config.jsonc` 的 `debug` 布尔字段。
-也可用 `bin/start.sh --debug`（或 `python -m app.server --debug`）在启动时启用；
-之后允许配置页关闭。Restart Server 保留原参数，因此带 `--debug` 重启会再次启用。
-该参数本身不写入配置，两种方式均不调整日志级别或 MCP，stdio 模式没有界面效果。
+Debug 完全由配置控制，Restart Server 重新读取已保存的设置；不再支持 `--debug` 启动参数。
+更新后首次启动需从原命令或启动配置中移除该参数。Debug 不调整日志级别或 MCP，
+stdio 模式没有界面效果。
 
 从仓库根目录运行 `bin/start.sh`。Ops 页面执行任何运维动作前，先点 **Enter
 Maintenance**；此时普通记忆写入暂停，查询继续。动作完成后点 **Exit Maintenance**。

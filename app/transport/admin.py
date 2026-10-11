@@ -243,8 +243,6 @@ class AdminAPI:
         self._service = service
         self.runtime = runtime
         self.debug = bool(debug)
-        if runtime is not None and debug is not None:
-            runtime.debug_effective = bool(debug)
 
     @property
     def service(self):

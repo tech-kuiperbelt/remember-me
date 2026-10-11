@@ -1,4 +1,4 @@
-"""Persistent configuration and startup Debug share one effective UI state."""
+"""Debug UI state is controlled solely by persistent configuration."""
 import asyncio
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -15,7 +15,7 @@ from app.transport.admin import create_admin_routes
 
 
 @pytest.mark.parametrize('debug', [False, True])
-def test_console_debug_flag_ignores_request_override(admin, debug):
+def test_console_debug_state_ignores_request_override(admin, debug):
     client = TestClient(Starlette(routes=create_admin_routes(admin.service, debug=debug)))
     response = client.get('/admin/console?debug=true')
     assert response.status_code == 200
@@ -24,8 +24,8 @@ def test_console_debug_flag_ignores_request_override(admin, debug):
 
 
 @pytest.mark.parametrize('debug', [False, True])
-def test_cli_debug_reaches_http_app_and_survives_restart(monkeypatch, debug):
-    settings = SimpleNamespace(PORT=1314, LOCAL_ONLY=True, environment={})
+def test_cli_uses_config_debug_and_retains_restart_arguments(monkeypatch, debug):
+    settings = SimpleNamespace(PORT=1314, LOCAL_ONLY=True, UI_DEBUG=debug, environment={})
     runtime = SimpleNamespace(restart_requested=True, close=Mock())
     app = SimpleNamespace(state=SimpleNamespace(close_connections=Mock()))
     build = Mock(return_value=app)
@@ -46,15 +46,35 @@ def test_cli_debug_reaches_http_app_and_survives_restart(monkeypatch, debug):
     import os
     restart = Mock()
     monkeypatch.setattr(os, 'execv', restart)
-    args = ['--port', '1314'] + (['--debug'] if debug else [])
+    args = ['--port', '1314']
     asyncio.run(server.main(args))
-    build.assert_called_once_with(runtime, port=1314, local_only=True, debug=True if debug else None)
+    build.assert_called_once_with(runtime, port=1314, local_only=True)
     runtime.close.assert_called_once()
     restart.assert_called_once_with(server.sys.executable,
         [server.sys.executable, '-m', 'app.server', *args])
 
-@pytest.mark.parametrize('configured, flag', [(False, None), (True, None), (False, True)])
-def test_config_debug_roundtrip_and_fresh_html(tmp_path, configured, flag):
+
+def test_cli_rejects_removed_debug_option_before_loading_config(monkeypatch, capsys):
+    load = Mock()
+    monkeypatch.setattr(Settings, 'from_config', load)
+    with pytest.raises(SystemExit) as exc:
+        asyncio.run(server.main(['--debug']))
+    assert exc.value.code == 2
+    assert 'unrecognized arguments: --debug' in capsys.readouterr().err
+    load.assert_not_called()
+
+
+def test_runtime_admin_constructor_preserves_config_debug(tmp_path):
+    from app.runtime import Runtime
+    from app.transport.admin import AdminAPI
+    for configured in (False, True):
+        (tmp_path / 'config.jsonc').write_text('{"debug":' + str(configured).lower() + '}')
+        rt = Runtime(Settings.from_config(tmp_path, environment={}), configure_logging=False)
+        AdminAPI(runtime=rt, debug=not configured)
+        assert rt.debug_effective is configured
+
+@pytest.mark.parametrize('configured', [False, True])
+def test_config_debug_roundtrip_and_fresh_html(tmp_path, configured):
     from app.runtime import Runtime
     from tests.conftest import FakeProvider
     from app.config.jsonc import loads
@@ -62,12 +82,12 @@ def test_config_debug_roundtrip_and_fresh_html(tmp_path, configured, flag):
     path.write_text('// Keep this comment\n{"debug": ' + str(configured).lower() + '}')
     settings = Settings.from_config(tmp_path, environment={'MEMORY_STORAGE': 'sqlite', 'MEMORY_STORAGE_PATH': ':memory:', 'EMBED_PRELOAD': 'false'})
     rt = Runtime(settings, provider_factory=lambda **_: FakeProvider(), configure_logging=False)
-    with TestClient(server.create_http_app(rt, debug=flag)) as client:
-        initial = configured or flag is True
+    with TestClient(server.create_http_app(rt)) as client:
+        initial = configured
         config = client.get('/api/config').json()
         assert config['debug'] is configured and config['debug_effective'] is initial
         assert f'data-ui-debug="{str(initial).lower()}"' in client.get('/admin/console').text
-        # Saving another setting does not override a startup flag.
+        # Saving another setting preserves Debug configuration.
         assert client.post('/api/config', json={'language': 'en'}).json()['debug_effective'] is initial
         for target in (False, True, False):
             result = client.post('/api/config', json={'debug': target})
@@ -85,9 +105,10 @@ def test_config_debug_roundtrip_and_fresh_html(tmp_path, configured, flag):
 def test_debug_save_failure_keeps_effective_state(tmp_path, monkeypatch):
     from app.runtime import Runtime
     from tests.conftest import FakeProvider
-    settings = Settings.from_config(tmp_path, create=True, environment={'MEMORY_STORAGE': 'sqlite', 'MEMORY_STORAGE_PATH': ':memory:', 'EMBED_PRELOAD': 'false'})
+    (tmp_path / 'config.jsonc').write_text('{"debug":true}')
+    settings = Settings.from_config(tmp_path, environment={'MEMORY_STORAGE': 'sqlite', 'MEMORY_STORAGE_PATH': ':memory:', 'EMBED_PRELOAD': 'false'})
     rt = Runtime(settings, provider_factory=lambda **_: FakeProvider(), configure_logging=False)
-    with TestClient(server.create_http_app(rt, debug=True)) as client:
+    with TestClient(server.create_http_app(rt)) as client:
         for value in ('true', 1, None, []):
             assert client.post('/api/config', json={'debug': value}).status_code == 400
             assert rt.debug_effective is True
@@ -97,7 +118,7 @@ def test_debug_save_failure_keeps_effective_state(tmp_path, monkeypatch):
         monkeypatch.setattr(configuration.Configuration, 'save', fail_save)
         assert client.post('/api/config', json={'debug': False}).status_code == 400
         assert client.get('/api/config').json()['debug_effective'] is True
-        assert configuration.Configuration.load(tmp_path).debug is False
+        assert configuration.Configuration.load(tmp_path).debug is True
 
 
 def test_legacy_config_defaults_debug_off_without_rewrite(tmp_path):

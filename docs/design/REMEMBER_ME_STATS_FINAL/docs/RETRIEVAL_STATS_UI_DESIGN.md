@@ -68,7 +68,7 @@ The four sample PNGs are **composition references only**. In particular, do NOT 
 
 ## Confirmed diagnostics behavior
 
-The Data notes disclosure is available only with the startup `--debug` flag. It describes global scan diagnostics and never attributes them to the selected namespace/period. File-read/API errors remain visible in every mode. Do not claim complete history from available_from. Show the last weekly bucket as partial through window_end_utc, even when end_utc denotes the next calendar midnight.
+The Data notes disclosure is available only when Debug is enabled in configuration. It describes global scan diagnostics and never attributes them to the selected namespace/period. File-read/API errors remain visible in every mode. Do not claim complete history from available_from. Show the last weekly bucket as partial through window_end_utc, even when end_utc denotes the next calendar midnight.
 
 Confirmed Overview icon treatment: Searches uses a blue search icon, Rated Searches a purple feedback/check icon, and Feedback Coverage a green target icon. Reuse Memory Overview badge sizing and responsive placement; icons are decorative and do not add metrics.
 

@@ -3,11 +3,11 @@ async function runConfigDebugRegression() {
   const phase = sessionStorage.getItem('config-debug-phase') || 'initial';
   const ui = await import('/admin/console/static/js/ui.js');
   if (phase === 'initial') {
-    assert(ui.debugEnabled() && !$('nav-audit').hidden, 'startup flag enables UI');
+    assert(ui.debugEnabled() && !$('nav-audit').hidden, 'saved config enables UI');
     $('nav-ops').click(); await waitFor(() => !$('btn-model-save').disabled, 'config loaded');
-    assert($('config-debug').checked, 'checkbox reflects effective startup flag');
+    assert($('config-debug').checked, 'checkbox reflects saved config');
     const config = await S.realFetch('/api/config').then(r => r.json());
-    assert(config.debug === false && config.debug_effective === true, 'persisted and effective are distinct');
+    assert(config.debug === true && config.debug_effective === true, 'persisted config controls startup state');
     $('config-debug').checked = false; $('btn-model-save').click();
     await waitFor(() => !$('config-debug-refresh').hidden && !$('btn-model-save').disabled, 'disable saved');
     assert(ui.debugEnabled() && !$('nav-audit').hidden, 'existing page retained until reload');
@@ -34,7 +34,7 @@ async function runConfigDebugRegression() {
   $('btn-detail-close').click(); $('nav-ops').click(); await waitFor(() => !$('btn-model-save').disabled, 'enabled config loaded');
   assert($('config-debug').checked && $('config-debug-refresh').hidden, 'on setting persists');
   sessionStorage.removeItem('config-debug-phase');
-  result.textContent = 'PASS: config Debug persisted, startup overridden, real reload disables/enables navigation and drawer buttons';
+  result.textContent = 'PASS: config Debug persisted, configuration controls startup, real reload disables/enables navigation and drawer buttons';
 }
 
 async function checkDebugDiagnostics(enabled) {
