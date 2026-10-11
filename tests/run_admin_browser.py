@@ -48,10 +48,19 @@ class BrowserProvider(FakeProvider):
         return [1., 0.]
 
 
-service = MemoryService(Settings.from_env(),
-    SQLiteStorage(':memory:', embedding_spec=EmbeddingSpec('test','smoke',2).as_dict()), BrowserProvider())
+config_debug_case = sys.argv[1:] == ['--case', 'config-debug']
+browser_runtime = None
+if config_debug_case:
+    from app.runtime import Runtime
+    browser_runtime = Runtime(Settings.from_config(work.name, create=True),
+                              provider_factory=lambda **_: BrowserProvider(), configure_logging=False)
+    browser_runtime.start()
+    service = browser_runtime.service
+else:
+    service = MemoryService(Settings.from_env(),
+        SQLiteStorage(':memory:', embedding_spec=EmbeddingSpec('test','smoke',2).as_dict()), BrowserProvider())
 debug_disabled = sys.argv[1:] in (['--case', 'debug-disabled'], ['--case', 'retrieval-debug-disabled'])
-admin = AdminAPI(service, debug=not debug_disabled)
+admin = AdminAPI(runtime=browser_runtime, debug=True) if config_debug_case else AdminAPI(service, debug=not debug_disabled)
 service.embed_query = lambda _: [1.,0.]
 words = ['cache', 'cache clear', 'rare_id'] + ['word%03d' % i for i in range(60)]
 for i, word in enumerate(words):
@@ -71,6 +80,7 @@ checks += '\n' + (ROOT / 'tests/browser/create_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/stats_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/retrieval_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/audit_regression.js').read_text()
+checks += '\n' + (ROOT / 'tests/browser/config_debug_regression.js').read_text()
 HEAD_SCRIPT = '<script>' + harness + '</script>'
 BODY_SCRIPT = '<script type="module">' + checks + '</script>'
 
@@ -257,6 +267,11 @@ try:
         else tempfile.TemporaryDirectory(prefix='remember-ui-shots-')
     with tempfile.TemporaryDirectory(prefix='keyword-chrome-') as profile, _shots_ctx as shots:
         failures = []
+        if selected('config-debug'):
+            proc, shot = run_case(profile, 'config-debug', '1440,900', '1', shots, 'config-debug', theme='light')
+            ok, output = check(proc)
+            print(('PASS ' if ok else 'FAIL ') + 'config-debug -> ' + str(shot) + ('' if ok else ' :: ' + output), flush=True)
+            if not ok: failures.append('config-debug')
         for label, size, scheme in [('audit-functional', '1440,900', 'light'), ('audit-layout-narrow', '390,844', 'light'), ('audit-layout-dark', '1440,900', 'dark'), ('audit-layout-list-light', '1440,900', 'light'), ('audit-layout-list-dark', '1440,900', 'dark'), ('audit-layout-list-medium', '820,900', 'light'), ('audit-layout-list-narrow', '390,844', 'light'), ('audit-layout-list-narrow-expanded', '390,844', 'light'), ('audit-layout-list-below', '1320,900', 'light'), ('audit-layout-list-above', '1380,900', 'light')]:
             if not selected(label): continue
             proc, shot = run_case(profile, label, size, '1', shots, label, theme=scheme)
@@ -430,6 +445,8 @@ try:
         print('Screenshots (not committed): ' + shots +
               (' (retained for review)' if keep_dir else ' (temporary; removed on exit)'))
 finally:
-    server.should_exit = True; t.join(timeout=5); sock.close(); service.storage.close()
+    server.should_exit = True; t.join(timeout=5); sock.close()
+    if browser_runtime: browser_runtime.close()
+    else: service.storage.close()
     audit.close()
     work.cleanup()

@@ -25,10 +25,12 @@
 
 ## 启动和关闭
 
-Admin 界面的所有 Debug 按钮默认隐藏，元素检查不可启用。需要微调界面时使用
-`bin/start.sh --debug`（或 `python -m app.server --debug`）：显示顶部及新增／明细抽屉
-的 Debug 按钮，再点击按钮开启元素 ID 检查。该参数不写入 `config.jsonc`、不调整日志级别，
-Restart Server 保留原启动参数；不带 `--debug` 重新启动即可隐藏入口。stdio 模式没有界面效果。
+Admin Debug 模式默认关闭。配置页勾选“启用 Debug 模式”并保存，刷新页面后显示
+顶部及新增／明细抽屉的 Debug 按钮、Audit 导航和 Stats 诊断入口；点击 Debug
+按钮才开启元素 ID 检查。配置持久保存为 `config.jsonc` 的 `debug` 布尔字段。
+也可用 `bin/start.sh --debug`（或 `python -m app.server --debug`）在启动时启用；
+之后允许配置页关闭。Restart Server 保留原参数，因此带 `--debug` 重启会再次启用。
+该参数本身不写入配置，两种方式均不调整日志级别或 MCP，stdio 模式没有界面效果。
 
 从仓库根目录运行 `bin/start.sh`。Ops 页面执行任何运维动作前，先点 **Enter
 Maintenance**；此时普通记忆写入暂停，查询继续。动作完成后点 **Exit Maintenance**。
@@ -88,6 +90,8 @@ url = "http://127.0.0.1:1314/mcp"
   "auto_download_model": true,
   // true=仅监听 127.0.0.1；false=监听 0.0.0.0 并对局域网开放全部 HTTP 接口
   "local_only": true,
+  // Debug 按钮、Audit 与诊断入口；配置页保存后刷新生效
+  "debug": false,
   // 代理地址可以包含端口
   "proxy": {"enabled": false, "url": ""}
 }

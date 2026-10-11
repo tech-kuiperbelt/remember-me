@@ -205,6 +205,9 @@ async function loadModelConfig() {
     $('config-port').value = config.port;
     $('config-language').value = config.language;
     $('config-local-only').checked = config.local_only;
+    const debug = config.debug_effective ?? config.debug ?? (document.documentElement.dataset.uiDebug === 'true');
+    $('config-debug').checked = debug;
+    $('config-debug-refresh').hidden = debug === (document.documentElement.dataset.uiDebug === 'true');
     $('model-auto-download').checked = config.auto_download_model;
     $('model-proxy-enabled').checked = config.proxy.enabled;
     $('model-proxy-saved').textContent = config.proxy.url ? `已保存：${config.proxy.url}` : '尚未设置代理地址';
@@ -233,7 +236,7 @@ async function saveModelConfig() {
     await api('/config', {method:'POST', body:JSON.stringify({
       port, language:$('config-language').value,
       auto_download_model:$('model-auto-download').checked,
-      local_only:$('config-local-only').checked, proxy})});
+      local_only:$('config-local-only').checked, debug:$('config-debug').checked, proxy})});
     result.textContent = '配置已保存；端口、语言与访问范围重启后生效。';
     const state = await refreshMaintenance();
     if (state?.required_reason === 'model_not_ready') {

@@ -167,15 +167,18 @@ def test_loopback_ollama_bypasses_all_proxy_and_missing_model_help(monkeypatch):
     assert not any(seen["proxies"].get(key) for key in ("http", "https", "all"))
 
 
-def test_migration_keeps_proxy_and_download_policy(tmp_path):
+@pytest.mark.parametrize("debug", [None, False, True])
+def test_migration_keeps_proxy_and_download_policy(tmp_path, debug):
     project, source, env = legacy_layout(tmp_path)
     values = {"port": 1314, "language": "en", "auto_download_model": False,
               "local_only": True,
               "proxy": {"enabled": True, "url": "https://proxy.example:8443"}}
+    if debug is not None:
+        values["debug"] = debug
     (source / "config.jsonc").write_text(json.dumps(values))
     target = tmp_path / "new-data"
     migrate(target, source, environment=env, project_root=project)
-    assert json.loads((target / "config.jsonc").read_text()) == values
+    assert json.loads((target / "config.jsonc").read_text()) == {"debug": False, **values}
 
 
 def test_download_cli_explicitly_allows_download(monkeypatch, capsys):

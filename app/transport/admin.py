@@ -237,12 +237,14 @@ class AdminAPI:
         directory.mkdir(parents=True, exist_ok=True)
         return str(directory)
 
-    def __init__(self, service=None, *, runtime=None, debug=False):
+    def __init__(self, service=None, *, runtime=None, debug=None):
         if service is None and runtime is None:
             raise ValueError("service or runtime is required")
         self._service = service
         self.runtime = runtime
-        self.debug = debug
+        self.debug = bool(debug)
+        if runtime is not None and debug is not None:
+            runtime.debug_effective = bool(debug)
 
     @property
     def service(self):
@@ -454,9 +456,12 @@ class AdminAPI:
         logger.info("GET /admin/console")
         # No-store: the UI is edited frequently; always serve the latest HTML
         # instead of letting browsers serve stale cached copies.
-        html = await self._run(lambda: ADMIN_HTML_PATH.read_text(encoding="utf-8"), control=True)
-        html = html.replace('data-ui-debug="false"',
-                            'data-ui-debug="true"' if self.debug else 'data-ui-debug="false"', 1)
+        def render():
+            html = ADMIN_HTML_PATH.read_text(encoding="utf-8")
+            debug = self.runtime.debug_effective if self.runtime is not None else self.debug
+            return html.replace('data-ui-debug="false"',
+                                'data-ui-debug="true"' if debug else 'data-ui-debug="false"', 1)
+        html = await self._run(render, control=True)
         return Response(html, media_type="text/html", headers={
             "Cache-Control": "no-store",
             "Pragma": "no-cache",
@@ -1046,5 +1051,5 @@ class AdminAPI:
         return guarded
 
 
-def create_admin_routes(service=None, *, runtime=None, debug=False):
+def create_admin_routes(service=None, *, runtime=None, debug=None):
     return AdminAPI(service, runtime=runtime, debug=debug).routes

@@ -1,7 +1,7 @@
 """Explicit, immutable configuration snapshot shared by one service runtime."""
 import os
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import Mapping
 
@@ -41,11 +41,12 @@ class Settings:
     LANGUAGE: str
     LOCAL_ONLY: bool
     CONFIG_PATH: str | None
+    UI_DEBUG: bool = False
 
     @classmethod
     def from_config(cls, data_dir=None, *, create=False, environment=None):
         config = Configuration.load(data_dir, create=create, environment=environment)
-        return cls.from_env(config.runtime_environment(environment))
+        return replace(cls.from_env(config.runtime_environment(environment)), UI_DEBUG=config.debug)
 
     @classmethod
     def from_env(cls, environment=None):

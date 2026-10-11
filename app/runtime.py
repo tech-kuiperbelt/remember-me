@@ -25,6 +25,7 @@ class Runtime:
     def __init__(self, settings, *, provider_factory=create_embedder, storage_factory=create_storage,
                  configure_logging=True, log_dir=None):
         self.settings = settings
+        self.debug_effective = settings.UI_DEBUG
         self.provider_factory = provider_factory
         self.storage_factory = storage_factory
         self.configure_logging = configure_logging
@@ -107,22 +108,24 @@ class Runtime:
                 and self.maintenance.required_reason is None}
 
     def model_config(self):
-        return Configuration.load(self.settings.DATA_DIR).as_dict(redact=True)
+        with self._lock:
+            return {**Configuration.load(self.settings.DATA_DIR).as_dict(redact=True),
+                    "debug_effective": self.debug_effective}
 
     def save_model_config(self, changes):
         from app.operations.maintenance import MaintenanceRejected
         with self._lock:
             if self.state != "running":
                 raise MaintenanceRejected("maintenance_busy", "Service is closing; configuration cannot be saved")
-            if not isinstance(changes, dict) or set(changes) - {"port", "language", "proxy", "auto_download_model", "local_only"}:
-                raise ValueError("Only port, language, proxy, auto_download_model and local_only may be changed here")
+            if not isinstance(changes, dict) or set(changes) - {"port", "language", "proxy", "auto_download_model", "local_only", "debug"}:
+                raise ValueError("Only port, language, proxy, auto_download_model, local_only and debug may be changed here")
             config = Configuration.load(self.settings.DATA_DIR)
             values = config.as_dict()
             if "proxy" in changes:
                 if not isinstance(changes["proxy"], dict):
                     raise ValueError("proxy must be an object")
                 values["proxy"] = {**values["proxy"], **changes["proxy"]}
-            for key in ("port", "language", "auto_download_model", "local_only"):
+            for key in ("port", "language", "auto_download_model", "local_only", "debug"):
                 if key in changes:
                     values[key] = changes[key]
             validated = Configuration.from_values(config.path, config.data_dir, values)
@@ -130,8 +133,10 @@ class Runtime:
                 raise ValueError("Enter the actual proxy URL; leave URL unchanged to preserve credentials")
             from dataclasses import replace
             replace(validated, source_text=config.source_text).save()
+            if "debug" in changes:
+                self.debug_effective = validated.debug
             self.audit.record("model_config", {}, validated.as_dict(redact=True), 0)
-            return validated.as_dict(redact=True)
+            return {**validated.as_dict(redact=True), "debug_effective": self.debug_effective}
 
     def retry_model(self):
         from app.operations.maintenance import MaintenanceRejected

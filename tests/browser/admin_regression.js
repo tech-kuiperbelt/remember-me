@@ -171,7 +171,10 @@ async function runThemeScenario(scenario) {
 
 try {
   const scenario = new URLSearchParams(location.search).get('smoke') || '';
-  if (scenario.startsWith('audit-')) {
+  if (scenario === 'config-debug') {
+    await runConfigDebugRegression();
+  }
+  else if (scenario.startsWith('audit-')) {
     await runAuditRegression(scenario);
   }
   else if (scenario === 'debug-disabled') {

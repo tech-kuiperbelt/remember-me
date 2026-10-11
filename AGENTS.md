@@ -17,18 +17,21 @@ cache) if present. The configured provider must match the active embedding
 profile in the data directory's `memories.db`, otherwise startup fails and requires an offline
 `app.embedding_cli reindex`/`activate`.
 
-Admin UI Debug buttons are hidden and element inspection is disabled by default.
-Pass `--debug` (for example `bin/start.sh --debug`) to make the global and
-create/detail drawer buttons available; inspection still requires clicking a
-button. This flag is not persisted in config.jsonc, does not change logging or
-MCP tools, and is retained by the UI's Restart Server action. It has no UI effect
-in stdio mode.
+Admin UI Debug mode defaults off. Enable it through the configuration page
+(`debug: true` in config.jsonc; save then refresh the page) or launch with
+`--debug` (for example `bin/start.sh --debug`). Both show global/create/detail
+Debug buttons, Audit navigation and Stats diagnostic entries; element inspection
+still requires clicking a Debug button. `--debug` enables only the startup state:
+the configuration page can turn it off for the current process. Restart Server
+retains the original arguments, so a retained `--debug` enables it again at startup.
+The flag itself is not persisted; the configuration setting is. Neither changes
+logging or MCP tools, and neither has a UI effect in stdio mode.
 
 Data directory selection: `--data-dir` > `MEMORY_DATA_DIR` > the OS per-user default
 (Linux `~/.remember-me/`, Windows `%LOCALAPPDATA%\remember-me\` with a `~/AppData/Local`
 fallback, macOS `~/Library/Application Support/remember-me/`); relative
 directories are resolved against the project root. `<data-dir>/config.jsonc` contains
-`{"port":1314,"language":"zh-CN","auto_download_model":true,"local_only":true,"proxy":{"enabled":false,"url":""}}`
+`{"port":1314,"language":"zh-CN","auto_download_model":true,"local_only":true,"debug":false,"proxy":{"enabled":false,"url":""}}`
 and is created only on normal startup. Missing fields use these defaults.
 JSONC supports line/block comments and trailing commas; config saves preserve
 existing comments. Legacy config.json is read only when config.jsonc is absent;
@@ -208,6 +211,10 @@ Memory records should contain only a short pointer to these files and a compact 
 
 ## Audit UI
 
-Audit navigation and its frontend route are enabled only with `--debug`; the API is unchanged. `audit.js` owns compact Memory-style rows, an editable Namespace picker and a read-only JSON drawer displaying the returned event snapshot. Namespace candidates combine the shared live registry and currently loaded audit events; arbitrary historical names remain editable. `namespace-picker.js` accepts optional ID prefix/popup container with unchanged Memory defaults. `drawer-motion.js` shares the existing Memory/Audit slide and fade animation (240ms open, 200ms close; reduced-motion aware). See `docs/project-management/plans/50.9-audit-ui-refinement.md`.
+Audit navigation and its frontend route are enabled only in effective Debug mode (config or startup flag); the API is unchanged. `audit.js` owns compact Memory-style rows, an editable Namespace picker and a read-only JSON drawer displaying the returned event snapshot. Namespace candidates combine the shared live registry and currently loaded audit events; arbitrary historical names remain editable. `namespace-picker.js` accepts optional ID prefix/popup container with unchanged Memory defaults. `drawer-motion.js` shares the existing Memory/Audit slide and fade animation (240ms open, 200ms close; reduced-motion aware). See `docs/project-management/plans/50.9-audit-ui-refinement.md`.
 
 `audit-presentation.js` derives list summaries and business outcomes from the bounded audit payload without querying memories or changing events. Audit columns align at container widths >=1100px, with labeled cards below. The Result column shows only the original call status (ok/error/etc.); counts, business outcomes and errors are available in the JSON drawer. Add/update bodies and summaries are absent by design. See `docs/project-management/plans/50.9.1-audit-list-key-information.md`.
+
+## Config Debug setting
+
+`Configuration.debug` persists a strict boolean (default false), and `Settings.UI_DEBUG` carries the startup snapshot. Runtime owns mutable `debug_effective`. GET/POST /api/config (and /api/config/model) return persisted debug and read-only debug_effective; explicit debug saves update effective state only after persistence succeeds. Fresh Admin HTML reads current state in the control worker; open pages change after reload. See docs/project-management/plans/50.10-config-debug-mode.md.
