@@ -182,7 +182,7 @@ async function runMemoriesFiltersRegression() {
   S.resetCalls(); $('memories-reset').click();
   await waitFor(() => $('memories-count').textContent === '63 memories', 'reset cap fixture');
   $('memories-keywords').click(); inputQuery('word');
-  document.querySelector('.nav button[data-page="keywords"]').click(); await settle(300);
+  document.querySelector('.nav button[data-page="stats"]').click(); await settle(300);
   assert(!document.querySelector('.memory-filter-popover'), 'leaving page closes popup');
   assert(!S.calls.some(call => call.url === '/api/keywords/query' && JSON.parse(call.body).limit === 20), 'leaving cancels candidate debounce');
   document.querySelector('.nav button[data-page="memories"]').click();

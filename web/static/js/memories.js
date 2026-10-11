@@ -30,9 +30,6 @@ function updateCreate() {
 
 export function loadMemories() { return data.refresh(); }
 export function hide() { filters.close(); focusId = null; }
-export function prepareKeywordBrowse(keyword, namespace) {
-  hide(); searchControls.clearDates(); data.prepareKeywordBrowse(keyword, namespace);
-}
 export function prepareMetadataDrilldown(dimension, value, namespace) {
   hide(); searchControls.clearDates();
   data.prepareMetadataDrilldown(dimension, value, namespace);

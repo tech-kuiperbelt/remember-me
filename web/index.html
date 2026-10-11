@@ -40,10 +40,6 @@
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
           <span class="nav-label">Memories</span>
         </button>
-        <button id="nav-keywords" class="nav-item" data-page="keywords">
-          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h10M4 17h7"/></svg>
-          <span class="nav-label">Keywords</span>
-        </button>
         <button id="nav-stats" class="nav-item" data-page="stats">
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 20V10M12 20V4M19 20v-6"/></svg>
           <span class="nav-label">Stats</span>
@@ -108,29 +104,6 @@
     <div id="memories-list" class="memory-list" aria-busy="true"></div>
     <div id="memories-pagination" class="memories-pagination"></div>
   </section>
-</div>
-
-<!-- Add -->
-<div class="page" id="page-keywords">
-  <div class="card">
-    <div class="card-header">Keywords</div>
-    <div class="card-body">
-      <form id="form-keywords">
-        <div class="form-row">
-          <div class="form-group"><label>Namespace</label><select id="kw-ns"><option value="">(all)</option></select></div>
-          <div class="form-group"><label>Categories</label><select id="kw-categories" multiple size="3"></select></div>
-          <div class="form-group"><label>Query</label><input id="kw-query" placeholder="Keyword or concept"></div>
-          <div class="form-group"><label>Match</label><select id="kw-mode"><option value="literal">Literal</option><option value="semantic">Semantic</option></select></div>
-          <div class="form-group"><label>Sort</label><select id="kw-sort"><option value="count">Usage count</option><option value="keyword">Keyword</option></select></div>
-        </div>
-        <button class="btn btn-primary" type="submit">Search</button>
-      </form>
-      <p>Semantic scores indicate similarity, not interchangeable meanings. Counts reflect the selected namespace, and selecting one or more categories narrows results to keywords used by memories with any of them.</p>
-      <div id="kw-results"></div>
-      <button id="kw-prev" class="btn btn-outline" disabled>Previous</button>
-      <button id="kw-next" class="btn btn-outline" disabled>Next</button>
-    </div>
-  </div>
 </div>
 
 <div class="page" id="page-stats">

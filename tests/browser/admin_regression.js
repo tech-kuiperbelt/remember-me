@@ -203,6 +203,17 @@ try {
     await checkSearchLayout();
     result.textContent='PASS: '+scenario;
   }
+  else if (scenario === 'keywords-removal') {
+    await waitFor(()=>$('memories-list').getAttribute('aria-busy')==='false'&&$('memories-namespace').options.length>1,'workspace ready');
+    assert(!$('nav-keywords')&&!$('page-keywords')&&!$('form-keywords'),'standalone Keywords UI removed');
+    const router=await import('/admin/console/static/js/router.js');
+    assert(router.switchPage('keywords')===false&&$('page-memories').classList.contains('active'),'retired route rejected');
+    assert([...document.querySelectorAll('.nav button[data-page]')].map(b=>b.dataset.page).join(',')==='memories,stats,ops,audit','remaining navigation order');
+    await runMemoriesFiltersRegression();
+    await runMemoriesSearchRegression();
+    await runMemoriesAcceptanceRegression();
+    result.textContent='PASS: Keywords UI removed; common filters, search, navigation drafts and Stats keyword drilldown retained';
+  }
   else if (await runRetrievalScenario(scenario) || await runStatsScenario(scenario) || await runCreateScenario(scenario) || await runDetailScenario(scenario) || await runMemoriesVisualScenario(scenario) || await runThemeScenario(scenario)) { /* theme scenario finished */ }
   else {
 
@@ -301,46 +312,13 @@ try {
   assert($('memories-sort').value === 'updated_at', 'retry retains sort');
   S.reset();
 
-  // Real nav click exercises router.bindNav + switchPage.
-  document.querySelector('.nav button[data-page="keywords"]').click();
-  await settle();
-  assert($('page-keywords').classList.contains('active'), 'nav click switches page');
-  assert(!$('page-memories').classList.contains('active'), 'nav click hides old page');
-
-  await waitFor(() => $('kw-results').textContent.includes('63 matches'), 'browse count');
-  assert(!$('kw-next').disabled, 'next page enabled');
-  $('kw-next').click();
-  await waitFor(() => $('kw-results').textContent.includes('51–63'), 'pagination');
-
-  $('kw-query').value = 'CACHE'; fire($('kw-query'), 'input'); submit($('form-keywords'));
-  await waitFor(() => $('kw-results').textContent.includes('2 matches'), 'literal search');
-  $('kw-mode').value = 'semantic'; submit($('form-keywords'));
-  await waitFor(() => $('kw-results').textContent.includes('score 1.000'), 'semantic scores');
-  assert($('kw-next').disabled && $('kw-sort').disabled, 'semantic controls');
-
-  // Jump from a keyword into an exact query.
-  $('kw-query').value = ''; $('kw-mode').value = 'literal'; $('kw-ns').value = 'a'; fire($('kw-ns'), 'change');
-  await waitFor(() => Array.from($('kw-results').querySelectorAll('button')).some(b => b.textContent === 'cache'), 'cache keyword button');
-  S.resetCalls();
-  Array.from($('kw-results').querySelectorAll('button')).find(b => b.textContent === 'cache').click();
-  await waitFor(() => $('memories-list').textContent.includes('memory cache'), 'keyword jump result');
-  assert(S.calls.filter(c => c.url.startsWith('/api/memories/page?')).length === 1, 'keyword jump queries exactly once');
-  assert($('memories-namespace').value === 'a', 'namespace jump');
-  assert($('memories-filters').textContent.includes('cache ×'), 'selected keyword');
-  document.querySelector('.nav button[data-page="keywords"]').click();
-  // Stale response must not overwrite the newer one.
-  let release, first = true;
-  S.setOverride(url => {
-    if (url === '/api/keywords/query' && first) { first = false; return new Promise(resolve => { release = resolve; }); }
-    return undefined;
-  });
-  $('kw-query').value = 'stale'; fire($('kw-query'), 'input'); submit($('form-keywords'));
-  await waitFor(() => first === false, 'stale request started');
-  $('kw-query').value = 'absent'; fire($('kw-query'), 'input'); submit($('form-keywords'));
-  await waitFor(() => $('kw-results').textContent === 'No matching keywords.', 'absent result');
-  release(json({results: [{total: 1, items: [{keyword: 'stale', count: 1}]}]}));
-  await settle(50);
-  assert($('kw-results').textContent === 'No matching keywords.', 'stale response ignored');
+  // Keywords standalone UI is retired; Stats remains a real navigation target.
+  assert(!$('nav-keywords') && !$('page-keywords') && !$('form-keywords'), 'Keywords menu and page removed');
+  document.querySelector('.nav button[data-page="stats"]').click();
+  await waitFor(()=>$('stats-overview'),'Stats navigation');
+  assert($('page-stats').classList.contains('active') && !$('page-memories').classList.contains('active'), 'nav click switches page');
+  const router = await import('/admin/console/static/js/router.js');
+  assert(router.switchPage('keywords') === false && $('page-stats').classList.contains('active'), 'removed route cannot change active page');
   S.reset();
 
   // Special characters round-trip through a real stats refresh.
@@ -384,7 +362,9 @@ try {
   await waitFor(() => $('edit-text'), 'edit modal');
   assert(!S.calls.some(c => c.url === detailUrl), 'editing reuses authoritative detail');
   assert($('edit-namespace').value === special, 'edit namespace value');
-  assert([...$('detail-namespaces').children].some(el=>el.value===special), 'namespace candidates');
+  $('detail-namespace-select').click();
+  assert([...$('detail-namespace-options').querySelectorAll('[role=option]')].some(el=>el.dataset.namespace===special), 'namespace candidates');
+  $('detail-namespace-select').click();
   $('edit-text').value += '\nEdited'; fire($('edit-text'),'input');
   S.resetCalls(); $('detail-save').click();
   await waitFor(() => S.calls.some(c => c.url === detailUrl && c.method === 'PUT'), 'detail save action');
@@ -591,7 +571,7 @@ try {
   await settle();
   assert(scroller.scrollTop === 0, 'switch page scrolls work area to top');
   assert(document.querySelector('.nav button[data-page="audit"]').getAttribute('aria-current') === 'page', 'aria-current set');
-  assert(!document.querySelector('.nav button[data-page="keywords"]').hasAttribute('aria-current'), 'aria-current cleared');
+  assert(!document.querySelector('.nav button[data-page="ops"]').hasAttribute('aria-current'), 'aria-current cleared');
 
   // Blank-nav collapse: accessible state, persistence, menu routing and form content preserved.
   $('memories-query').value = 'draft-kept';

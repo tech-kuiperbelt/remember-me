@@ -256,6 +256,11 @@ try:
         else tempfile.TemporaryDirectory(prefix='remember-ui-shots-')
     with tempfile.TemporaryDirectory(prefix='keyword-chrome-') as profile, _shots_ctx as shots:
         failures = []
+        if selected('keywords-removal'):
+            proc, shot = run_case(profile, 'keywords-removal', '1440,900', '1', shots, 'keywords-removal', theme='light')
+            ok, output = check(proc)
+            print(('PASS ' if ok else 'FAIL ') + 'keywords-removal -> ' + str(shot) + ('' if ok else ' :: ' + output), flush=True)
+            if not ok: failures.append('keywords-removal')
         retrieval_cases = [('retrieval-functional', '1440,800', 'light'), ('retrieval-debug-disabled', '1280,800', 'light'), ('retrieval-reload', '1280,800', 'light')]
         retrieval_cases += [(f'retrieval-layout-{width}-{mode}-{scheme}', f'{width},1000', scheme) for width in (390,820,1120,1460) for mode in ('7','30','90','empty','nofeedback') for scheme in ('light','dark')]
         for label, size, scheme in retrieval_cases:

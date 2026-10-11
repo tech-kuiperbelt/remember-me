@@ -63,11 +63,11 @@ async function runMemoriesAcceptanceRegression() {
     await waitFor(()=>$('detail-edit'),'saved view'); assert($('app-shell').inert,'saved drawer remains modal'); action('Close'); assert(document.activeElement === $('memories-count'),'edited-away row restores result focus');
 
     query('unsubmitted draft'); $('memories-k').value='30';
-    $('nav-keywords').click(); await settle(); S.resetCalls(); $('nav-memories').click(); await ready();
+    $('nav-stats').click(); await settle(); S.resetCalls(); $('nav-memories').click(); await ready();
     assert(searchCalls().length===1 && JSON.parse(searchCalls()[0].body).query==='acceptance','return refreshes submitted query once');
     assert($('memories-query').value==='unsubmitted draft' && $('memories-k').value==='30','return preserves both drafts');
     let release; pending=resolve=>{release=resolve;}; $('btn-refresh').click();
-    await waitFor(()=>release,'pending before leaving'); $('nav-keywords').click(); $('nav-memories').click(); await ready();
+    await waitFor(()=>release,'pending before leaving'); $('nav-stats').click(); $('nav-memories').click(); await ready();
     release(json({items:[],filter_resolution:null})); await settle();
     assert($('memories-count').textContent.includes('19 条'),'old response across navigation ignored');
 
@@ -105,12 +105,13 @@ async function runMemoriesAcceptanceRegression() {
     $('memories-query').dispatchEvent(new CompositionEvent('compositionend',{bubbles:true}));
     assert(!searchCalls().length,'composition end retains draft without submitting');
 
-    // Keyword jump clears old search, filters and date drafts in one list request.
+    // Stats keyword drilldown clears old search, filters and dates in one request.
     $('memories-updated-after').value='2020-01-01T00:00:00';
-    $('nav-keywords').click(); $('kw-mode').value='literal'; $('kw-ns').value='a';
-    $('kw-query').value='cache'; submit($('form-keywords'));
-    await waitFor(()=>[...$('kw-results').querySelectorAll('button')].some(b=>b.textContent==='cache'),'keyword jump candidate');
-    S.resetCalls(); [...$('kw-results').querySelectorAll('button')].find(b=>b.textContent==='cache').click(); await ready();
+    $('nav-stats').click();
+    await waitFor(()=>$('stats-keywords-ranking'),'Stats keyword ranking');
+    if($('stats-namespace').value!=='a'){$('stats-namespace').value='a';fire($('stats-namespace'),'change');}
+    await waitFor(()=>$('stats-content').getAttribute('aria-busy')==='false'&&[...$('stats-keywords-ranking').querySelectorAll('button')].some(b=>b.dataset.value==='cache'),'Stats keyword candidate');
+    S.resetCalls(); [...$('stats-keywords-ranking').querySelectorAll('button')].find(b=>b.dataset.value==='cache').click(); await ready();
     const calls=S.calls.filter(c=>c.url.startsWith('/api/memories/page?'));
     assert(calls.length===1 && !searchCalls().length,'keyword jump replaces search once: '+JSON.stringify(S.calls));
     const params=new URL(calls[0].url,location.origin).searchParams;

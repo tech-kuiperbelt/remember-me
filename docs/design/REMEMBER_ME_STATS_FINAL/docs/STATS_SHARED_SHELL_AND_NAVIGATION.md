@@ -4,7 +4,7 @@ Status: Confirmed UI decisions, 2026-10-10.
 
 ## Scope and constraints
 
-- Retain current top header: `Remember Me · MCP Server`, existing collapsed/expanded sidebar, and original nav entries `Memories / Keywords / Stats / 配置 / Audit` **without renaming**. i18n is future cross-app work, not part of this task.
+- Retain current top header: `Remember Me · MCP Server`, existing collapsed/expanded sidebar, and original nav entries `Memories / Stats / 配置 / Audit` **without renaming**. i18n is future cross-app work, not part of this task.
 - Do not redesign approved Memory List, Search/Filters, or Detail view/edit/create. Do not create additional sidebar item for Retrieval.
 - `Statistics` is ONE page with two subviews: `Memory` and `Retrieval`.
 
@@ -47,3 +47,5 @@ Memory view reads the existing completed metadata stats API. Retrieval view uses
 - Data notes appear only when launched with `--debug`, using the existing startup flag. Diagnostic counts describe the global retained-audit scan. Ordinary mode still displays API errors and Retry.
 
 User-approved label clarification: the Retrieval tab is displayed as **LLM Retrieval**, while internal view keys and API paths remain unchanged. Add the compact source caption **MCP search activity and reported feedback** beside the date/time context. This indicates the intended LLM retrieval use and the actual MCP data source; Admin search remains excluded.
+
+2026-10-11 user decision: remove the standalone Keywords menu/page. Memories keyword filters and Stats keyword rankings/drilldown remain; MCP/API discovery is unchanged.
