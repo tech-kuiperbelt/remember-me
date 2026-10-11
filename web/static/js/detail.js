@@ -9,6 +9,7 @@ import { createDraft, isDirty, validateDraft, buildUpdatePayload, createNewDraft
 import { renderMarkdown, copyText } from './markdown.js';
 import { renderDetailEditor } from './detail-editor.js';
 import { renderTechnicalDetails } from './detail-technical.js';
+import { createMemoryIcon } from './memory-icons.js';
 
 let state = 'closed', memory = null, draft = null, selected = null, version = 0;
 let picker = null, pending = null, confirmation = null, menu = null, preview = false;
@@ -27,7 +28,10 @@ function button(id, text, action, cls = 'btn-outline') {
   const el = node('button', id, text, 'btn btn-sm ' + cls); el.type = 'button'; el.onclick = action; return el;
 }
 function field(id, title, content) {
-  const section = node('section', id, undefined, 'detail-section'); section.append(node('h2', id + '-label', title), content); return section;
+  const section = node('section', id, undefined, 'detail-section'), label = node('h2', id + '-label', title);
+  const dimension = {Categories:'category', Keywords:'keyword', Anchors:'anchor'}[title];
+  if (dimension) { label.classList.add('detail-icon-label'); label.prepend(createMemoryIcon(dimension)); }
+  section.append(label, content); return section;
 }
 export const isOpen = () => state !== 'closed';
 export function onSelectionChanged(fn) { listeners.add(fn); }
@@ -83,8 +87,9 @@ async function readMemory(afterSave = false) {
 }
 function header() {
   const title = mode === 'create' ? 'New Memory' : memory ? deriveSummary(memory.summary || memory.text) || 'Memory Detail' : 'Memory Detail';
-  $('detail-title').textContent = title; $('detail-title').title = title;
+  $('detail-title').replaceChildren(createMemoryIcon('memory'), node('span','detail-title-text',title)); $('detail-title').title = title;
   $('detail-subtitle').textContent = memory ? memory.namespace + ' · ' + (formatTime(memory.updated_at) || '—') : '';
+  if (memory?.namespace) $('detail-subtitle').prepend(createMemoryIcon('namespace'));
   $('detail-subtitle').title = memory?.updated_at || '';
   const actions = $('detail-actions'); actions.replaceChildren();
   if (editing()) {

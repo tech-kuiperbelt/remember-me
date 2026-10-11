@@ -5,9 +5,15 @@ import { normalizeAnchors } from './detail-model.js';
 import { renderMarkdown } from './markdown.js';
 import { createValuePickers } from './memory-value-picker.js';
 import { createNamespacePicker } from './namespace-picker.js';
+import { createMemoryIcon } from './memory-icons.js';
 const node = (tag, id, text, cls = '') => { const el = document.createElement(tag); if (id) el.id = id; if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
 function button(id, text, action, cls = 'btn-outline') { const el=node('button',id,text,'btn btn-sm '+cls);el.type='button';el.onclick=action;return el; }
-function field(id,title,content) {const section=node('section',id,undefined,'detail-section');section.append(node('h2',id+'-label',title),content);return section;}
+function field(id,title,content) {
+  const section=node('section',id,undefined,'detail-section'), label=node('h2',id+'-label',title);
+  const dimension={Categories:'category',Keywords:'keyword',Anchors:'anchor'}[title];
+  if(dimension){label.classList.add('detail-icon-label');label.prepend(createMemoryIcon(dimension));}
+  section.append(label,content);return section;
+}
 export function renderDetailEditor({body, draft, creating, validate, showError, technical, retryCategories, onRetryDefault}) {
   let picker;
   let namespacePicker;
@@ -32,6 +38,7 @@ export function renderDetailEditor({body, draft, creating, validate, showError, 
   for (const [key,label] of [['namespace','Namespace'],['summary','Summary']]) {
     const input = node(key === 'namespace' ? 'input' : 'textarea','edit-'+key); input.value = draft[key];
     const section = field('detail-edit-'+key,label,input); section.querySelector('h2').replaceWith(Object.assign(node('label','detail-edit-'+key+'-label',label),{htmlFor:input.id}));
+    if(key==='namespace'){const label=section.querySelector('label');label.classList.add('detail-icon-label');label.prepend(createMemoryIcon('namespace'));}
     input.oninput = () => { draft[key] = input.value; if(key==='summary')resize(input,64,130); if(key === 'namespace') {namespacePicker?.close();input.dataset.touched='true';updatePicker();} validate(key); }; fieldError(section,key,input); body.append(section);
     if(key==='summary'){input.rows=2;input.placeholder='Summary (optional)';}
     if(key === 'summary' && creating) section.append(node('p','detail-summary-hint','留空将从正文生成摘要。','text-muted'));

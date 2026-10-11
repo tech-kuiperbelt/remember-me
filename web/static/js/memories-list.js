@@ -1,5 +1,6 @@
 // Safe memory row and page rendering. All data/actions arrive through callbacks.
 import { deriveSummary, formatTime } from './core.js';
+import { createMemoryIcon } from './memory-icons.js';
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -10,6 +11,7 @@ function el(tag, className, text) {
 const clean = value => String(value || '').trim().replace(/\s+/g, ' ');
 const values = (raw, preserveCase = false) => Array.isArray(raw)
   ? [...new Set(raw.filter(v => typeof v === 'string').map(v => preserveCase ? v.trim() : v.trim().toLowerCase()).filter(Boolean))] : [];
+
 
 function memoryDate(memory) {
   for (const stamp of [memory.updated_at, memory.created_at]) {
@@ -113,10 +115,10 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
     documentIcon.setAttribute('viewBox', '0 0 24 24');
     documentIcon.setAttribute('width', '16'); documentIcon.setAttribute('height', '16');
     documentIcon.setAttribute('fill', 'none'); documentIcon.setAttribute('stroke', 'currentColor');
-    documentIcon.setAttribute('stroke-width', '1.6'); documentIcon.setAttribute('stroke-linecap', 'round');
+    documentIcon.setAttribute('stroke-width', '1.8'); documentIcon.setAttribute('stroke-linecap', 'round');
     documentIcon.setAttribute('stroke-linejoin', 'round'); documentIcon.setAttribute('focusable', 'false');
     const documentPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    documentPath.setAttribute('d', 'M8 3h6l4 4v11a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3Z M9 10h5 M9 14h3');
+    documentPath.setAttribute('d', 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Z M14 2v6h6 M8 13h8 M8 17h6');
     documentIcon.append(documentPath); icon.append(documentIcon);
     const content = el('div', 'memory-row-content');
     const heading = el('div', 'memory-row-title', title); heading.title = title;
@@ -137,7 +139,8 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
     const namespace = memory.namespace ? el('div', 'memory-tag-group memory-namespace') : null;
     if (namespace) {
       namespace.title = memory.namespace;
-      namespace.append(el('span', 'memory-group-label', '空间：'), el('span', 'memory-namespace-value', memory.namespace));
+      namespace.setAttribute('aria-label', '空间：' + memory.namespace);
+      namespace.append(createMemoryIcon('namespace'), el('span', 'memory-namespace-value', memory.namespace));
       metadata.append(namespace);
     }
     const tagNodes = [], groups = [];
@@ -146,7 +149,10 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
       if (!tags.length) continue;
       const group = el('span', 'memory-tag-group'); group.id = rowId + '-' + field;
       const firstPair = el('span', 'memory-tag-first');
-      const groupLabel = el('span', 'memory-group-label', label + '：');
+      const groupLabel = el('span', 'memory-group-label');
+      groupLabel.title = label;
+      groupLabel.append(createMemoryIcon(dimension));
+      group.setAttribute('aria-label', label + '：' + tags.join('、'));
       firstPair.append(groupLabel); group.append(firstPair);
       tags.forEach((value, tagIndex) => {
         const chip = el('span', 'memory-chip memory-' + dimension + '-chip', value);

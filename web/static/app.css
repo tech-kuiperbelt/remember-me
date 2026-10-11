@@ -134,7 +134,8 @@ input[type="checkbox"],progress{accent-color:var(--accent-solid)}
 .memory-row.is-recent::before{content:"";position:absolute;left:0;top:16px;width:2px;height:24px;border-radius:2px;background:var(--accent);pointer-events:none}
 .memory-open{position:absolute;inset:0;width:100%;height:100%;border:0;background:transparent;cursor:pointer;z-index:1;border-radius:8px}
 .memory-open:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.memory-row-icon{display:flex;align-items:center;justify-content:center;width:22px;height:21px;color:var(--text-muted);flex-shrink:0;pointer-events:none}
+.memory-row-icon{display:flex;align-items:center;justify-content:center;width:22px;height:21px;color:#247bd5;flex-shrink:0;pointer-events:none}
+[data-theme="dark"] .memory-row-icon{color:#69b1ff}
 .memory-row-content{flex:1;min-width:0;pointer-events:none}
 .memory-row-title{font-size:14px;font-weight:600;line-height:21px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;overflow-wrap:anywhere;padding-right:36px}
 .memory-row-summary{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;font-size:13px;line-height:20px;color:var(--text-secondary);margin-top:8px;overflow:hidden;overflow-wrap:anywhere;padding-right:36px}
@@ -148,9 +149,14 @@ input[type="checkbox"],progress{accent-color:var(--accent-solid)}
 .memory-tag-first{display:inline-flex;align-items:center;gap:6px;flex-shrink:0;white-space:nowrap;padding-left:8px;border-left:1px solid var(--border-subtle)}
 .memory-row-metadata>.memory-tag-group:first-child .memory-tag-first{border-left:0;padding-left:0}
 .memory-row .memory-category-chip{background:var(--accent-subtle);color:var(--accent)}
-.memory-row .memory-anchor-chip{background:transparent;border:1px solid var(--border-control);padding:1px 7px}
 .memory-namespace{display:inline-flex;align-items:center;gap:6px;max-width:min(160px,100%);min-width:0;white-space:nowrap;cursor:default;flex-shrink:0}
 .memory-namespace-value{overflow:hidden;text-overflow:ellipsis;min-width:0}
+.memory-metadata-icon{width:14px;height:14px;flex-shrink:0;color:var(--text-muted)}
+.memory-namespace-icon{color:#8658d7}.memory-category-icon{color:#15966b}.memory-keyword-icon{color:#aa740c}.memory-anchor-icon{color:#ce477b}
+.memory-memory-icon{color:#247bd5}
+[data-theme="dark"] .memory-memory-icon{color:#69b1ff}
+[data-theme="dark"] .memory-namespace-icon{color:#b493f0}[data-theme="dark"] .memory-category-icon{color:#58d6aa}[data-theme="dark"] .memory-keyword-icon{color:#efba57}[data-theme="dark"] .memory-anchor-icon{color:#f28caf}
+.memory-tag-first>.memory-group-label{display:inline-flex;align-items:center}
 .memory-group-label{flex-shrink:0;font-size:12px;line-height:24px;color:var(--text-muted);cursor:default}
 .memory-tags-more{cursor:pointer;position:relative;z-index:2;pointer-events:auto;flex-shrink:0;justify-content:center}
 .memory-tags-more:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -303,6 +309,12 @@ pre.json{background:var(--bg-code);padding:12px;border-radius:6px;font-size:12px
 .detail-tag-keywords{background:var(--bg-hover);color:var(--text-secondary)}
 .detail-tag-anchors{background:transparent;border:1px solid var(--border-control);color:var(--text-secondary);padding:2px 7px}
 .detail-field-error{margin:6px 0 0;color:var(--danger);font-size:12px}
+#detail-title{display:flex;align-items:center;gap:8px}
+#detail-title>.memory-metadata-icon{width:16px;height:16px}
+#detail-title-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#detail-subtitle>.memory-metadata-icon{vertical-align:-3px;margin-right:6px}
+.detail-section>.detail-icon-label{display:flex;align-items:center;gap:6px}
+#detail-summary-label,#detail-content-label,#detail-categories-label,#detail-keywords-label,#detail-anchors-label{font-size:14px;font-weight:700;color:var(--text-primary);line-height:21px}
 #detail-panel [aria-invalid=true]{border-color:var(--danger)}
 .detail-technical h3{font-size:12px;font-weight:500;color:var(--text-secondary);margin:16px 0 8px}
 .detail-technical dd{margin:0;display:flex;align-items:center;gap:8px;min-width:0}

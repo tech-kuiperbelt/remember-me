@@ -268,7 +268,7 @@ try {
   $('memories-list').querySelector('.memory-row-time').click();
   await waitFor(() => $('detail-modal').style.display === 'flex', 'time area opens detail');
   $('btn-detail-close').click();
-  assert($('memory-row-1-namespace').textContent === '空间：a', 'namespace has explicit group label');
+  assert($('memory-row-1-namespace').textContent === 'a' && $('memory-row-1-namespace').getAttribute('aria-label') === '空间：a' && $('memory-row-1-namespace').querySelector('svg'), 'namespace uses icon with accessible group label');
   $('memory-row-1').scrollIntoView({block:'center'});
   for (const id of ['memory-row-1-date', 'memory-row-1-namespace', 'memory-row-1-category-1', 'memory-row-1-keyword-1']) {
     const node = $(id), box = node.getBoundingClientRect();
