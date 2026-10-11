@@ -171,10 +171,17 @@ async function runThemeScenario(scenario) {
 
 try {
   const scenario = new URLSearchParams(location.search).get('smoke') || '';
-  if (scenario === 'debug-disabled') {
+  if (scenario.startsWith('audit-')) {
+    await runAuditRegression(scenario);
+  }
+  else if (scenario === 'debug-disabled') {
     await waitFor(()=>$('memories-list').getAttribute('aria-busy')==='false','initial list');
     const ui=await import('/admin/console/static/js/ui.js');
     assert(!ui.debugEnabled()&&getComputedStyle($('btn-debug')).display==='none','global Debug hidden without startup flag');
+    assert(getComputedStyle($('nav-audit')).display==='none','Audit navigation hidden without debug');
+    const router=await import('/admin/console/static/js/router.js');
+    assert(router.switchPage('audit')===false,'Audit route disabled without debug');
+    assert(!S.calls.some(call=>call.url.startsWith('/api/audit')),'no Audit request without debug');
     ui.toggleDebug();$('btn-debug').click();
     assert(!document.body.classList.contains('debug-ids')&&!document.querySelector('.debug-id-label'),'disabled Debug cannot be activated');
     document.querySelector('.memory-row-detail-arrow').click();

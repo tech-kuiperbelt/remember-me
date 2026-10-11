@@ -205,3 +205,9 @@ The authoritative project backlog is kept in the repository, not in a long memor
 - `docs/project-management/plans/` — per-item implementation plans.
 
 Memory records should contain only a short pointer to these files and a compact status, so updates do not exceed the embedding model context window.
+
+## Audit UI
+
+Audit navigation and its frontend route are enabled only with `--debug`; the API is unchanged. `audit.js` owns compact Memory-style rows, an editable Namespace picker and a read-only JSON drawer displaying the returned event snapshot. Namespace candidates combine the shared live registry and currently loaded audit events; arbitrary historical names remain editable. `namespace-picker.js` accepts optional ID prefix/popup container with unchanged Memory defaults. `drawer-motion.js` shares the existing Memory/Audit slide and fade animation (240ms open, 200ms close; reduced-motion aware). See `docs/project-management/plans/50.9-audit-ui-refinement.md`.
+
+`audit-presentation.js` derives list summaries and business outcomes from the bounded audit payload without querying memories or changing events. Audit columns align at container widths >=1100px, with labeled cards below. The Result column shows only the original call status (ok/error/etc.); counts, business outcomes and errors are available in the JSON drawer. Add/update bodies and summaries are absent by design. See `docs/project-management/plans/50.9.1-audit-list-key-information.md`.

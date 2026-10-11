@@ -1,4 +1,5 @@
 // Owns one drawer session. Draft policy, Markdown and candidates have separate owners.
+import { createDrawerAnimator } from './drawer-motion.js';
 import { $, formatTime, deriveSummary } from './core.js';
 import { api, isNamespaceNotFound, confirmNamespaceCreation } from './api.js';
 import { toast, debugEnabled, toggleDebug } from './ui.js';
@@ -12,33 +13,8 @@ import { renderTechnicalDetails } from './detail-technical.js';
 let state = 'closed', memory = null, draft = null, selected = null, version = 0;
 let picker = null, pending = null, confirmation = null, menu = null, preview = false;
 let onClose = null, priorFocus = null, background = null, retryCategories = () => {};
-let drawerAnimations = [];
+const animateDrawer = createDrawerAnimator($('detail-modal'), $('detail-panel'));
 let touchedFields = new Set();
-function animateDrawer(open) {
-  drawerAnimations.forEach(animation => animation.cancel());
-  drawerAnimations = [];
-  const overlay = $('detail-modal'), panel = $('detail-panel');
-  overlay.inert = !open;
-  overlay.style.pointerEvents = open ? '' : 'none';
-  if (open) overlay.style.display = 'flex';
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    if (!open) overlay.style.display = 'none';
-    return;
-  }
-  const options = {duration: open ? 240 : 200, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'both'};
-  const animations = [
-    panel.animate([{transform: open ? 'translateX(100%)' : 'translateX(0)'},
-      {transform: open ? 'translateX(0)' : 'translateX(100%)'}], options),
-    overlay.animate([{opacity: open ? 0 : 1}, {opacity: open ? 1 : 0}], options)
-  ];
-  drawerAnimations = animations;
-  Promise.all(animations.map(animation => animation.finished)).then(() => {
-    if (drawerAnimations !== animations) return;
-    if (!open) overlay.style.display = 'none';
-    animations.forEach(animation => animation.cancel());
-    drawerAnimations = [];
-  }).catch(() => {});
-}
 const listeners = new Set();
 const busy = () => ['saving', 'reloading', 'deleting'].includes(state);
 const editing = () => ['edit', 'saving'].includes(state);

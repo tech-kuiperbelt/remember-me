@@ -48,7 +48,7 @@
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>
           <span class="nav-label">配置</span>
         </button>
-        <button id="nav-audit" class="nav-item" data-page="audit">
+        <button id="nav-audit" hidden class="nav-item" data-page="audit">
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h9l4 4v14H6z"/><path d="M9 12h6M9 16h6"/></svg>
           <span class="nav-label">Audit</span>
         </button>
@@ -325,9 +325,9 @@
       <button id="btn-audit-refresh" class="btn btn-outline btn-sm">Refresh</button>
     </div>
     <div class="card-body">
-      <div class="form-row" style="margin-bottom:12px">
+      <div id="audit-filters" class="audit-filters">
         <div class="form-group">
-          <label>工具</label>
+          <label for="audit-tool">工具</label>
           <select id="audit-tool">
             <option value="">全部</option>
             <option value="add">add</option>
@@ -341,28 +341,17 @@
           </select>
         </div>
         <div class="form-group">
-          <label>Namespace</label>
-          <input id="audit-namespace" placeholder="全部" style="padding:8px 10px;border:1px solid var(--border-control);border-radius:6px;font-size:13px;background:var(--bg-surface);color:var(--text-primary)">
+          <label for="audit-namespace">Namespace</label>
+          <div id="audit-namespace-control" class="audit-namespace-control"><input id="audit-namespace" placeholder="全部" autocomplete="off"></div>
         </div>
         <div class="form-group">
-          <label>条数</label>
-          <input id="audit-limit" type="number" value="200" min="1" max="5000" style="padding:8px 10px;border:1px solid var(--border-control);border-radius:6px;font-size:13px;width:90px;background:var(--bg-surface);color:var(--text-primary)">
+          <label for="audit-limit">条数</label>
+          <input id="audit-limit" type="number" value="200" min="1" max="5000">
         </div>
       </div>
-      <div class="table-scroll" style="padding:0;max-height:70vh;overflow:auto">
-        <table>
-          <thead>
-            <tr>
-              <th style="width:170px">时间</th>
-              <th style="width:90px">工具</th>
-              <th style="width:60px">状态</th>
-              <th style="width:70px">耗时(ms)</th>
-              <th style="width:120px">Namespace</th>
-              <th>参数 / 返回摘要</th>
-            </tr>
-          </thead>
-          <tbody id="audit-list"><tr><td colspan="6" class="empty-state">Loading...</td></tr></tbody>
-        </table>
+      <div id="audit-results" class="audit-results">
+        <div id="audit-list-header" class="audit-list-header" aria-hidden="true"><span>时间</span><span>Action</span><span>Namespace</span><span>关键信息</span><span>结果</span><span>耗时</span><span></span></div>
+        <div id="audit-list" class="memory-list" aria-busy="false"></div>
       </div>
     </div>
   </div>
@@ -380,6 +369,17 @@
       <button id="btn-detail-close" data-debug-navigation class="btn btn-sm btn-outline" aria-label="Close memory detail">✕</button>
     </header>
     <div id="detail-body" class="detail-body"></div>
+  </div>
+</div>
+
+<!-- Audit JSON drawer -->
+<div id="audit-modal" class="modal-overlay detail-overlay" role="dialog" aria-modal="true" aria-labelledby="audit-detail-title" style="display:none">
+  <div id="audit-panel" class="detail-panel">
+    <header id="audit-detail-header" class="detail-header">
+      <div class="detail-heading"><strong id="audit-detail-title">Audit Details</strong></div>
+      <button id="btn-audit-close" data-debug-navigation class="btn btn-sm btn-outline" aria-label="Close audit detail">✕</button>
+    </header>
+    <div id="audit-detail-body" class="detail-body"><pre id="audit-json" tabindex="0"></pre></div>
   </div>
 </div>
 

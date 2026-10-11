@@ -2,6 +2,8 @@
 
 本文件归档已完成的项目待办。详细实现记录保留在 git 提交和项目变更日志中。
 
+- [50.9 / 50.9.1] Audit UI 与列表关键信息（2026-10-11 用户验收并授权提交）：Audit 导航/路由仅 --debug 启用；Memory 风格列表、Namespace 可编辑下拉、箭头引导的 pretty JSON 抽屉，共享 Memory 进出动画及焦点管理。宽屏列对齐、窄屏标签卡片，按 Action 提取现有参数摘要；最终结果列仅显示 ok/error 等原始 status，其他结果在 JSON 详情。基础阶段 8 项浏览器场景通过（含 Memory detail/create），关键信息阶段 10 项独立场景通过，最终状态精简功能与窄屏复验通过。后端/日志 Schema 未改，生产未重启，随本次提交归档；见 [50.9](plans/50.9-audit-ui-refinement.md)、[50.9.1](plans/50.9.1-audit-list-key-information.md)。
+
 - [50.8] 移除独立 Keywords UI（2026-10-11 用户验收并授权提交）：删除 Keywords 导航、独立页面、前端模块及路由/初始化绑定，导航保留 Memories / Stats / 配置 / Audit。保留 Memories 关键词候选/筛选/编辑、Stats 关键词统计下钻、MCP list_keywords 与 Admin 查询 API；移除只服务独立页的跳转包装，更新导航和跨页回归场景。8 项定向浏览器验证通过，含移除专项、综合 Admin、Search/Detail/Stats/Retrieval 功能与明暗搜索布局，语法及 diff 检查通过。后端未改、生产未重启，随本次提交归档；见 [实施记录](plans/50.8-remove-keywords-ui.md)。
 
 - [53.4] Statistics Memory / LLM Retrieval 双视图（2026-10-10 用户验收并授权提交）：复用既有 metadata/retrieval API；共享 Namespace 来自全局 registry + 默认空间，移除局部 Refresh，仅站内保留视图与筛选，F5 重置，Data notes 仅 `--debug`。完成 mockup 对照字号、间距、图标、粗圆环占比与列标题、Top 摘要同行、三类元数据多色排名及 Retrieval 模式固定配色；Valid Ratings 移入带信息图标的底部说明。平均分保留 −10..10 数值与十颗星：正分金色左填，负分红色右填，小数裁切，0 空星，null —；数字 28px、星 18px。修复隐藏 Memories 请求覆盖共享滚动及切视图滚动条造成几何变化。完整 Memory 25 / Retrieval 43 场景通过；最后的评分和来源文案变更已作功能及明暗宽窄定向复验。后端未改，生产未重启；详见 [Coding Plan 与实施记录](plans/53.4-stats-retrieval-ui-coding-plan.md)、[最终设计包](../design/REMEMBER_ME_STATS_FINAL/README.md)。随本次提交归档。

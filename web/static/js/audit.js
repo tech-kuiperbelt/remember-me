@@ -1,56 +1,90 @@
-// audit.js — tool-call and background-task audit journal viewer.
-
-import { $, esc, formatTime, truncateJson } from './core.js';
+// Debug-only audit viewer. Detail snapshots are the event returned by the API.
+import { $, esc, formatTime } from './core.js';
 import { api } from './api.js';
+import { debugEnabled } from './ui.js';
+import { getNamespaces, onNamespacesChanged } from './store.js';
+import { createNamespacePicker } from './namespace-picker.js';
+import { createDrawerAnimator } from './drawer-motion.js';
+import { presentAudit } from './audit-presentation.js';
 
+let version = 0, events = [], picker, opened = false, background, priorFocus;
+const animate = createDrawerAnimator($('audit-modal'), $('audit-panel'));
+function updateNamespaces() {
+  picker?.update([...new Set([...getNamespaces(), ...events.map(ev => ev.namespace).filter(Boolean)])].sort());
+}
 export async function loadAudit() {
-  const tool = $('audit-tool').value;
-  const namespace = $('audit-namespace').value.trim();
+  if (!debugEnabled()) return;
+  const request = ++version;
   let limit = parseInt($('audit-limit').value, 10);
-  if (isNaN(limit) || limit < 1) limit = 200;
-  if (limit > 5000) limit = 5000;
-  const params = new URLSearchParams({limit: String(limit)});
-  if (tool) params.set('tool', tool);
-  if (namespace) params.set('namespace', namespace);
-  const tbody = $('audit-list');
-  tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Loading...</td></tr>';
+  if (!Number.isFinite(limit) || limit < 1) limit = 200;
+  const params = new URLSearchParams({limit: String(Math.min(5000, limit))});
+  if ($('audit-tool').value) params.set('tool', $('audit-tool').value);
+  if ($('audit-namespace').value.trim()) params.set('namespace', $('audit-namespace').value.trim());
+  const list = $('audit-list');
+  list.setAttribute('aria-busy', 'true');
+  list.innerHTML = '<div class="empty-state">Loading...</div>';
   try {
-    const data = await api('/audit?' + params.toString());
-    renderAudit(data);
-  } catch(e) {
-    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Error: ' + esc(e.message) + '</td></tr>';
+    const data = await api('/audit?' + params);
+    if (request !== version) return;
+    events = data || []; updateNamespaces(); render();
+  } catch (e) {
+    if (request !== version) return;
+    list.innerHTML = '<div class="empty-state">Error: ' + esc(e.message) + '</div>';
+  } finally {
+    if (request === version) list.setAttribute('aria-busy', 'false');
   }
 }
-
-function renderAudit(events) {
-  const tbody = $('audit-list');
-  if (!events || events.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">暂无审计记录</td></tr>';
-    return;
-  }
-  tbody.innerHTML = events.map(ev => {
-    const status = ev.status === 'error'
-      ? '<span class="text-danger" style="font-weight:600">error</span>'
-      : '<span class="text-success">ok</span>';
-    const err = ev.error ? ' <span class="text-danger" style="font-size:12px">' + esc(ev.error.type) + ': ' + esc(ev.error.message) + '</span>' : '';
-    const params = truncateJson(ev.params);
-    const result = truncateJson(ev.result);
-    return '<tr style="border-bottom:1px solid var(--border-subtle);vertical-align:top">' +
-      '<td class="text-muted" style="white-space:nowrap;font-size:12px">' + esc(formatTime(ev.ts)) + '</td>' +
-      '<td>' + esc(ev.tool) + '</td>' +
-      '<td>' + status + '</td>' +
-      '<td class="text-muted">' + esc(ev.duration_ms) + '</td>' +
-      '<td style="word-break:break-all;font-size:12px">' + esc(ev.namespace || '') + '</td>' +
-      '<td style="font-size:12px;color:var(--text-secondary);word-break:break-all"><div>params: ' + esc(params) + '</div>' +
-      '<div style="margin-top:2px">result: ' + esc(result) + '</div>' + err + '</td>' +
-      '</tr>';
+function render() {
+  const list = $('audit-list');
+  if (!events.length) { list.innerHTML = '<div class="empty-state">暂无审计记录</div>'; return; }
+  list.innerHTML = events.map((ev, i) => {
+    const row = 'audit-row-' + (i + 1), view = presentAudit(ev);
+    const cell = (name, label, content, cls = '') => `<div id="${row}-${name}" class="audit-cell audit-cell-${name} ${cls}"><span class="audit-cell-label">${label}</span><span class="audit-cell-value">${esc(content)}</span></div>`;
+    return `<article id="${row}" class="memory-row audit-row">
+      ${cell('time', '时间', formatTime(ev.ts) || '—')}
+      ${cell('action', 'Action', ev.tool || '—')}
+      ${cell('namespace', 'Namespace', view.namespace)}
+      ${cell('summary', '关键信息', view.summary)}
+      <div id="${row}-result" class="audit-cell audit-cell-result"><span class="audit-cell-label">结果</span><span id="${row}-status" class="audit-row-status ${view.status === 'error' ? 'text-danger' : view.status === 'ok' ? 'text-success' : 'text-muted'}">${esc(view.status)}</span></div>
+      ${cell('duration', '耗时', view.duration)}
+      <button id="${row}-detail" class="audit-row-open" aria-label="查看 ${esc(ev.tool || 'Audit')} 详情"><span class="memory-row-detail-arrow" aria-hidden="true">›</span></button>
+    </article>`;
   }).join('');
+  list.querySelectorAll('.audit-row-open').forEach((button, i) => button.onclick = () => openDetail(events[i]));
 }
-
+function openDetail(event) {
+  picker.close(); priorFocus = document.activeElement;
+  background = {inert: $('app-shell').inert, overflow: document.body.style.overflow};
+  $('app-shell').inert = true; document.body.style.overflow = 'hidden';
+  $('audit-json').textContent = JSON.stringify(event, null, 2);
+  $('audit-detail-body').scrollTop = 0; $('audit-json').scrollLeft = 0;
+  opened = true; animate(true); $('btn-audit-close').focus();
+}
+function closeDetail() {
+  if (!opened) return;
+  opened = false; animate(false);
+  $('app-shell').inert = background.inert; document.body.style.overflow = background.overflow;
+  if (priorFocus?.isConnected) priorFocus.focus();
+}
+export function hide() { ++version; picker?.close(); closeDetail(); }
 export function mount() {
-  $('btn-audit-refresh').addEventListener('click', loadAudit);
-  $('audit-tool').addEventListener('change', loadAudit);
-  $('audit-namespace').addEventListener('keydown', e => {
-    if (e.key === 'Enter') loadAudit();
+  picker = createNamespacePicker({control: $('audit-namespace-control'), input: $('audit-namespace'),
+    idPrefix: 'audit-namespace', popupRoot: $('page-audit'),
+    onChoose: value => { $('audit-namespace').value = value; loadAudit(); }});
+  onNamespacesChanged(updateNamespaces); updateNamespaces();
+  $('btn-audit-refresh').onclick = loadAudit;
+  $('audit-tool').onchange = loadAudit;
+  $('audit-namespace').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) loadAudit(); });
+  $('btn-audit-close').onclick = closeDetail;
+  $('audit-modal').onclick = e => { if (e.target === e.currentTarget) closeDetail(); };
+  document.addEventListener('keydown', e => {
+    if (!opened || e.isComposing || e.defaultPrevented) return;
+    if (e.key === 'Escape') { e.preventDefault(); closeDetail(); }
+    if (e.key === 'Tab') {
+      const first = $('btn-audit-close'), last = $('audit-json');
+      if (!$('audit-panel').contains(document.activeElement) || (e.shiftKey && document.activeElement === first) || (!e.shiftKey && document.activeElement === last)) {
+        e.preventDefault(); (e.shiftKey ? last : first).focus();
+      }
+    }
   });
 }

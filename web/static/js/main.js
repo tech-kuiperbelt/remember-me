@@ -31,7 +31,8 @@ function mountAll() {
     switchPage('memories', () => memories.prepareMetadataDrilldown(dimension, value, namespace));
   }});
   ops.mount();
-  audit.mount();
+  $('nav-audit').hidden = !debugEnabled();
+  if (debugEnabled()) audit.mount();
   clear.mount();
   $('btn-refresh').addEventListener('click', refreshStats);
   $('btn-debug').hidden = !debugEnabled();
@@ -42,7 +43,7 @@ function registerPages() {
   register('memories', { onShow: memories.loadMemories, onHide: memories.hide });
   register('stats', { onShow: stats.show, onHide: stats.hide });
   register('ops', { onShow: ops.loadOpsPage });
-  register('audit', { onShow: audit.loadAudit });
+  if (debugEnabled()) register('audit', { onShow: audit.loadAudit, onHide: audit.hide });
 }
 
 (async () => {

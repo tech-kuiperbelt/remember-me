@@ -37,7 +37,7 @@ function onDebugKeyDown(event) {
   if (event.key === 'Escape') {
     stopDebugAction(event); toggleDebug(); const modal = $('detail-modal');
     const trigger = [...document.querySelectorAll('#detail-panel [data-debug-toggle]')].find(el => el.getClientRects().length && !el.closest('[inert]'));
-    (modal.style.display === 'flex' ? trigger || $('btn-detail-close') : $('btn-debug')).focus(); return;
+    (modal.style.display === 'flex' && !modal.inert ? trigger || $('btn-detail-close') : $('audit-modal').style.display === 'flex' && !$('audit-modal').inert ? $('btn-audit-close') : $('btn-debug')).focus(); return;
   }
   if (event.target.closest(debugNavigation)) return;
   // Tab may reach the drawer focus trap; editing and business shortcuts remain

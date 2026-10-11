@@ -1,10 +1,10 @@
 // Editable namespace field with a full candidate list bounded by the viewport.
-export function createNamespacePicker({control, input, onChoose, onOpen}) {
-  const trigger=document.createElement('button'); trigger.id='detail-namespace-select';
+export function createNamespacePicker({control, input, onChoose, onOpen = () => {}, idPrefix = 'detail-namespace', popupRoot = document.getElementById('detail-panel')}) {
+  const trigger=document.createElement('button'); trigger.id=idPrefix+'-select';
   trigger.type='button'; trigger.textContent='⌄'; trigger.title='选择已有 Namespace';
   trigger.disabled=true;
   trigger.setAttribute('aria-label','选择已有 Namespace'); trigger.setAttribute('aria-haspopup','listbox');
-  trigger.setAttribute('aria-controls','detail-namespace-options'); trigger.setAttribute('aria-expanded','false');
+  trigger.setAttribute('aria-controls',idPrefix+'-options'); trigger.setAttribute('aria-expanded','false');
   control.append(trigger);
   let values=[], popup=null, anchor=null;
   const options=()=>popup ? [...popup.querySelectorAll('[role=option]')] : [];
@@ -25,7 +25,7 @@ export function createNamespacePicker({control, input, onChoose, onOpen}) {
     const focused=document.activeElement?.dataset.namespace;
     popup.replaceChildren(...values.map((value,index)=>{
       const option=document.createElement('button'); option.type='button';
-      option.id='detail-namespace-option-'+(index+1); option.dataset.namespace=value;
+      option.id=idPrefix+'-option-'+(index+1); option.dataset.namespace=value;
       option.textContent=value; option.title=value; option.setAttribute('role','option');
       option.setAttribute('aria-selected',String(value===input.value)); option.tabIndex=-1;
       option.onclick=()=>{close();onChoose(value);input.focus();};
@@ -38,10 +38,10 @@ export function createNamespacePicker({control, input, onChoose, onOpen}) {
   function open(last=false) {
     if(trigger.disabled||!values.length)return;
     onOpen(); close();
-    popup=document.createElement('div'); popup.id='detail-namespace-options';
+    popup=document.createElement('div'); popup.id=idPrefix+'-options';
     popup.className='detail-namespace-options'; popup.setAttribute('role','listbox');
     popup.setAttribute('aria-label','已有 Namespace');
-    document.getElementById('detail-panel').append(popup); paint();
+    popupRoot.append(popup); paint();
     const box=control.getBoundingClientRect(), margin=8;
     anchor=box;
     const width=Math.min(box.width,innerWidth-2*margin);

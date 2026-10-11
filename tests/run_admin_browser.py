@@ -70,6 +70,7 @@ checks += '\n' + (ROOT / 'tests/browser/detail_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/create_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/stats_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/retrieval_regression.js').read_text()
+checks += '\n' + (ROOT / 'tests/browser/audit_regression.js').read_text()
 HEAD_SCRIPT = '<script>' + harness + '</script>'
 BODY_SCRIPT = '<script type="module">' + checks + '</script>'
 
@@ -179,7 +180,7 @@ def run_case(profile, label, window_size, scale, shot_dir, query, theme=None, zo
     url = f'http://127.0.0.1:{port}/admin/console?smoke=' + query
     if theme:
         url += '&theme=' + theme
-    if query.startswith(('search-layout-', 'search-wrap-', 'cards-', 'stats-layout-', 'retrieval-layout-')):
+    if query.startswith(('search-layout-', 'search-wrap-', 'cards-', 'stats-layout-', 'retrieval-layout-', 'audit-layout-')):
         from tests.chrome_viewport import run_viewport
         width, height = map(int, window_size.split(','))
         result = run_viewport(url, profile, width, height, shot,
@@ -256,6 +257,12 @@ try:
         else tempfile.TemporaryDirectory(prefix='remember-ui-shots-')
     with tempfile.TemporaryDirectory(prefix='keyword-chrome-') as profile, _shots_ctx as shots:
         failures = []
+        for label, size, scheme in [('audit-functional', '1440,900', 'light'), ('audit-layout-narrow', '390,844', 'light'), ('audit-layout-dark', '1440,900', 'dark'), ('audit-layout-list-light', '1440,900', 'light'), ('audit-layout-list-dark', '1440,900', 'dark'), ('audit-layout-list-medium', '820,900', 'light'), ('audit-layout-list-narrow', '390,844', 'light'), ('audit-layout-list-narrow-expanded', '390,844', 'light'), ('audit-layout-list-below', '1320,900', 'light'), ('audit-layout-list-above', '1380,900', 'light')]:
+            if not selected(label): continue
+            proc, shot = run_case(profile, label, size, '1', shots, label, theme=scheme)
+            ok, output = check(proc)
+            print(('PASS ' if ok else 'FAIL ') + label + ' -> ' + str(shot) + ('' if ok else ' :: ' + output), flush=True)
+            if not ok: failures.append(label)
         if selected('keywords-removal'):
             proc, shot = run_case(profile, 'keywords-removal', '1440,900', '1', shots, 'keywords-removal', theme='light')
             ok, output = check(proc)
