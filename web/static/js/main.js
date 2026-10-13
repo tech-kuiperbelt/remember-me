@@ -10,7 +10,6 @@ import * as memories from './memories.js';
 import * as stats from './stats.js';
 import * as ops from './ops.js';
 import * as audit from './audit.js';
-import * as clear from './clear.js';
 import * as layout from './layout.js';
 import * as theme from './theme.js';
 
@@ -33,7 +32,6 @@ function mountAll() {
   ops.mount();
   $('nav-audit').hidden = !debugEnabled();
   if (debugEnabled()) audit.mount();
-  clear.mount();
   $('btn-refresh').addEventListener('click', refreshStats);
   $('btn-debug').hidden = !debugEnabled();
   if (debugEnabled()) $('btn-debug').addEventListener('click', toggleDebug);
@@ -42,7 +40,7 @@ function mountAll() {
 function registerPages() {
   register('memories', { onShow: memories.loadMemories, onHide: memories.hide });
   register('stats', { onShow: stats.show, onHide: stats.hide });
-  register('ops', { onShow: ops.loadOpsPage });
+  register('ops', { onShow: ops.loadOpsPage, onHide: ops.hide });
   if (debugEnabled()) register('audit', { onShow: audit.loadAudit, onHide: audit.hide });
 }
 

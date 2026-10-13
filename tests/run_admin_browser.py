@@ -82,6 +82,7 @@ checks += '\n' + (ROOT / 'tests/browser/stats_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/retrieval_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/audit_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/config_debug_regression.js').read_text()
+checks += '\n' + (ROOT / 'tests/browser/ops_regression.js').read_text()
 HEAD_SCRIPT = '<script>' + harness + '</script>'
 BODY_SCRIPT = '<script type="module">' + checks + '</script>'
 
@@ -191,7 +192,7 @@ def run_case(profile, label, window_size, scale, shot_dir, query, theme=None, zo
     url = f'http://127.0.0.1:{port}/admin/console?smoke=' + query
     if theme:
         url += '&theme=' + theme
-    if query.startswith(('search-layout-', 'search-wrap-', 'cards-', 'stats-layout-', 'retrieval-layout-', 'audit-layout-')):
+    if query.startswith(('search-layout-', 'search-wrap-', 'cards-', 'stats-layout-', 'retrieval-layout-', 'audit-layout-', 'ops-')):
         from tests.chrome_viewport import run_viewport
         width, height = map(int, window_size.split(','))
         result = run_viewport(url, profile, width, height, shot,
@@ -268,6 +269,15 @@ try:
         else tempfile.TemporaryDirectory(prefix='remember-ui-shots-')
     with tempfile.TemporaryDirectory(prefix='keyword-chrome-') as profile, _shots_ctx as shots:
         failures = []
+        ops_cases = [('ops-functional', '1440,1000', 'light'), ('ops-restart', '1440,900', 'light'), ('ops-shutdown', '1440,900', 'light'), ('ops-restart-timeout', '1440,900', 'light')]
+        ops_cases += [('ops-layout-sidebar-390-maintenance-light', '390,1000', 'light'), ('ops-expanded-390-dark', '390,1000', 'dark'), ('ops-confirm-layout-390-light', '390,844', 'light')]
+        ops_cases += [(f'ops-layout-{width}-{tab}-{scheme}', f'{width},1000', scheme) for width in (1440,1024,390) for tab in ('settings','maintenance') for scheme in ('light','dark')]
+        for label, size, scheme in ops_cases:
+            if not selected(label): continue
+            proc, shot = run_case(profile, label, size, '1', shots, label, theme=scheme)
+            ok, output = check(proc)
+            print(('PASS ' if ok else 'FAIL ') + label + ' -> ' + str(shot) + ('' if ok else ' :: ' + output), flush=True)
+            if not ok: failures.append(label)
         if selected('config-debug'):
             proc, shot = run_case(profile, 'config-debug', '1440,900', '1', shots, 'config-debug', theme='light')
             ok, output = check(proc)

@@ -131,194 +131,53 @@
 
 <!-- Ops (运维) -->
 <div class="page" id="page-ops">
-  <h2 style="margin-bottom:12px">外观</h2>
-  <div class="card" id="appearance-card">
-    <div class="card-header">主题</div>
-    <div class="card-body">
-      <div class="form-group" style="max-width:320px">
-        <label for="theme-select">主题</label>
-        <select id="theme-select">
-          <option value="system">跟随系统</option>
-          <option value="light">浅色</option>
-          <option value="dark">深色</option>
-        </select>
-      </div>
-      <p class="text-muted">仅影响当前浏览器；立即生效，无需保存。</p>
-    </div>
+  <h2 id="ops-title">Configuration</h2>
+  <div id="ops-tabs" class="ops-tabs" role="tablist" aria-label="Configuration">
+    <button id="ops-tab-settings" role="tab" aria-selected="true" aria-controls="ops-settings">常规设置 <span>Settings</span></button>
+    <button id="ops-tab-maintenance" role="tab" aria-selected="false" aria-controls="ops-maintenance" tabindex="-1">维护工具 <span>Maintenance</span></button>
   </div>
-  <h2 style="margin-bottom:12px">服务配置</h2>
-  <div class="card" id="model-card">
-    <div class="card-header">配置文件</div>
-    <div class="card-body">
-      <p class="text-muted">保存配置无需进入维护模式。端口与语言重启后生效，启动参数 --port 优先；语言目前仅保存选择。</p>
-      <div class="form-row">
-        <div class="form-group">
-          <label for="config-port">HTTP 端口</label>
-          <input id="config-port" type="number" min="1" max="65535" step="1" value="1314">
-        </div>
-        <div class="form-group">
-          <label for="config-language">语言</label>
-          <select id="config-language"><option value="zh-CN">中文</option><option value="en">English</option></select>
-        </div>
+  <div id="ops-settings" role="tabpanel" aria-labelledby="ops-tab-settings">
+    <section class="ops-card" id="appearance-card">
+      <div class="ops-card-heading"><h3>Appearance</h3><p>选择当前浏览器的外观。</p></div>
+      <div class="ops-card-content"><fieldset id="theme-select" class="ops-theme"><legend class="sr-only">主题</legend>
+        <label><input type="radio" name="theme" value="system"> 跟随系统</label><label><input type="radio" name="theme" value="light"> 浅色</label><label><input type="radio" name="theme" value="dark"> 深色</label>
+      </fieldset><p class="ops-help">立即生效，无需保存。</p></div>
+    </section>
+    <section class="ops-card" id="model-card">
+      <div class="ops-card-heading"><h3>Service Configuration</h3><p>配置服务访问与模型准备。</p></div>
+      <div class="ops-card-content">
+        <fieldset id="ops-config-fields" disabled>
+          <div class="ops-field-grid">
+            <div class="form-group"><label for="config-port">HTTP 端口</label><input id="config-port" type="number" min="1" max="65535" step="1" value="1314"><p class="ops-help">重启后生效；--port 优先。</p></div>
+            <div class="form-group"><label for="config-language">语言</label><select id="config-language"><option value="zh-CN">中文</option><option value="en">English</option></select><p class="ops-help">仅保存偏好，尚未接入界面翻译。</p></div>
+          </div>
+          <div class="ops-setting"><label><input id="config-local-only" type="checkbox" checked aria-describedby="config-local-only-help"> 仅本机服务（推荐）</label><p id="config-local-only-help" class="ops-help">监听 127.0.0.1；取消后监听 0.0.0.0。需重启生效。</p></div>
+          <p id="config-local-only-warning" class="ops-warning" role="alert" hidden>取消“仅本机服务”将对局域网开放管理页面、SSE、MCP 与全部 /api，并关闭 /mcp 的 Host/Origin 防护。服务无账号密码，其他设备可读写、删除记忆、导入导出及控制服务。仅在完全可信的网络中启用。</p>
+          <div class="ops-setting"><label><input id="config-debug" type="checkbox" aria-describedby="config-debug-help"> 启用 Debug 模式</label><p id="config-debug-help" class="ops-help">显示 Debug、Audit 和诊断入口；元素检查需点击 Debug。保存后刷新页面生效，无需重启。</p></div>
+          <div class="ops-setting"><label><input id="model-auto-download" type="checkbox"> 缓存缺失时自动下载</label><p class="ops-help">用于下一次模型准备。</p></div>
+          <div class="ops-setting"><label><input id="model-proxy-enabled" type="checkbox"> 使用 HTTP/HTTPS 代理</label><p class="ops-help">关闭时直连，保留已保存的代理地址。</p></div>
+          <div id="model-proxy-fields" class="form-group" hidden><label for="model-proxy-url">代理地址</label><input id="model-proxy-url" type="password" autocomplete="off" placeholder="http://127.0.0.1:7890" aria-describedby="model-proxy-saved"><p id="model-proxy-saved" class="ops-help"></p></div>
+        </fieldset>
+        <p id="config-validation" class="text-danger" role="status"></p>
+        <div class="ops-actions"><button id="btn-model-save" class="btn btn-primary" disabled>保存配置</button><button id="config-load-retry" class="btn btn-outline" hidden>重新读取配置</button></div>
+        <p id="model-config-result" class="ops-result" role="status"></p>
+        <p id="config-debug-refresh" class="ops-notice" role="status" hidden>Debug 设置已保存，刷新页面后生效。</p>
+        <div id="config-restart-notice" class="ops-notice" hidden><span id="config-restart-text"></span> <button id="config-open-maintenance" class="ops-link">前往维护工具</button></div>
       </div>
-      <div class="form-row">
-        <label><input id="config-local-only" type="checkbox" checked> 仅本机服务（推荐）</label>
-      </div>
-      <p class="text-muted" id="config-local-only-help">勾选：仅监听 127.0.0.1，只有本机能访问。取消：监听 0.0.0.0，局域网内其他设备可访问全部 HTTP 接口（管理页面、SSE、MCP 与 /api）。修改访问范围需重启服务生效；端口仍由 --port 临时覆盖。</p>
-      <p class="text-danger" id="config-local-only-warning" role="alert" hidden>警告：取消“仅本机服务”会关闭 /mcp 的 Host/Origin 防护，并把管理页面、SSE、MCP 及全部 /api 接口暴露到局域网。本服务没有任何账号或密码，同一网络内的任何设备都能读取、写入、删除全部记忆、导入/导出数据，甚至关闭或重启服务。请仅在完全可信的网络中启用。</p>
-      <div class="form-row">
-        <label><input id="config-debug" type="checkbox" aria-describedby="config-debug-help config-debug-refresh"> 启用 Debug 模式</label>
-      </div>
-      <p class="text-muted" id="config-debug-help">显示 Debug 按钮、Audit 页面和诊断入口；元素检查仍需点击 Debug 按钮开启。保存后刷新页面生效，无需重启服务。</p>
-      <p class="text-muted" id="config-debug-refresh" role="status" hidden>Debug 设置已保存，与当前页面状态不同；刷新页面后生效。</p>
-      <div class="form-row">
-        <label><input id="model-auto-download" type="checkbox"> 缓存缺失时自动下载</label>
-        <label><input id="model-proxy-enabled" type="checkbox"> 使用 HTTP/HTTPS 代理</label>
-      </div>
-      <div class="form-group" style="margin-top:12px">
-        <label for="model-proxy-url">代理地址（留空保留已保存地址）</label>
-        <input id="model-proxy-url" type="password" autocomplete="off" placeholder="http://127.0.0.1:7890">
-        <span id="model-proxy-saved" class="text-muted"></span>
-      </div>
-      <button id="btn-model-save" class="btn btn-primary" disabled>保存配置</button>
-      <p id="model-config-result" role="status"></p>
-      <p class="text-muted">代理与自动下载设置用于下次模型准备。模型未就绪时保存会重试当前任务，无需重启。</p>
-    </div>
+    </section>
   </div>
-  <h2 style="margin:24px 0 12px">维护操作</h2>
-  <p class="text-muted" style="margin-bottom:12px">以下操作需进入维护模式。模型未就绪时自动进入维护，准备完成后才可退出。</p>
-  <div class="card" id="model-preparation-card">
-    <div class="card-header">模型准备</div>
-    <div class="card-body">
-      <p id="model-status" role="status">正在读取模型状态…</p>
-      <progress id="model-progress" max="100" style="width:100%;height:20px" aria-label="模型下载进度"></progress>
-      <p id="model-progress-detail" class="text-muted"></p>
-      <p id="model-error" class="text-danger" role="alert"></p>
-      <button id="btn-model-retry" class="btn btn-outline">重试准备模型</button>
-    </div>
-  </div>
-  <div class="card">
-    <div class="card-header">Maintenance Mode</div>
-    <div class="card-body">
-      <p id="maintenance-status">Loading maintenance status...</p>
-      <button id="btn-maintenance-enter" class="btn btn-primary">Enter Maintenance</button>
-      <button id="btn-maintenance-exit" class="btn btn-outline">Exit Maintenance</button>
-      <span id="maintenance-result" style="margin-left:12px;font-size:13px"></span>
-    </div>
-  </div>
-  <!-- Server controls -->
-  <div class="card">
-    <div class="card-header">Server</div>
-    <div class="card-body">
-      <p class="text-muted" style="margin-bottom:12px">Restart or shut down after active work finishes. Shutdown requires starting the server again from the terminal.</p>
-      <button id="btn-restart" class="btn btn-primary">Restart Server</button>
-      <button id="btn-shutdown" class="btn btn-danger">Shut Down Server</button>
-      <span id="restart-result" style="margin-left:12px;font-size:13px"></span>
-    </div>
-  </div>
-
-  <!-- Import -->
-  <div class="card">
-    <div class="card-header">JSONL Recover</div>
-    <div class="card-body">
-      <p class="text-danger">Replaces all memories in the current database from an uploaded JSONL backup.</p>
-      <input id="recover-file" type="file" accept=".jsonl,.ndjson,application/x-ndjson">
-      <button id="btn-recover" class="btn btn-danger">Recover</button>
-      <span id="recover-result" style="margin-left:12px;font-size:13px"></span>
-    </div>
-  </div>
-
-  <!-- Import -->
-  <div class="card">
-    <div class="card-header">JSONL Import</div>
-    <div class="card-body">
-      <div class="form-row">
-        <div class="form-group" style="flex:2">
-          <label>JSONL file (max 64 MiB / 10,000 live records)</label>
-          <input id="import-file" type="file" accept=".jsonl,.ndjson,application/x-ndjson">
-        </div>
-        <div class="form-group" style="flex:1">
-          <label>Namespace prefix (optional)</label>
-          <input id="import-prefix" placeholder="">
-        </div>
-      </div>
-      <div style="margin-top:16px">
-        <button id="btn-import" class="btn btn-primary">Import</button>
-        <span id="import-result" style="margin-left:12px;font-size:13px"></span>
-      </div>
-    </div>
-  </div>
-
-  <!-- Export -->
-  <div class="card">
-    <div class="card-header">JSONL Export</div>
-    <div class="card-body">
-      <p class="text-muted" style="margin-bottom:12px">Full Export refreshes and verifies the disaster-recovery JSONL before download. Namespace Export creates an independent partial snapshot.</p>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Namespace</label>
-          <select id="export-namespace"><option value="">Select namespace...</option></select>
-        </div>
-      </div>
-      <div style="margin-top:16px">
-        <button id="btn-export-full" class="btn btn-primary">Full Export</button>
-        <button id="btn-export-ns" class="btn btn-outline">Export Namespace</button>
-        <span id="export-result" style="margin-left:12px;font-size:13px"></span>
-      </div>
-    </div>
-  </div>
-
-  <!-- Sync (manual backup) -->
-  <div class="card">
-    <div class="card-header">Sync（手动备份）</div>
-    <div class="card-body">
-      <p class="text-muted" style="margin-bottom:12px">手动将主库（SQLite）完整同步到灾备副本（JSONL）。<span id="sync-paths" class="text-muted"></span></p>
-      <button id="btn-sync" class="btn btn-primary">Sync Now（SQLite → JSONL）</button>
-      <span id="sync-result" style="margin-left:12px;font-size:13px"></span>
-    </div>
-  </div>
-
-  <!-- Clear -->
-  <div class="card">
-    <div class="card-header">Clear</div>
-    <div class="card-body">
-      <p class="text-danger" style="margin-bottom:12px">⚠️ Danger: this deletes memories. There is no undo.</p>
-      <div class="form-group">
-        <label>Namespace (optional)</label>
-        <select id="clear-ns">
-          <option value="">(all namespaces)</option>
-        </select>
-      </div>
-      <div style="margin-top:16px">
-        <button id="btn-clear" class="btn btn-danger">Clear</button>
-        <span id="clear-result" style="margin-left:12px;font-size:13px"></span>
-      </div>
-    </div>
-  </div>
-
-  <!-- Migrate Namespace -->
-  <div class="card">
-    <div class="card-header">Migrate Namespace</div>
-    <div class="card-body">
-      <div class="form-group">
-        <label>Source namespace</label>
-        <select id="migrate-source" class="ns-select"></select>
-      </div>
-      <div class="form-row">
-        <div class="text-muted" style="text-align:center;padding:8px 0;font-size:18px">↓</div>
-      </div>
-      <div class="form-group">
-        <label>Target namespace</label>
-        <div class="ns-wrapper">
-          <input id="migrate-target" list="migrate-target-suggestions" placeholder="Enter or select namespace..." style="padding:8px 10px;border:1px solid var(--border-control);border-radius:6px;font-size:13px;width:100%;background:var(--bg-surface);color:var(--text-primary)">
-          <datalist id="migrate-target-suggestions"></datalist>
-        </div>
-      </div>
-      <div style="margin-top:16px">
-        <button id="btn-migrate" class="btn btn-danger">Migrate</button>
-        <span id="migrate-result" style="margin-left:12px;font-size:13px"></span>
-      </div>
-    </div>
+  <div id="ops-maintenance" role="tabpanel" aria-labelledby="ops-tab-maintenance" hidden>
+    <section class="ops-card" id="maintenance-card"><div class="ops-card-heading"><h3>Maintenance Mode</h3><p>维护暂停写入，操作完成后手动退出。</p></div><div class="ops-card-content"><p id="maintenance-status" role="status"></p><p id="ops-action-reason" class="ops-help"></p><div class="ops-actions"><button id="btn-maintenance-enter" class="btn btn-primary" disabled>Enter Maintenance</button><button id="btn-maintenance-exit" class="btn btn-outline" disabled>Exit Maintenance</button></div><p id="maintenance-result" class="ops-result" role="status"></p></div></section>
+    <section class="ops-card" id="model-preparation-card"><div class="ops-card-heading"><h3>Model Management</h3><p>Embedding 模型准备与验证。</p></div><div class="ops-card-content"><div class="ops-action-row"><p id="model-status" role="status">正在读取模型状态…</p><button id="btn-model-retry" class="btn btn-outline" disabled>重试准备</button></div><div id="model-progress-area"><progress id="model-progress" max="100" aria-label="模型准备进度"></progress><p id="model-progress-detail" class="ops-help"></p></div><p id="model-error" class="text-danger" role="alert"></p><p id="model-retry-result" class="ops-result" role="status"></p></div></section>
+    <section class="ops-card" id="ops-transfer-card"><div class="ops-card-heading"><h3>Data Transfer</h3><p>导入数据或下载 JSONL 快照。</p></div><div class="ops-card-content">
+      <details id="ops-import"><summary><span>Import JSONL<small>导入新记录，可添加 Namespace 前缀。</small></span><span class="ops-disclosure">Import</span></summary><div class="ops-tool-form"><div class="form-group"><label for="import-file">JSONL 文件 · 最大 64 MiB / 10,000 条 live 记录</label><input id="import-file" type="file" accept=".jsonl,.ndjson"></div><div class="form-group"><label for="import-prefix">Namespace 前缀（可选）</label><input id="import-prefix"></div><button id="btn-import" class="btn btn-primary" disabled>Import</button><p id="import-result" class="ops-result" role="status"></p><button id="import-poll-retry" class="btn btn-outline" hidden>重新查询任务</button></div></details>
+      <details id="ops-export"><summary><span>Export JSONL<small>完整备份，或导出指定 Namespace。</small></span><span class="ops-disclosure">Export</span></summary><div class="ops-tool-form"><p class="ops-help">Full Export 先完整同步并验证灾备 JSONL；Namespace Export 生成独立局部快照。</p><div class="form-group"><label for="export-namespace">Namespace</label><select id="export-namespace"><option value="">Select namespace…</option></select></div><div class="ops-actions"><button id="btn-export-full" class="btn btn-primary" disabled>Full Export</button><button id="btn-export-ns" class="btn btn-outline" disabled>Export Namespace</button></div><p id="export-result" class="ops-result" role="status"></p></div></details>
+    </div></section>
+    <section class="ops-card" id="ops-data-card"><div class="ops-card-heading"><h3>Data Management</h3><p>备份同步与 Namespace 管理。</p></div><div class="ops-card-content"><div class="ops-action-row"><div><h4>Sync Backup</h4><p class="ops-help">将 SQLite 主库完整同步至灾备 JSONL。</p></div><button id="btn-sync" class="btn btn-outline" disabled>Sync</button></div><p id="sync-paths" class="ops-help"></p><p id="sync-result" class="ops-result" role="status"></p>
+      <details id="ops-migrate"><summary><span>Migrate Namespace<small>移动指定 Namespace 中的全部记忆。</small></span><span class="ops-disclosure">Migrate</span></summary><div class="ops-tool-form"><div class="ops-field-grid"><div class="form-group"><label for="migrate-source">源 Namespace</label><select id="migrate-source"></select></div><div class="form-group"><label for="migrate-target">目标 Namespace</label><input id="migrate-target" list="migrate-target-suggestions"><datalist id="migrate-target-suggestions"></datalist></div></div><button id="btn-migrate" class="btn btn-outline" disabled>Migrate</button><p id="migrate-result" class="ops-result" role="status"></p></div></details>
+    </div></section>
+    <section class="ops-card" id="ops-server-card"><div class="ops-card-heading"><h3>Server</h3><p>服务生命周期控制。</p></div><div class="ops-card-content"><div class="ops-action-row"><div><h4>Restart Server</h4><p class="ops-help">重启并读取已保存的配置。</p></div><button id="btn-restart" class="btn btn-outline" disabled>Restart</button></div><div class="ops-action-row"><div><h4>Shut Down Server</h4><p class="ops-help">关闭后需要在终端手动启动。</p></div><button id="btn-shutdown" class="btn btn-danger" disabled>Shut Down</button></div><p id="restart-result" class="ops-result" role="status"></p><p id="restart-address" class="ops-help"></p><button id="restart-poll-retry" class="btn btn-outline" hidden>重新检查连接</button></div></section>
+    <section class="ops-card ops-danger" id="ops-danger-card"><div class="ops-card-heading"><h3>Danger Zone</h3><p>不可撤销的操作，请确认影响范围。</p></div><div class="ops-card-content"><details id="ops-recover"><summary><span>JSONL Recover<small>从备份覆盖当前数据库全部记忆。</small></span><span class="ops-disclosure">Recover</span></summary><div class="ops-tool-form"><div class="form-group"><label for="recover-file">JSONL 备份文件</label><input id="recover-file" type="file" accept=".jsonl,.ndjson"></div><button id="btn-recover" class="btn btn-danger" disabled>Recover</button><p id="recover-result" class="ops-result" role="status"></p><button id="recover-poll-retry" class="btn btn-outline" hidden>重新查询任务</button></div></details><details id="ops-clear"><summary><span>Clear Memories<small>删除全部或指定 Namespace 的记忆。</small></span><span class="ops-disclosure">Clear</span></summary><div class="ops-tool-form"><div class="form-group"><label for="clear-ns">Namespace</label><select id="clear-ns"><option value="">全部 Namespace</option></select></div><button id="btn-clear" class="btn btn-danger" disabled>Clear</button><p id="clear-result" class="ops-result" role="status"></p></div></details></div></section>
   </div>
 </div>
 
@@ -389,16 +248,13 @@
 </div>
 
 <!-- Clear confirmation modal (outside the shell; fixed overlay) -->
-<div id="clear-modal" class="modal-overlay" style="display:none;z-index:200">
+<div id="clear-modal" class="modal-overlay ops-confirm" role="dialog" aria-modal="true" aria-labelledby="clear-confirm-title" aria-describedby="clear-confirm-description" style="display:none;z-index:200">
   <div class="modal-panel" style="width:480px;max-width:92vw;padding:24px">
-    <div class="text-danger" style="font-size:16px;font-weight:700;margin-bottom:8px">⚠️ Confirm Clear</div>
-    <div class="text-muted" style="margin-bottom:16px">
-      This will permanently delete <strong id="clear-confirm-scope"></strong>. This cannot be undone.<br>
-      To confirm, type the code below exactly:
-    </div>
+    <h2 id="clear-confirm-title">Confirm Clear</h2>
+    <p id="clear-confirm-description">确认操作：<strong id="clear-confirm-scope"></strong></p>
     <div style="text-align:center;font-size:28px;font-weight:700;letter-spacing:6px;font-family:monospace;background:var(--bg-code);padding:12px;border-radius:8px;margin-bottom:16px;user-select:text" id="clear-confirm-code">ABCDef12</div>
     <div class="form-group">
-      <input id="clear-confirm-input" placeholder="Enter the code above" style="text-align:center;font-size:18px;font-family:monospace;letter-spacing:4px;text-transform:none">
+      <input aria-label="输入上方8位确认码" id="clear-confirm-input" placeholder="Enter the code above" style="text-align:center;font-size:18px;font-family:monospace;letter-spacing:4px;text-transform:none">
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button id="btn-clear-cancel" class="btn btn-outline">Cancel</button>

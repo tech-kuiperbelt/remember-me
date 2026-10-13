@@ -174,6 +174,9 @@ try {
   if (scenario === 'config-debug') {
     await runConfigDebugRegression();
   }
+  else if (scenario.startsWith('ops-')) {
+    await runOpsRegression(scenario);
+  }
   else if (scenario.startsWith('audit-')) {
     await runAuditRegression(scenario);
   }
@@ -423,91 +426,9 @@ try {
   await settle(100);
   assert(!window.injected && !document.querySelector('img[src="x"]'), 'no injected elements or script');
 
-  // Shutdown controls need a maintenance-ready state.
-  const maintReady = {state: 'maintenance', action: null, required_reason: null, model: {status: 'ready', ready: true}};
-  S.setOverride(url => url === '/api/maintenance' ? json(maintReady) : undefined);
-  document.querySelector('.nav button[data-page="ops"]').click();
-  await waitFor(() => !$('btn-shutdown').disabled, 'shutdown enabled');
-  S.freezeMaintenance();
-
-  const originalConfirm2 = window.confirm;
-  let shutdownCalls = 0;
-  S.setOverride(url => {
-    if (url === '/api/shutdown') { shutdownCalls++; return json({status: 'stopping'}); }
-    return undefined;
-  });
-  window.confirm = () => false;
-  $('btn-shutdown').click();
-  await settle();
-  assert(shutdownCalls === 0, 'shutdown cancellation');
-
-  window.confirm = () => true;
-  S.setOverride(url => url === '/api/shutdown' ? Promise.reject(new Error('network failed')) : undefined);
-  $('btn-shutdown').click();
-  await waitFor(() => $('restart-result').textContent.includes('could not be confirmed'), 'shutdown failure');
-  assert(!$('btn-shutdown').disabled, 'shutdown failure re-enables');
-
-  S.setOverride(url => url === '/api/shutdown' ? json({status: 'stopping'}) : undefined);
-  $('btn-shutdown').click();
-  await waitFor(() => $('restart-result').textContent.includes('terminal'), 'shutdown accepted');
-  assert($('btn-shutdown').disabled, 'shutdown accepted disables controls');
-  window.confirm = originalConfirm2;
-  S.unfreezeMaintenance();
-
-  // Model bootstrap / progress / proxy / retry.
-  const preparing = {state: 'maintenance', action: null, required_reason: 'model_not_ready',
-    model: {status: 'downloading', ready: false, completed: 40, total: 100, percent: 40, file: 'weights.bin'}};
-  let saved, retried = false;
-  S.setOverride((url, init) => {
-    if (url === '/api/maintenance') return json(preparing);
-    if (url === '/api/config' && init && init.method === 'POST') { saved = JSON.parse(init.body); return json({}); }
-    if (url === '/api/config') return json({port: 1314, language: 'zh-CN', auto_download_model: true, local_only: true, proxy: {enabled: true, url: 'http://***@localhost:7890'}});
-    if (url === '/api/model/retry') { retried = true; return json({}); }
-    return undefined;
-  });
-  document.querySelector('.nav button[data-page="ops"]').click();
-  await waitFor(() => $('btn-status').textContent === '模型未就绪' && !$('btn-model-save').disabled && $('model-progress').value === 40, 'bootstrap progress');
-  console.debug = (...a) => { result.dataset.dbg = JSON.stringify(a); };
-  assert('DIAG status=' + $('btn-status').textContent + ' exit=' + $('btn-maintenance-exit').disabled + ' sync=' + $('btn-sync').disabled + ' bulk=' + $('btn-import').disabled, 'DIAG');
-  assert($('btn-maintenance-exit').disabled && $('btn-sync').disabled, 'forced maintenance locks actions');
-  assert(!$('btn-shutdown').disabled, 'bootstrap shutdown available');
-  assert($('model-progress-detail').textContent.includes('40.0%'), 'actual byte progress');
-
-  $('model-proxy-url').value = 'http://127.0.0.1:7890';
-  $('btn-model-save').click();
-  await waitFor(() => saved && retried, 'save proxy and retry');
-  assert(saved.proxy.url === 'http://127.0.0.1:7890', 'proxy saved');
-  assert($('model-proxy-url').value === '', 'proxy credential input cleared');
-
-  preparing.model = {status: 'failed', ready: false, percent: null, error: '<img src=x onerror=window.injected=1>'};
-  document.querySelector('.nav button[data-page="ops"]').click();
-  await waitFor(() => $('model-error').textContent.includes('<img'), 'model error rendered');
-  assert(!$('model-progress').hasAttribute('value'), 'indeterminate progress');
-  assert(!$('model-error').querySelector('img'), 'model error safely rendered');
-
-  preparing.required_reason = null; preparing.model = {status: 'ready', ready: true};
-  document.querySelector('.nav button[data-page="ops"]').click();
-  await waitFor(() => !$('btn-maintenance-exit').disabled, 'ready permits manual exit');
-  assert($('model-progress').value === 100, 'ready progress');
-
-  preparing.state = 'normal';
-  document.querySelector('.nav button[data-page="ops"]').click();
-  await waitFor(() => $('maintenance-status').textContent.includes('State: normal'), 'normal state');
-  assert(!$('btn-model-save').disabled, 'normal mode permits config');
-  assert($('btn-sync').disabled && $('btn-restart').disabled, 'normal mode blocks maintenance actions');
-
-  $('config-port').value = '2314'; $('config-language').value = 'en';
-  assert($('config-local-only').checked === true, 'local-only loaded from config');
-  assert($('config-local-only-warning').hidden, 'LAN warning hidden when local-only');
-  $('config-local-only').checked = false;
-  $('config-local-only').dispatchEvent(new Event('change'));
-  assert(!$('config-local-only-warning').hidden, 'LAN warning shown when local access disabled');
-  retried = false;
-  $('btn-model-save').click();
-  await waitFor(() => saved.port === 2314, 'full config save');
-  assert(saved.language === 'en' && saved.local_only === false && !retried, 'full config save in normal mode');
-  assert($('model-config-result').textContent.includes('重启后生效'), 'restart requirement shown');
-  assert($('model-card').compareDocumentPosition($('model-preparation-card')) & Node.DOCUMENT_POSITION_FOLLOWING, 'configuration above maintenance');
+  // Configuration contracts and task flows are exercised by the shared regression.
+  await runOpsRegression('ops-functional');
+  result.textContent = '';
   S.reset();
 
   // --- Desktop shell: status states, layout, collapse, scroll ownership ---

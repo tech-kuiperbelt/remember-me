@@ -215,3 +215,7 @@ Audit navigation and its frontend route are enabled only in configuration-contro
 ## Config Debug setting
 
 `Configuration.debug` persists a strict boolean (default false), and `Settings.UI_DEBUG` carries the startup snapshot. Runtime owns mutable `debug_effective`. GET/POST /api/config (and /api/config/model) return persisted debug and read-only debug_effective; explicit debug saves update effective state only after persistence succeeds. Fresh Admin HTML reads current state in the control worker; open pages change after reload. See docs/project-management/plans/50.10-config-debug-mode.md.
+
+## Configuration UI (50.11)
+
+Configuration uses Settings / Maintenance tabs. `ops.js` owns maintenance actions and polling, `ops-state.js` derives gates, `ops-config.js` owns configuration baseline/drafts/validation, and `clear.js` provides the shared random-code destructive confirmation. Polling must preserve drafts and local submission/job locks. Failed job queries retain the job ID for query-only retry. Sync can repair maintenance errors; restart/shutdown allow idle maintenance despite errors/model requirements. Layout responds to available container width, including Sidebar changes; theme alone persists across refresh. See docs/project-management/plans/50.11-configuration-ui-refinement.md.

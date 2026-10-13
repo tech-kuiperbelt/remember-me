@@ -1,466 +1,261 @@
-// ops.js — service configuration, maintenance/model preparation, JSONL
-// import/export/recover/sync/migrate and server process control.
-
+// Configuration and maintenance orchestration. Backend admission stays authoritative.
 import { $, formatBytes } from './core.js';
 import { api } from './api.js';
-import { setMaintenance, emitMemoriesChanged, emitStatsChanged } from './store.js';
+import { setMaintenance, emitMemoriesChanged, emitStatsChanged, onNamespacesChanged, getNamespaces, getNamespaceCounts } from './store.js';
+import { deriveStatus, statusText, statusDetail } from './ops-state.js';
+import { createConfiguration } from './ops-config.js';
+import { confirmDestructive } from './clear.js';
 
-let serviceConfigLoaded = false;
-let configSaving = false;
-
-export async function loadOpsPage() {
-  const state = await refreshMaintenance();
-  await loadModelConfig();
-  if (state && state.required_reason === 'model_not_ready') return;
-  const data = await api('/stats');
-  const nsList = data.namespace_counts ? Object.keys(data.namespace_counts) : [];
-  nsList.sort();
-  // Source dropdown
-  const srcSelect = $('migrate-source');
-  srcSelect.innerHTML = '<option value="">Select namespace...</option>';
-  nsList.forEach(ns => {
-    const opt = document.createElement('option');
-    opt.value = ns;
-    opt.textContent = `${ns} (${data.namespace_counts[ns]})`;
-    srcSelect.appendChild(opt);
-  });
-  // Target datalist suggestions
-  const dl = $('migrate-target-suggestions');
-  dl.innerHTML = '';
-  nsList.forEach(ns => {
-    const opt = document.createElement('option');
-    opt.value = ns;
-    opt.textContent = ns;
-    dl.appendChild(opt);
-  });
-  const exportSel = $('export-namespace');
-  const exportCur = exportSel.value;
-  exportSel.innerHTML = '<option value="">Select namespace...</option>';
-  nsList.forEach(ns => {
-    const opt = document.createElement('option');
-    opt.value = ns;
-    opt.textContent = `${ns} (${data.namespace_counts[ns]})`;
-    if (ns === exportCur) opt.selected = true;
-    exportSel.appendChild(opt);
-  });
-  // Clear namespace dropdown
-  const clrSel = $('clear-ns');
-  const clrCur = clrSel.value;
-  clrSel.innerHTML = '<option value="">(all namespaces)</option>';
-  nsList.forEach(ns => {
-    const opt = document.createElement('option');
-    opt.value = ns;
-    opt.textContent = ns;
-    if (ns === clrCur) opt.selected = true;
-    clrSel.appendChild(opt);
-  });
-  $('migrate-result').textContent = '';
+let status=deriveStatus(null), config, busy=null, job=null, power=null, pollVersion=0, reconnecting=false;
+let namespaceCounts={}, maintenanceRequest=null, needsRegistry=false;
+const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const gates={enter:'enter',exit:'exit',retry:'retryModel',sync:'sync',restart:'restartShutdown',shutdown:'restartShutdown'};
+const controls={enter:'btn-maintenance-enter',exit:'btn-maintenance-exit',retry:'btn-model-retry',sync:'btn-sync',restart:'btn-restart',shutdown:'btn-shutdown',import:'btn-import',recover:'btn-recover',clear:'btn-clear',migrate:'btn-migrate',exportFull:'btn-export-full',exportNamespace:'btn-export-ns'};
+const allowed=kind=>status[gates[kind]||'bulkActions'];
+const locked=()=>!!busy||!!job||!!power||!!config?.isSaving();
+function fileError(file,limit=false) {
+  if(!file)return '请选择 JSONL 文件。';
+  if(!/\.(jsonl|ndjson)$/i.test(file.name))return '请选择 .jsonl 或 .ndjson 文件。';
+  if(limit&&file.size>64*1024*1024)return '文件不能超过 64 MiB。';
+  return '';
 }
-
-// Derive the display status and control availability from a /api/maintenance
-// snapshot. Priority: request failure/unparseable -> sticky action error ->
-// model_not_ready -> maintenance -> normal. Gating mirrors the server authority
-// in app/operations/maintenance.py (start_action / exit).
-function deriveStatus(snapshot) {
-  const s = snapshot || {};
-  const idle = !s.action;
-  const hasError = !!s.error;
-  const modelPending = s.required_reason === 'model_not_ready' && !hasError;
-  const isMaintenance = s.state === 'maintenance';
-  let kind;
-  if (hasError) kind = 'error';
-  else if (modelPending) kind = 'model_not_ready';
-  else if (isMaintenance) kind = 'maintenance';
-  else if (s.state === 'normal') kind = 'normal';
-  else kind = 'unavailable';
-
-  const normal = kind === 'normal';
-  const maintenanceReady = isMaintenance && idle && !hasError && !modelPending;
-  // Mirrors maintenance.py start_action: required_reason allows only
-  // restart/shutdown; a sticky error additionally allows sync; only a plain,
-  // idle maintenance state allows the ordinary bulk actions.
-  const processControl = (isMaintenance || modelPending) && idle;
-  // sync is an ordinary maintenance action (and the repair path for a sticky
-  // error); it is blocked while a model requirement is pending.
-  const sync = isMaintenance && idle && !modelPending;
-
-  return {
-    kind, snapshot: s, modelPending, idle, hasError,
-    enter: normal,
-    exit: maintenanceReady,
-    retryModel: modelPending && !['downloading', 'validating', 'cancelling'].includes(s.model?.status),
-    restartShutdown: processControl,
-    sync,
-    bulkActions: maintenanceReady,
-    normalWrites: normal,
-  };
-}
-
-const STATUS_TEXT = {
-  normal: '运行中',
-  maintenance: '维护中',
-  model_not_ready: '模型未就绪',
-  error: '维护异常',
-  unavailable: '状态不可用',
-};
-
-function statusDetail(status) {
-  const s = status.snapshot || {};
-  if (status.kind === 'unavailable') return status.message || '无法读取服务状态；请在下次轮询前保持谨慎。';
-  const action = s.action ? ` · 当前动作：${s.action}` : '';
-  if (status.kind === 'normal') return '服务正常运行。';
-  if (status.kind === 'maintenance') return `写入暂停、查询可用${action}。`;
-  if (status.kind === 'model_not_ready') {
-    const model = s.model || {};
-    const info = model.error || model.status || '准备中';
-    return `记忆读写与搜索不可用；模型：${info}${action}。`;
+function formError(kind) {
+  if(kind==='import'||kind==='recover')return fileError($(kind+'-file').files[0],kind==='import');
+  if(kind==='exportNamespace'&&!$('export-namespace').value)return '请选择 Namespace。';
+  if(kind==='migrate') {
+    const source=$('migrate-source').value,target=$('migrate-target').value.trim();
+    if(!source||!target)return '请选择源和目标 Namespace。';
+    if(source===target)return '源与目标不能相同。';
+    if(Array.from(target).length>64||['all','*','none','null'].includes(target.toLowerCase()))return '目标 Namespace 不合法。';
   }
-  return `维护操作失败：${s.error || '未知错误'} · state=${s.state || '-'}${action}。`;
+  return '';
 }
-
-function applyStatusChip(status) {
-  const chip = $('btn-status');
-  chip.dataset.state = status.kind;
-  chip.textContent = STATUS_TEXT[status.kind];
-  $('status-tooltip').textContent = statusDetail(status);
-}
-
-function applyControls(status) {
-  $('btn-maintenance-enter').disabled = !status.enter;
-  $('btn-maintenance-exit').disabled = !status.exit;
-  $('btn-model-retry').disabled = !status.retryModel;
-  $('btn-model-save').disabled = !serviceConfigLoaded || configSaving;
-  $('btn-restart').disabled = !status.restartShutdown;
-  $('btn-shutdown').disabled = !status.restartShutdown;
-  $('btn-sync').disabled = !status.sync;
-  for (const id of ['btn-recover', 'btn-import', 'btn-export-full', 'btn-export-ns', 'btn-clear', 'btn-migrate']) {
-    $(id).disabled = !status.bulkActions;
+function applyControls() {
+  for(const [kind,id] of Object.entries(controls)) {
+    const reason=locked()?'有请求、任务或确认正在进行。':!allowed(kind)?statusDetail(status)+' 此操作当前不可用。':formError(kind);
+    $(id).disabled=!!reason;$(id).title=reason;
   }
-  $('maintenance-status').textContent = `State: ${status.snapshot.state || '-'}` +
-    (status.snapshot.action ? ` · Running: ${status.snapshot.action}` : '') +
-    (status.snapshot.error ? ` · Error: ${status.snapshot.error}` : '');
+  $('ops-action-reason').textContent=locked()?'当前请求或任务尚未结束。':status.kind==='normal'?'可预先填写表单；进入维护后执行。':status.kind==='error'?'可使用 Sync 修复备份错误，或重启／关闭服务；模型未就绪时不能 Sync。':status.modelPending||status.kind==='unavailable'?statusDetail(status):'';
+  config?.update();
 }
-
-export async function refreshMaintenance() {
-  try {
-    const state = await api('/maintenance');
-    const status = deriveStatus(state);
-    applyStatusChip(status);
-    applyControls(status);
-    renderModelStatus(state.model);
-    setMaintenance(state);
-    return state;
-  } catch (e) {
-    // Safe snapshot: treat the service as unavailable so writers stay disabled
-    // until a later successful poll replaces it.
-    const status = deriveStatus({ state: 'unavailable' });
-    status.message = 'Maintenance status unavailable: ' + e.message;
-    applyStatusChip(status);
-    applyControls(status);
-    setMaintenance({ state: 'unavailable', error: String(e.message) });
-  }
+function paint(next) {
+  status=deriveStatus(next);
+  if(status.modelPending)needsRegistry=true;
+  if(needsRegistry&&!status.modelPending&&!status.hasError&&status.kind!=='unavailable'){needsRegistry=false;emitStatsChanged();}
+  $('btn-status').dataset.state=status.kind;$('btn-status').textContent=statusText[status.kind];
+  $('status-tooltip').textContent=statusDetail(status);
+  $('maintenance-status').textContent=statusDetail(status);
+  renderModelStatus(next?.model);
+  setMaintenance(next);applyControls();
 }
-
-async function enterMaintenance() {
-  $('maintenance-result').textContent = 'Waiting for active writes...';
-  try {
-    await api('/maintenance/enter', {method:'POST'});
-    $('maintenance-result').textContent = 'Maintenance mode active.';
-  } catch(e) { $('maintenance-result').textContent = 'Error: ' + e.message; }
-  await refreshMaintenance();
-}
-
-async function exitMaintenance() {
-  try {
-    await api('/maintenance/exit', {method:'POST'});
-    $('maintenance-result').textContent = 'Normal service restored.';
-  } catch(e) { $('maintenance-result').textContent = 'Error: ' + e.message; }
-  await refreshMaintenance();
+function message(id,text,error=false) { const el=$(id);el.textContent=text;el.classList.toggle('is-error',error); }
+export function refreshMaintenance() {
+  if(power)return Promise.resolve(null);
+  if(maintenanceRequest)return maintenanceRequest;
+  const version=++pollVersion;
+  maintenanceRequest=(async()=>{
+    try {
+      const next=await api('/maintenance',{signal:AbortSignal.timeout(5000)});
+      if(version!==pollVersion||power)return null;
+      paint(next);return next;
+    }catch(e) {
+      if(version===pollVersion&&!power)paint({state:'unavailable',error:String(e.message)});
+      return null;
+    }finally{maintenanceRequest=null;}
+  })();
+  return maintenanceRequest;
 }
 
 function renderModelStatus(model) {
-  if (!model) return;
-  const labels = {waiting:'模型缓存缺失，请设置代理后重试', downloading:'正在下载 / 加载模型',
-    validating:'正在验证模型与数据库', ready:'模型已就绪', failed:'模型准备失败，可修改代理后重试',
-    cancelling:'正在结束上一次任务，随后使用新配置重试'};
-  $('model-status').textContent = labels[model.status] || model.status;
-  const bar = $('model-progress');
-  if (model.ready) bar.value = 100;
-  else if (model.percent != null) bar.value = model.percent;
+  const labels={waiting:'模型缓存缺失',downloading:'正在下载 / 加载模型',validating:'正在验证模型与数据库',ready:'模型已就绪',failed:'模型准备失败',cancelling:'正在结束上一次任务'};
+  $('model-status').textContent=model?(labels[model.status]||model.status):'模型状态暂不可用';
+  $('model-progress-area').hidden=!model||!!model.ready;
+  const bar=$('model-progress');
+  if(model?.ready)bar.value=100;
+  else if(Number.isFinite(model?.percent))bar.value=model.percent;
   else bar.removeAttribute('value');
-  $('model-progress-detail').textContent = model.total
-    ? `${model.file || '当前文件 / 下载批次'}：${formatBytes(model.completed)} / ${formatBytes(model.total)} (${model.percent.toFixed(1)}%)`
-    : '总量尚未确定；正在等待或准备模型。';
-  if (model.ready) $('model-progress-detail').textContent = '模型加载与验证完成。';
-  $('model-error').textContent = model.error || '';
+  $('model-progress-detail').textContent=model?.total ? `${model.file||'当前文件'}：${formatBytes(model.completed||0)} / ${formatBytes(model.total)}${Number.isFinite(model.percent)?' ('+model.percent.toFixed(1)+'%)':''}`:'总量尚未确定，请等待模型准备。';
+  $('model-error').textContent=model?.error||'';
 }
-
-function updateLocalOnlyWarning() {
-  $('config-local-only-warning').hidden = $('config-local-only').checked;
-}
-
-async function loadModelConfig() {
-  try {
-    const config = await api('/config');
-    $('config-port').value = config.port;
-    $('config-language').value = config.language;
-    $('config-local-only').checked = config.local_only;
-    const debug = config.debug_effective ?? config.debug ?? (document.documentElement.dataset.uiDebug === 'true');
-    $('config-debug').checked = debug;
-    $('config-debug-refresh').hidden = debug === (document.documentElement.dataset.uiDebug === 'true');
-    $('model-auto-download').checked = config.auto_download_model;
-    $('model-proxy-enabled').checked = config.proxy.enabled;
-    $('model-proxy-saved').textContent = config.proxy.url ? `已保存：${config.proxy.url}` : '尚未设置代理地址';
-    $('model-proxy-url').value = '';
-    updateLocalOnlyWarning();
-    serviceConfigLoaded = true;
-    $('btn-model-save').disabled = configSaving;
-  } catch (e) {
-    serviceConfigLoaded = false;
-    $('btn-model-save').disabled = true;
-    $('model-config-result').textContent = e.message;
+function updateNamespaces() {
+  namespaceCounts=getNamespaceCounts();
+  const names=getNamespaces().slice().sort();
+  for(const [id,placeholder] of [['migrate-source','Select namespace…'],['export-namespace','Select namespace…'],['clear-ns','全部 Namespace']]) {
+    const select=$(id),previous=select.value;
+    select.replaceChildren(new Option(placeholder,''),...names.map(name=>new Option(name+(id==='clear-ns'?'':` (${namespaceCounts[name]??0})`),name)));
+    if(previous&&!names.includes(previous))select.add(new Option(previous,previous));
+    select.value=previous;
   }
+  $('migrate-target-suggestions').replaceChildren(...names.map(name=>new Option(name,name)));applyControls();
 }
-
-async function saveModelConfig() {
-  const result = $('model-config-result');
-  if (configSaving || !serviceConfigLoaded) return;
-  configSaving = true;
-  $('btn-model-save').disabled = true;
-  try {
-    const port = Number($('config-port').value);
-    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('端口必须是 1–65535 的整数');
-    const proxy = {enabled: $('model-proxy-enabled').checked};
-    const url = $('model-proxy-url').value.trim();
-    if (url) proxy.url = url;
-    await api('/config', {method:'POST', body:JSON.stringify({
-      port, language:$('config-language').value,
-      auto_download_model:$('model-auto-download').checked,
-      local_only:$('config-local-only').checked, debug:$('config-debug').checked, proxy})});
-    result.textContent = '配置已保存；端口、语言与访问范围重启后生效。';
-    const state = await refreshMaintenance();
-    if (state?.required_reason === 'model_not_ready') {
-      await api('/model/retry', {method:'POST'});
-      result.textContent = '配置已保存，正在使用新配置准备模型；端口与语言重启后生效。';
-    }
-    await loadModelConfig();
-  } catch (e) { result.textContent = '保存失败：' + e.message; }
-  finally { configSaving = false; $('btn-model-save').disabled = !serviceConfigLoaded; }
-  await refreshMaintenance();
+export async function loadOpsPage() {
+  await refreshMaintenance();await config.load();updateNamespaces();
+  if(!status.modelPending&&!status.hasError&&status.kind!=='unavailable'&&!power)emitStatsChanged();
+  await fetchStoragePaths();
 }
-
-async function retryModel() {
-  try {
-    await api('/model/retry', {method:'POST'});
-    $('model-config-result').textContent = '已请求重试。';
-  } catch (e) { $('model-config-result').textContent = e.message; }
-  await refreshMaintenance();
+export function hide() {
+  if(busy||job||power)return;
+  for(const id of ['import-result','export-result','migrate-result','recover-result','clear-result','sync-result','maintenance-result','model-retry-result'])message(id,'');
 }
-
-async function doRecover() {
-  const file = $('recover-file').files[0];
-  const resultEl = $('recover-result');
-  if (!file) { resultEl.textContent = 'Select a JSONL file.'; return; }
-  if (!confirm(`Replace ALL current memories with records from ${file.name}?`)) return;
-  const form = new FormData();
-  form.append('file', file);
-  resultEl.textContent = 'Uploading...';
+function selectTab(name,focus=false) {
+  for(const tab of ['settings','maintenance']) {
+    $('ops-'+tab).hidden=tab!==name;
+    $('ops-tab-'+tab).setAttribute('aria-selected',String(tab===name));$('ops-tab-'+tab).tabIndex=tab===name?0:-1;
+  }
+  if(focus)$('ops-tab-'+name).focus();
+}
+async function run(kind,result,operation,confirmation) {
+  if(locked()||!allowed(kind)||formError(kind))return;
+  busy=kind;applyControls();
   try {
-    const response = await fetch('/api/recover', {method:'POST', body:form});
-    const job = await response.json();
-    if (!response.ok) throw new Error(job.detail || response.statusText);
+    if(confirmation&&!await confirmation())return;
     await refreshMaintenance();
-    while (true) {
-      const status = await api('/recover/' + encodeURIComponent(job.id));
-      resultEl.textContent = `Recover: ${status.phase} ${status.completed}/${status.total}`;
-      if (status.status === 'completed') {
-        resultEl.textContent = `Recovered ${status.result.recovered} memories.`;
-        emitMemoriesChanged();
-        emitStatsChanged();
-        break;
+    if(!allowed(kind))throw new Error('服务状态已变化，请检查状态后重试。');
+    message(result,'正在执行…');
+    await operation();
+  }catch(e){message(result,'操作未完成：'+e.message,true);}
+  finally{busy=null;await refreshMaintenance();applyControls();}
+}
+function changedData() { emitMemoriesChanged();emitStatsChanged(); }
+async function upload(path,file,prefix) {
+  const form=new FormData();form.append('file',file);if(prefix!==undefined)form.append('namespace_prefix',prefix);
+  const response=await fetch('/api/'+path,{method:'POST',body:form});
+  const data=await response.json();if(!response.ok)throw new Error(data.detail||response.statusText);return data;
+}
+async function watchJob() {
+  if(!job||job.polling)return;
+  const current=job;current.polling=true;
+  const result=current.kind+'-result', retry=$(current.kind+'-poll-retry');retry.hidden=true;
+  try {
+    while(job===current) {
+      let data;
+      try{data=await api('/'+current.kind+'/'+encodeURIComponent(current.id),{signal:AbortSignal.timeout(5000)});}
+      catch(e){message(result,`任务 ${current.id} 状态暂不可确认：${e.message}。请重新查询，不要重复提交。`,true);retry.hidden=false;return;}
+      message(result,`任务 ${current.id} · ${data.phase||data.status}${data.total!=null?' · '+data.completed+'/'+data.total:''}`);
+      if(data.status==='completed') {
+        const r=data.result||{};
+        message(result,current.kind==='import'?`Imported ${r.imported??'—'}; skipped ${r.skipped??'—'}; renamed ${r.renamed??'—'}.`:`Recovered ${r.recovered??'—'} memories.`);
+        job=null;changedData();return;
       }
-      if (status.status === 'failed') throw new Error(status.error);
-      await new Promise(resolve => setTimeout(resolve, 750));
+      if(data.status==='failed') {job=null;throw new Error(data.error?.message||data.error||'任务失败');}
+      await sleep(750);
     }
-  } catch(e) { resultEl.textContent = 'Error: ' + e.message; }
-  await refreshMaintenance();
+  }catch(e){message(result,e.message,true);}
+  finally{current.polling=false;await refreshMaintenance();applyControls();}
 }
+function importMemories() {
+  const file=$('import-file').files[0],prefix=$('import-prefix').value.trim();
+  return run('import','import-result',async()=>{
+    const data=await upload('import',file,prefix);if(!data.import_id)throw new Error('响应缺少任务 ID，无法确认提交结果。');
+    job={kind:'import',id:data.import_id};await watchJob();
+  });
+}
+function recover() {
+  const file=$('recover-file').files[0];
+  return run('recover','recover-result',async()=>{
+    const data=await upload('recover',file);if(!data.id)throw new Error('响应缺少任务 ID，无法确认提交结果。');
+    job={kind:'recover',id:data.id};await watchJob();
+  },()=>confirmDestructive({title:'Confirm Recover',scope:`使用 ${file.name} 覆盖当前数据库全部记忆`,action:'Confirm Recover'}));
+}
+function clearMemories() {
+  const ns=$('clear-ns').value;
+  return run('clear','clear-result',async()=>{
+    const data=await api('/memories'+(ns?'?namespace='+encodeURIComponent(ns):''),{method:'DELETE'});
+    message('clear-result',`Deleted ${data.deleted} memories.`);changedData();
+  },()=>confirmDestructive({title:'Confirm Clear',scope:ns?`删除 Namespace “${ns}” 中全部记忆`:'删除全部 Namespace 中的记忆',action:'Confirm Clear'}));
+}
+function migrate() {
+  const source=$('migrate-source').value,target=$('migrate-target').value.trim(),count=namespaceCounts[source];
+  return run('migrate','migrate-result',async()=>{
+    const r=await api('/namespaces/migrate',{method:'POST',body:JSON.stringify({source,target})});
+    if(r.error)throw new Error(r.error);
+    message('migrate-result',`Migrated ${r.migrated} memories from “${source}” to “${target}”.`);changedData();
+  },()=>confirm(`将 “${source}” 中${count==null?'全部':count+' 条'}记忆移动到 “${target}”？此操作不可撤销。`));
+}
+async function downloadExport(path,options) {
+  const response=await fetch('/api'+path,options);
+  if(!response.ok){const error=await response.json();throw new Error(error.detail||response.statusText);}
+  const blob=await response.blob(), disposition=response.headers.get('Content-Disposition')||'';
+  const encoded=disposition.match(/filename\*=UTF-8''([^;]+)/i),plain=disposition.match(/filename="?([^";]+)"?/i);
+  let name=plain?.[1]||'remember-me-export.jsonl';if(encoded){try{name=decodeURIComponent(encoded[1]);}catch{}}
+  const link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download=name;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(link.href),1000);
+  return response.headers.get('X-Memory-Count')||'—';
+}
+function exportMemories(full) {
+  const ns=$('export-namespace').value;
+  return run(full?'exportFull':'exportNamespace','export-result',async()=>{
+    const count=await downloadExport(full?'/export/full':'/export/namespace',full?{method:'POST'}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({namespace:ns})});
+    message('export-result',`Downloaded ${full?'full snapshot':ns} (${count} records).`);
+  });
+}
+function sync() {return run('sync','sync-result',async()=>{const r=await api('/sync',{method:'POST'});if(r.error)throw new Error(r.error);message('sync-result',`Synced ${r.synced??'—'} records (errors: ${r.errors??'—'}).`);emitStatsChanged();});}
+function maintenance(enter) {return run(enter?'enter':'exit','maintenance-result',async()=>{await api('/maintenance/'+(enter?'enter':'exit'),{method:'POST'});message('maintenance-result',enter?'Maintenance mode active.':'Normal service restored.');});}
+function retryModel(){return run('retry','model-retry-result',async()=>{await api('/model/retry',{method:'POST'});message('model-retry-result','已请求准备模型。');});}
 
-async function doMigrate() {
-  const source = $('migrate-source').value;
-  const target = $('migrate-target').value.trim();
-  if (!source || !target) {
-    $('migrate-result').textContent = 'Please select source and enter target.';
-    return;
-  }
-  if (!confirm(`Move ALL memories from "${source}" to "${target}"? This cannot be undone.`)) {
-    return;
-  }
-  const btn = $('btn-migrate');
-  const resultEl = $('migrate-result');
-  btn.disabled = true;
-  resultEl.textContent = 'Migrating...';
+function addressHint() {
+  const c=config.config();if(!c)return;
+  const target=new URL(location.href);target.port=String(c.port);
+  $('restart-address').textContent=`若端口已变化，可尝试 ${target.origin}/admin/console（--port 可能覆盖配置）。${c.local_only?'仅本机服务启用时请在服务器本机访问。':''}`;
+}
+async function reconnect() {
+  if(reconnecting||power!=='restart')return;
+  reconnecting=true;$('restart-poll-retry').hidden=true;
+  const deadline=Date.now()+60000;
   try {
-    const result = await api('/namespaces/migrate', {
-      method: 'POST',
-      body: JSON.stringify({source, target}),
-    });
-    if (result.error) {
-      resultEl.textContent = result.error;
-    } else {
-      resultEl.textContent = `✅ Migrated ${result.migrated} memories from "${source}" to "${target}".`;
-      loadOpsPage();
+    while(Date.now()<deadline) {
+      await sleep(Math.min(2000,Math.max(0,deadline-Date.now())));
+      if(Date.now()>=deadline)break;
+      try {
+        const snapshot=await api('/maintenance',{signal:AbortSignal.timeout(Math.min(5000,Math.max(1,deadline-Date.now())))});
+        if(!['normal','maintenance'].includes(snapshot.state)||snapshot.action)continue;
+        power=null;paint(snapshot);await config.load(true);
+        message('restart-result','服务当前可访问，已重新读取状态与配置。');return;
+      }catch{}
     }
-  } catch(e) {
-    resultEl.textContent = 'Error: ' + e.message;
-  } finally {
-    btn.disabled = false;
-  }
+    message('restart-result','等待服务恢复超时。请检查启动终端或使用新地址；可手动重新检查连接。',true);
+    $('restart-poll-retry').hidden=false;
+  }finally{reconnecting=false;applyControls();}
 }
-
-async function doRestartServer() { return controlServer(true); }
-async function doShutdownServer() { return controlServer(false); }
-
-async function controlServer(restart) {
-  const message = restart
-    ? 'Restart the MCP server after active work finishes? Connections will need to reconnect.'
-    : 'Shut down the MCP server after active work finishes? You will need to start it again from the terminal.';
-  if (!confirm(message)) return;
-  const resultEl = $('restart-result');
-  const buttons = [$('btn-restart'), $('btn-shutdown')];
-  buttons.forEach(btn => { btn.disabled = true; });
-  resultEl.textContent = 'Sending request...';
-  try {
-    await api(restart ? '/restart' : '/shutdown', {method: 'POST'});
-    resultEl.textContent = restart
-      ? 'Restart accepted. Waiting for active work to finish; refresh once the server returns.'
-      : 'Shutdown accepted. Waiting for active work to finish. Start the server from the terminal to use it again.';
-  } catch(e) {
-    resultEl.textContent = 'Request could not be confirmed: ' + e.message;
-    buttons.forEach(btn => { btn.disabled = false; });
-  }
+function controlServer(restart) {
+  return run(restart?'restart':'shutdown','restart-result',async()=>{
+    try{await api(restart?'/restart':'/shutdown',{method:'POST'});}
+    catch(e){throw new Error('请求结果无法确认，请检查服务状态后再操作：'+e.message);}
+    power=restart?'restart':'shutdown';++pollVersion;
+    paint({state:'unavailable'});addressHint();
+    message('restart-result',restart?'重启请求已接受，正在等待服务可访问…':'服务关闭请求已接受。请从终端手动启动（terminal）。');
+    if(restart)void reconnect();
+  },()=>confirm(restart?'确认重启服务并读取已保存配置？连接将中断；端口或访问范围变更可能需要新地址。':'确认关闭服务？关闭后需要从终端手动启动。'));
 }
-
-async function doImport() {
-  const file = $('import-file').files[0];
-  const prefix = $('import-prefix').value.trim();
-  const resultEl = $('import-result');
-  const btn = $('btn-import');
-  if (!file) { resultEl.textContent = 'Please select a JSONL file.'; return; }
-  btn.disabled = true;
-  resultEl.textContent = 'Importing...';
-  try {
-    const form = new FormData();
-    form.append('file', file);
-    form.append('namespace_prefix', prefix);
-    const response = await fetch('/api/import', {method: 'POST', body: form});
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.detail || response.statusText);
-    resultEl.textContent = `Import ${result.import_id}: queued`;
-    while (true) {
-      await new Promise(resolve => setTimeout(resolve, 750));
-      const status = await api('/import/' + encodeURIComponent(result.import_id));
-      resultEl.textContent = `Import ${result.import_id}: ${status.phase}`;
-      if (status.status === 'completed') {
-        resultEl.textContent = `✅ Imported ${status.result.imported}; skipped ${status.result.skipped}; renamed ${status.result.renamed}.`;
-        break;
-      }
-      if (status.status === 'failed') throw new Error(status.error.message);
-    }
-    emitMemoriesChanged();
-    emitStatsChanged();
-  } catch(e) {
-    resultEl.textContent = 'Error: ' + e.message;
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-async function downloadExport(path, options) {
-  const response = await fetch('/api' + path, options);
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.detail || response.statusText);
-  }
-  const blob = await response.blob();
-  const disposition = response.headers.get('Content-Disposition') || '';
-  const match = disposition.match(/filename="?([^";]+)"?/i);
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = match ? match[1] : 'remember-me-export.jsonl';
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(link.href);
-  return response.headers.get('X-Memory-Count') || '?';
-}
-
-async function doExportFull() {
-  const resultEl = $('export-result');
-  resultEl.textContent = 'Full Sync and export in progress...';
-  try {
-    const count = await downloadExport('/export/full', {method: 'POST'});
-    resultEl.textContent = `✅ Downloaded full snapshot (${count} records).`;
-  } catch (e) { resultEl.textContent = 'Error: ' + e.message; }
-}
-
-async function doExportNamespace() {
-  const namespace = $('export-namespace').value;
-  const resultEl = $('export-result');
-  if (!namespace) { resultEl.textContent = 'Please select a namespace.'; return; }
-  resultEl.textContent = 'Exporting namespace...';
-  try {
-    const count = await downloadExport('/export/namespace', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({namespace}),
-    });
-    resultEl.textContent = `✅ Downloaded ${namespace} (${count} records).`;
-  } catch (e) { resultEl.textContent = 'Error: ' + e.message; }
-}
-
-async function doSync() {
-  const resultEl = $('sync-result');
-  const btn = $('btn-sync');
-  btn.disabled = true;
-  resultEl.textContent = 'Syncing...';
-  try {
-    const result = await api('/sync', {method: 'POST'});
-    if (result.error) {
-      resultEl.textContent = result.error;
-    } else {
-      resultEl.textContent = `✅ Synced ${result.synced || 0} records (errors: ${result.errors || 0}).`;
-    }
-  } catch(e) {
-    resultEl.textContent = 'Error: ' + e.message;
-  } finally {
-    btn.disabled = false;
-  }
-}
-
 export async function fetchStoragePaths() {
-  try {
-    const data = await api('/storage-paths');
-    if (data.backend === 'dual' && data.primary_path && data.secondary_path) {
-      const syncEl = $('sync-paths');
-      if (syncEl) syncEl.textContent = `${data.primary_path} → ${data.secondary_path}`;
-    }
-  } catch(e) {
-    // Not in dual mode — paths may be unavailable; leave placeholders empty.
-  }
+  if(status.modelPending||status.kind==='unavailable')return;
+  try {const data=await api('/storage-paths');$('sync-paths').textContent=data.backend==='dual'?`${data.primary_path} → ${data.secondary_path}`:'当前存储未配置 JSONL 灾备副本。';}catch{}
 }
-
+function cardIcons() {
+  const paths=['M3 4h18v12H3z M8 21h8 M12 16v5','M12 3v3 M12 18v3 M3 12h3 M18 12h3 M8 8h8v8H8z','M4 5h16v14H4z M8 9h8 M8 13h5','M8 3h8v4H8z M5 7h14v14H5z M9 11h6 M9 15h6','M12 3v12 M7 8l5-5 5 5 M4 15v6h16v-6','M4 5h16v14H4z M8 9h8 M8 13h8','M3 3h18v7H3z M3 14h18v7H3z M7 6h.01 M7 17h.01','M12 3 2 21h20L12 3z M12 9v5 M12 17h.01'];
+  document.querySelectorAll('#page-ops .ops-card-heading').forEach((heading,i)=>{
+    const id=heading.parentElement.id;heading.id=id+'-heading';heading.querySelector('h3').id=id+'-title';heading.querySelector('p').id=id+'-description';
+    const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+    for(const [k,v] of Object.entries({viewBox:'0 0 24 24',fill:'none','stroke-width':1.6,'stroke-linecap':'round','stroke-linejoin':'round','aria-hidden':true}))svg.setAttribute(k,v);
+    svg.id=id+'-icon';
+    const path=document.createElementNS(svg.namespaceURI,'path');path.setAttribute('d',paths[i]);svg.append(path);heading.prepend(svg);
+  });
+}
 export function mount() {
-  $('btn-model-save').addEventListener('click', saveModelConfig);
-  $('config-local-only').addEventListener('change', updateLocalOnlyWarning);
-  $('btn-model-retry').addEventListener('click', retryModel);
-  $('btn-maintenance-enter').addEventListener('click', enterMaintenance);
-  $('btn-maintenance-exit').addEventListener('click', exitMaintenance);
-  $('btn-restart').addEventListener('click', doRestartServer);
-  $('btn-shutdown').addEventListener('click', doShutdownServer);
-  $('btn-recover').addEventListener('click', doRecover);
-  $('btn-import').addEventListener('click', doImport);
-  $('btn-export-full').addEventListener('click', doExportFull);
-  $('btn-export-ns').addEventListener('click', doExportNamespace);
-  $('btn-sync').addEventListener('click', doSync);
-  $('btn-migrate').addEventListener('click', doMigrate);
+  config=createConfiguration({available:()=>status.kind!=='unavailable'&&!busy&&!job&&!power,refresh:refreshMaintenance,changed:applyControls,retryModel:()=>api('/model/retry',{method:'POST'})});
+  cardIcons();onNamespacesChanged(updateNamespaces);
+  for(const name of ['settings','maintenance'])$('ops-tab-'+name).onclick=()=>selectTab(name);
+  $('ops-tabs').onkeydown=e=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){e.preventDefault();selectTab(e.key==='Home'?'settings':e.key==='End'?'maintenance':$('ops-settings').hidden?'settings':'maintenance',true);}};
+  $('config-open-maintenance').onclick=()=>selectTab('maintenance',true);
+  const actions={enter:()=>maintenance(true),exit:()=>maintenance(false),retry:retryModel,sync,restart:()=>controlServer(true),shutdown:()=>controlServer(false),import:importMemories,recover,clear:clearMemories,migrate,exportFull:()=>exportMemories(true),exportNamespace:()=>exportMemories(false)};
+  for(const [kind,id] of Object.entries(controls))$(id).onclick=actions[kind];
+  $('ops-maintenance').addEventListener('input',applyControls);$('ops-maintenance').addEventListener('change',applyControls);
+  for(const kind of ['import','recover'])$(kind+'-poll-retry').onclick=()=>watchJob();
+  $('restart-poll-retry').onclick=()=>reconnect();
+  for(const details of document.querySelectorAll('#ops-maintenance details'))details.addEventListener('toggle',()=>{
+    if(details.open)return;
+    const kind=details.id.slice(4);
+    if(busy===kind||(kind==='export'&&busy?.startsWith('export'))||job?.kind===kind){details.open=true;return;}
+    if($(kind+'-result'))message(kind+'-result','');
+  });
+  applyControls();
 }

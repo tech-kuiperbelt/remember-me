@@ -26,7 +26,10 @@ function apply() {
   document.documentElement.dataset.theme = resolveTheme(preference);
   document.documentElement.dataset.themePreference = preference;
   const select = $('theme-select');
-  if (select) select.value = preference;
+  if (select) {
+    select.value = preference;
+    select.querySelectorAll('input[name=theme]').forEach(input => { input.checked = input.value === preference; });
+  }
 }
 
 function onSystemChange() {
@@ -43,7 +46,7 @@ export function mount() {
   preference = readStored();
   apply();
   const select = $('theme-select');
-  if (select) select.addEventListener('change', () => setTheme(select.value));
+  if (select) select.addEventListener('change', event => setTheme(event.target.matches('input[name=theme]') ? event.target.value : select.value));
   if (typeof media.addEventListener === 'function') media.addEventListener('change', onSystemChange);
   else if (typeof media.addListener === 'function') media.addListener(onSystemChange);
 }

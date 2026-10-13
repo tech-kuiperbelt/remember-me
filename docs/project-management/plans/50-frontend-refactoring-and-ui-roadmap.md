@@ -127,3 +127,7 @@ Stats 最终 mockup 对照复核：统一 Overview 字号与图标尺寸、面�
 2026-10-11 用户验收并授权提交 Memory List / Detail 图标及标题修订：Anchor 标签统一 Keywords 样式，五类图标与 Stats Overview 形状及明暗配色一致；详情及创建/编辑对应位置同步，详情分组标题更醒目。卡片功能、详情/创建功能及明暗宽窄屏布局验证通过，见 [50.5.10 后续修订](50.5.10-memory-card-refinement.md)。代码、测试与文档随本次提交保存，后端未改，生产未重启。
 
 2026-10-11 配置 Debug 后续修订：按用户要求移除 `--debug` CLI及HTTP启动覆盖，Debug完全由配置控制，启动/重启读取持久值。73项定向Python与真实配置刷新浏览器回归通过，操作说明及Stats设计已同步；见 [50.10 后续修订](50.10-config-debug-mode.md)。用户已授权提交，代码、测试与文档随提交保存，生产未重启。
+
+### 2026-10-11 — Configuration
+
+[50.11](50.11-configuration-ui-refinement.md) 已实施，待视觉验收：双 Tab、配置草稿、维护状态门控、任务恢复、危险操作确认与宽窄布局；后端契约不变。
