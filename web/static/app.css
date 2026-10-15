@@ -453,9 +453,14 @@ pre.json{background:var(--bg-code);padding:12px;border-radius:6px;font-size:12px
 /* Shared Statistics views; selection and visibility never alter control geometry. */
 .stats-view-controls{display:grid;grid-template-columns:minmax(0,1fr) 288px;gap:24px;margin-bottom:20px;min-width:0}
 .stats-view-switch,.stats-days{display:flex;height:40px;border:1px solid var(--border-subtle);border-radius:6px;background:var(--bg-hover);padding:3px;min-width:0}
+.stats-view-switch{width:max-content;max-width:100%;height:auto;align-self:start;border-radius:8px;gap:3px}
 #stats-days[hidden]{display:flex;visibility:hidden;pointer-events:none}
 .stats-view-switch button,.stats-days button{flex:1;min-width:0;padding:4px 8px;border:0;border-radius:4px;background:transparent;color:var(--text-secondary);font:inherit;font-size:13px;line-height:20px;cursor:pointer;white-space:nowrap}
-.stats-view-switch button[aria-selected=true],.stats-days button[aria-pressed=true]{background:var(--stats-segment-selected);color:var(--text-primary);font-weight:600}
+.stats-view-switch button{flex:0 1 184px;width:184px;max-width:50vw;padding:10px 12px;border-radius:5px;line-height:normal}
+@container(max-width:760px){.stats-view-switch button{flex-basis:170px;width:170px}}
+@container(max-width:480px){.stats-view-switch{width:100%}.stats-view-switch button{flex:1;width:50%;padding:8px 4px}}
+.stats-view-switch button[aria-selected=true]{background:var(--bg-surface);color:var(--accent);box-shadow:0 1px 2px #00000008,inset 0 -2px var(--accent);font-weight:600}
+.stats-days button[aria-pressed=true]{background:var(--stats-segment-selected);color:var(--text-primary);font-weight:600}
 .stats-view-switch button:not([aria-selected=true]):hover,.stats-days button:not([aria-pressed=true]):hover{background:var(--bg-surface)}
 .stats-view-switch button:focus-visible,.stats-days button:focus-visible,.stats-trend-svg:focus-visible,.stats-data-details summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .stats-options-status:empty{display:none}.stats-options-status{font-size:12px;line-height:18px;color:var(--text-secondary);margin-bottom:16px}
