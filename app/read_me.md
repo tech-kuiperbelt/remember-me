@@ -89,7 +89,7 @@ args = ["--stdio"]
 
 四种搜索有结果时，可用 `get_details(memory_ids=[...], source_search_id=<search_id>)` 读取全文；使用结果后，再用 `report` 和同一个 `search_id` 反馈有用程度。空结果按返回 hint 放宽条件或更换搜索方式，无需对空结果调用 `report`。`get_details` 的 `memory_ids` 始终是数组，单条记忆也传一个元素的数组。
 
-`report` 只接受当前服务进程中最近 24 小时内、仍在保留范围内的非空搜索结果；每个评分 ID 必须属于该次结果，评分须为 -10～10 的整数，同一 ID 只能评一次。无效反馈返回 `response_code=invalid_report` 且不计为有效评分。可选的 `feedback_source`（`llm` / `human` / `test`）和 `feedback_purpose`（`task` / `evaluation` / `test`）是调用方声明；audit 另存服务端观察到的传输与客户端上下文，不能仅凭声明认定为已核实的人工标注。未声明的旧客户端反馈归入 `unclassified`。
+`report` 只接受当前服务进程中最近 24 小时内、仍在保留范围内的非空搜索结果；每个评分 ID 必须属于该次结果，评分须为 -10～10 的整数，同一 ID 只能评一次。无效反馈返回 `response_code=invalid_report` 且不计为有效评分。可选的 `feedback_source`（`llm` / `human` / `test`）和 `feedback_purpose`（`task` / `evaluation` / `test`）是调用方声明；audit 另存服务端观察到的传输与客户端上下文，不能仅凭声明认定为已核实的人工标注。不匹配以上明确组合的反馈（含未声明来源或用途的旧客户端）归入 `unclassified`。
 
 Ops 进入运维状态时，`add`、`update`、`delete` 暂停并返回 `response_code=maintenance_mode`；请稍后重试。检索、详情、统计和资源读取继续服务；Recover 切换数据库的短暂窗口可能返回 `maintenance_switching`，同样稍后重试。
 
@@ -104,6 +104,14 @@ Ops 进入运维状态时，`add`、`update`、`delete` 暂停并返回 `respons
 `search_semantic` 也接受 `updated_after` / `updated_before`：带时区的 ISO 8601 时间（支持 Z），严格筛选更新时间大于／小于边界的候选，再计算相似度和 Top-K；同时传入时 after 必须早于 before。省略或空白表示无该边界，保留微秒精度。概念问题限定时间窗口用此检索；只想按更新时间查看最近记忆用 `search_meta`。相对窗口可参考 `stats.server_time`。`search_meta` 和旧 Admin 列表接口采用同样的时间校验及微秒边界规则；无时区、非法时间或 after >= before 均拒绝。Admin Memories 的日期条件同样同时适用于浏览与搜索。
 
 `list_keywords` 提供 browse/literal/semantic 三种模式与可选 `namespace`，还可传 `categories`（精确匹配，多个为 OR，与 namespace 用 AND），用于查看某命名空间下、带这些分类的记忆实际使用的关键词词表；不传 `categories` 时行为与词表查询不变。
+
+### 记忆字段与治理要点
+
+Namespace 用于组织记忆分组，不是访问权限隔离。保存或检索一个尚不存在的分组会被拒绝，需按返回的 `namespace_not_found` 提示，在确认要新建该分组后用对应确认码（`confirm_codes`）重试；配置的默认分组（`MEMORY_DEFAULT_NAMESPACE`）始终可用。
+
+分类优先复用 `stats.category_counts` 中的规范词表，确有必要时可自行扩展新分类。长期行为规则（例如关键操作前需要遵守的约定）与其他记忆一样存储，可用某个分类（如自定义的 `action-rule`）、keywords 或 anchors 标记；执行提交、部署、删除等关键操作前，可用 `search_meta` / `search_semantic`（配合 `categories` / `keywords`）或 `search_anchor` 检索是否已有适用规则，再决定是否复用。
+
+`add` 按「内容 + Namespace」去重：与已有记忆内容相同时不会新增，返回 `created=false` 与已有记录 id。
 
 权威清单以客户端连上后的 MCP `tools/list` 为准；本页只给概要。
 
