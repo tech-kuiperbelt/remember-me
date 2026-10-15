@@ -85,7 +85,7 @@ async function runHelpRegression(scenario) {
     $('help-connect-prompt').closest('details').open=true;
     $('help-copy-connect').click();await settle();assert(copied===$('help-connect-prompt').textContent,'copy full request');
     open('rules');$('help-copy-install').click();await settle();
-    assert(copied.startsWith($('help-install-prompt').textContent)&&copied.endsWith($('help-system-prompt').textContent)&&copied.includes('6. 工具失败'),'combined copy complete');
+    assert(copied.startsWith($('help-install-prompt').textContent)&&copied.endsWith($('help-system-prompt').textContent)&&copied.includes('主动回忆')&&copied.includes('8. 事实与安全'),'combined copy complete');
     $('help-system-prompt').closest('details').open=true;
     $('help-copy-system').click();await settle();assert(copied===$('help-system-prompt').textContent,'copy rules alone');
     $('help-system-prompt').closest('details').open=false;deny=true;
