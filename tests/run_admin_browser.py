@@ -106,7 +106,7 @@ class InjectHarness:
         from urllib.parse import parse_qs
         theme = (parse_qs(scope.get("query_string", b"").decode()).get("theme") or [""])[0]
         seed = ""
-        if theme in ("light", "dark", "system"):
+        if theme in ("light", "neutral", "dark", "system"):
             seed = ("<script>try{localStorage.setItem('remember-me.theme.v1','"
                     + theme + "')}catch(e){}</script>")
         if theme == "invalid":
@@ -141,6 +141,9 @@ class InjectHarness:
         start = next(m for m in messages if m["type"] == "http.response.start")
         raw = b"".join(m.get("body", b"") for m in messages if m["type"] == "http.response.body")
         text = raw.decode("utf-8")
+        # Observe the real bootstrap before modules mount, without production hooks.
+        boot_end = text.index('</script>') + len('</script>')
+        text = text[:boot_end] + "<script>window.__themeFirstPaint={theme:document.documentElement.dataset.theme,preference:document.documentElement.dataset.themePreference}</script>" + text[boot_end:]
         # Seed must run before the synchronous theme bootstrap.
         if seed:
             marker = '<script>'
@@ -177,7 +180,7 @@ SCALES = ["1", "1.25", "1.5"]
 # doubling the whole matrix. The URL carries the scenario so the regression
 # module can branch (see admin_regression.js).
 THEME_VIEWPORTS = ["1440,900", "768,800"]
-THEME_SCHEMES = ["light", "dark"]
+THEME_SCHEMES = ["light", "neutral", "dark"]
 THEME_EDGE_CASES = ["system", "blocked", "default", "invalid"]
 
 
@@ -193,7 +196,9 @@ def run_case(profile, label, window_size, scale, shot_dir, query, theme=None, zo
     url = f'http://127.0.0.1:{port}/admin/console?smoke=' + query
     if theme:
         url += '&theme=' + theme
-    if query.startswith(('search-layout-', 'search-wrap-', 'cards-', 'stats-layout-', 'retrieval-layout-', 'audit-layout-', 'ops-', 'help-')):
+    # Real frame timing is required to measure theme transitions; virtual-time
+    # dump-dom can advance timers while leaving control colors at the old theme.
+    if query.startswith(('search-layout-', 'search-wrap-', 'cards-', 'stats-layout-', 'retrieval-layout-', 'audit-layout-', 'ops-', 'help-')) or (query.startswith('theme-') and zoom == 1):
         from tests.chrome_viewport import run_viewport
         width, height = map(int, window_size.split(','))
         result = run_viewport(url, profile, width, height, shot,
@@ -201,6 +206,7 @@ def run_case(profile, label, window_size, scale, shot_dir, query, theme=None, zo
                               verify_stats_keyboard=query == "stats-layout-1460-all-light",
                               verify_retrieval_keyboard=query == "retrieval-layout-1460-7-light",
                               verify_help_keyboard=query == "help-functional",
+                              verify_theme_keyboard=query == "ops-layout-1440-settings-neutral",
                               capture_help_document=query.startswith("help-layout-"))
         shot.with_suffix('.json').write_text(json.dumps(result, indent=2) + '\n')
         return subprocess.CompletedProcess([], 0, '<pre id="smoke-result">' + result['text'] + '</pre>', ''), shot
@@ -272,6 +278,33 @@ try:
         else tempfile.TemporaryDirectory(prefix='remember-ui-shots-')
     with tempfile.TemporaryDirectory(prefix='keyword-chrome-') as profile, _shots_ctx as shots:
         failures = []
+        neutral_cases = [
+            ('settings', 'theme-1440x900-neutral', '1440,900', 1),
+            ('settings-ready', 'ops-layout-1440-settings-neutral', '1440,1000', 1),
+            ('settings-narrow', 'theme-390x844-neutral', '390,844', 1),
+            ('settings-zoom', 'theme-zoom-neutral', '1440,1000', 2),
+            ('refresh', 'theme-1280x800-refresh-neutral', '1280,800', 1),
+            ('memories', 'theme-1440x900-memories-neutral', '1440,900', 1),
+            ('search', 'theme-1440x900-search-neutral', '1440,900', 1),
+            ('filters', 'theme-1440x900-filters-neutral', '1440,900', 1),
+            ('detail', 'theme-1440x900-modal-neutral', '1440,900', 1),
+            ('create', 'create-1440x900-edit-neutral', '1440,900', 1),
+            ('maintenance', 'ops-layout-1440-maintenance-neutral', '1440,1000', 1),
+            ('maintenance-narrow', 'ops-layout-390-maintenance-neutral', '390,1000', 1),
+            ('model-error', 'ops-expanded-390-neutral', '390,1000', 1),
+            ('stats', 'stats-layout-1460-all-neutral', '1460,900', 1),
+            ('stats-narrow', 'stats-layout-390-all-neutral', '390,900', 1),
+            ('retrieval', 'retrieval-layout-1460-7-neutral', '1460,1000', 1),
+            ('help', 'help-layout-home-1440-neutral', '1440,1000', 1),
+            ('help-narrow', 'help-layout-home-390-neutral', '390,1000', 1),
+        ]
+        for subject, query, size, zoom in neutral_cases:
+            label = 'neutral-' + subject
+            if not selected(label): continue
+            proc, shot = run_case(profile, label, size, '1', shots, query, theme='neutral', zoom=zoom)
+            ok, output = check(proc)
+            print(('PASS ' if ok else 'FAIL ') + label + ' -> ' + str(shot) + ('' if ok else ' :: ' + output), flush=True)
+            if not ok: failures.append(label)
         help_cases = [(name, '1440,900', 'light') for name in
                       ('help-disabled', 'help-functional', 'help-deeplink', 'help-refresh', 'help-invalid', 'help-model')]
         help_cases += [(f'help-layout-{topic}-{width}-{scheme}', f'{width},1000', scheme)

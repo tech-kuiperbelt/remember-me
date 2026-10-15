@@ -1,13 +1,38 @@
-/* theme.css — semantic design tokens for Light / Dark, consumed by app.css.
+/* theme.css — semantic design tokens for Light / Neutral / Dark, consumed by app.css.
  *
  * Only variable definitions and the base color-scheme live here. The actual
- * theme is selected by [data-theme="light|dark"] on <html>, set by the
+ * theme is selected by [data-theme="light|neutral|dark"] on <html>, set by the
  * first-paint boot script in index.html and updated by theme.js.
  */
 
 :root {
   color-scheme: light;
 
+  --icon-memory: #247bd5;
+  --icon-namespace: #8658d7;
+  --icon-category: #15966b;
+  --icon-keyword: #aa740c;
+  --icon-anchor: #ce477b;
+  --stats-segment-selected: #dce5ef;
+  --rating-star: #e4a11b;
+  --status-maintenance: #b96514;
+  --status-maintenance-dot: #d47b25;
+  --status-preparing: #947008;
+  --status-preparing-dot: #c49b20;
+  --model-icon-background: #8658d7;
+  --stats-label: #fff;
+  --stats-label-outline: #182332;
+  --stats-color-0: #3178d9;
+  --stats-color-1: #8965d3;
+  --stats-color-2: #27977e;
+  --stats-color-3: #c78c29;
+  --stats-color-4: #329db5;
+  --stats-color-5: #c85d87;
+  --stats-color-6: #7389bc;
+  --stats-color-7: #9c814c;
+  --bg-workspace: var(--bg-canvas);
+  --border-field: var(--border-subtle);
+  --border-ops-control: color-mix(in srgb,var(--border-control) 45%,var(--border-subtle));
   --bg-canvas: #f7f9fc;
   --bg-shell: #f2f5f9;
   --bg-surface: #ffffff;
@@ -47,6 +72,28 @@
 [data-theme="dark"] {
   color-scheme: dark;
 
+  --icon-memory: #69b1ff;
+  --icon-namespace: #b493f0;
+  --icon-category: #58d6aa;
+  --icon-keyword: #efba57;
+  --icon-anchor: #f28caf;
+  --stats-segment-selected: #324255;
+  --rating-star: #f2ba4c;
+  --status-maintenance: #efa75b;
+  --status-maintenance-dot: #d47b25;
+  --status-preparing: #ebce68;
+  --status-preparing-dot: #c49b20;
+  --model-icon-background: #8658d7;
+  --stats-label: #fff;
+  --stats-label-outline: #182332;
+  --stats-color-0: #66a2ee;
+  --stats-color-1: #ab8fe8;
+  --stats-color-2: #58bda2;
+  --stats-color-3: #dfad56;
+  --stats-color-4: #62bdce;
+  --stats-color-5: #de89a7;
+  --stats-color-6: #a0b0d6;
+  --stats-color-7: #bfaa77;
   --bg-canvas: #0e161e;
   --bg-shell: #111c25;
   --bg-surface: #16212b;
@@ -83,10 +130,91 @@
   --shadow-modal: 0 8px 32px rgba(0, 0, 0, .6);
 }
 
+/* Slate is an explicit light-family palette; System continues to use Light/Dark. */
+[data-theme="neutral"] {
+  color-scheme: light;
+  --bg-canvas: #dce3ea;
+  --bg-shell: #d5dfe9;
+  --bg-workspace: #e8edf2;
+  --bg-surface: #f2f5f8;
+  --bg-elevated: #f8fafc;
+  --bg-hover: #e4ebf2;
+  --bg-selected: #d5e2f1;
+  --bg-code: #e4ebf2;
+  --border-subtle: #cad5df;
+  --border-control: #74879a;
+  --border-field: var(--border-control);
+  --border-ops-control: var(--border-control);
+  --text-primary: #22334a;
+  --text-secondary: #52657a;
+  --text-muted: #586b7f;
+  --accent: #205a9c;
+  --accent-solid: #205a9c;
+  --accent-solid-hover: #174878;
+  --on-accent: #ffffff;
+  --accent-subtle: #d5e2f1;
+  --success: #176b48;
+  --success-solid: #176b48;
+  --success-subtle: #dfeee6;
+  --warning: #805509;
+  --warning-subtle: #f3ead6;
+  --danger: #b42318;
+  --danger-solid: #b42318;
+  --danger-subtle: #f5e3e1;
+  --overlay: rgba(34, 51, 74, .4);
+  --focus-ring: rgba(32, 90, 156, .35);
+  --shadow-floating: 0 4px 12px rgba(34, 51, 74, .14);
+  --shadow-modal: 0 8px 32px rgba(34, 51, 74, .2);
+  --icon-memory: #205a9c;
+  --icon-namespace: #655589;
+  --icon-category: #276e59;
+  --icon-keyword: #805509;
+  --icon-anchor: #965370;
+  --stats-segment-selected: #d5e2f1;
+  --rating-star: #94650b;
+  --status-maintenance: #805509;
+  --status-maintenance-dot: #805509;
+  --status-preparing: #805509;
+  --status-preparing-dot: #805509;
+  --model-icon-background: #655589;
+  --stats-label: #ffffff;
+  --stats-label-outline: #22334a;
+  --stats-color-0: #205a9c;
+  --stats-color-1: #527696;
+  --stats-color-2: #30465e;
+  --stats-color-3: #657886;
+  --stats-color-4: #366d80;
+  --stats-color-5: #4f6084;
+  --stats-color-6: #456a66;
+  --stats-color-7: #726579;
+}
+
 /* A browser without the theme bootstrap still follows its OS preference. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
     color-scheme: dark;
+    --icon-memory: #69b1ff;
+    --icon-namespace: #b493f0;
+    --icon-category: #58d6aa;
+    --icon-keyword: #efba57;
+    --icon-anchor: #f28caf;
+    --stats-segment-selected: #324255;
+    --rating-star: #f2ba4c;
+    --status-maintenance: #efa75b;
+    --status-maintenance-dot: #d47b25;
+    --status-preparing: #ebce68;
+    --status-preparing-dot: #c49b20;
+    --model-icon-background: #8658d7;
+    --stats-label: #fff;
+    --stats-label-outline: #182332;
+    --stats-color-0: #66a2ee;
+    --stats-color-1: #ab8fe8;
+    --stats-color-2: #58bda2;
+    --stats-color-3: #dfad56;
+    --stats-color-4: #62bdce;
+    --stats-color-5: #de89a7;
+    --stats-color-6: #a0b0d6;
+    --stats-color-7: #bfaa77;
     --bg-canvas: #0e161e;
     --bg-shell: #111c25;
     --bg-surface: #16212b;

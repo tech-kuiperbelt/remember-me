@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Remember Me</title>
-<script>!function(){var p='system';try{p=localStorage.getItem('remember-me.theme.v1')||p}catch(e){}if(p!=='light'&&p!=='dark')p='system';document.documentElement.dataset.theme=p==='dark'||p==='system'&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.dataset.themePreference=p}();</script>
+<script>!function(){var p='system';try{p=localStorage.getItem('remember-me.theme.v1')||p}catch(e){}if(!['system','light','neutral','dark'].includes(p))p='system';document.documentElement.dataset.theme=p==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):p;document.documentElement.dataset.themePreference=p}();</script>
 <link rel="stylesheet" href="/admin/console/static/theme.css">
 <link rel="stylesheet" href="/admin/console/static/app.css">
 </head>
@@ -144,7 +144,7 @@
     <section class="ops-card" id="appearance-card">
       <div class="ops-card-heading"><h3>Appearance</h3><p>选择当前浏览器的外观。</p></div>
       <div class="ops-card-content"><fieldset id="theme-select" class="ops-theme"><legend class="sr-only">主题</legend>
-        <label><input type="radio" name="theme" value="system"> 跟随系统</label><label><input type="radio" name="theme" value="light"> 浅色</label><label><input type="radio" name="theme" value="dark"> 深色</label>
+        <label><input type="radio" name="theme" value="system"> 跟随系统</label><label><input type="radio" name="theme" value="light"> 浅色</label><label><input type="radio" name="theme" value="neutral"> 岩石灰</label><label><input type="radio" name="theme" value="dark"> 深色</label>
       </fieldset><p class="ops-help">立即生效，无需保存。</p></div>
     </section>
     <section class="ops-card" id="model-card">

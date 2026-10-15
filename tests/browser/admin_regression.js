@@ -28,18 +28,19 @@ async function waitFor(check, label, timeout = 8000) {
 
 async function runThemeScenario(scenario) {
   if (!scenario.startsWith('theme-')) return false;
-    const memoriesOnly = scenario.endsWith('memories-dark') || scenario.endsWith('memories-light');
-    const modalOnly = scenario.endsWith('modal-dark');
-    const collapsedOnly = scenario.endsWith('collapsed-dark');
-    const refreshOnly = scenario.endsWith('refresh-dark');
-    const filtersOnly = scenario.endsWith('filters-light') || scenario.endsWith('filters-dark');
-    const searchOnly = scenario.endsWith('search-light') || scenario.endsWith('search-dark');
-    const advancedOnly = scenario.endsWith('advanced-light') || scenario.endsWith('advanced-dark');
+    const memoriesOnly = /memories-(light|neutral|dark)$/.test(scenario);
+    const modalOnly = /modal-(light|neutral|dark)$/.test(scenario);
+    const collapsedOnly = /collapsed-(light|neutral|dark)$/.test(scenario);
+    const refreshOnly = /refresh-(light|neutral|dark)$/.test(scenario);
+    const filtersOnly = /filters-(light|neutral|dark)$/.test(scenario);
+    const searchOnly = /search-(light|neutral|dark)$/.test(scenario);
+    const advancedOnly = /advanced-(light|neutral|dark)$/.test(scenario);
     const filtersError = scenario.endsWith('filters-error-light');
     const blocked = scenario.endsWith('blocked');
     const system = scenario.endsWith('system');
     const unseeded = scenario.endsWith('default') || scenario.endsWith('invalid');
-    const scheme = scenario.endsWith('dark') ? 'dark' : 'light';
+    const scheme = scenario.endsWith('neutral') ? 'neutral' : scenario.endsWith('dark') ? 'dark' : 'light';
+    assert(window.__themeFirstPaint?.theme === document.documentElement.dataset.theme, 'first paint matches mounted theme');
     // The test seeds the stored preference before first paint; the boot script
     // must apply it without waiting for the app entry.
     assert(document.documentElement.dataset.theme === ((blocked || unseeded) ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : scheme), 'first-paint theme');
@@ -53,8 +54,8 @@ async function runThemeScenario(scenario) {
         return true;
       }
       sessionStorage.removeItem('theme-refresh-stage');
-      assert(document.documentElement.dataset.theme === 'dark', 'stored theme survives reload');
-      result.textContent = 'PASS: dark theme survives reload without seed';
+      assert(document.documentElement.dataset.theme === scheme, 'stored theme survives reload');
+      result.textContent = 'PASS: ' + scheme + ' theme survives reload without seed';
       return true;
     }
 
@@ -99,7 +100,7 @@ async function runThemeScenario(scenario) {
         const themeSelect = $('theme-select');
         themeSelect.value = 'light'; themeSelect.dispatchEvent(new Event('change', {bubbles:true}));
         assert($('detail-modal').style.display === 'flex', 'theme switch keeps modal open');
-        themeSelect.value = 'dark'; themeSelect.dispatchEvent(new Event('change', {bubbles:true}));
+        themeSelect.value = scheme; themeSelect.dispatchEvent(new Event('change', {bubbles:true}));
       }
       if (collapsedOnly) {
         $('nav').click();
@@ -109,6 +110,7 @@ async function runThemeScenario(scenario) {
       return true;
     }
 
+    await waitFor(() => $('memories-list').getAttribute('aria-busy') === 'false', 'initial memories load before draft');
     document.querySelector('.nav button[data-page="ops"]').click(); await settle();
     const select = $('theme-select');
     assert(select && select.value === (blocked || system || unseeded ? 'system' : scheme), 'appearance select reflects preference');
@@ -120,6 +122,10 @@ async function runThemeScenario(scenario) {
       window.__themeMedia.set(false);
       window.__themeMedia.set(true);
       assert(document.documentElement.dataset.theme === 'light', 'manual choice ignores system changes');
+      document.querySelector('#theme-select input[value=neutral]').click();
+      window.__themeMedia.set(false); window.__themeMedia.set(true);
+      assert(document.documentElement.dataset.theme === 'neutral', 'neutral ignores system changes');
+      assert(getComputedStyle(document.documentElement).colorScheme === 'light', 'neutral native controls stay light');
       select.value = 'system'; select.dispatchEvent(new Event('change', {bubbles:true}));
       assert(document.documentElement.dataset.theme === 'dark', 'system choice resumes following OS');
       result.textContent = 'PASS: system theme, live changes, manual override';
@@ -130,6 +136,8 @@ async function runThemeScenario(scenario) {
       assert(document.documentElement.dataset.theme === 'dark', 'theme switch applies dark');
       select.value = 'light'; select.dispatchEvent(new Event('change', {bubbles:true}));
       assert(document.documentElement.dataset.theme === 'light', 'theme switch applies light');
+      document.querySelector('#theme-select input[value=neutral]').click();
+      assert(document.documentElement.dataset.theme === 'neutral', 'neutral usable with unavailable or invalid storage');
       result.textContent = 'PASS: ' + (blocked ? 'storage unavailable' : 'default or invalid preference') + '; theme stays interactive';
       return true;
     }
@@ -149,6 +157,21 @@ async function runThemeScenario(scenario) {
     assert(document.documentElement.dataset.theme === 'light', 'manual light applies');
     assert($('memories-query').value === 'theme-kept', 'theme switch preserves form content');
     assert(workArea.scrollTop === priorScroll, 'theme switch preserves scroll position');
+    document.querySelector('#theme-select input[value=neutral]').click();
+    assert(document.documentElement.dataset.theme === 'neutral', 'radio applies neutral');
+    assert(localStorage.getItem('remember-me.theme.v1') === 'neutral', 'neutral persisted');
+    assert($('memories-query').value === 'theme-kept' && workArea.scrollTop === priorScroll, 'neutral preserves draft and scroll');
+    assert(getComputedStyle(document.documentElement).colorScheme === 'light', 'neutral uses light native controls');
+    await settle(200); // Wait for existing control color transitions before measuring contrast.
+    const rgb = value => value.match(/[\d.]+/g).slice(0,3).map(Number);
+    const luminance = color => rgb(color).map(v => v / 255).map(v => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4).reduce((n,v,i) => n + v * [.2126,.7152,.0722][i], 0);
+    const contrast = (a,b) => (Math.max(luminance(a),luminance(b))+.05)/(Math.min(luminance(a),luminance(b))+.05);
+    const surface = getComputedStyle(document.querySelector('.ops-card'));
+    const textStyle = getComputedStyle(document.querySelector('.ops-help'));
+    const field = getComputedStyle($('config-port'));
+    assert(contrast(surface.color,surface.backgroundColor) >= 4.5, 'neutral body contrast');
+    assert(contrast(textStyle.color,surface.backgroundColor) >= 4.5, 'neutral helper contrast');
+    assert(contrast(field.borderTopColor,field.backgroundColor) >= 3, 'neutral input boundary contrast: ' + field.borderTopColor + ' on ' + field.backgroundColor);
     const bodyBg = getComputedStyle(document.body).backgroundColor;
     const panel = getComputedStyle(document.querySelector('.card')).backgroundColor;
     assert(bodyBg && panel && bodyBg !== panel, 'canvas and surface tokens resolve distinctly');

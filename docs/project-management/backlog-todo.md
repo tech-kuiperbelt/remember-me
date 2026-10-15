@@ -6,6 +6,7 @@
 
 ### 前端工作
 
+- [50.13] Neutral 岩石灰主题已实施，待视觉验收：第三套浅色系蓝灰配色、即时切换与偏好保存，见[实施记录](plans/50.13-neutral-theme.md)。
 - [50.12] Help 首页与八个主题详情页已实施，含品牌介绍、接入、参考与排错，待内容与视觉验收。见[实施记录](plans/50.12-help-page.md)。
 
 - [50.11] 配置页 Settings / Maintenance 与响应式布局已实施，待用户视觉验收。见[实施计划](plans/50.11-configuration-ui-refinement.md)。

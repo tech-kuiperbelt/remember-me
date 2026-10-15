@@ -7,7 +7,7 @@ import subprocess
 import time
 
 
-def run_viewport(url, profile, width, height, screenshot, verify_search_keyboard=False, verify_stats_keyboard=False, verify_retrieval_keyboard=False, verify_help_keyboard=False, capture_help_document=False):
+def run_viewport(url, profile, width, height, screenshot, verify_search_keyboard=False, verify_stats_keyboard=False, verify_retrieval_keyboard=False, verify_help_keyboard=False, capture_help_document=False, verify_theme_keyboard=False):
     incoming, writer = os.pipe()
     reader, outgoing = os.pipe()
 
@@ -65,7 +65,7 @@ def run_viewport(url, profile, width, height, screenshot, verify_search_keyboard
             raise TimeoutError('UI result')
         if result['width'] != width or result['height'] != height:
             raise AssertionError('Unexpected CSS viewport: ' + str(result))
-        if verify_search_keyboard or verify_stats_keyboard or verify_retrieval_keyboard or verify_help_keyboard:
+        if verify_search_keyboard or verify_stats_keyboard or verify_retrieval_keyboard or verify_help_keyboard or verify_theme_keyboard:
             def evaluate(expression):
                 return call('Runtime.evaluate', {'expression': expression, 'returnByValue': True}, session)['result'].get('value')
 
@@ -77,6 +77,18 @@ def run_viewport(url, profile, width, height, screenshot, verify_search_keyboard
                 call('Input.dispatchKeyEvent', {'type': 'keyUp', 'key': name,
                      'code': code, 'windowsVirtualKeyCode': virtual}, session)
 
+        if verify_theme_keyboard and result['text'].startswith('PASS:'):
+            evaluate("document.querySelector('#theme-select input[value=light]').focus()")
+            key('ArrowRight', 'ArrowRight', 39)
+            if not evaluate("document.documentElement.dataset.theme==='neutral' && document.activeElement.value==='neutral' && document.activeElement.checked"):
+                raise AssertionError('Native radio arrow must select Neutral')
+            if not evaluate("document.activeElement.matches(':focus-visible') && parseFloat(getComputedStyle(document.activeElement).outlineWidth)>=2"):
+                raise AssertionError('Neutral keyboard focus must have a visible outline')
+            key('ArrowRight', 'ArrowRight', 39)
+            if not evaluate("document.documentElement.dataset.theme==='dark'"):
+                raise AssertionError('Native radio arrow must select Dark')
+            key('ArrowLeft', 'ArrowLeft', 37)
+            evaluate("document.activeElement.blur();document.getElementById('content').scrollTop=0")
         if verify_help_keyboard and result['text'].startswith('PASS:'):
             evaluate("document.getElementById('help-entry-connect').focus()")
             key('Enter', 'Enter', 13)

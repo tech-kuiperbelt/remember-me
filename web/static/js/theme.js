@@ -4,7 +4,7 @@
 import { $ } from './core.js';
 
 const STORAGE_KEY = 'remember-me.theme.v1';
-const CHOICES = ['system', 'light', 'dark'];
+const CHOICES = ['system', 'light', 'neutral', 'dark'];
 const media = window.matchMedia('(prefers-color-scheme: dark)');
 
 let preference = 'system';
