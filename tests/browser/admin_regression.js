@@ -177,6 +177,9 @@ try {
   else if (scenario.startsWith('ops-')) {
     await runOpsRegression(scenario);
   }
+  else if (scenario.startsWith('help-')) {
+    await runHelpRegression(scenario);
+  }
   else if (scenario.startsWith('audit-')) {
     await runAuditRegression(scenario);
   }
@@ -221,7 +224,7 @@ try {
     assert(!$('nav-keywords')&&!$('page-keywords')&&!$('form-keywords'),'standalone Keywords UI removed');
     const router=await import('/admin/console/static/js/router.js');
     assert(router.switchPage('keywords')===false&&$('page-memories').classList.contains('active'),'retired route rejected');
-    assert([...document.querySelectorAll('.nav button[data-page]')].map(b=>b.dataset.page).join(',')==='memories,stats,ops,audit','remaining navigation order');
+    assert([...document.querySelectorAll('.nav button[data-page]')].map(b=>b.dataset.page).join(',')==='memories,stats,ops,audit,help','remaining navigation order');
     await runMemoriesFiltersRegression();
     await runMemoriesSearchRegression();
     await runMemoriesAcceptanceRegression();

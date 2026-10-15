@@ -4,7 +4,7 @@
 
 import { $ } from './core.js';
 import { debugEnabled, toggleDebug } from './ui.js';
-import { switchPage, register, bindNav, setLeaveGuard } from './router.js';
+import { switchPage, register, bindNav, setLeaveGuard, startNavigation } from './router.js';
 import * as detail from './detail.js';
 import * as memories from './memories.js';
 import * as stats from './stats.js';
@@ -12,6 +12,7 @@ import * as ops from './ops.js';
 import * as audit from './audit.js';
 import * as layout from './layout.js';
 import * as theme from './theme.js';
+import * as help from './help.js';
 
 function refreshStats() {
   stats.loadStats();
@@ -22,6 +23,7 @@ function mountAll() {
   bindNav();
   layout.mount();
   theme.mount();
+  help.mount({ onNavigate: (topic, options) => switchPage('help', () => {}, { ...options, topic }) });
   detail.mount({retryCategories: stats.loadStats});
   setLeaveGuard(detail.requestLeave);
   memories.mount({
@@ -41,6 +43,7 @@ function registerPages() {
   register('memories', { onShow: memories.loadMemories, onHide: memories.hide });
   register('stats', { onShow: stats.show, onHide: stats.hide });
   register('ops', { onShow: ops.loadOpsPage, onHide: ops.hide });
+  register('help', { onShow: help.show, normalizeTopic: help.normalizeTopic });
   if (debugEnabled()) register('audit', { onShow: audit.loadAudit, onHide: audit.hide });
 }
 
@@ -48,9 +51,8 @@ function registerPages() {
   mountAll();
   registerPages();
   const state = await ops.refreshMaintenance();
-  if (state?.required_reason === 'model_not_ready') switchPage('ops');
-  else {
-    memories.loadMemories();
+  startNavigation({ forcePage: state?.required_reason === 'model_not_ready' ? 'ops' : undefined });
+  if (state?.required_reason !== 'model_not_ready') {
     stats.loadStats();
     ops.fetchStoragePaths();
   }

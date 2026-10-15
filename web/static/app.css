@@ -40,6 +40,112 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC
 .content{padding:20px;min-width:0;min-height:0;overflow-y:auto}
 .page{display:none}
 .page.active{display:block}
+/* Human-facing Help: shared shell, quiet reading surfaces, container-based layout. */
+#page-help{container-type:inline-size}
+#page-help [hidden]{display:none!important}
+.content:has(#page-help.active){scrollbar-gutter:stable}
+.help-workspace{max-width:1200px;margin:0 auto;min-width:0;font-size:14px;line-height:1.8;overflow-wrap:anywhere;padding:8px 0 32px}
+.help-workspace a{color:var(--accent);text-underline-offset:4px}
+.help-workspace :is(a,button,summary):focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.help-workspace h2:focus{outline:none}
+.help-workspace .btn{min-height:44px}
+.help-heading{margin-bottom:28px}
+.help-heading h2{font-size:26px;line-height:1.4;font-weight:600}
+.help-heading p{color:var(--text-muted);margin-top:8px}
+.help-about{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);align-items:center;gap:36px;padding:32px;border:1px solid var(--border-subtle);border-radius:8px;position:relative;isolation:isolate;overflow:hidden;background:var(--bg-surface);--help-hero-image:url("img/help/help-hero-bg-light-tech.png");--help-hero-opacity:.8}
+/* Decoration belongs to the whole card; masks keep both text columns quiet. */
+.help-about::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;opacity:var(--help-hero-opacity);background-image:linear-gradient(90deg,var(--bg-surface) 0%,var(--bg-surface) 42%,color-mix(in srgb,var(--bg-surface) 80%,transparent) 62%,transparent 100%),radial-gradient(ellipse at 80% 45%,color-mix(in srgb,var(--bg-surface) 75%,transparent),transparent 65%),var(--help-hero-image);background-position:center,center,right center;background-size:cover;background-repeat:no-repeat}
+.help-about>*{position:relative;z-index:1}
+[data-theme="dark"] .help-about{--help-hero-image:url("img/help/help-hero-bg-dark-tech.png");--help-hero-opacity:.55}
+.help-about-copy{min-width:0;max-width:42em}
+.help-eyebrow{font-size:11px;letter-spacing:.1em;color:var(--text-muted);font-weight:600}
+.help-manifesto-title{font-size:28px;line-height:1.5;font-weight:600;margin:12px 0 20px;letter-spacing:.02em}
+.help-keep{white-space:nowrap}
+.help-about-copy p+p{margin-top:16px}
+.help-memory-quote{margin:0;padding:24px 0 24px 28px;border-left:2px solid var(--border-subtle);min-width:0}
+.help-memory-quote blockquote{margin:0}
+.help-memory-quote blockquote p{font-size:20px;line-height:1.8}
+.help-memory-quote blockquote p[lang=en]{font-size:13px;color:var(--text-secondary);margin-top:16px}
+.help-memory-quote figcaption{font-size:12px;color:var(--text-muted);margin-top:20px;max-width:30em}
+.help-memory-quote cite{font-style:normal}
+.help-home-section{margin-top:32px}
+.help-home-section h3,.help-troubleshooting h3{font-size:17px;font-weight:600}
+.help-home-section>p,.help-troubleshooting p{color:var(--text-muted);margin-top:4px}
+.help-start-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:16px}
+.help-start-card{display:flex;align-items:flex-start;flex-direction:column;gap:8px;padding:22px 24px;border:1px solid var(--border-subtle);border-radius:8px;background:var(--bg-surface);text-decoration:none}
+.help-start-card:hover{border-color:var(--accent);background:var(--bg-hover)}
+.help-step-number{font-size:12px;color:var(--text-muted);letter-spacing:.1em}
+.help-start-card h4{font-size:16px;color:var(--text-primary)}
+.help-start-card p{color:var(--text-secondary);font-size:13px;flex:1}
+.help-card-link{font-size:13px;margin-top:12px}
+.help-reference-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 36px;margin-top:12px}
+.help-reference-grid a{display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:15px 0;border-bottom:1px solid var(--border-subtle);text-decoration:none;min-height:44px}
+.help-reference-grid strong{font-size:14px;font-weight:500;color:var(--text-primary)}
+.help-reference-grid a>span:first-of-type{grid-column:1;color:var(--text-muted);font-size:13px}
+.help-reference-grid a>span:last-child{grid-column:2;grid-row:1/3;align-self:center}
+.help-reference-grid a:hover strong{color:var(--accent)}
+.help-troubleshooting{margin-top:28px;padding-top:20px}
+.help-troubleshooting a{display:inline-flex;align-items:center;min-height:44px}
+.help-topic{max-width:1000px;margin:0 auto}
+.help-breadcrumb{display:flex;align-items:center;gap:12px;flex-wrap:wrap;color:var(--text-muted);font-size:13px;margin-bottom:16px}
+.help-breadcrumb a{display:inline-flex;align-items:center;min-height:44px}
+.help-section{padding:28px 32px;border:1px solid var(--border-subtle);border-radius:8px;background:var(--bg-surface);min-width:0}
+.help-section p,.help-section ol{max-width:42em}
+.help-section p+p,.help-section dl+p,.help-section ol+p{margin-top:14px}
+.help-section h3{font-size:17px;font-weight:600;margin:28px 0 14px;line-height:1.5}
+.help-section h4{font-size:14px;margin:24px 0 12px}
+.help-section>section:first-child h3{margin-top:0}
+.help-section .help-lead{font-size:18px;font-weight:500;margin-bottom:14px}
+.help-section ol{padding-left:24px}
+.help-section li+li{margin-top:12px}
+.help-steps{margin-top:16px}
+.help-url{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:20px;margin:24px 0 16px;background:var(--bg-hover);border:1px solid var(--border-subtle);border-radius:6px}
+.help-url a{flex:1;min-width:0;font-size:16px;user-select:text}
+.help-copy-text{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;padding:16px;margin-top:12px;border:1px solid var(--border-subtle);border-radius:6px;background:var(--bg-hover);user-select:text}
+.help-actions{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:16px}
+.help-actions a{display:inline-flex;align-items:center;min-height:44px}
+.help-section .help-note{color:var(--text-muted);font-size:13px;margin-top:16px}
+.help-section details{margin-top:12px;border-top:1px solid var(--border-subtle);padding-top:4px}
+.help-section summary{cursor:pointer;font-weight:500;min-height:44px;padding:10px 0}
+.help-section details p{margin:8px 0 12px;color:var(--text-secondary)}
+.help-client-guides{margin-top:12px}
+.help-definitions>div+div{margin-top:16px}
+.help-definitions dt{font-weight:500}
+.help-definitions dd{color:var(--text-secondary);margin-top:4px;max-width:42em}
+.help-mode-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;margin:24px 0}
+.help-mode-grid>div+div{margin-top:0}
+.help-mode-grid>div{padding-top:14px;border-top:2px solid var(--border-subtle)}
+.help-example-grid{display:grid;grid-template-columns:1fr 1fr;gap:28px;align-items:start;margin-bottom:28px}
+.help-example{background:var(--bg-hover);border:1px solid var(--border-subtle);padding:24px;border-radius:6px;margin:20px 0}
+.help-example-grid .help-example{margin:0}
+.help-example h4{font-size:17px;margin:12px 0}
+.help-example-fields{display:grid;grid-template-columns:auto 1fr;gap:8px 16px;margin-top:20px;font-size:13px}
+.help-example-fields dt{color:var(--text-muted)}
+.help-contents{display:flex;flex-wrap:wrap;gap:0 24px;margin:16px 0 24px}
+.help-contents a{display:inline-flex;align-items:center;min-height:44px}
+.help-section section{scroll-margin-top:20px}
+.help-warning{border-left:2px solid var(--danger);padding-left:20px;margin-top:28px}
+.help-warning h3{color:var(--danger)}
+@container (max-width:799px){
+  .help-about,.help-start-grid,.help-reference-grid,.help-example-grid,.help-mode-grid{grid-template-columns:1fr}
+  .help-about{padding:24px;gap:24px}
+  .help-about::before{display:none}
+  .help-manifesto-title{font-size:24px}
+  .help-memory-quote{padding:4px 0 4px 18px}
+  .help-memory-quote blockquote p{font-size:18px}
+  .help-section{padding:20px}
+  .help-start-card{padding:18px 20px}
+}
+@container (max-width:420px){
+  .help-about,.help-section{padding:16px}
+  .help-heading h2{font-size:24px}
+  .help-manifesto-title{font-size:22px}
+  .help-url{padding:14px;flex-direction:column;align-items:stretch}
+  .help-url a{flex:auto;font-size:14px}
+  .help-url .btn{align-self:flex-start}
+  .help-example{padding:16px}
+}
+@container (max-width:279px){.help-keep{white-space:normal}}
 .card{background:var(--bg-surface);border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.08);margin-bottom:16px;overflow:hidden}
 .card-header{padding:14px 18px;border-bottom:1px solid var(--border-subtle);font-weight:600;font-size:15px;display:flex;justify-content:space-between;align-items:center;color:var(--text-primary)}
 .ns-tabs{padding:0 18px;border-bottom:1px solid var(--border-subtle);display:flex;gap:4px;background:var(--bg-hover);flex-wrap:wrap}

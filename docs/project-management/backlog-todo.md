@@ -6,6 +6,8 @@
 
 ### 前端工作
 
+- [50.12] Help 首页与八个主题详情页已实施，含品牌介绍、接入、参考与排错，待内容与视觉验收。见[实施记录](plans/50.12-help-page.md)。
+
 - [50.11] 配置页 Settings / Maintenance 与响应式布局已实施，待用户视觉验收。见[实施计划](plans/50.11-configuration-ui-refinement.md)。
 
 - [50] 前端重构与 UI 调整：模块拆分、桌面布局、主题基础、Shell 视觉、Memory List、Memory Detail 及 [50.7 新增抽屉](plans/50.7-memory-create-drawer.md) 已完成。2026-10-09 完成 Debug 入口和 Edit／Preview 标签页反馈调整，用户验收并授权提交；验证范围见各实施记录。**当前待办：后续页面调整及布局稳定后的结构复核**，见[路线图](plans/50-frontend-refactoring-and-ui-roadmap.md)。

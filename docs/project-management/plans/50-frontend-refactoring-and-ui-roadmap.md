@@ -131,3 +131,11 @@ Stats 最终 mockup 对照复核：统一 Overview 字号与图标尺寸、面�
 ### 2026-10-11 — Configuration
 
 [50.11](50.11-configuration-ui-refinement.md) 已实施，待视觉验收：双 Tab、配置草稿、维护状态门控、任务恢复、危险操作确认与宽窄布局；后端契约不变。
+
+### 2026-10-13 — Help
+
+[50.12](50.12-help-page.md) 已实施，待内容与视觉验收：侧栏新增常驻 Help 独立页面，面向人介绍产品、独立服务共享记忆、让 agent 读取 /read-me 接入、Namespace 与可复制的系统提示词；Web 操作指南作为补充。`/read-me` 保留 agent 受众与现有契约；无新增后端接口。
+
+### 2026-10-14 — Help 主题指南改版
+
+[50.12](50.12-help-page.md) 按设计交付包改为首页 + 八个主题详情页，完整品牌介绍、三张入门卡片、轻量参考与排错入口；加入 Help 深链接、历史导航与编辑离开保护，补充真实 Stats/Configuration 说明。实现完成，待用户内容与视觉验收，当前页面说明见 [Help 设计说明](../../design/help-page.md)。

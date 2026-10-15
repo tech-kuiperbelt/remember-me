@@ -60,7 +60,7 @@ if config_debug_case:
 else:
     service = MemoryService(Settings.from_env(),
         SQLiteStorage(':memory:', embedding_spec=EmbeddingSpec('test','smoke',2).as_dict()), BrowserProvider())
-debug_disabled = sys.argv[1:] in (['--case', 'debug-disabled'], ['--case', 'retrieval-debug-disabled'])
+debug_disabled = sys.argv[1:] in (['--case', 'debug-disabled'], ['--case', 'retrieval-debug-disabled'], ['--case', 'help-disabled'])
 admin = AdminAPI(runtime=browser_runtime) if config_debug_case else AdminAPI(service, debug=not debug_disabled)
 service.embed_query = lambda _: [1.,0.]
 words = ['cache', 'cache clear', 'rare_id'] + ['word%03d' % i for i in range(60)]
@@ -83,6 +83,7 @@ checks += '\n' + (ROOT / 'tests/browser/retrieval_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/audit_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/config_debug_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/ops_regression.js').read_text()
+checks += '\n' + (ROOT / 'tests/browser/help_regression.js').read_text()
 HEAD_SCRIPT = '<script>' + harness + '</script>'
 BODY_SCRIPT = '<script type="module">' + checks + '</script>'
 
@@ -192,13 +193,15 @@ def run_case(profile, label, window_size, scale, shot_dir, query, theme=None, zo
     url = f'http://127.0.0.1:{port}/admin/console?smoke=' + query
     if theme:
         url += '&theme=' + theme
-    if query.startswith(('search-layout-', 'search-wrap-', 'cards-', 'stats-layout-', 'retrieval-layout-', 'audit-layout-', 'ops-')):
+    if query.startswith(('search-layout-', 'search-wrap-', 'cards-', 'stats-layout-', 'retrieval-layout-', 'audit-layout-', 'ops-', 'help-')):
         from tests.chrome_viewport import run_viewport
         width, height = map(int, window_size.split(','))
         result = run_viewport(url, profile, width, height, shot,
                               verify_search_keyboard=query == "search-layout-1920-light",
                               verify_stats_keyboard=query == "stats-layout-1460-all-light",
-                              verify_retrieval_keyboard=query == "retrieval-layout-1460-7-light")
+                              verify_retrieval_keyboard=query == "retrieval-layout-1460-7-light",
+                              verify_help_keyboard=query == "help-functional",
+                              capture_help_document=query.startswith("help-layout-"))
         shot.with_suffix('.json').write_text(json.dumps(result, indent=2) + '\n')
         return subprocess.CompletedProcess([], 0, '<pre id="smoke-result">' + result['text'] + '</pre>', ''), shot
     cmd = ['google-chrome', '--headless', '--no-sandbox', '--disable-gpu',
@@ -269,6 +272,22 @@ try:
         else tempfile.TemporaryDirectory(prefix='remember-ui-shots-')
     with tempfile.TemporaryDirectory(prefix='keyword-chrome-') as profile, _shots_ctx as shots:
         failures = []
+        help_cases = [(name, '1440,900', 'light') for name in
+                      ('help-disabled', 'help-functional', 'help-deeplink', 'help-refresh', 'help-invalid', 'help-model')]
+        help_cases += [(f'help-layout-{topic}-{width}-{scheme}', f'{width},1000', scheme)
+                       for topic in ('home', 'connect', 'memory', 'configuration')
+                       for width in (1440, 390) for scheme in ('light', 'dark')]
+        help_cases += [('help-layout-home-1024-light', '1024,1000', 'light'),
+                       ('help-layout-rules-390-dark', '390,1000', 'dark'),
+                       ('help-layout-stats-390-light', '390,1000', 'light')]
+        for label, size, scheme in help_cases:
+            if not selected(label): continue
+            # Debug is a startup setting; run this case separately with --case.
+            if label == 'help-disabled' and not debug_disabled: continue
+            proc, shot = run_case(profile, label, size, '1', shots, label, theme=scheme)
+            ok, output = check(proc)
+            print(('PASS ' if ok else 'FAIL ') + label + ' -> ' + str(shot) + ('' if ok else ' :: ' + output), flush=True)
+            if not ok: failures.append(label)
         ops_cases = [('ops-functional', '1440,1000', 'light'), ('ops-restart', '1440,900', 'light'), ('ops-shutdown', '1440,900', 'light'), ('ops-restart-timeout', '1440,900', 'light')]
         ops_cases += [('ops-layout-sidebar-390-maintenance-light', '390,1000', 'light'), ('ops-expanded-390-dark', '390,1000', 'dark'), ('ops-confirm-layout-390-light', '390,844', 'light')]
         ops_cases += [(f'ops-layout-{width}-{tab}-{scheme}', f'{width},1000', scheme) for width in (1440,1024,390) for tab in ('settings','maintenance') for scheme in ('light','dark')]

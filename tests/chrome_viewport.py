@@ -7,7 +7,7 @@ import subprocess
 import time
 
 
-def run_viewport(url, profile, width, height, screenshot, verify_search_keyboard=False, verify_stats_keyboard=False, verify_retrieval_keyboard=False):
+def run_viewport(url, profile, width, height, screenshot, verify_search_keyboard=False, verify_stats_keyboard=False, verify_retrieval_keyboard=False, verify_help_keyboard=False, capture_help_document=False):
     incoming, writer = os.pipe()
     reader, outgoing = os.pipe()
 
@@ -65,7 +65,7 @@ def run_viewport(url, profile, width, height, screenshot, verify_search_keyboard
             raise TimeoutError('UI result')
         if result['width'] != width or result['height'] != height:
             raise AssertionError('Unexpected CSS viewport: ' + str(result))
-        if verify_search_keyboard or verify_stats_keyboard or verify_retrieval_keyboard:
+        if verify_search_keyboard or verify_stats_keyboard or verify_retrieval_keyboard or verify_help_keyboard:
             def evaluate(expression):
                 return call('Runtime.evaluate', {'expression': expression, 'returnByValue': True}, session)['result'].get('value')
 
@@ -77,6 +77,26 @@ def run_viewport(url, profile, width, height, screenshot, verify_search_keyboard
                 call('Input.dispatchKeyEvent', {'type': 'keyUp', 'key': name,
                      'code': code, 'windowsVirtualKeyCode': virtual}, session)
 
+        if verify_help_keyboard and result['text'].startswith('PASS:'):
+            evaluate("document.getElementById('help-entry-connect').focus()")
+            key('Enter', 'Enter', 13)
+            if not evaluate("!document.getElementById('help-topic-connect').hidden && document.activeElement.id === 'help-title-connect'"):
+                raise AssertionError('Native Enter must open Help topic and focus its title')
+            key('Tab', 'Tab', 9)
+            if evaluate('document.activeElement.id') != 'help-read-me-url':
+                raise AssertionError('Keyboard must skip hidden Help panels')
+            key('Tab', 'Tab', 9)
+            if evaluate('document.activeElement.id') != 'help-copy-url':
+                raise AssertionError('URL copy button must be keyboard reachable')
+            evaluate("document.querySelector('#help-topic-connect summary').focus()")
+            key('Enter', 'Enter', 13)
+            if not evaluate("document.getElementById('help-connect-prompt').closest('details').open"):
+                raise AssertionError('Native Enter must expand Help details')
+            evaluate("document.querySelector('#help-topic-connect [data-help-home]').focus()")
+            key('Enter', 'Enter', 13)
+            if not evaluate("!document.getElementById('help-home').hidden && document.activeElement.id === 'help-entry-connect'"):
+                raise AssertionError('Keyboard breadcrumb must restore entry focus')
+            evaluate("document.getElementById('content').scrollTop=0")
         if verify_stats_keyboard:
             evaluate("document.getElementById('stats-namespace').focus();window.__smoke.resetCalls()")
             key('Tab', 'Tab', 9)
@@ -194,6 +214,21 @@ def run_viewport(url, profile, width, height, screenshot, verify_search_keyboard
                 raise AssertionError('Native Enter must reopen Advanced')
             evaluate('document.activeElement.blur()')
         screenshot.write_bytes(base64.b64decode(call('Page.captureScreenshot', {'format': 'png'}, session)['data']))
+        if capture_help_document and result['text'].startswith('PASS:'):
+            # A second artifact expands only the scroll area vertically so the
+            # entire handbook page is reviewable at the tested CSS width.
+            expression = """(() => {
+              document.getElementById('smoke-result').hidden=true;
+              const content=document.getElementById('content');
+              content.style.height=(content.scrollHeight+40)+'px';content.scrollTop=0;
+              document.getElementById('app-shell').style.height='auto';
+              document.body.style.height='auto';
+              return document.documentElement.scrollHeight;
+            })()"""
+            height = call('Runtime.evaluate', {'expression': expression, 'returnByValue': True}, session)['result']['value']
+            full = call('Page.captureScreenshot', {'format':'png', 'captureBeyondViewport':True,
+                        'clip':{'x':0,'y':0,'width':width,'height':height,'scale':1}}, session)
+            screenshot.with_name(screenshot.stem+'-full.png').write_bytes(base64.b64decode(full['data']))
         return result
     finally:
         proc.terminate()
