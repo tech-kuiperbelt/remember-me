@@ -1,5 +1,6 @@
 // Responsive SVG trend. Dates are API calendar dates, never browser-local instants.
 import { el, number } from './stats-view.js';
+import { t, locale } from './i18n.js';
 const ns = 'http://www.w3.org/2000/svg';
 function svgNode(tag, attrs) {
   const node = document.createElementNS(ns, tag);
@@ -10,19 +11,19 @@ export function bucketLabel(bucket) {
   return bucket.date || bucket.start_date + ' – ' + bucket.end_date;
 }
 export function mountTrend(root, buckets, total) {
-  if (!total) { root.append(el('p', 'stats-trend-empty', 'No searches for this period.')); return () => {}; }
+  if (!total) { root.append(el('p', 'stats-trend-empty', t('stats.trend.empty'))); return () => {}; }
   const svg = svgNode('svg', {class: 'stats-trend-svg', role: 'img', tabindex: 0,
-    'aria-label': 'Search activity. Use Left and Right arrows to inspect counts, Home and End for first and last, Escape to dismiss.'});
+    'aria-label': t('stats.trend.aria')});
   const tooltip = el('div', 'stats-trend-tooltip'); tooltip.hidden = true;
   tooltip.setAttribute('role', 'status'); tooltip.setAttribute('aria-live', 'polite');
-  const table = el('table', 'stats-sr-only'); table.append(el('caption', '', 'Search activity by local date'));
-  const head = el('tr'); head.append(el('th', '', 'Date'), el('th', '', 'Searches')); table.append(head);
+  const table = el('table', 'stats-sr-only'); table.append(el('caption', '', t('stats.trend.caption')));
+  const head = el('tr'); head.append(el('th', '', t('stats.trend.date')), el('th', '', t('stats.trend.searches'))); table.append(head);
   for (const bucket of buckets) { const row = el('tr'); row.append(el('td', '', bucketLabel(bucket)), el('td', '', number(bucket.count))); table.append(row); }
   root.append(svg, tooltip, table);
   let selected = null, width = 0, points = [], marker;
   const reveal = index => {
     selected = index; tooltip.hidden = false;
-    tooltip.replaceChildren(el('strong', '', bucketLabel(buckets[index])), el('span', '', number(buckets[index].count) + ' searches'));
+    tooltip.replaceChildren(el('strong', '', bucketLabel(buckets[index])), el('span', '', t('stats.trend.tooltip',{count:number(buckets[index].count)})));
     if (marker) { marker.setAttribute('cx', points[index].x); marker.setAttribute('cy', points[index].y); marker.style.display = ''; }
     const tipWidth = Math.min(220, width-16);
     tooltip.style.width = tipWidth + 'px'; tooltip.style.left = Math.max(8, Math.min(points[index].x-tipWidth/2, width-tipWidth-8)) + 'px';
@@ -40,7 +41,7 @@ export function mountTrend(root, buckets, total) {
       const y = bottom-i*step/ymax*(bottom-top);
       svg.append(svgNode('line', {x1: left, x2: right, y1: y, y2: y, class: 'stats-trend-grid'}));
       const label = svgNode('text', {x: left-8, y: y+4, 'text-anchor': 'end', class: 'stats-trend-label'});
-      label.textContent = Intl.NumberFormat(undefined, {notation: 'compact', maximumFractionDigits: 1}).format(i*step); svg.append(label);
+      label.textContent = Intl.NumberFormat(locale, {notation: 'compact', maximumFractionDigits: 1}).format(i*step); svg.append(label);
     }
     points = buckets.map((bucket, i) => ({x: left+i/Math.max(1, buckets.length-1)*(right-left), y: bottom-bucket.count/ymax*(bottom-top)}));
     svg.append(svgNode('path', {d: points.map((p, i) => (i?'L':'M')+p.x+' '+p.y).join(' '), class: 'stats-trend-line'}));
@@ -50,7 +51,7 @@ export function mountTrend(root, buckets, total) {
     for (const index of indices) {
       const date = buckets[index].date || buckets[index].start_date;
       const label = svgNode('text', {x: points[index].x, y: 228, 'text-anchor': index===0?'start':index===buckets.length-1?'end':'middle', class: 'stats-trend-label'});
-      label.textContent = new Intl.DateTimeFormat(undefined, {month: 'short', day: 'numeric', timeZone: 'UTC'}).format(new Date(date+'T00:00:00Z')); svg.append(label);
+      label.textContent = new Intl.DateTimeFormat(locale, {month: 'short', day: 'numeric', timeZone: 'UTC'}).format(new Date(date+'T00:00:00Z')); svg.append(label);
     }
     marker = svgNode('circle', {r: 5, class: 'stats-trend-marker'}); marker.style.display = 'none'; svg.append(marker);
     if (selected !== null)reveal(selected);

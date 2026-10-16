@@ -1,6 +1,7 @@
 // Global candidate registry loading, independent of the scoped Statistics view.
 import { api } from './api.js';
 import { setNamespaces, setCategories, setCategoryState, setDefaultNamespace } from './store.js';
+import { t } from './i18n.js';
 let version = 0;
 export async function refreshStatsRegistry() {
   const request = ++version;
@@ -12,7 +13,7 @@ export async function refreshStatsRegistry() {
     setCategories(s.category_counts || {});
     const valid = typeof s.default_namespace === 'string' && Boolean(s.default_namespace.trim());
     setDefaultNamespace(valid ? 'ready' : 'error', valid ? s.default_namespace : null,
-      valid ? null : new Error('无法获取默认 Namespace，请手动输入或重试'));
+      valid ? null : new Error(t('stats.defaultNamespace.failed')));
   } catch (error) {
     if (request !== version) return;
     setCategoryState('error', error); setDefaultNamespace('error', null, error);

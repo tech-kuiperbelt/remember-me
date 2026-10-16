@@ -6,7 +6,7 @@ async function runStatsScenario(scenario) {
   router.switchPage('stats');
   await waitFor(()=>$('stats-overview'),'real statistics endpoint');
   assert($('stats-overview').querySelector('[data-metric=memories] dd').textContent==='63','real isolated API total');
-  assert($('stats-anchors').textContent.includes('No anchors'),'real isolated empty anchors');
+  assert($('stats-anchors').textContent.includes(t('stats.ranking.empty',{dimension:t('stats.dimension.anchors')})),'real isolated empty anchors');
   const special='部门 <img src=x onerror=window.statsInjected=1> '+ 'LongNamespace'.repeat(7);
   let largeNumbers=false;
   const fixture=scope=>{
@@ -41,7 +41,7 @@ async function runStatsScenario(scenario) {
   assert(document.querySelectorAll('.stats-namespace-row').length===2&&$('stats-distribution').querySelector('svg[role=img]'),'full clickable distribution with donut');
   assert(document.querySelectorAll('#stats-overview .stats-metric-icon svg').length===5,'five Overview identity icons');
   assert(new Set([...document.querySelectorAll('#stats-overview .stats-metric-icon')].map(e=>getComputedStyle(e).color)).size===5,'distinct metric colors');
-  assert($('stats-distribution').querySelector('.stats-namespace-columns').textContent==='NamespaceCountPercentage'&&$('stats-distribution').querySelector('circle').getAttribute('stroke-width')==='44'&&$('stats-distribution').querySelectorAll('.stats-donut-label').length===2,'table headings and thicker labelled donut');
+  assert($('stats-distribution').querySelector('.stats-namespace-columns').textContent===t('stats.namespace')+t('stats.count')+t('stats.percentage')&&$('stats-distribution').querySelector('circle').getAttribute('stroke-width')==='44'&&$('stats-distribution').querySelectorAll('.stats-donut-label').length===2,'table headings and thicker labelled donut');
   for(const key of ['categories','keywords','anchors'])assert($('stats-'+key+'-unique-count')&&$('stats-'+key+'-coverage-percent')&&$('stats-'+key+'-coverage-count')&&$('stats-'+key+'-coverage-progress'),'dimension Debug targets');
   const donut=$('stats-distribution').querySelector('svg'),box=donut.viewBox.baseVal,circle=donut.querySelector('circle'),outer=circle.r.baseVal.value+Number(circle.getAttribute('stroke-width'))/2;
   assert(circle.cx.baseVal.value-outer>box.x&&circle.cy.baseVal.value-outer>box.y&&circle.cx.baseVal.value+outer<box.x+box.width&&circle.cy.baseVal.value+outer<box.y+box.height,'donut stroke has margin inside every viewport edge');
@@ -51,7 +51,7 @@ async function runStatsScenario(scenario) {
     assert(bars.every((bar,index)=>getComputedStyle(bar).backgroundColor===getComputedStyle($('stats-keywords-ranking').querySelectorAll('.stats-rank-bar>span')[index]).backgroundColor),'shared ranking palette for '+key);
   }
   assert(!window.statsInjected&&!$('stats-content').querySelector('img'),'safe user labels');
-  assert($('stats-keywords').textContent.includes('80.0%')&&$('stats-keywords').textContent.includes('160 / 200 memories'),'coverage has count and scoped ratio');
+  assert($('stats-keywords').textContent.includes('80.0%')&&$('stats-keywords').textContent.includes(t('stats.coverageCount',{covered:160,total:200})),'coverage has count and scoped ratio');
   assert($('stats-keywords-ranking').querySelector('.stats-percent').textContent==='50.0%'&&$('stats-keywords-ranking').querySelector('.stats-rank-bar span').style.width==='50%','rank bars use scoped memory total');
   assert(JSON.stringify(store.getNamespaces())===globalNamespaces&&JSON.stringify(store.getCategories())===globalCategories,'metadata does not pollute global candidates');
   if(scenario!=='stats-functional') {
@@ -151,9 +151,9 @@ async function runStatsScenario(scenario) {
   assert($('stats-namespace').value==='b'&&$('stats-overview').querySelector('[data-metric=memories] dd').textContent==='20','stale response cannot overwrite scope');
   fail=true;$('btn-refresh').click();await waitFor(()=>$('stats-content').querySelector('[role=alert]'),'explicit failure');
   assert(!$('stats-content').querySelector('img'),'error is safe text');fail=false;
-  [...$('stats-content').querySelectorAll('button')].find(node=>node.textContent==='Retry').click();await ready();
+  [...$('stats-content').querySelectorAll('button')].find(node=>node.textContent===t('detail.action.retry')).click();await ready();
   $('stats-namespace').append(new Option('missing','missing'));select('missing');await waitFor(()=>$('stats-content').querySelector('[role=alert]'),'unknown namespace');
-  [...$('stats-content').querySelectorAll('button')].find(node=>node.textContent==='All Namespaces').click();await ready();assert($('stats-distribution'),'return All after error');
+  [...$('stats-content').querySelectorAll('button')].find(node=>node.textContent===t('stats.namespace.all')).click();await ready();assert($('stats-distribution'),'return All after error');
   held=callback=>{release=callback;};$('btn-refresh').click();await waitFor(()=>held===null,'held refresh');router.switchPage('memories');release();await settle(50);assert(!$('page-stats').classList.contains('active'),'hidden response cannot navigate');
   // A rejected router leave guard does not run the drilldown preparation.
   const detail=await import('/admin/console/static/js/detail.js');

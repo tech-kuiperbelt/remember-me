@@ -49,7 +49,7 @@ async function runRetrievalScenario(scenario) {
   assert(getComputedStyle($('stats-search-modes').querySelector('.stats-retrieval-bar')).height==='8px','mode bar weight matches mockup');
   const modeCard=$('stats-search-modes');
   if(modeCard.clientWidth-2*parseFloat(getComputedStyle(modeCard).paddingLeft)>=360)assert(getComputedStyle(modeCard.querySelector('.stats-retrieval-bar')).gridRowStart==='1','wide mode bars share text row');
-  assert($('stats-tab-retrieval').textContent===t('stats.tab.retrieval')&&$('stats-retrieval-source').textContent==='MCP search activity and reported feedback','Retrieval identifies LLM and MCP source');
+  assert($('stats-tab-retrieval').textContent===t('stats.tab.retrieval')&&$('stats-retrieval-source').textContent===t('retrieval.source'),'Retrieval identifies LLM and MCP source');
   assert(!document.getElementById('btn-stats-refresh'),'no local Refresh');
   assert($('stats-search-modes').querySelectorAll('.stats-retrieval-row').length===4,'four modes');
   assert(new Set([...$('stats-search-modes').querySelectorAll('.stats-retrieval-bar>span')].map(e=>getComputedStyle(e).backgroundColor)).size===4,'four distinct mode identity colors');
@@ -68,8 +68,8 @@ async function runRetrievalScenario(scenario) {
     result.textContent='PASS: '+scenario;return true;
   }
   assert($('stats-feedback-note-icon').matches('svg[aria-hidden=true][focusable=false]'),'footer explanation has decorative information icon');
-  assert(!$('stats-feedback').querySelector('.stats-feedback-summary').textContent.includes('Valid Ratings')&&$('stats-feedback-note').textContent.endsWith('Valid ratings: 48.'),'valid rating count lives in footer explanation');
-  assert($('stats-feedback').textContent.includes('-2.5')&&$('stats-feedback').textContent.includes('−10 to +10'),'numeric negative rating scale');
+  assert(!$('stats-feedback').querySelector('.stats-feedback-summary').textContent.includes('Valid Ratings')&&$('stats-feedback-note').textContent.endsWith(t('retrieval.note',{count:48})),'valid rating count lives in footer explanation');
+  assert($('stats-feedback').textContent.includes('-2.5')&&$('stats-feedback').textContent.includes(t('retrieval.scale')),'numeric negative rating scale');
   const negativeFills=[...$('stats-average-rating-stars').children].map(e=>Number(e.dataset.fill));
   assert(negativeFills.length===10&&negativeFills.slice(0,7).every(n=>n===0)&&negativeFills[7]===.5&&negativeFills.slice(8).every(n=>n===1),'negative rating fills from the right');
   assert(getComputedStyle($('stats-average-rating-stars').children[7].querySelector('.stats-rating-star-fill')).color===getComputedStyle(document.querySelector('.stats-feedback-negative .stats-retrieval-bar>span')).backgroundColor,'negative stars use semantic red');
@@ -109,12 +109,12 @@ async function runRetrievalScenario(scenario) {
   $('content').scrollTop=90;const scroll=$('content').scrollTop;router.switchPage('memories');router.switchPage('stats');await ready();assert($('content').scrollTop===scroll&&$('stats-tab-retrieval').getAttribute('aria-selected')==='true','navigation restores retrieval: expected '+scroll+', actual '+$('content').scrollTop+', selected '+$('stats-tab-retrieval').getAttribute('aria-selected'));
   let release;hold=callback=>release=callback;$('stats-days-7').click();await waitFor(()=>release,'held request');$('stats-days-90').click();await ready();release();await settle();assert($('stats-days-90').getAttribute('aria-pressed')==='true'&&document.querySelector('.stats-trend table').textContent.includes('2026-07-13'),'stale daily response ignored');
   mode='empty';$('btn-refresh').click();await ready();assert($('stats-retrieval-overview').textContent.includes('—')&&document.querySelector('.stats-trend-empty')&&!document.querySelector('.stats-trend-svg'),'empty search');
-  mode='nofeedback';$('btn-refresh').click();await ready();assert($('stats-retrieval-overview').textContent.includes('0.0%')&&$('stats-feedback').textContent.includes('No feedback')&&!document.querySelector('.stats-feedback-positive'),'no feedback differs from undefined coverage');
-  assert($('stats-feedback-note').textContent.endsWith('Valid ratings: 0.'),'footer rating count handles zero');
+  mode='nofeedback';$('btn-refresh').click();await ready();assert($('stats-retrieval-overview').textContent.includes('0.0%')&&$('stats-feedback').textContent.includes(t('retrieval.noFeedback'))&&!document.querySelector('.stats-feedback-positive'),'no feedback differs from undefined coverage');
+  assert($('stats-feedback-note').textContent.endsWith(t('retrieval.note',{count:0})),'footer rating count handles zero');
   assert($('stats-average-rating-value').textContent==='—'&&$('stats-average-rating-stars').hidden&&getComputedStyle($('stats-average-rating-stars')).display==='none','missing rating shows dash without stars');
   failed=true;$('btn-refresh').click();await waitFor(()=>$('stats-content').querySelector('[role=alert]'),'read error');assert(!$('stats-content').querySelector('img'),'safe error');failed=false;mode='normal';$('stats-content').querySelector('button').click();await ready();
-  mode='invalid';$('btn-refresh').click();await waitFor(()=>$('stats-content').textContent.includes('Invalid retrieval'),'contract failure');mode='normal';$('stats-content').querySelector('button').click();await ready();
-  $('stats-namespace').append(new Option('missing','missing'));$('stats-namespace').value='missing';fire($('stats-namespace'),'change');await waitFor(()=>$('stats-content').querySelector('[role=alert]'),'unknown namespace');[...$('stats-content').querySelectorAll('button')].find(b=>b.textContent==='All Namespaces').click();await ready();
-  assert(!$('stats-data-details')||$('stats-data-details').textContent.includes('Global retained-audit'),'diagnostic scope');
+  mode='invalid';$('btn-refresh').click();await waitFor(()=>$('stats-content').textContent.includes(t('retrieval.invalid')),'contract failure');mode='normal';$('stats-content').querySelector('button').click();await ready();
+  $('stats-namespace').append(new Option('missing','missing'));$('stats-namespace').value='missing';fire($('stats-namespace'),'change');await waitFor(()=>$('stats-content').querySelector('[role=alert]'),'unknown namespace');[...$('stats-content').querySelectorAll('button')].find(b=>b.textContent===t('stats.namespace.all')).click();await ready();
+  assert(!$('stats-data-details')||$('stats-data-details').textContent.includes(t('retrieval.dataNotes.scope')),'diagnostic scope');
   result.textContent='PASS: '+scenario;return true;
 }

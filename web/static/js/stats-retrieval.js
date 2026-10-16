@@ -2,6 +2,7 @@
 import { el, panel, number, percent, metricIcon } from './stats-view.js';
 import { debugEnabled } from './ui.js';
 import { mountTrend } from './stats-trend.js';
+import { t, locale } from './i18n.js';
 const modes = ['semantic', 'lexical', 'anchor', 'meta'];
 const count = n => Number.isSafeInteger(n) && n >= 0;
 const date = s => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && Number.isFinite(Date.parse(s+'T00:00:00Z'));
@@ -19,7 +20,7 @@ export function validateRetrieval(data, namespace, days, timezone) {
       (f.eligible_searches===0?f.coverage_percent!==null:!Number.isFinite(f.coverage_percent)||f.coverage_percent<0||f.coverage_percent>100) ||
       (f.rating_count===0?f.average_rating!==null:!Number.isFinite(f.average_rating)||f.average_rating< -10||f.average_rating>10) ||
       !f.distribution || !['positive','neutral','negative'].every(k=>count(f.distribution[k])) ||
-      Object.values(f.distribution).reduce((n,v)=>n+v,0)!==f.rating_count)throw new Error('Invalid retrieval statistics response');
+      Object.values(f.distribution).reduce((n,v)=>n+v,0)!==f.rating_count)throw new Error(t('retrieval.invalid'));
 }
 function metric(key, label, value) {
   const item = el('div', 'stats-metric'); item.dataset.metric = key; item.append(metricIcon(key), el('dt', '', label), el('dd', '', value)); return item;
@@ -53,51 +54,51 @@ function diagnostics(data) {
   const details = el('details', 'stats-data-details'); details.id = 'stats-data-details';
   const q = data.data_quality || {}, warnings = Array.isArray(q.warnings)?q.warnings:[];
   const alert = warnings.some(w=>w!=='no_audit_history') || ['skipped_malformed_lines','unmatched_reports','conflicting_search_ids'].some(k=>q[k]>0);
-  details.append(el('summary', '', 'Data notes'+(alert?' · Attention':'')));
-  const body = el('div', 'stats-data-body'); body.append(el('p', '', 'Global retained-audit scan diagnostics; not limited to the selected namespace or period.'));
-  body.append(el('p', '', 'History completeness: '+(data.scope.coverage_complete===true?'Complete':data.scope.coverage_complete===false?'Incomplete':'Unknown')));
-  if (data.scope.available_from)body.append(el('p', '', 'Earliest usable retained search: '+data.scope.available_from));
-  const names = {skipped_malformed_lines:'Malformed lines skipped',skipped_unrecognized_source:'Unrecognized sources skipped',excluded_test_reports:'Declared test reports excluded',unmatched_reports:'Unmatched reports',conflicting_search_ids:'Conflicting search IDs'};
+  details.append(el('summary', '', t('retrieval.dataNotes')+(alert?t('retrieval.attention'):'')));
+  const body = el('div', 'stats-data-body'); body.append(el('p', '', t('retrieval.dataNotes.scope')));
+  body.append(el('p', '', t('retrieval.history',{state:data.scope.coverage_complete===true?t('retrieval.history.complete'):data.scope.coverage_complete===false?t('retrieval.history.incomplete'):t('retrieval.history.unknown')})));
+  if (data.scope.available_from)body.append(el('p', '', t('retrieval.earliest',{date:data.scope.available_from})));
+  const names = {skipped_malformed_lines:t('retrieval.diag.skipped_malformed_lines'),skipped_unrecognized_source:t('retrieval.diag.skipped_unrecognized_source'),excluded_test_reports:t('retrieval.diag.excluded_test_reports'),unmatched_reports:t('retrieval.diag.unmatched_reports'),conflicting_search_ids:t('retrieval.diag.conflicting_search_ids')};
   for (const [key, label] of Object.entries(names))if (count(q[key]))body.append(el('p', '', label+': '+number(q[key])));
-  const messages = {no_audit_history:'No retained audit history is available.',audit_changed_during_scan:'Audit files changed during reading; these statistics may be temporarily incomplete.',incomplete_tail:'An incomplete trailing record was skipped.'};
+  const messages = {no_audit_history:t('retrieval.warn.no_audit_history'),audit_changed_during_scan:t('retrieval.warn.audit_changed_during_scan'),incomplete_tail:t('retrieval.warn.incomplete_tail')};
   for (const warning of warnings)body.append(el('p', '', messages[warning] || String(warning)));
   details.append(body); return details;
 }
 export function renderRetrieval(root, data) {
-  const overview = panel('Overview', 'stats-retrieval-overview'), grid = el('dl', 'stats-overview-grid stats-retrieval-metrics');
-  grid.append(metric('searches', 'Searches', number(data.search.total_searches)), metric('rated', 'Rated Searches', number(data.feedback.rated_searches)),
-    metric('coverage', 'Feedback Coverage', data.feedback.coverage_percent===null?'—':percent(data.feedback.coverage_percent/100)));
+  const overview = panel(t('stats.overview'), 'stats-retrieval-overview'), grid = el('dl', 'stats-overview-grid stats-retrieval-metrics');
+  grid.append(metric('searches', t('retrieval.metric.searches'), number(data.search.total_searches)), metric('rated', t('retrieval.metric.rated'), number(data.feedback.rated_searches)),
+    metric('coverage', t('retrieval.metric.coverage'), data.feedback.coverage_percent===null?'—':percent(data.feedback.coverage_percent/100)));
   overview.append(grid);
   const context = el('div', 'stats-retrieval-context');
-  const source = el('p', 'stats-retrieval-source', 'MCP search activity and reported feedback'); source.id = 'stats-retrieval-source'; context.append(source);
+  const source = el('p', 'stats-retrieval-source', t('retrieval.source')); source.id = 'stats-retrieval-source'; context.append(source);
   context.append(el('p', '', data.scope.local_start_date+' – '+data.scope.local_end_date+' · '+data.scope.timezone));
-  const cutoff = new Intl.DateTimeFormat(undefined, {hour:'2-digit',minute:'2-digit',timeZone:data.scope.timezone}).format(new Date(data.scope.window_end_utc));
-  context.append(el('p', '', 'Today is partial · as of '+cutoff));
+  const cutoff = new Intl.DateTimeFormat(locale, {hour:'2-digit',minute:'2-digit',timeZone:data.scope.timezone}).format(new Date(data.scope.window_end_utc));
+  context.append(el('p', '', t('retrieval.todayPartial',{time:cutoff})));
   if (debugEnabled())context.append(diagnostics(data));
-  const activity = panel('Search Activity', 'stats-search-activity'), plot = el('div', 'stats-trend'); activity.append(plot);
-  const modePanel = panel('Search Modes', 'stats-search-modes');
+  const activity = panel(t('retrieval.activity'), 'stats-search-activity'), plot = el('div', 'stats-trend'); activity.append(plot);
+  const modePanel = panel(t('retrieval.modes'), 'stats-search-modes');
   const ordered = [...data.search.modes].sort((a,b)=>b.count-a.count||modes.indexOf(a.mode)-modes.indexOf(b.mode));
-  for (const mode of ordered) { const row = proportionalRow(mode.mode[0].toUpperCase()+mode.mode.slice(1),mode.count,data.search.total_searches); row.dataset.mode=mode.mode; modePanel.append(row); }
-  const feedback = panel('Feedback', 'stats-feedback'), summary = el('div', 'stats-feedback-summary');
+  for (const mode of ordered) { const row = proportionalRow(t('retrieval.mode.'+mode.mode),mode.count,data.search.total_searches); row.dataset.mode=mode.mode; modePanel.append(row); }
+  const feedback = panel(t('retrieval.feedback'), 'stats-feedback'), summary = el('div', 'stats-feedback-summary');
   const average = el('div');
   const ratingValue = el('div','stats-rating-value'), numeric = el('strong','',data.feedback.average_rating===null?'—':number(data.feedback.average_rating));
   numeric.id = 'stats-average-rating-value'; ratingValue.append(numeric,ratingStars(data.feedback.average_rating));
-  average.append(el('span','stats-label','Average Rating'),ratingValue,el('span','stats-label','Scale −10 to +10'));
+  average.append(el('span','stats-label',t('retrieval.avgRating')),ratingValue,el('span','stats-label',t('retrieval.scale')));
   summary.append(average); feedback.append(summary);
-  if (!data.feedback.rating_count)feedback.append(el('p','stats-empty','No feedback available for this period.'));
-  else for (const [key,label] of [['positive','Positive (>0)'],['neutral','Neutral (=0)'],['negative','Negative (<0)']])feedback.append(proportionalRow(label,data.feedback.distribution[key],data.feedback.rating_count,'stats-feedback-'+key));
+  if (!data.feedback.rating_count)feedback.append(el('p','stats-empty',t('retrieval.noFeedback')));
+  else for (const [key,label] of [['positive',t('retrieval.positive')],['neutral',t('retrieval.neutral')],['negative',t('retrieval.negative')]])feedback.append(proportionalRow(label,data.feedback.distribution[key],data.feedback.rating_count,'stats-feedback-'+key));
   const note = el('p','stats-feedback-note'); note.id = 'stats-feedback-note';
   const info = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); info.id = 'stats-feedback-note-icon';
   for (const [key,value] of Object.entries({viewBox:'0 0 24 24',fill:'none',stroke:'currentColor','stroke-width':1.5,'stroke-linecap':'round','stroke-linejoin':'round','aria-hidden':'true',focusable:'false'}))info.setAttribute(key,value);
   const infoPath = document.createElementNS(info.namespaceURI,'path');
   infoPath.setAttribute('d','M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z M12 11v6 M12 7h.01'); info.append(infoPath);
-  note.append(info,el('span','','Based on reported ratings only, not all search results. Valid ratings: '+number(data.feedback.rating_count)+'.')); feedback.append(note);
+  note.append(info,el('span','',t('retrieval.note',{count:number(data.feedback.rating_count)}))); feedback.append(note);
   const lower = el('div','stats-retrieval-panels'); lower.append(modePanel,feedback);
   root.replaceChildren(context,overview,activity,lower);
   return mountTrend(plot,data.search.trend,data.search.total_searches);
 }
 export function renderRetrievalLoading(root) {
-  const status = el('p','stats-sr-only','Loading retrieval statistics…'); status.setAttribute('role','status');
+  const status = el('p','stats-sr-only',t('retrieval.loading')); status.setAttribute('role','status');
   const overview = el('div','stats-panel stats-retrieval-skeleton stats-skeleton-overview');
   const chart = el('div','stats-panel stats-retrieval-skeleton stats-skeleton-chart');
   const lower = el('div','stats-retrieval-panels'); lower.append(el('div','stats-panel stats-retrieval-skeleton stats-skeleton-detail'),el('div','stats-panel stats-retrieval-skeleton stats-skeleton-detail'));

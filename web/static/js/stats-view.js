@@ -1,6 +1,8 @@
 // Safe, shared Statistics rendering. Data comes from the metadata API only.
-const labels = {categories: 'Categories', keywords: 'Keywords', anchors: 'Anchors'};
-export const number = value => value.toLocaleString();
+import { t, locale } from './i18n.js';
+const dimensions = ['categories', 'keywords', 'anchors'];
+const dimensionLabel = key => t('stats.dimension.' + key);
+export const number = value => value.toLocaleString(locale);
 export const percent = value => value > 0 && value < .001 ? '<0.1%' : (value * 100).toFixed(1) + '%';
 export function el(tag, cls, text) {
   const node = document.createElement(tag);
@@ -46,21 +48,21 @@ export function metricIcon(key) {
 }
 function color(index) { return 'var(--stats-color-'+(index%8)+')'; }
 function overview(data) {
-  const node = panel('Overview', 'stats-overview'), grid = el('dl', 'stats-overview-grid');
-  const metrics = [['Memories', data.total_memories], ['Namespaces', data.namespace_distribution.length],
-    ...Object.entries(labels).map(([key, label]) => [label, data.dimensions[key].unique_count])];
-  for (const [label, value] of metrics) {
-    const item = el('div', 'stats-metric'); item.dataset.metric = label.toLowerCase();
-    item.append(metricIcon(label.toLowerCase()), el('dt', '', label), el('dd', '', number(value))); grid.append(item);
+  const node = panel(t('stats.overview'), 'stats-overview'), grid = el('dl', 'stats-overview-grid');
+  const metrics = [['memories', t('stats.metric.memories'), data.total_memories], ['namespaces', t('stats.metric.namespaces'), data.namespace_distribution.length],
+    ...dimensions.map(key => [key, dimensionLabel(key), data.dimensions[key].unique_count])];
+  for (const [key, label, value] of metrics) {
+    const item = el('div', 'stats-metric'); item.dataset.metric = key;
+    item.append(metricIcon(key), el('dt', '', label), el('dd', '', number(value))); grid.append(item);
   }
   node.append(grid); return node;
 }
 function distribution(data, selectNamespace) {
-  const node = panel('Namespace Distribution', 'stats-distribution'), body = el('div', 'stats-distribution-body');
+  const node = panel(t('stats.distribution.title'), 'stats-distribution'), body = el('div', 'stats-distribution-body');
   const colors = new Map(data.namespace_distribution.map(item=>item.name).sort().map((name,index)=>[name,color(index)]));
   const chart = el('div', 'stats-donut'), svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', '-6 -6 212 212'); svg.setAttribute('role', 'img');
-  svg.setAttribute('aria-label', 'Namespace distribution: ' + number(data.total_memories) + ' memories. Exact counts are listed alongside.');
+  svg.setAttribute('aria-label', t('stats.distribution.aria',{count:number(data.total_memories)}));
   const circle = () => {
     const c = document.createElementNS(svg.namespaceURI, 'circle');
     for (const [key, value] of Object.entries({cx: 100, cy: 100, r: 80, fill: 'none', 'stroke-width': 44, pathLength: 100}))c.setAttribute(key, value);
@@ -82,49 +84,49 @@ function distribution(data, selectNamespace) {
     offset += share;
   }
   const center = el('div', 'stats-donut-center'); center.setAttribute('aria-hidden', 'true');
-  center.append(el('strong', '', number(data.total_memories)), el('span', '', 'Memories')); chart.append(svg, center);
+  center.append(el('strong', '', number(data.total_memories)), el('span', '', t('stats.metric.memories'))); chart.append(svg, center);
   const list = el('div', 'stats-namespace-list');
   const columns = el('div', 'stats-namespace-columns');
-  columns.append(el('span', '', 'Namespace'), el('span', 'stats-count', 'Count'), el('span', 'stats-percent', 'Percentage'), el('span'));
+  columns.append(el('span', '', t('stats.namespace')), el('span', 'stats-count', t('stats.count')), el('span', 'stats-percent', t('stats.percentage')), el('span'));
   list.append(columns);
-  if (!data.namespace_distribution.length)list.append(el('p', 'stats-empty', 'No namespaces with memories.'));
+  if (!data.namespace_distribution.length)list.append(el('p', 'stats-empty', t('stats.distribution.empty')));
   for (const item of data.namespace_distribution) {
     const row = button('', () => selectNamespace(item.name), 'stats-namespace-row'); row.dataset.namespace = item.name;
     const name = el('span', 'stats-namespace-name'), dot = el('span', 'stats-color-dot');
     dot.style.background = colors.get(item.name); dot.setAttribute('aria-hidden', 'true'); name.append(dot, el('span', '', item.name));
     row.append(name, el('span', 'stats-count', number(item.count)), el('span', 'stats-percent', percent(item.count/data.total_memories)), drilldownArrow());
-    row.setAttribute('aria-label', item.name + ', ' + item.count + ' memories, ' + percent(item.count/data.total_memories)); list.append(row);
+    row.setAttribute('aria-label', t('stats.namespaceRow.aria',{name:item.name,count:item.count,percent:percent(item.count/data.total_memories)})); list.append(row);
   }
   body.append(chart, list); node.append(body); return node;
 }
 function dimensionPanel(key, data, state, onTop, onDrilldown) {
-  const d = data.dimensions[key], title = labels[key], node = panel(title, 'stats-' + key);
+  const d = data.dimensions[key], title = dimensionLabel(key), node = panel(title, 'stats-' + key);
   const controls = el('div', 'stats-top-controls');
-  controls.setAttribute('role', 'group'); controls.setAttribute('aria-label', title + ' ranking size');
+  controls.setAttribute('role', 'group'); controls.setAttribute('aria-label', t('stats.rankingSize',{dimension:title}));
   for (const n of [5, 30, 100]) {
-    const b = button('Top ' + n, () => onTop(key, n)); b.id = 'stats-' + key + '-top-' + n;
+    const b = button(t('stats.top',{count:n}), () => onTop(key, n)); b.id = 'stats-' + key + '-top-' + n;
     b.setAttribute('aria-pressed', String(state.top[key] === n)); controls.append(b);
   }
   const summary = el('div', 'stats-dimension-summary'), metrics = el('div', 'stats-dimension-metrics'), unique = el('div'), coverage = el('div');
   summary.id = 'stats-'+key+'-summary'; unique.id = 'stats-'+key+'-unique'; coverage.id = 'stats-'+key+'-coverage';
-  unique.append(el('span', 'stats-label', 'Unique Count'), el('strong', '', number(d.unique_count)));
+  unique.append(el('span', 'stats-label', t('stats.uniqueCount')), el('strong', '', number(d.unique_count)));
   unique.firstChild.id = 'stats-'+key+'-unique-label'; unique.lastChild.id = 'stats-'+key+'-unique-count';
-  coverage.append(el('span', 'stats-label', 'Coverage'), el('strong', '', percent(d.coverage_ratio)),
-    el('span', 'stats-coverage-count', number(d.covered_memories) + ' / ' + number(data.total_memories) + ' memories'));
+  coverage.append(el('span', 'stats-label', t('stats.coverage')), el('strong', '', percent(d.coverage_ratio)),
+    el('span', 'stats-coverage-count', t('stats.coverageCount',{covered:number(d.covered_memories),total:number(data.total_memories)})));
   coverage.children[0].id = 'stats-'+key+'-coverage-label'; coverage.children[1].id = 'stats-'+key+'-coverage-percent'; coverage.children[2].id = 'stats-'+key+'-coverage-count';
   metrics.append(unique, coverage); summary.append(metrics, controls);
   const progress = el('progress', 'stats-coverage'); progress.id = 'stats-'+key+'-coverage-progress'; progress.max = 1; progress.value = d.coverage_ratio;
-  progress.setAttribute('aria-label', title + ' coverage'); progress.setAttribute('aria-valuetext', d.covered_memories + ' of ' + data.total_memories + ' memories');
+  progress.setAttribute('aria-label', t('stats.coverageAria',{dimension:title})); progress.setAttribute('aria-valuetext', t('stats.coverageValueText',{covered:number(d.covered_memories),total:number(data.total_memories)}));
   summary.append(progress);
   const list = el('ol', 'stats-ranking'); list.id = 'stats-' + key + '-ranking';
-  list.setAttribute('aria-label', title + ' ranked by memory count');
+  list.setAttribute('aria-label', t('stats.rankingAria',{dimension:title}));
   if (state.top[key] !== 5)list.classList.add('stats-ranking-scroll');
   const items = d.top.slice(0, state.top[key]);
-  if (!items.length)list.append(el('li', 'stats-empty', 'No ' + title.toLowerCase() + ' in this scope.'));
+  if (!items.length)list.append(el('li', 'stats-empty', t('stats.ranking.empty',{dimension:title})));
   items.forEach((item, index) => {
     const li = el('li'), ratio = data.total_memories ? item.count/data.total_memories : 0;
     const b = button('', () => onDrilldown(key, item.value), 'stats-rank-row'); b.dataset.value = item.value;
-    b.setAttribute('aria-label', item.value + ', ' + item.count + ' memories, ' + percent(ratio));
+    b.setAttribute('aria-label', t('stats.rankRow.aria',{value:item.value,count:item.count,percent:percent(ratio)}));
     const text = el('span', 'stats-rank-name', item.value); text.title = item.value;
     const bar = el('span', 'stats-rank-bar'), fill = el('span'); fill.style.width = ratio * 100 + '%';
     fill.style.background = color(index);
@@ -137,11 +139,11 @@ function dimensionPanel(key, data, state, onTop, onDrilldown) {
 }
 export function renderStats(root, data, state, callbacks) {
   const panels = el('div', 'stats-dimensions');
-  for (const key of Object.keys(labels))panels.append(dimensionPanel(key, data, state, callbacks.onTop, callbacks.onDrilldown));
+  for (const key of dimensions)panels.append(dimensionPanel(key, data, state, callbacks.onTop, callbacks.onDrilldown));
   root.replaceChildren(overview(data), ...(data.scope.namespace === null ? [distribution(data, callbacks.onNamespace)] : []), panels);
 }
 export function renderStatsStatus(root, message, error, onRetry, onAll) {
   const node = el('div', 'stats-status', message); node.setAttribute('role', error ? 'alert' : 'status');
-  if (error)node.append(button('Retry', onRetry, 'btn btn-outline'), button('All Namespaces', onAll, 'btn btn-outline'));
+  if (error)node.append(button(t('detail.action.retry'), onRetry, 'btn btn-outline'), button(t('stats.namespace.all'), onAll, 'btn btn-outline'));
   root.replaceChildren(node);
 }

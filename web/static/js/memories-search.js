@@ -1,5 +1,6 @@
 // Search form and unapplied advanced field drafts; no API calls.
 import { $ } from './core.js';
+import { t } from './i18n.js';
 
 export function createMemoriesSearch({onInput, onSubmit, onClear, onApply, onMode}) {
   let searching = false, composing = false;
@@ -28,11 +29,11 @@ export function createMemoriesSearch({onInput, onSubmit, onClear, onApply, onMod
     if (search) {
       const raw = $('memories-k').value.trim(), k = Number(raw), thresholdRaw = $('memories-threshold').value.trim();
       const threshold = Number(thresholdRaw);
-      if (!/^\d+$/.test(raw) || k < 1 || k > 100) invalid('memories-k', '请输入 1–100 的整数');
+      if (!/^\d+$/.test(raw) || k < 1 || k > 100) invalid('memories-k', t('memories.search.error.k'));
       const semantic = mode === 'semantic';
       const numeric = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(thresholdRaw);
       if ((semantic || thresholdRaw) && (!numeric || !Number.isFinite(threshold) || threshold < 0 || (semantic && threshold > 1))) {
-        invalid('memories-threshold', semantic ? '请输入 0–1 的有限数字' : '请输入有限非负数字，或留空');
+        invalid('memories-threshold', semantic ? t('memories.search.error.thresholdSemantic') : t('memories.search.error.thresholdLexical'));
       }
       options = semantic ? {k, threshold} : {k, minScore: thresholdRaw ? threshold : null};
     }
@@ -43,13 +44,13 @@ export function createMemoriesSearch({onInput, onSubmit, onClear, onApply, onMod
       if (!parts || !Number.isFinite(parsed.getTime()) || [parsed.getFullYear(), parsed.getMonth() + 1,
         parsed.getDate(), parsed.getHours(), parsed.getMinutes(), parsed.getSeconds()]
         .some((value, i) => value !== Number(parts[i + 1] || 0))) {
-        invalid(id, '请输入有效本地日期时间'); return '';
+        invalid(id, t('memories.search.error.date')); return '';
       }
       return parsed.toISOString();
     }
     options = {...options, updatedAfter: date('memories-updated-after'), updatedBefore: date('memories-updated-before')};
     if (options.updatedAfter && options.updatedBefore && options.updatedAfter >= options.updatedBefore) {
-      invalid('memories-updated-before', '结束时间必须晚于开始时间');
+      invalid('memories-updated-before', t('memories.search.error.dateOrder'));
     }
     if (errors.length) {
       setAdvancedOpen(true);
@@ -85,8 +86,8 @@ export function createMemoriesSearch({onInput, onSubmit, onClear, onApply, onMod
       ['memories-k', 'memories-threshold'].forEach(id => error(id, ''));
     }
     modeSelect.value = mode;
-    $('memories-threshold-label').textContent = mode === 'semantic' ? '最低相似度' : '最低相关性分数';
-    $('memories-threshold-help').textContent = mode === 'semantic' ? '仅搜索时生效 · 0–1' : '留空不限 · BM25 无统一范围';
+    $('memories-threshold-label').textContent = mode === 'semantic' ? t('memories.advanced.threshold') : t('memories.search.threshold.lexical');
+    $('memories-threshold-help').textContent = mode === 'semantic' ? t('memories.advanced.thresholdHelp') : t('memories.search.thresholdHelp.lexical');
     searching = Boolean(state.submittedQuery);
     if (query.value !== state.inputQuery && !composing) query.value = state.inputQuery;
     $('memories-k').disabled = $('memories-threshold').disabled = !searching;
