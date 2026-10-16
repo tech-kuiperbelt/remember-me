@@ -143,7 +143,7 @@ class InjectHarness:
         text = raw.decode("utf-8")
         # Observe the real bootstrap before modules mount, without production hooks.
         boot_end = text.index('</script>') + len('</script>')
-        text = text[:boot_end] + "<script>window.__themeFirstPaint={theme:document.documentElement.dataset.theme,preference:document.documentElement.dataset.themePreference}</script>" + text[boot_end:]
+        text = text[:boot_end] + "<script>window.__themeFirstPaint={theme:document.documentElement.dataset.theme,preference:document.documentElement.dataset.themePreference,favicon:document.getElementById('brand-favicon')?.getAttribute('href')}</script>" + text[boot_end:]
         # Seed must run before the synchronous theme bootstrap.
         if seed:
             marker = '<script>'

@@ -143,3 +143,9 @@ Stats 最终 mockup 对照复核：统一 Overview 字号与图标尺寸、面�
 ### 2026-10-15 — Neutral 岩石灰主题
 
 [50.13](50.13-neutral-theme.md) 已实施，待视觉验收：现有主题系统新增 Neutral，外观选择、首屏与持久化同步接入；记忆图标、Stats 和维护状态配色集中到主题变量。保留 System 默认行为与现有 Light/Dark 色值。
+
+### 2026-10-15 — 页头 Logo 与 favicon
+
+[50.14](50.14-brand-logo.md) 已实施，待视觉验收：左上角海马主标与圆形徽章 favicon 随 Light/Neutral/Dark 同步切换，保留首屏主题与响应式页头。26 项浏览器检查通过，未提交。
+
+2026-10-16 用户验收并授权提交 [50.14](50.14-brand-logo.md)：最终 favicon 使用放大后的无圆框海马主标，与页头 Logo 同步三主题。实现、资源与验证记录随提交归档至 backlog-done。

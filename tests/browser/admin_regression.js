@@ -26,6 +26,18 @@ async function waitFor(check, label, timeout = 8000) {
   }
 }
 
+function assertBrandTheme() {
+  const theme = document.documentElement.dataset.theme;
+  const mark = document.querySelector('.brand-logo');
+  assert(mark?.getAttribute('aria-hidden') === 'true', 'logo does not repeat accessible brand name');
+  assert(getComputedStyle(mark).backgroundImage.includes(`logo-${theme}-64.png`) && getComputedStyle(mark).backgroundImage.includes(`logo-${theme}-128.png`), 'logo follows actual theme at both densities');
+  assert($('brand-favicon').getAttribute('href') === `/admin/console/static/img/brand/favicon-${theme}.svg`, 'favicon follows actual theme');
+  assert(document.querySelectorAll('link[rel=icon]').length === 1, 'one active favicon');
+  const box = mark.getBoundingClientRect(), header = document.querySelector('.app-header').getBoundingClientRect();
+  assert(box.width === 48 && box.height === 48 && box.top >= header.top && box.bottom <= header.bottom, 'logo fits compact header without cropping');
+  assert(document.documentElement.scrollWidth <= innerWidth, 'brand does not overflow viewport');
+}
+
 async function runThemeScenario(scenario) {
   if (!scenario.startsWith('theme-')) return false;
     const memoriesOnly = /memories-(light|neutral|dark)$/.test(scenario);
@@ -45,6 +57,22 @@ async function runThemeScenario(scenario) {
     // must apply it without waiting for the app entry.
     assert(document.documentElement.dataset.theme === ((blocked || unseeded) ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : scheme), 'first-paint theme');
     assert(document.documentElement.dataset.themePreference === (blocked || system || unseeded ? 'system' : scheme), 'seeded preference applied');
+
+    assertBrandTheme();
+    assert(window.__themeFirstPaint.favicon === $('brand-favicon').getAttribute('href'), 'favicon correct before app mount');
+    const faviconResponse = await S.realFetch($('brand-favicon').href);
+    assert(faviconResponse.ok && faviconResponse.headers.get('content-type').includes('image/svg+xml'), 'favicon served as icon');
+    const faviconImage = new Image();
+    faviconImage.src = $('brand-favicon').href;
+    await faviconImage.decode();
+    assert(faviconImage.naturalWidth > 0, 'favicon SVG decodes in browser');
+    const initialTheme = document.documentElement.dataset.theme;
+    for (const size of [64, 128]) {
+      const logo = new Image();
+      logo.src = `/admin/console/static/img/brand/logo-${initialTheme}-${size}.png`;
+      await logo.decode();
+      assert(logo.naturalWidth === size && logo.naturalHeight === size, 'logo resource decodes');
+    }
 
     if (refreshOnly) {
       if (sessionStorage.getItem('theme-refresh-stage') !== 'verify') {
@@ -118,6 +146,7 @@ async function runThemeScenario(scenario) {
     if (system) {
       window.__themeMedia.set(true);
       assert(document.documentElement.dataset.theme === 'dark', 'system change applies dark');
+      assertBrandTheme();
       select.value = 'light'; select.dispatchEvent(new Event('change', {bubbles:true}));
       window.__themeMedia.set(false);
       window.__themeMedia.set(true);
@@ -125,9 +154,11 @@ async function runThemeScenario(scenario) {
       document.querySelector('#theme-select input[value=neutral]').click();
       window.__themeMedia.set(false); window.__themeMedia.set(true);
       assert(document.documentElement.dataset.theme === 'neutral', 'neutral ignores system changes');
+      assertBrandTheme();
       assert(getComputedStyle(document.documentElement).colorScheme === 'light', 'neutral native controls stay light');
       select.value = 'system'; select.dispatchEvent(new Event('change', {bubbles:true}));
       assert(document.documentElement.dataset.theme === 'dark', 'system choice resumes following OS');
+      assertBrandTheme();
       result.textContent = 'PASS: system theme, live changes, manual override';
       return true;
     }
@@ -138,6 +169,7 @@ async function runThemeScenario(scenario) {
       assert(document.documentElement.dataset.theme === 'light', 'theme switch applies light');
       document.querySelector('#theme-select input[value=neutral]').click();
       assert(document.documentElement.dataset.theme === 'neutral', 'neutral usable with unavailable or invalid storage');
+      assertBrandTheme();
       result.textContent = 'PASS: ' + (blocked ? 'storage unavailable' : 'default or invalid preference') + '; theme stays interactive';
       return true;
     }
@@ -159,6 +191,7 @@ async function runThemeScenario(scenario) {
     assert(workArea.scrollTop === priorScroll, 'theme switch preserves scroll position');
     document.querySelector('#theme-select input[value=neutral]').click();
     assert(document.documentElement.dataset.theme === 'neutral', 'radio applies neutral');
+      assertBrandTheme();
     assert(localStorage.getItem('remember-me.theme.v1') === 'neutral', 'neutral persisted');
     assert($('memories-query').value === 'theme-kept' && workArea.scrollTop === priorScroll, 'neutral preserves draft and scroll');
     assert(getComputedStyle(document.documentElement).colorScheme === 'light', 'neutral uses light native controls');
@@ -187,6 +220,7 @@ async function runThemeScenario(scenario) {
     S.reset();
     select.value = scheme; select.dispatchEvent(new Event('change', {bubbles: true}));
     assert(document.documentElement.dataset.theme === scheme, 'screenshot retains requested theme');
+      assertBrandTheme();
 
   result.textContent = 'PASS: theme ' + scheme + '; first-paint, manual override, persistence, form preserved, token colors, control under failure';
   return true;

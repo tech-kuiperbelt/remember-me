@@ -2,6 +2,8 @@
 
 本文件归档已完成的项目待办。详细实现记录保留在 git 提交和项目变更日志中。
 
+- [50.14] 页头 Logo 与无圆框 favicon（2026-10-16 用户验收并授权提交）：海马主标随三主题同步，favicon 使用放大后的独立海马。26 项初始浏览器检查及最终 22 项主题检查通过，见[实施记录](plans/50.14-brand-logo.md)。
+
 - [50.10] 配置页 Debug 开关（用户授权提交）：新增持久布尔 debug，默认关闭；Runtime 区分持久配置与当前 debug_effective，配置页可覆盖 --debug 启用状态，保存后刷新页面统一更新 Debug/Audit/Stats 诊断入口。保留 --debug 重启时再次启用；保存失败不改有效状态，字段省略不覆盖启动状态。95 项定向 Python 和 6 项浏览器场景通过（含真实刷新），全量 916 passed / 1 既有 Stats 文案断言失败。代码、测试、说明与进度随本次提交归档；生产未重启，新代码首次生效需重启一次。见 [实施记录](plans/50.10-config-debug-mode.md)。
 
 - [50.9 / 50.9.1] Audit UI 与列表关键信息（2026-10-11 用户验收并授权提交）：Audit 导航/路由仅 --debug 启用；Memory 风格列表、Namespace 可编辑下拉、箭头引导的 pretty JSON 抽屉，共享 Memory 进出动画及焦点管理。宽屏列对齐、窄屏标签卡片，按 Action 提取现有参数摘要；最终结果列仅显示 ok/error 等原始 status，其他结果在 JSON 详情。基础阶段 8 项浏览器场景通过（含 Memory detail/create），关键信息阶段 10 项独立场景通过，最终状态精简功能与窄屏复验通过。后端/日志 Schema 未改，生产未重启，随本次提交归档；见 [50.9](plans/50.9-audit-ui-refinement.md)、[50.9.1](plans/50.9.1-audit-list-key-information.md)。

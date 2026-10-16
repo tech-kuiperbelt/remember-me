@@ -25,6 +25,8 @@ function resolveTheme(choice) {
 function apply() {
   document.documentElement.dataset.theme = resolveTheme(preference);
   document.documentElement.dataset.themePreference = preference;
+  const favicon = $('brand-favicon');
+  if (favicon) favicon.setAttribute('href', `/admin/console/static/img/brand/favicon-${resolveTheme(preference)}.svg`);
   const select = $('theme-select');
   if (select) {
     select.value = preference;

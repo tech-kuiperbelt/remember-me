@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Remember Me</title>
-<script>!function(){var p='system';try{p=localStorage.getItem('remember-me.theme.v1')||p}catch(e){}if(!['system','light','neutral','dark'].includes(p))p='system';document.documentElement.dataset.theme=p==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):p;document.documentElement.dataset.themePreference=p}();</script>
+<link id="brand-favicon" rel="icon" type="image/svg+xml" sizes="any" href="/admin/console/static/img/brand/favicon-light.svg">
+<script>!function(){var p='system';try{p=localStorage.getItem('remember-me.theme.v1')||p}catch(e){}if(!['system','light','neutral','dark'].includes(p))p='system';document.documentElement.dataset.theme=p==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):p;document.documentElement.dataset.themePreference=p;document.getElementById('brand-favicon').href='/admin/console/static/img/brand/favicon-'+document.documentElement.dataset.theme+'.svg'}();</script>
 <link rel="stylesheet" href="/admin/console/static/theme.css">
 <link rel="stylesheet" href="/admin/console/static/app.css">
 </head>
@@ -13,8 +14,11 @@
 <div class="app-shell" id="app-shell">
   <header class="app-header">
     <div class="brand">
-      <h1>Remember Me</h1>
-      <span class="sub" id="server-info">MCP Server</span>
+      <span class="brand-logo" aria-hidden="true"></span>
+      <div class="brand-copy">
+        <h1>Remember Me</h1>
+        <span class="sub" id="server-info">MCP Server</span>
+      </div>
     </div>
     <div class="header-status">
       <button id="btn-status" class="status-chip" type="button" data-state="loading"

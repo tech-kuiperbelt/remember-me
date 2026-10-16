@@ -7,6 +7,7 @@
 
 :root {
   color-scheme: light;
+  --brand-logo: image-set(url("img/brand/logo-light-64.png") 1x, url("img/brand/logo-light-128.png") 2x);
 
   --icon-memory: #247bd5;
   --icon-namespace: #8658d7;
@@ -71,6 +72,7 @@
 
 [data-theme="dark"] {
   color-scheme: dark;
+  --brand-logo: image-set(url("img/brand/logo-dark-64.png") 1x, url("img/brand/logo-dark-128.png") 2x);
 
   --icon-memory: #69b1ff;
   --icon-namespace: #b493f0;
@@ -133,6 +135,7 @@
 /* Slate is an explicit light-family palette; System continues to use Light/Dark. */
 [data-theme="neutral"] {
   color-scheme: light;
+  --brand-logo: image-set(url("img/brand/logo-neutral-64.png") 1x, url("img/brand/logo-neutral-128.png") 2x);
   --bg-canvas: #dce3ea;
   --bg-shell: #d5dfe9;
   --bg-workspace: #e8edf2;
@@ -193,6 +196,7 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
     color-scheme: dark;
+    --brand-logo: image-set(url("img/brand/logo-dark-64.png") 1x, url("img/brand/logo-dark-128.png") 2x);
     --icon-memory: #69b1ff;
     --icon-namespace: #b493f0;
     --icon-category: #58d6aa;
