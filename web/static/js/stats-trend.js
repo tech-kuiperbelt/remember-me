@@ -46,7 +46,8 @@ export function mountTrend(root, buckets, total) {
     points = buckets.map((bucket, i) => ({x: left+i/Math.max(1, buckets.length-1)*(right-left), y: bottom-bucket.count/ymax*(bottom-top)}));
     svg.append(svgNode('path', {d: points.map((p, i) => (i?'L':'M')+p.x+' '+p.y).join(' '), class: 'stats-trend-line'}));
     for (const p of points)svg.append(svgNode('circle', {cx: p.x, cy: p.y, r: 3, class: 'stats-trend-point'}));
-    const ticks = width>=900?7:width>=500?5:3;
+    const dense = locale === 'zh-CN';
+    const ticks = width>=900?(dense?5:7):width>=500?(dense?4:5):3;
     const indices = [...new Set(Array.from({length: Math.min(ticks, buckets.length)}, (_, i) => Math.round(i*(buckets.length-1)/Math.max(1,Math.min(ticks,buckets.length)-1))))];
     for (const index of indices) {
       const date = buckets[index].date || buckets[index].start_date;

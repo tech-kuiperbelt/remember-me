@@ -77,7 +77,8 @@ async function runStatsScenario(scenario) {
     assert([...document.querySelectorAll('.stats-panel')].every(panel=>panel.getBoundingClientRect().right<=innerWidth),'panels fit container');
     assert([...document.querySelectorAll('.stats-rank-row,.stats-namespace-row')].every(row=>[...row.children].every(child=>child.getBoundingClientRect().right<=row.getBoundingClientRect().right+1)),'labels, counts and arrows stay inside rows');
     if($('stats-distribution')){const headers=$('stats-distribution').querySelector('.stats-namespace-columns'),row=$('stats-distribution').querySelector('.stats-namespace-row');
-      assert(Math.abs(headers.querySelector('.stats-count').getBoundingClientRect().right-row.querySelector('.stats-count').getBoundingClientRect().right)<1&&Math.abs(headers.querySelector('.stats-percent').getBoundingClientRect().right-row.querySelector('.stats-percent').getBoundingClientRect().right)<1,'distribution headers align with values');}
+      assert(Math.abs(headers.querySelector('.stats-count').getBoundingClientRect().right-row.querySelector('.stats-count').getBoundingClientRect().right)<1&&Math.abs(headers.querySelector('.stats-percent').getBoundingClientRect().right-row.querySelector('.stats-percent').getBoundingClientRect().right)<1,'distribution headers align with values');
+      assert([...headers.children].every(span=>span.scrollWidth<=span.clientWidth+2),'distribution headers do not overflow');}
     for(const card of document.querySelectorAll('.stats-dimensions>.stats-panel')){
       const controls=card.querySelector('.stats-top-controls').getBoundingClientRect(), metrics=card.querySelector('.stats-dimension-metrics').getBoundingClientRect();
       if(card.clientWidth-parseFloat(getComputedStyle(card).paddingLeft)*2>=360){assert(Math.abs(controls.top-metrics.top)<1,'Top controls align with dimension summary');
