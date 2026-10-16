@@ -77,7 +77,7 @@ async function runHelpRegression(scenario) {
   open('connect');
   const readMe=new URL('/read-me',location.origin).href;
   assert($('help-read-me-url').textContent===readMe&&$('help-read-me').href===readMe,'actual runtime URL');
-  assert($('help-connect-prompt').textContent.includes(readMe)&&$('help-connect-prompt').textContent.includes('连接方式'),'transport chosen from guide');
+  assert($('help-connect-prompt').textContent===t('help.connect.prompt',{url:readMe}),'transport chosen from guide');
   const descriptor=Object.getOwnPropertyDescriptor(navigator,'clipboard');let copied='',deny=false;
   Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{if(deny)throw Error('denied');copied=text;}}});
   try {
@@ -85,13 +85,13 @@ async function runHelpRegression(scenario) {
     $('help-connect-prompt').closest('details').open=true;
     $('help-copy-connect').click();await settle();assert(copied===$('help-connect-prompt').textContent,'copy full request');
     open('rules');$('help-copy-install').click();await settle();
-    assert(copied.startsWith($('help-install-prompt').textContent)&&copied.endsWith($('help-system-prompt').textContent)&&copied.includes('主动回忆')&&copied.includes('8. 事实与安全'),'combined copy complete');
+    assert(copied===$('help-install-prompt').textContent+t('help.install.separator')+$('help-system-prompt').textContent,'combined copy complete');
     $('help-system-prompt').closest('details').open=true;
     $('help-copy-system').click();await settle();assert(copied===$('help-system-prompt').textContent,'copy rules alone');
     $('help-system-prompt').closest('details').open=false;deny=true;
     $('help-copy-install').click();await settle();
     assert($('help-system-prompt').closest('details').open&&$('help-install-prompt').closest('details').open,'copy failure exposes both sources');
-    assert([...document.querySelectorAll('.toast')].some(el=>el.textContent.includes('手动复制保存请求')),'copy failure feedback');
+    assert([...document.querySelectorAll('.toast')].some(el=>el.textContent.includes(t('help.toast.copyFailedAll'))),'copy failure feedback');
   } finally {
     if(descriptor)Object.defineProperty(navigator,'clipboard',descriptor);else delete navigator.clipboard;
     document.querySelectorAll('#page-help details').forEach(d=>d.open=false);
