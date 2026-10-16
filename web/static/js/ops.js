@@ -15,28 +15,28 @@ const controls={enter:'btn-maintenance-enter',exit:'btn-maintenance-exit',retry:
 const allowed=kind=>status[gates[kind]||'bulkActions'];
 const locked=()=>!!busy||!!job||!!power||!!config?.isSaving();
 function fileError(file,limit=false) {
-  if(!file)return '请选择 JSONL 文件。';
-  if(!/\.(jsonl|ndjson)$/i.test(file.name))return '请选择 .jsonl 或 .ndjson 文件。';
-  if(limit&&file.size>64*1024*1024)return '文件不能超过 64 MiB。';
+  if(!file)return t('ops.error.selectFile');
+  if(!/\.(jsonl|ndjson)$/i.test(file.name))return t('ops.error.fileType');
+  if(limit&&file.size>64*1024*1024)return t('ops.error.fileTooLarge');
   return '';
 }
 function formError(kind) {
   if(kind==='import'||kind==='recover')return fileError($(kind+'-file').files[0],kind==='import');
-  if(kind==='exportNamespace'&&!$('export-namespace').value)return '请选择 Namespace。';
+  if(kind==='exportNamespace'&&!$('export-namespace').value)return t('ops.error.selectNamespace');
   if(kind==='migrate') {
     const source=$('migrate-source').value,target=$('migrate-target').value.trim();
-    if(!source||!target)return '请选择源和目标 Namespace。';
-    if(source===target)return '源与目标不能相同。';
-    if(Array.from(target).length>64||['all','*','none','null'].includes(target.toLowerCase()))return '目标 Namespace 不合法。';
+    if(!source||!target)return t('ops.error.selectSourceTarget');
+    if(source===target)return t('ops.error.sameSourceTarget');
+    if(Array.from(target).length>64||['all','*','none','null'].includes(target.toLowerCase()))return t('ops.error.invalidTarget');
   }
   return '';
 }
 function applyControls() {
   for(const [kind,id] of Object.entries(controls)) {
-    const reason=locked()?'有请求、任务或确认正在进行。':!allowed(kind)?statusDetail(status)+' 此操作当前不可用。':formError(kind);
+    const reason=locked()?t('ops.error.busy'):!allowed(kind)?t('ops.error.actionUnavailable',{reason:statusDetail(status)}):formError(kind);
     $(id).disabled=!!reason;$(id).title=reason;
   }
-  $('ops-action-reason').textContent=locked()?'当前请求或任务尚未结束。':status.kind==='normal'?'可预先填写表单；进入维护后执行。':status.kind==='error'?'可使用 Sync 修复备份错误，或重启／关闭服务；模型未就绪时不能 Sync。':status.modelPending||status.kind==='unavailable'?statusDetail(status):'';
+  $('ops-action-reason').textContent=locked()?t('ops.actionReason.locked'):status.kind==='normal'?t('ops.actionReason.normal'):status.kind==='error'?t('ops.actionReason.error'):status.modelPending||status.kind==='unavailable'?statusDetail(status):'';
   config?.update();
 }
 function paint(next) {
@@ -84,7 +84,7 @@ function renderModelStatus(model) {
 function updateNamespaces() {
   namespaceCounts=getNamespaceCounts();
   const names=getNamespaces().slice().sort();
-  for(const [id,placeholder] of [['migrate-source','Select namespace…'],['export-namespace','Select namespace…'],['clear-ns','全部 Namespace']]) {
+  for(const [id,placeholder] of [['migrate-source',t('ops.export.namespace.placeholder')],['export-namespace',t('ops.export.namespace.placeholder')],['clear-ns',t('ops.clear.namespace.all')]]) {
     const select=$(id),previous=select.value;
     select.replaceChildren(new Option(placeholder,''),...names.map(name=>new Option(name+(id==='clear-ns'?'':` (${namespaceCounts[name]??0})`),name)));
     if(previous&&!names.includes(previous))select.add(new Option(previous,previous));
@@ -114,10 +114,10 @@ async function run(kind,result,operation,confirmation) {
   try {
     if(confirmation&&!await confirmation())return;
     await refreshMaintenance();
-    if(!allowed(kind))throw new Error('服务状态已变化，请检查状态后重试。');
-    message(result,'正在执行…');
+    if(!allowed(kind))throw new Error(t('ops.error.stateChanged'));
+    message(result,t('ops.status.running'));
     await operation();
-  }catch(e){message(result,'操作未完成：'+e.message,true);}
+  }catch(e){message(result,t('ops.error.failed',{error:e.message}),true);}
   finally{busy=null;await refreshMaintenance();applyControls();}
 }
 function changedData() { emitMemoriesChanged();emitStatsChanged(); }
@@ -134,14 +134,14 @@ async function watchJob() {
     while(job===current) {
       let data;
       try{data=await api('/'+current.kind+'/'+encodeURIComponent(current.id),{signal:AbortSignal.timeout(5000)});}
-      catch(e){message(result,`任务 ${current.id} 状态暂不可确认：${e.message}。请重新查询，不要重复提交。`,true);retry.hidden=false;return;}
-      message(result,`任务 ${current.id} · ${data.phase||data.status}${data.total!=null?' · '+data.completed+'/'+data.total:''}`);
+      catch(e){message(result,t('ops.job.uncertain',{id:current.id,error:e.message}),true);retry.hidden=false;return;}
+      message(result,t('ops.job.progress',{id:current.id,phase:data.phase||data.status,progress:data.total!=null?' · '+data.completed+'/'+data.total:''}));
       if(data.status==='completed') {
         const r=data.result||{};
-        message(result,current.kind==='import'?`Imported ${r.imported??'—'}; skipped ${r.skipped??'—'}; renamed ${r.renamed??'—'}.`:`Recovered ${r.recovered??'—'} memories.`);
+        message(result,current.kind==='import'?t('ops.import.result',{imported:r.imported??'—',skipped:r.skipped??'—',renamed:r.renamed??'—'}):t('ops.recover.result',{count:r.recovered??'—'}));
         job=null;changedData();return;
       }
-      if(data.status==='failed') {job=null;throw new Error(data.error?.message||data.error||'任务失败');}
+      if(data.status==='failed') {job=null;throw new Error(data.error?.message||data.error||t('ops.job.failed'));}
       await sleep(750);
     }
   }catch(e){message(result,e.message,true);}
@@ -150,31 +150,31 @@ async function watchJob() {
 function importMemories() {
   const file=$('import-file').files[0],prefix=$('import-prefix').value.trim();
   return run('import','import-result',async()=>{
-    const data=await upload('import',file,prefix);if(!data.import_id)throw new Error('响应缺少任务 ID，无法确认提交结果。');
+    const data=await upload('import',file,prefix);if(!data.import_id)throw new Error(t('ops.job.missingId'));
     job={kind:'import',id:data.import_id};await watchJob();
   });
 }
 function recover() {
   const file=$('recover-file').files[0];
   return run('recover','recover-result',async()=>{
-    const data=await upload('recover',file);if(!data.id)throw new Error('响应缺少任务 ID，无法确认提交结果。');
+    const data=await upload('recover',file);if(!data.id)throw new Error(t('ops.job.missingId'));
     job={kind:'recover',id:data.id};await watchJob();
-  },()=>confirmDestructive({title:'Confirm Recover',scope:`使用 ${file.name} 覆盖当前数据库全部记忆`,action:'Confirm Recover'}));
+  },()=>confirmDestructive({title:t('ops.recover.confirm.title'),scope:t('ops.recover.confirm.scope',{file:file.name}),action:t('ops.recover.confirm.action')}));
 }
 function clearMemories() {
   const ns=$('clear-ns').value;
   return run('clear','clear-result',async()=>{
     const data=await api('/memories'+(ns?'?namespace='+encodeURIComponent(ns):''),{method:'DELETE'});
-    message('clear-result',`Deleted ${data.deleted} memories.`);changedData();
-  },()=>confirmDestructive({title:'Confirm Clear',scope:ns?`删除 Namespace “${ns}” 中全部记忆`:'删除全部 Namespace 中的记忆',action:'Confirm Clear'}));
+    message('clear-result',t('ops.clear.result',{count:data.deleted}));changedData();
+  },()=>confirmDestructive({title:t('ops.clear.confirm.title'),scope:ns?t('ops.clear.confirm.scope.ns',{ns}):t('ops.clear.confirm.scope.all'),action:t('ops.clear.confirm.action')}));
 }
 function migrate() {
   const source=$('migrate-source').value,target=$('migrate-target').value.trim(),count=namespaceCounts[source];
   return run('migrate','migrate-result',async()=>{
     const r=await api('/namespaces/migrate',{method:'POST',body:JSON.stringify({source,target})});
     if(r.error)throw new Error(r.error);
-    message('migrate-result',`Migrated ${r.migrated} memories from “${source}” to “${target}”.`);changedData();
-  },()=>confirm(`将 “${source}” 中${count==null?'全部':count+' 条'}记忆移动到 “${target}”？此操作不可撤销。`));
+    message('migrate-result',t('ops.migrate.result',{count:r.migrated,source,target}));changedData();
+  },()=>confirm(t('ops.migrate.confirm',{source,count:count==null?t('ops.migrate.confirm.all'):t('ops.migrate.confirm.count',{count}),target})));
 }
 async function downloadExport(path,options) {
   const response=await fetch('/api'+path,options);
@@ -189,17 +189,17 @@ function exportMemories(full) {
   const ns=$('export-namespace').value;
   return run(full?'exportFull':'exportNamespace','export-result',async()=>{
     const count=await downloadExport(full?'/export/full':'/export/namespace',full?{method:'POST'}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({namespace:ns})});
-    message('export-result',`Downloaded ${full?'full snapshot':ns} (${count} records).`);
+    message('export-result',t('ops.export.downloaded',{scope:full?t('ops.export.scope.full'):ns,count}));
   });
 }
-function sync() {return run('sync','sync-result',async()=>{const r=await api('/sync',{method:'POST'});if(r.error)throw new Error(r.error);message('sync-result',`Synced ${r.synced??'—'} records (errors: ${r.errors??'—'}).`);emitStatsChanged();});}
-function maintenance(enter) {return run(enter?'enter':'exit','maintenance-result',async()=>{await api('/maintenance/'+(enter?'enter':'exit'),{method:'POST'});message('maintenance-result',enter?'Maintenance mode active.':'Normal service restored.');});}
-function retryModel(){return run('retry','model-retry-result',async()=>{await api('/model/retry',{method:'POST'});message('model-retry-result','已请求准备模型。');});}
+function sync() {return run('sync','sync-result',async()=>{const r=await api('/sync',{method:'POST'});if(r.error)throw new Error(r.error);message('sync-result',t('ops.sync.result',{count:r.synced??'—',errors:r.errors??'—'}));emitStatsChanged();});}
+function maintenance(enter) {return run(enter?'enter':'exit','maintenance-result',async()=>{await api('/maintenance/'+(enter?'enter':'exit'),{method:'POST'});message('maintenance-result',enter?t('ops.maintenance.entered'):t('ops.maintenance.exited'));});}
+function retryModel(){return run('retry','model-retry-result',async()=>{await api('/model/retry',{method:'POST'});message('model-retry-result',t('ops.model.requested'));});}
 
 function addressHint() {
   const c=config.config();if(!c)return;
   const target=new URL(location.href);target.port=String(c.port);
-  $('restart-address').textContent=`若端口已变化，可尝试 ${target.origin}/admin/console（--port 可能覆盖配置）。${c.local_only?'仅本机服务启用时请在服务器本机访问。':''}`;
+  $('restart-address').textContent=t('ops.restart.address',{origin:target.origin,localOnly:c.local_only?t('ops.restart.address.localOnly'):''});
 }
 async function reconnect() {
   if(reconnecting||power!=='restart')return;
@@ -213,26 +213,26 @@ async function reconnect() {
         const snapshot=await api('/maintenance',{signal:AbortSignal.timeout(Math.min(5000,Math.max(1,deadline-Date.now())))});
         if(!['normal','maintenance'].includes(snapshot.state)||snapshot.action)continue;
         power=null;paint(snapshot);await config.load(true);
-        message('restart-result','服务当前可访问，已重新读取状态与配置。');return;
+        message('restart-result',t('ops.restart.reconnected'));return;
       }catch{}
     }
-    message('restart-result','等待服务恢复超时。请检查启动终端或使用新地址；可手动重新检查连接。',true);
+    message('restart-result',t('ops.restart.timeout'),true);
     $('restart-poll-retry').hidden=false;
   }finally{reconnecting=false;applyControls();}
 }
 function controlServer(restart) {
   return run(restart?'restart':'shutdown','restart-result',async()=>{
     try{await api(restart?'/restart':'/shutdown',{method:'POST'});}
-    catch(e){throw new Error('请求结果无法确认，请检查服务状态后再操作：'+e.message);}
+    catch(e){throw new Error(t('ops.error.resultUnknown',{error:e.message}));}
     power=restart?'restart':'shutdown';++pollVersion;
     paint({state:'unavailable'});addressHint();
-    message('restart-result',restart?'重启请求已接受，正在等待服务可访问…':'服务关闭请求已接受。请从终端手动启动（terminal）。');
+    message('restart-result',restart?t('ops.restart.accepted'):t('ops.shutdown.accepted'));
     if(restart)void reconnect();
-  },()=>confirm(restart?'确认重启服务并读取已保存配置？连接将中断；端口或访问范围变更可能需要新地址。':'确认关闭服务？关闭后需要从终端手动启动。'));
+  },()=>confirm(restart?t('ops.restart.confirm'):t('ops.shutdown.confirm')));
 }
 export async function fetchStoragePaths() {
   if(status.modelPending||status.kind==='unavailable')return;
-  try {const data=await api('/storage-paths');$('sync-paths').textContent=data.backend==='dual'?`${data.primary_path} → ${data.secondary_path}`:'当前存储未配置 JSONL 灾备副本。';}catch{}
+  try {const data=await api('/storage-paths');$('sync-paths').textContent=data.backend==='dual'?`${data.primary_path} → ${data.secondary_path}`:t('ops.sync.paths.missing');}catch{}
 }
 function cardIcons() {
   const paths=['M3 4h18v12H3z M8 21h8 M12 16v5','M12 3v3 M12 18v3 M3 12h3 M18 12h3 M8 8h8v8H8z','M4 5h16v14H4z M8 9h8 M8 13h5','M8 3h8v4H8z M5 7h14v14H5z M9 11h6 M9 15h6','M12 3v12 M7 8l5-5 5 5 M4 15v6h16v-6','M4 5h16v14H4z M8 9h8 M8 13h8','M3 3h18v7H3z M3 14h18v7H3z M7 6h.01 M7 17h.01','M12 3 2 21h20L12 3z M12 9v5 M12 17h.01'];

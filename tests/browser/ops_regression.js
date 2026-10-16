@@ -93,13 +93,13 @@ async function runOpsRegression(scenario) {
       Date.now=realNow;window.setTimeout=realTimeout;
       assert(!$('restart-poll-retry').hidden&&$('btn-restart').disabled,'timeout ends automatic reconnect and locks writes');
       assert(writes.length===1,'timeout does not resubmit restart');
-      down=false;$('restart-poll-retry').click();await waitFor(()=>$('restart-result').textContent.includes('服务当前可访问'),'manual reconnect');
+      down=false;$('restart-poll-retry').click();await waitFor(()=>$('restart-result').textContent.includes(t('ops.restart.reconnected')),'manual reconnect');
       window.confirm=original;result.textContent='PASS: restart timeout and manual connection recovery';return;
     }
     $(scenario==='ops-restart'?'btn-restart':'btn-shutdown').click();
     await waitFor(()=>writes.length===1,'single process control request');
     if(scenario==='ops-restart') {
-      await waitFor(()=>$('restart-result').textContent.includes('服务当前可访问'),'bounded reconnect');
+      await waitFor(()=>$('restart-result').textContent.includes(t('ops.restart.reconnected')),'bounded reconnect');
       assert($('btn-restart').disabled,'normal resumed state still gates restart');
     } else {
       await waitFor(()=>$('restart-result').textContent.includes('terminal'),'shutdown feedback');
@@ -145,8 +145,8 @@ async function runOpsRegression(scenario) {
   input('config-language','en');saveError=true;$('btn-model-save').click();await waitFor(()=>$('model-config-result').textContent.includes('disk error'),'save error');
   assert($('config-language').value==='en'&&!$('btn-model-save').disabled,'failed save preserves editable draft');saveError=false;
   await setState({...ready,required_reason:'model_not_ready',model:{status:'failed',ready:false,error:'missing'}});retryError=true;$('btn-model-save').click();
-  await waitFor(()=>$('model-config-result').textContent.includes('模型重试未成功'),'save and retry differentiated');
-  assert($('model-config-result').textContent.startsWith('配置已保存'),'persist succeeded despite retry failure');retryError=false;
+  await waitFor(()=>$('model-config-result').textContent.includes(t('ops.config.retryFailed',{error:''}).trim()),'save and retry differentiated');
+  assert($('model-config-result').textContent.startsWith(t('ops.config.saved')),'persist succeeded despite retry failure');retryError=false;
   $('ops-tab-maintenance').click();
   for(const [state,sync,exit,restart,retry] of [
     [normal,false,false,false,false], [ready,true,true,true,false],
@@ -169,16 +169,16 @@ async function runOpsRegression(scenario) {
   $('ops-recover').open=true;file('recover-file');$('btn-recover').click();await waitFor(()=>$('clear-modal').style.display==='flex','recover opened');
   document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));await settle();assert(recoverPosts===0&&!$('app-shell').inert,'cancel recover');
   $('btn-recover').click();await waitFor(()=>$('clear-modal').style.display==='flex','recover reopened');await setState(normal);await code();
-  await waitFor(()=>$('recover-result').textContent.includes('状态已变化'),'confirm rechecks current state');assert(recoverPosts===0,'stale confirmation cannot execute');await setState(ready);
-  $('btn-recover').click();await code();await waitFor(()=>recoverPosts===1&&$('recover-result').textContent.includes('Recovered'),'recover completed');
+  await waitFor(()=>$('recover-result').textContent.includes(t('ops.error.stateChanged')),'confirm rechecks current state');assert(recoverPosts===0,'stale confirmation cannot execute');await setState(ready);
+  $('btn-recover').click();await code();await waitFor(()=>recoverPosts===1&&$('recover-result').textContent.includes(t('ops.recover.result',{count:4})),'recover completed');
   await waitFor(()=>!$('btn-sync').disabled,'recover release');
   $('ops-import').open=true;file('import-file');jobReadFail=true;$('btn-import').click();await waitFor(()=>!$('import-poll-retry').hidden,'query retry visible');
   assert(importPosts===1&&$('btn-import').disabled&&$('btn-maintenance-exit').disabled,'uncertain job cannot resubmit');
   $('ops-import').open=false;await settle();assert($('ops-import').open,'running job result cannot be collapsed');
-  jobReadFail=false;$('import-poll-retry').click();await waitFor(()=>$('import-result').textContent.includes('Imported'),'query resumes');assert(importPosts===1,'query retry does not reupload');
+  jobReadFail=false;$('import-poll-retry').click();await waitFor(()=>$('import-result').textContent.includes(t('ops.import.result',{imported:2,skipped:1,renamed:1})),'query resumes');assert(importPosts===1,'query retry does not reupload');
   await waitFor(()=>!$('btn-sync').disabled,'job release');$('ops-import').open=false;await settle();assert(!$('import-result').textContent,'explicit collapse clears result');
-  $('ops-export').open=true;$('btn-export-full').click();await waitFor(()=>$('export-result').textContent.includes('(4 records)'),'export count');
-  await waitFor(()=>!$('btn-sync').disabled,'export release');$('ops-migrate').open=true;input('migrate-source','a');input('migrate-target','new-space');$('btn-migrate').click();await waitFor(()=>$('migrate-result').textContent.includes('Migrated'),'migration result retained');
+  $('ops-export').open=true;$('btn-export-full').click();await waitFor(()=>$('export-result').textContent.includes(t('ops.export.downloaded',{scope:t('ops.export.scope.full'),count:4})),'export count');
+  await waitFor(()=>!$('btn-sync').disabled,'export release');$('ops-migrate').open=true;input('migrate-source','a');input('migrate-target','new-space');$('btn-migrate').click();await waitFor(()=>$('migrate-result').textContent.includes(t('ops.migrate.result',{count:2,source:'a',target:'new-space'})),'migration result retained');
   await waitFor(()=>!$('btn-sync').disabled,'migration release');
   window.confirm=originalConfirm;result.textContent='PASS: config drafts, gates, credentials, confirmation snapshots, tasks and transfer';
 }
