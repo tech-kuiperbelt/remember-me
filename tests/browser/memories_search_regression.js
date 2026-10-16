@@ -234,10 +234,10 @@ async function runMemoriesSearchRegression() {
   for (const name of ['lexical','anchor']) {
     S.setOverride(url => url.endsWith('/'+name) ? json({items:bm25}) : undefined);
     selectMode(name); await ready();
-    assert($('memories-list').textContent.includes('Invalid search response'), 'terms envelope rejected: '+name);
+    assert($('memories-list').textContent.includes(t('memories.error.invalidSearch')), 'terms envelope rejected: '+name);
     S.setOverride(url => url.endsWith('/'+name) ? json([{...bm25[0],score:'1e-9'}]) : undefined);
     [...$('memories-list').querySelectorAll('button')].find(b=>b.textContent===t('memories.retry')).click(); await ready();
-    assert($('memories-list').textContent.includes('Invalid search response'), 'non-number score rejected: '+name);
+    assert($('memories-list').textContent.includes(t('memories.error.invalidSearch')), 'non-number score rejected: '+name);
     S.setOverride(url => url.endsWith('/'+name) ? json(bm25) : undefined);
     S.resetCalls(); [...$('memories-list').querySelectorAll('button')].find(b=>b.textContent===t('memories.retry')).click(); await ready();
     assert(allSearchCalls().length===1 && lastBody().query==='A' && lastBody().k===(name==='lexical'?13:7), 'Retry keeps terms mode applied values');

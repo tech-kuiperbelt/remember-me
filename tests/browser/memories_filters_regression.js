@@ -90,10 +90,10 @@ async function runMemoriesFiltersRegression() {
   await waitFor(() => $('memories-categories-popover').textContent.includes('Stats temporarily offline'), 'category refresh failure');
   assert(document.querySelectorAll('.memory-category-option').length > 0, 'category refresh failure retains candidates');
   failStats = false;
-  [...$('memories-categories-popover').querySelectorAll('button')].find(node => node.textContent === 'Retry').click();
+  [...$('memories-categories-popover').querySelectorAll('button')].find(node => node.textContent === t('picker.retry')).click();
   await waitFor(() => releaseStats, 'pending stats refresh');
   S.resetCalls(); $('btn-refresh').click(); $('memories-categories').click();
-  await waitFor(() => !$('memories-categories-popover').textContent.includes('正在加载分类'), 'latest stats response');
+  await waitFor(() => !$('memories-categories-popover').textContent.includes(t('picker.categories.loading')), 'latest stats response');
   releaseStats(json({...sample, category_counts: {'obsolete-category': 1}})); await settle(50);
   assert(!$('memories-categories-popover').textContent.includes('obsolete-category'), 'old Stats response ignored');
   assert(S.calls.filter(call => call.url.startsWith('/api/memories/page?')).length === 1, 'registry updates do not refetch memories');
@@ -128,20 +128,20 @@ async function runMemoriesFiltersRegression() {
   await waitFor(() => $('memories-keywords-popover').textContent.includes('More failed'), 'more failure');
   assert(document.querySelectorAll('[data-keyword]').length === 20, 'failed more retains suggestions');
   failMore = false;
-  [...$('memories-keywords-popover').querySelectorAll('button')].find(node => node.textContent === 'Retry').click();
+  [...$('memories-keywords-popover').querySelectorAll('button')].find(node => node.textContent === t('picker.retry')).click();
   await waitFor(() => document.querySelectorAll('[data-keyword]').length === 21, 'retry more same offset');
   for (const [index, word] of words.slice(1, 20).entries()) {
     addKeyword(word.keyword);
     if (index === 3) {
-      assert($('memories-selected-preview').children.length === 5 && $('memories-keywords').textContent === 'Keywords ▾',
+      assert($('memories-selected-preview').children.length === 5 && $('memories-keywords').textContent === t('picker.keywords')+' ▾',
         'five keywords all visible without overflow count');
     }
     if (index === 4) {
-      assert($('memories-selected-preview').children.length === 5 && $('memories-keywords').textContent === 'Keywords · +1 ▾'
+      assert($('memories-selected-preview').children.length === 5 && $('memories-keywords').textContent === t('picker.keywords')+' · +1 ▾'
         && ![...$('memories-selected-preview').children].some(node => node.title === word.keyword),
         'sixth keyword hidden and counted once');
       [...document.querySelectorAll('.memory-filter-selected button')].find(node => node.title === word.keyword).click();
-      assert($('memories-selected-preview').children.length === 5 && $('memories-keywords').textContent === 'Keywords ▾',
+      assert($('memories-selected-preview').children.length === 5 && $('memories-keywords').textContent === t('picker.keywords')+' ▾',
         'removing sixth keyword clears overflow count');
       addKeyword(word.keyword);
     }
@@ -160,14 +160,14 @@ async function runMemoriesFiltersRegression() {
   candidateNames.slice(0, 20).forEach((value, index) => {
     chooseCategory(value);
     if (index === 2) {
-      assert(categoryPreview.children.length === 3 && $('memories-categories').textContent === 'Categories ▾',
+      assert(categoryPreview.children.length === 3 && $('memories-categories').textContent === t('picker.categories')+' ▾',
         'three categories all visible without overflow count');
     }
     if (index === 3) {
-      assert(categoryPreview.children.length === 3 && $('memories-categories').textContent === 'Categories · +1 ▾'
+      assert(categoryPreview.children.length === 3 && $('memories-categories').textContent === t('picker.categories')+' · +1 ▾'
         && ![...categoryPreview.children].some(node => node.title === value), 'fourth category hidden and counted once');
       chooseCategory(value);
-      assert(categoryPreview.children.length === 3 && $('memories-categories').textContent === 'Categories ▾',
+      assert(categoryPreview.children.length === 3 && $('memories-categories').textContent === t('picker.categories')+' ▾',
         'removing fourth category clears overflow count');
       chooseCategory(value);
     }
@@ -177,7 +177,7 @@ async function runMemoriesFiltersRegression() {
   assert(![...document.querySelectorAll('.memory-category-option input')].find(node => node.dataset.value === 'category20').disabled, 'category removal permits additions');
   S.setOverride(url => url === '/api/stats' ? json(sample) : undefined);
   $('btn-refresh').click(); $('memories-categories').click();
-  await waitFor(() => $('memories-categories-popover').textContent.includes('当前候选中不可用'), 'selected unavailable category retained');
+  await waitFor(() => $('memories-categories-popover').textContent.includes(t('picker.categories.unavailable')), 'selected unavailable category retained');
   escape();
   S.resetCalls(); $('memories-reset').click();
   await waitFor(() => $('memories-count').textContent === t('memories.count.browse',{total:63}), 'reset cap fixture');

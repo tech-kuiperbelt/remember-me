@@ -1,5 +1,6 @@
 import { Marked } from '../vendor/marked.js';
 import DOMPurify from '../vendor/purify.js';
+import { t } from './i18n.js';
 
 const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function safeURL(value) {
@@ -14,12 +15,12 @@ const parser = new Marked({renderer: {
     return url ? `<a href="${escape(url)}">${text}</a>` : text;
   },
   image({href, text}) {
-    const label = escape(text || 'Image'), url = safeURL(href);
+    const label = escape(text || t('markdown.image')), url = safeURL(href);
     return url ? `<a href="${escape(url)}">${label}</a>` : label;
   },
 }});
 export async function copyText(text) {
-  if (!navigator.clipboard?.writeText) throw new Error('Copy failed (clipboard not available)');
+  if (!navigator.clipboard?.writeText) throw new Error(t('markdown.copyFailed'));
   await navigator.clipboard.writeText(text);
 }
 export function renderMarkdown(root, source) {
@@ -36,15 +37,15 @@ export function renderMarkdown(root, source) {
     });
     root.querySelectorAll('pre').forEach((pre, index) => {
       const wrap = document.createElement('div'); wrap.className = 'detail-code'; wrap.id = root.id + '-code-block-' + (index + 1);
-      const button = document.createElement('button'); button.id = wrap.id + '-copy'; button.type = 'button'; button.className = 'btn btn-sm btn-outline'; button.textContent = 'Copy code';
-      button.onclick = async () => { try { await copyText(pre.textContent); button.textContent = 'Copied!'; } catch(e) { button.textContent = e.message; } };
+      const button = document.createElement('button'); button.id = wrap.id + '-copy'; button.type = 'button'; button.className = 'btn btn-sm btn-outline'; button.textContent = t('markdown.copyCode');
+      button.onclick = async () => { try { await copyText(pre.textContent); button.textContent = t('markdown.copied'); } catch(e) { button.textContent = e.message; } };
       pre.before(wrap); wrap.append(button, pre);
     });
     root.querySelectorAll('table').forEach((table, index) => {
       const wrap = document.createElement('div'); wrap.className = 'detail-table'; wrap.id = root.id + '-table-wrap-' + (index + 1); table.before(wrap); wrap.append(table);
     });
   } catch {
-    const message = document.createElement('p'); message.className = 'text-danger'; message.textContent = 'Markdown 渲染失败，显示原文';
+    const message = document.createElement('p'); message.className = 'text-danger'; message.textContent = t('markdown.renderFailed');
     const fallback = document.createElement('pre'); fallback.className = 'detail-source'; fallback.textContent = source;
     root.replaceChildren(message, fallback);
   }

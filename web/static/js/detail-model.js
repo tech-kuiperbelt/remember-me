@@ -1,4 +1,5 @@
 // Pure draft rules; never rewrite the server-confirmed record.
+import { t } from './i18n.js';
 const whitespace = '[\\u0009-\\u000d\\u001c-\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]';
 const trimPattern = new RegExp('^' + whitespace + '+|' + whitespace + '+$', 'g');
 export const trimValue = value => String(value ?? '').replace(trimPattern, '');
@@ -38,14 +39,14 @@ export const isDirty = (memory, draft) => Object.keys(changedFields(memory, draf
 export function validateDraft(draft, memory) {
   const errors = {}, changes = memory ? changedFields(memory, draft) : {categories: true, keywords: true, anchors: true, text: true};
   const namespace = trimValue(draft.namespace);
-  if (!namespace || Array.from(namespace).length > 64 || ['all', '*', 'none', 'null'].includes(namespace.toLowerCase())) errors.namespace = '请输入有效 Namespace（最多 64 个字符，不能使用保留名称）';
+  if (!namespace || Array.from(namespace).length > 64 || ['all', '*', 'none', 'null'].includes(namespace.toLowerCase())) errors.namespace = t('detail.error.namespace');
   for (const key of ['categories', 'keywords']) {
-    if (changes[key] && draft[key].some(v => typeof v !== 'string' || !trimValue(v))) errors[key] = '请修正无效标签';
+    if (changes[key] && draft[key].some(v => typeof v !== 'string' || !trimValue(v))) errors[key] = t('detail.error.tags');
   }
-  if (changes.categories && normalizeValues(draft.categories).length > 3) errors.categories = '最多 3 个分类';
+  if (changes.categories && normalizeValues(draft.categories).length > 3) errors.categories = t('detail.error.categoriesMax');
   if (changes.anchors || changes.text) {
     if (draft.anchors.length > 5 || draft.anchors.some(v => typeof v !== 'string') ||
-        normalizeAnchors(draft.anchors).some(v => !v || Array.from(v).length > 128)) errors.anchors = '最多 5 个锚点，每项 1–128 个字符';
+        normalizeAnchors(draft.anchors).some(v => !v || Array.from(v).length > 128)) errors.anchors = t('detail.error.anchors');
   }
   return errors;
 }
@@ -64,7 +65,7 @@ export function createNewDraft(namespace = '') {
 }
 export function validateCreateDraft(draft) {
   const errors = validateDraft(draft, null);
-  if (!trimValue(draft.text)) errors.text = '请输入正文';
+  if (!trimValue(draft.text)) errors.text = t('detail.error.textRequired');
   return errors;
 }
 export function isCreateDirty(initial, draft) {

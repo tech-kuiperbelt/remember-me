@@ -1,4 +1,5 @@
 // Shared, object-specific 8-character confirmation for Clear and Recover.
+import { t } from './i18n.js';
 import { $ } from './core.js';
 let pending=null;
 export function confirmDestructive({title,scope,action}) {
@@ -8,7 +9,7 @@ export function confirmDestructive({title,scope,action}) {
   const modal=$('clear-modal'), input=$('clear-confirm-input'), accept=$('btn-clear-confirm');
   const prior=document.activeElement, shell=$('app-shell'), wasInert=shell.inert;
   $('clear-confirm-title').textContent=title;
-  $('clear-confirm-scope').textContent=scope+'。此操作不可撤销，请准确输入下方8位确认码。';
+  $('clear-confirm-scope').textContent=scope+t('clear.scopeSuffix');
   $('clear-confirm-code').textContent=code; input.value=''; accept.disabled=true; accept.textContent=action;
   modal.style.display='flex';shell.inert=true;input.focus();
   return new Promise(resolve=>{

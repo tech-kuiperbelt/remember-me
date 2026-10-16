@@ -6,11 +6,12 @@ import { renderMarkdown } from './markdown.js';
 import { createValuePickers } from './memory-value-picker.js';
 import { createNamespacePicker } from './namespace-picker.js';
 import { createMemoryIcon } from './memory-icons.js';
+import { t } from './i18n.js';
 const node = (tag, id, text, cls = '') => { const el = document.createElement(tag); if (id) el.id = id; if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
 function button(id, text, action, cls = 'btn-outline') { const el=node('button',id,text,'btn btn-sm '+cls);el.type='button';el.onclick=action;return el; }
 function field(id,title,content) {
   const section=node('section',id,undefined,'detail-section'), label=node('h2',id+'-label',title);
-  const dimension={Categories:'category',Keywords:'keyword',Anchors:'anchor'}[title];
+  const dimension = id.endsWith('categories') ? 'category' : id.endsWith('keywords') ? 'keyword' : id.endsWith('anchors') ? 'anchor' : null;
   if(dimension){label.classList.add('detail-icon-label');label.prepend(createMemoryIcon(dimension));}
   section.append(label,content);return section;
 }
@@ -35,15 +36,15 @@ export function renderDetailEditor({body, draft, creating, validate, showError, 
     if(control) control.onblur=()=>validate(key,true);
   }
   const status = node('p','detail-error','', 'text-danger'); status.hidden = true; status.setAttribute('role','alert'); body.append(status);
-  for (const [key,label] of [['namespace','Namespace'],['summary','Summary']]) {
+  for (const [key,label] of [['namespace',t('detail.field.namespace')],['summary',t('detail.field.summary')]]) {
     const input = node(key === 'namespace' ? 'input' : 'textarea','edit-'+key); input.value = draft[key];
     const section = field('detail-edit-'+key,label,input); section.querySelector('h2').replaceWith(Object.assign(node('label','detail-edit-'+key+'-label',label),{htmlFor:input.id}));
     if(key==='namespace'){const label=section.querySelector('label');label.classList.add('detail-icon-label');label.prepend(createMemoryIcon('namespace'));}
     input.oninput = () => { draft[key] = input.value; if(key==='summary')resize(input,64,130); if(key === 'namespace') {namespacePicker?.close();input.dataset.touched='true';updatePicker();} validate(key); }; fieldError(section,key,input); body.append(section);
-    if(key==='summary'){input.rows=2;input.placeholder='Summary (optional)';}
-    if(key === 'summary' && creating) section.append(node('p','detail-summary-hint','留空将从正文生成摘要。','text-muted'));
+    if(key==='summary'){input.rows=2;input.placeholder=t('detail.summary.placeholder');}
+    if(key === 'summary' && creating) section.append(node('p','detail-summary-hint',t('detail.summary.hint'),'text-muted'));
     if(key === 'namespace' && creating) {
-      const hint=node('p','detail-default-namespace-status','','text-muted'); hint.setAttribute('role','status'); section.append(hint,button('detail-default-namespace-retry','Retry default Namespace',onRetryDefault));
+      const hint=node('p','detail-default-namespace-status','','text-muted'); hint.setAttribute('role','status'); section.append(hint,button('detail-default-namespace-retry',t('detail.defaultNamespace.retry'),onRetryDefault));
     }
     if(key === 'namespace') {
       const control=node('div','detail-namespace-control',undefined,'detail-namespace-control');
@@ -61,12 +62,12 @@ export function renderDetailEditor({body, draft, creating, validate, showError, 
       refreshNamespaces();
     }
   }
-  const text = node('textarea','edit-text'); text.value = draft.text; text.spellcheck = false; text.setAttribute('aria-label','Content Markdown source');
+  const text = node('textarea','edit-text'); text.value = draft.text; text.spellcheck = false; text.setAttribute('aria-label',t('detail.content.sourceAria'));
   const rendered = node('div','detail-preview',undefined,'detail-markdown'); rendered.hidden = true;
   const modes = node('div','detail-content-modes');
-  modes.setAttribute('role','tablist'); modes.setAttribute('aria-label','Content view');
-  const editButton = button('detail-source-mode','Edit',()=>setPreview(false)); editButton.className='detail-content-tab';
-  const previewButton = button('detail-preview-mode','Preview',()=>setPreview(true)); previewButton.className='detail-content-tab';
+  modes.setAttribute('role','tablist'); modes.setAttribute('aria-label',t('detail.content.aria'));
+  const editButton = button('detail-source-mode',t('detail.content.edit'),()=>setPreview(false)); editButton.className='detail-content-tab';
+  const previewButton = button('detail-preview-mode',t('detail.content.preview'),()=>setPreview(true)); previewButton.className='detail-content-tab';
   const source = node('div','detail-source-panel'); source.append(text);
   for (const [tab,panel] of [[editButton,source],[previewButton,rendered]]) {
     tab.setAttribute('role','tab'); tab.setAttribute('aria-controls',panel.id);
@@ -75,8 +76,8 @@ export function renderDetailEditor({body, draft, creating, validate, showError, 
   rendered.tabIndex=0;
   modes.append(editButton,previewButton);
   const editor = node('div','detail-content-editor',undefined,'detail-content-editor'); editor.append(modes,source,rendered);
-  const contentSection=field('detail-edit-content','Content',editor);fieldError(contentSection,'text',text);body.append(contentSection);
-  text.placeholder='Enter memory content in Markdown…';
+  const contentSection=field('detail-edit-content',t('detail.field.content'),editor);fieldError(contentSection,'text',text);body.append(contentSection);
+  text.placeholder=t('detail.content.placeholder');
   modes.onkeydown = event => {
     if(event.isComposing || event.target.disabled) return;
     const tabs=[editButton,previewButton], index=tabs.indexOf(event.target);
@@ -101,20 +102,20 @@ export function renderDetailEditor({body, draft, creating, validate, showError, 
   const pickerRoot = node('div','detail-pickers'); body.append(pickerRoot);
   picker = createValuePickers({root:pickerRoot,idPrefix:'detail-picker',container:$('detail-panel'),maxSelected:{categories:3,keywords:Infinity},allowCreate:true,onRetryCategories:retryCategories,
     onChange:changes=>{ Object.assign(draft,changes); updatePicker(); validate(Object.keys(changes)[0],true); }}); updatePicker();
-  for(const [key,title] of [['categories','Categories'],['keywords','Keywords']]) {
+  for(const [key,title] of [['categories',t('detail.field.categories')],['keywords',t('detail.field.keywords')]]) {
     const section=field('detail-edit-'+key,title,$('detail-picker-'+(key==='categories'?'category':'keyword')+'-control'));
     pickerRoot.append(section);fieldError(section,key,$('detail-picker-'+key));
   }
-  const anchors = node('div','detail-anchor-values',undefined,'detail-tags'), input = node('input','detail-anchor-input'); input.placeholder='添加锚点'; input.setAttribute('aria-label','New anchor');
-  const add = button('detail-anchor-add','Add',()=>{
+  const anchors = node('div','detail-anchor-values',undefined,'detail-tags'), input = node('input','detail-anchor-input'); input.placeholder=t('detail.anchor.placeholder'); input.setAttribute('aria-label',t('detail.anchor.inputAria'));
+  const add = button('detail-anchor-add',t('detail.anchor.add'),()=>{
     const value = normalizeAnchors([input.value])[0];
-    if (!value || Array.from(value).length > 128 || draft.anchors.length >= 5) { input.focus();const error=$('detail-field-error-anchors');error.textContent='最多 5 个锚点，每项 1–128 个字符';error.hidden=false;input.setAttribute('aria-invalid','true');return; }
+    if (!value || Array.from(value).length > 128 || draft.anchors.length >= 5) { input.focus();const error=$('detail-field-error-anchors');error.textContent=t('detail.error.anchors');error.hidden=false;input.setAttribute('aria-invalid','true');return; }
     if (!normalizeAnchors(draft.anchors).some(existing=>existing===value || (/^[\x00-\x7f]*$/.test(existing) && existing.toLowerCase()===value.toLowerCase()))) draft.anchors.push(value); input.value=''; paintAnchors(); validate('anchors',true);
   });
   input.oninput=()=>{const error=$('detail-field-error-anchors');error.textContent='';error.hidden=true;input.setAttribute('aria-invalid','false');};
   input.onkeydown=e=>{ if(e.key==='Enter'&&!e.isComposing){e.preventDefault();add.click();} };
   function paintAnchors() { anchors.replaceChildren(...draft.anchors.map((value,index)=>button('detail-anchor-'+(index+1),String(value)+' ×',()=>{draft.anchors.splice(index,1);paintAnchors();validate('anchors',true);}))); }
-  paintAnchors(); const anchorSection = field('detail-edit-anchors','Anchors',anchors); anchorSection.append(input,add,node('p','detail-anchor-hint','修改正文后，请检查锚点是否仍然准确。','text-muted')); fieldError(anchorSection,'anchors',input);body.append(anchorSection);
+  paintAnchors(); const anchorSection = field('detail-edit-anchors',t('detail.field.anchors'),anchors); anchorSection.append(input,add,node('p','detail-anchor-hint',t('detail.anchor.hint'),'text-muted')); fieldError(anchorSection,'anchors',input);body.append(anchorSection);
   if(!creating) body.append(technical());
   let lastWidth = 0;
   function resizeFields() {

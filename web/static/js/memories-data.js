@@ -1,19 +1,20 @@
 // Workspace state, network requests and local Top-K paging; no DOM dependencies.
+import { t } from './i18n.js';
 import { api } from './api.js';
 
 function validateSearch(response) {
   if (!response || !Array.isArray(response.items) || response.items.some(item => !Number.isFinite(item.score))) {
-    throw new Error('Invalid search response');
+    throw new Error(t('memories.error.invalidSearch'));
   }
   const resolution = response.filter_resolution;
   if (resolution !== null) {
-    if (!resolution || typeof resolution !== 'object') throw new Error('Invalid filter resolution');
+    if (!resolution || typeof resolution !== 'object') throw new Error(t('memories.error.invalidResolution'));
     for (const dimension of ['keywords', 'categories']) {
       if (!(dimension in resolution)) continue;
       if (!Array.isArray(resolution[dimension]) || resolution[dimension].some(item =>
         typeof item.input !== 'string' || !['exact', 'semantic', 'none'].includes(item.match_type)
         || !Array.isArray(item.matches) || item.matches.some(match => typeof match.value !== 'string'
-          || typeof match.accepted !== 'boolean'))) throw new Error('Invalid filter resolution');
+          || typeof match.accepted !== 'boolean'))) throw new Error(t('memories.error.invalidResolution'));
     }
   }
 }
@@ -68,11 +69,11 @@ export function createMemoriesData(onChange) {
           response = await api('/memories/page?' + params);
           if (request !== version) return;
           if (!Array.isArray(response.items) || !Number.isSafeInteger(response.total) || response.total < 0) {
-            throw new Error('Invalid memory page response');
+            throw new Error(t('memories.error.invalidPage'));
           }
           const last = Math.max(1, Math.ceil(response.total / query.pageSize));
           if (query.page <= last) break;
-          if (correction) throw new Error('Memories changed while paging. Please retry.');
+          if (correction) throw new Error(t('memories.error.paging'));
           query.page = last;
         }
         state.page = query.page; state.items = response.items; state.total = response.total;
@@ -87,7 +88,7 @@ export function createMemoriesData(onChange) {
     for (const dimension of ['categories', 'keywords']) {
       if (dimension in changes) changes = {...changes, [dimension]:
         [...new Set(changes[dimension].map(value => value.trim().toLowerCase()).filter(Boolean))]};
-      if (changes[dimension]?.length > 20) throw new Error('最多选择 20 项');
+      if (changes[dimension]?.length > 20) throw new Error(t('memories.error.selectMax'));
     }
     if ('sort' in changes) {
       if (!searching()) state.browseSort = changes.sort;

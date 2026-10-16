@@ -10,6 +10,7 @@ import { renderMarkdown, copyText } from './markdown.js';
 import { renderDetailEditor } from './detail-editor.js';
 import { renderTechnicalDetails } from './detail-technical.js';
 import { createMemoryIcon } from './memory-icons.js';
+import { t } from './i18n.js';
 
 let state = 'closed', memory = null, draft = null, selected = null, version = 0;
 let picker = null, pending = null, confirmation = null, menu = null, preview = false;
@@ -56,7 +57,7 @@ export function requestLeave(action = closeNow) {
   if (!dirty()) { if (isOpen()) closeNow(); action === closeNow || action(); return true; }
   if (pending) return false;
   pending = action;
-  showConfirm('discard', 'Discard changes?', '未保存的修改将丢失。', 'Continue editing', 'Discard changes', () => {
+  showConfirm('discard', t('detail.confirm.discard.title'), t('detail.confirm.discard.text'), t('detail.confirm.discard.cancel'), t('detail.confirm.discard.accept'), () => {
     const next = pending; pending = null; dismissConfirm(); closeNow(); if (next !== closeNow) next();
   });
   return false;
@@ -86,16 +87,16 @@ async function readMemory(afterSave = false) {
   updateProtection();
 }
 function header() {
-  const title = mode === 'create' ? 'New Memory' : memory ? deriveSummary(memory.summary || memory.text) || 'Memory Detail' : 'Memory Detail';
+  const title = mode === 'create' ? t('detail.title.new') : memory ? deriveSummary(memory.summary || memory.text) || t('detail.title') : t('detail.title');
   $('detail-title').replaceChildren(createMemoryIcon('memory'), node('span','detail-title-text',title)); $('detail-title').title = title;
   $('detail-subtitle').textContent = memory ? memory.namespace + ' · ' + (formatTime(memory.updated_at) || '—') : '';
   if (memory?.namespace) $('detail-subtitle').prepend(createMemoryIcon('namespace'));
   $('detail-subtitle').title = memory?.updated_at || '';
   const actions = $('detail-actions'); actions.replaceChildren();
   if (editing()) {
-    actions.append(button('detail-cancel', 'Cancel', () => { if(mode==='create'){requestLeave();return;} destroyTransient(); draft = null; state = 'view'; render(); updateProtection(); $('detail-edit').focus(); }), button('detail-save', mode==='create' ? 'Create memory' : 'Save changes', save, 'btn-primary'),button('detail-copy-draft','Copy draft',()=>copy(draft.text)));
+    actions.append(button('detail-cancel', t('detail.action.cancel'), () => { if(mode==='create'){requestLeave();return;} destroyTransient(); draft = null; state = 'view'; render(); updateProtection(); $('detail-edit').focus(); }), button('detail-save', mode==='create' ? t('detail.action.create') : t('detail.action.save'), save, 'btn-primary'),button('detail-copy-draft',t('detail.action.copyDraft'),()=>copy(draft.text)));
   } else if (state === 'view') {
-    actions.append(button('detail-edit', 'Edit', edit, 'btn-primary'), button('detail-more', 'More ▾', showMenu));
+    actions.append(button('detail-edit', t('detail.action.edit'), edit, 'btn-primary'), button('detail-more', t('detail.action.more'), showMenu));
     $('detail-more').setAttribute('aria-haspopup', 'menu'); $('detail-more').setAttribute('aria-expanded', 'false');
   }
   if (debugEnabled()) actions.append(debugButton());
@@ -104,11 +105,11 @@ function header() {
 function render(error = '') {
   destroyTransient(); header(); const body = $('detail-body'); body.replaceChildren();
   if (['loading','reloading','deleting'].includes(state)) {
-    const status = node('p', 'detail-status', state === 'loading' ? 'Loading memory…' : state === 'deleting' ? 'Deleting…' : created ? '已创建，正在加载详情…' : '已保存，正在刷新详情…', 'text-muted'); status.setAttribute('role','status'); body.append(status); return;
+    const status = node('p', 'detail-status', state === 'loading' ? t('detail.status.loading') : state === 'deleting' ? t('detail.status.deleting') : created ? t('detail.status.createdLoading') : t('detail.status.savedLoading'), 'text-muted'); status.setAttribute('role','status'); body.append(status); return;
   }
   if (['load-error','saved-error','not-found'].includes(state)) {
-    const message = node('p','detail-status',state === 'saved-error' ? (created ? '已创建，详情加载失败：' : '已保存，详情刷新失败：') + error : state === 'not-found' ? '该记忆已不存在' : '详情加载失败：' + error,'text-danger'); message.setAttribute('role','alert'); body.append(message);
-    if (state !== 'not-found') body.append(button('detail-retry','Retry',()=>readMemory(state === 'saved-error'))); return;
+    const message = node('p','detail-status',state === 'saved-error' ? (created ? t('detail.status.createdLoadFailed',{error}) : t('detail.status.savedLoadFailed',{error})) : state === 'not-found' ? t('detail.status.notFound') : t('detail.status.loadFailed',{error}),'text-danger'); message.setAttribute('role','alert'); body.append(message);
+    if (state !== 'not-found') body.append(button('detail-retry',t('detail.action.retry'),()=>readMemory(state === 'saved-error'))); return;
   }
   if (editing()) renderEditor(body); else renderView(body);
 }
@@ -119,10 +120,10 @@ function tags(kind, values) {
   return wrap;
 }
 function renderView(body) {
-  body.append(field('detail-summary','Summary',node('div','detail-summary-value',memory.summary || '—',memory.summary ? 'detail-plain' : 'text-muted')));
+  body.append(field('detail-summary',t('detail.field.summary'),node('div','detail-summary-value',memory.summary || '—',memory.summary ? 'detail-plain' : 'text-muted')));
   const content = node('div','detail-content-markdown',undefined,'detail-markdown'); renderMarkdown(content,memory.text);
-  body.append(field('detail-content','Content',content));
-  for (const kind of ['categories','keywords','anchors']) body.append(field('detail-'+kind,kind[0].toUpperCase()+kind.slice(1),tags(kind,Array.isArray(memory.metadata?.[kind]) ? memory.metadata[kind] : [])));
+  body.append(field('detail-content',t('detail.field.content'),content));
+  for (const kind of ['categories','keywords','anchors']) body.append(field('detail-'+kind,t('detail.field.'+kind),tags(kind,Array.isArray(memory.metadata?.[kind]) ? memory.metadata[kind] : [])));
   body.append(technical());
 }
 function technical() { return renderTechnicalDetails(memory); }
@@ -157,7 +158,7 @@ function updateSaveAvailability() {
 function lock(value) {
   $('detail-panel').querySelectorAll('button,input,textarea,select').forEach(el=>el.disabled=value);
   const saveButton=$('detail-save');
-  if(saveButton) saveButton.textContent=value ? (mode==='create' ? 'Creating…' : 'Saving…') : (mode==='create' ? 'Create memory' : 'Save changes');
+  if(saveButton) saveButton.textContent=value ? (mode==='create' ? t('detail.action.creating') : t('detail.action.saving')) : (mode==='create' ? t('detail.action.create') : t('detail.action.save'));
   if(!value && state==='edit') validate(); updateProtection();
 }
 async function save() {
@@ -171,16 +172,16 @@ async function save() {
     try { await api('/memories/'+encodeURIComponent(id),{method:'PUT',body:JSON.stringify(payload)}); }
     catch(e) { if(!isNamespaceNotFound(e)) throw e; if(!confirmNamespaceCreation(e)){state='edit';lock(false);return;} await api('/memories/'+encodeURIComponent(id),{method:'PUT',body:JSON.stringify({...payload,confirm_codes:['namespace_not_found']})}); }
     if(request!==version) return;
-    state='reloading'; draft=null; emitMemoriesChanged(); emitStatsChanged(); toast('Memory updated'); await readMemory(true);
-  } catch(e) { if(request!==version) return; state='edit'; lock(false); showError(e.status===404 ? '该记忆已不存在；可复制草稿后关闭。' : e.message); }
+    state='reloading'; draft=null; emitMemoriesChanged(); emitStatsChanged(); toast(t('detail.toast.updated')); await readMemory(true);
+  } catch(e) { if(request!==version) return; state='edit'; lock(false); showError(e.status===404 ? t('detail.error.notFoundCopy') : e.message); }
 }
-async function copy(text) { try { await copyText(text); toast('Copied!'); } catch(e){toast(e.message,'error');} }
+async function copy(text) { try { await copyText(text); toast(t('detail.toast.copied')); } catch(e){toast(e.message,'error');} }
 function showMenu() {
   if(menu){closeMenu();return;}
   menu=node('div','detail-menu',undefined,'detail-menu'); menu.setAttribute('role','menu');
-  const copySummary=button('detail-copy-summary','Copy summary',()=>{closeMenu();copy(memory.summary);});
+  const copySummary=button('detail-copy-summary',t('detail.menu.copySummary'),()=>{closeMenu();copy(memory.summary);});
   copySummary.disabled=!memory.summary;
-  menu.append(copySummary,button('detail-copy','Copy content',()=>{closeMenu();copy(memory.text);}),button('detail-delete','Delete',()=>{closeMenu();showConfirm('delete','Delete this memory?',deriveSummary(memory.summary || memory.text)+'\n'+memory.id,'Cancel','Delete',remove);},'btn-danger'));
+  menu.append(copySummary,button('detail-copy',t('detail.menu.copyContent'),()=>{closeMenu();copy(memory.text);}),button('detail-delete',t('detail.menu.delete'),()=>{closeMenu();showConfirm('delete',t('detail.confirm.delete.title'),deriveSummary(memory.summary || memory.text)+'\n'+memory.id,t('detail.confirm.delete.cancel'),t('detail.confirm.delete.accept'),remove);},'btn-danger'));
   $('detail-panel').append(menu); $('detail-more').setAttribute('aria-expanded','true'); menu.querySelector('button:not(:disabled)').focus();
 }
 function dismissConfirm() { confirmation?.remove(); confirmation=null; pending=null; $('detail-body').inert=false; $('detail-header').inert=false; $('btn-detail-close').focus(); }
@@ -193,8 +194,8 @@ function showConfirm(kind,title,text,cancelLabel,acceptLabel,accept) {
 async function remove() {
   if(state==='deleting')return;
   state='deleting'; updateProtection(); confirmation.querySelectorAll('button').forEach(el=>el.disabled=true);
-  try { const deletedId=selected; await api('/memories/'+encodeURIComponent(deletedId),{method:'DELETE'}); closeNow(); emitMemoriesChanged({deletedId});emitStatsChanged();toast('Memory deleted'); }
-  catch(e) { state='view'; updateProtection();confirmation.querySelectorAll('button').forEach(el=>el.disabled=false); $('detail-confirm-error').textContent=e.status===404?'该记忆已不存在，关闭后刷新列表核对。':e.message; }
+  try { const deletedId=selected; await api('/memories/'+encodeURIComponent(deletedId),{method:'DELETE'}); closeNow(); emitMemoriesChanged({deletedId});emitStatsChanged();toast(t('detail.toast.deleted')); }
+  catch(e) { state='view'; updateProtection();confirmation.querySelectorAll('button').forEach(el=>el.disabled=false); $('detail-confirm-error').textContent=e.status===404?t('detail.error.notFoundDelete'):e.message; }
 }
 export function mount(options = {}) {
   retryCategories=options.retryCategories || (()=>{});
@@ -222,7 +223,7 @@ export function mount(options = {}) {
 }
 
 function debugButton() {
-  const debug=button('detail-debug','Debug',()=>toggleDebug());debug.dataset.debugToggle='';
+  const debug=button('detail-debug',t('detail.debug'),()=>toggleDebug());debug.dataset.debugToggle='';
   debug.setAttribute('aria-pressed',String(document.body.classList.contains('debug-ids')));return debug;
 }
 export function openCreate(namespace = '', options = {}) {
@@ -244,7 +245,7 @@ function updateDefaultHint() {
     draft.namespace=configured.value;initialDraft.namespace=configured.value;input.value=configured.value;updatePicker();validate();
   }
   const hint=$('detail-default-namespace-status'), retry=$('detail-default-namespace-retry');
-  if(hint) hint.textContent=configured.status==='ready' ? '' : configured.status==='error' ? '默认 Namespace 加载失败，可手动输入或重试。' : '正在加载默认 Namespace，也可手动输入。';
+  if(hint) hint.textContent=configured.status==='ready' ? '' : configured.status==='error' ? t('detail.defaultNamespace.error') : t('detail.defaultNamespace.loading');
   if(retry)retry.hidden=configured.status!=='error';
 }
 async function createMemory() {
@@ -256,17 +257,17 @@ async function createMemory() {
     try {result=await api('/memories',{method:'POST',body:JSON.stringify(payload)});}
     catch(e) {if(!isNamespaceNotFound(e))throw e;if(!confirmNamespaceCreation(e)){state='edit';lock(false);return;}result=await api('/memories',{method:'POST',body:JSON.stringify({...payload,confirm_codes:['namespace_not_found']})});}
     if(request!==version)return;
-    if(!result || typeof result.id!=='string' || typeof result.created!=='boolean')throw new Error('创建响应不完整，写入结果未确认，请先核对记录');
+    if(!result || typeof result.id!=='string' || typeof result.created!=='boolean')throw new Error(t('detail.error.createIncomplete'));
     if(!result.created) {
       duplicateId=result.id;state='edit';lock(false);
       const notice=node('div','detail-duplicate');notice.setAttribute('role','status');
-      notice.append(node('p','detail-duplicate-message','相同正文的记忆已存在，本次摘要和 metadata 未写入。继续修改草稿，或查看已有记忆。'),button('detail-view-existing','View existing memory',()=>openMemory(duplicateId,{onClose})));
+      notice.append(node('p','detail-duplicate-message',t('detail.duplicate.message')),button('detail-view-existing',t('detail.duplicate.view'),()=>openMemory(duplicateId,{onClose})));
       $('detail-body').prepend(notice);return;
     }
     created=true;mode='detail';select(result.id);draft=null;state='reloading';
-    emitMemoriesChanged();emitStatsChanged();toast('Memory created');await readMemory(true);
+    emitMemoriesChanged();emitStatsChanged();toast(t('detail.toast.created'));await readMemory(true);
   } catch(e) {
     if(request!==version)return;state='edit';lock(false);
-    showError(!e.status ? '写入结果未确认，请核对记录后重试。'+e.message : e.message);
+    showError(!e.status ? t('detail.error.writeUnconfirmed',{error:e.message}) : e.message);
   }
 }

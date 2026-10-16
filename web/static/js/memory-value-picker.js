@@ -1,5 +1,6 @@
 // Filter controls and transient candidate requests. Applied filters arrive from data.
 import { api } from './api.js';
+import { t } from './i18n.js';
 
 const CATEGORY_PREVIEW_LIMIT = 3;
 const KEYWORD_PREVIEW_LIMIT = 5;
@@ -43,29 +44,29 @@ export function createValuePickers({root, onChange, onReset = () => {}, onRetryC
 
   const nsLabel = el('label', 'memory-namespace-control'), namespace = el('select');
   nsLabel.id = prefix + '-namespace-control';
-  nsLabel.append(el('span', 'memory-namespace-label', 'Namespace:'));
+  nsLabel.append(el('span', 'memory-namespace-label', t('picker.namespace.label')));
   namespace.id = prefix + '-namespace'; nsLabel.append(namespace);
-  const categories = makeButton('Categories ▾', () => open('categories', categories));
+  const categories = makeButton(t('picker.categories')+' ▾', () => open('categories', categories));
   categories.classList.add('memory-filter-trigger');
   categories.id = prefix + '-categories';
   const categoryGroup = el('div', 'memory-category-control');
   categoryGroup.id = prefix + '-category-control';
   categoryGroup.setAttribute('role', 'group');
-  categoryGroup.setAttribute('aria-label', '分类筛选');
+  categoryGroup.setAttribute('aria-label', t('picker.categories.aria'));
   const categoryPreview = el('div', 'memory-selected-preview');
   categoryPreview.id = prefix + '-selected-categories';
   categoryGroup.append(categories, categoryPreview);
   const keywordGroup = el('div', 'memory-keyword-control');
   keywordGroup.id = prefix + '-keyword-control';
   keywordGroup.setAttribute('role', 'group');
-  keywordGroup.setAttribute('aria-label', '关键词筛选');
+  keywordGroup.setAttribute('aria-label', t('picker.keywords.aria'));
   const selectedPreview = el('div', 'memory-selected-preview');
   selectedPreview.id = prefix + '-selected-preview';
-  const keywords = makeButton('Keywords ▾', () => open('keywords', keywords));
+  const keywords = makeButton(t('picker.keywords')+' ▾', () => open('keywords', keywords));
   keywords.classList.add('memory-filter-trigger');
   keywords.id = prefix + '-keywords';
   keywordGroup.append(keywords, selectedPreview);
-  const reset = makeButton('Reset', () => { close(); onReset(); }); reset.id = prefix + '-reset';
+  const reset = makeButton(t('picker.reset'), () => { close(); onReset(); }); reset.id = prefix + '-reset';
   reset.classList.add('memory-filter-reset');
   for (const trigger of [categories, keywords]) {
     trigger.setAttribute('aria-haspopup', 'dialog'); trigger.setAttribute('aria-expanded', 'false');
@@ -95,11 +96,11 @@ export function createValuePickers({root, onChange, onReset = () => {}, onRetryC
     if (popup?.kind === kind) { close(true); return; }
     close();
     const node = el('div', 'memory-filter-popover'); node.id = prefix + '-' + kind + '-popover';
-    node.setAttribute('role', 'dialog'); node.setAttribute('aria-label', kind === 'categories' ? '选择分类' : '选择关键词');
-    const label = el('label', 'memory-filter-search', kind === 'categories' ? 'Search categories' : 'Search keywords');
+    node.setAttribute('role', 'dialog'); node.setAttribute('aria-label', kind === 'categories' ? t('picker.choose.category') : t('picker.choose.keyword'));
+    const label = el('label', 'memory-filter-search', kind === 'categories' ? t('picker.search.categories') : t('picker.search.keywords'));
     label.id = prefix + '-' + kind + '-search-label';
     const input = el('input'); input.type = 'search'; input.id = prefix + '-' + kind + '-query';
-    input.placeholder = kind === 'categories' ? '查找分类…' : '输入关键词查找…';
+    input.placeholder = kind === 'categories' ? t('picker.placeholder.category') : t('picker.placeholder.keyword');
     label.append(input);
     const selected = el('div', 'memory-filter-selected'), body = el('div', 'memory-filter-options');
     selected.id = prefix + '-' + kind + '-selected'; body.id = prefix + '-' + kind + '-options';
@@ -131,16 +132,16 @@ export function createValuePickers({root, onChange, onReset = () => {}, onRetryC
     const label = el('span', 'memory-filter-chip-text', value), cross = el('span', 'memory-filter-chip-remove', ' ×');
     cross.setAttribute('aria-hidden', 'true');
     const pill = el('span', 'memory-filter-chip-pill'); pill.append(label, cross); remove.append(pill);
-    remove.title = value; remove.setAttribute('aria-label', (dimension === 'categories' ? '移除分类 ' : '移除关键词 ') + value);
+    remove.title = value; remove.setAttribute('aria-label', dimension === 'categories' ? t('picker.remove.category',{value}) : t('picker.remove.keyword',{value}));
     return remove;
   }
   function renderSelected() {
     if (!popup || (popup.kind !== 'keywords' && !allowCreate)) return;
     const kind = popup.kind;
-    const nodes = [el('span', 'memory-filter-caption', 'Selected (' + state[kind].length + (Number.isFinite(cap(kind)) ? '/' + cap(kind) : '') + ')')];
+    const nodes = [el('span', 'memory-filter-caption', t('picker.selected',{count:state[kind].length,cap:(Number.isFinite(cap(kind)) ? '/' + cap(kind) : '')}))];
     state[kind].forEach((value, index) => {
       const remove = makeButton(value + ' ×', () => onChange({[kind]: state[kind].filter((_, i) => i !== index)}), 'selected:' + value + (allowCreate ? ':' + index : ''));
-      remove.title = value; remove.setAttribute('aria-label', '移除关键词 ' + value); nodes.push(remove);
+      remove.title = value; remove.setAttribute('aria-label', t('picker.remove.keyword',{value})); nodes.push(remove);
     });
     replaceKeepingFocus(popup.selected, nodes, popup.input);
   }
@@ -151,12 +152,12 @@ export function createValuePickers({root, onChange, onReset = () => {}, onRetryC
     const nodes = [], query = input.value.trim().toLowerCase();
     const values = normalize([...Object.keys(registry.categories), ...state.categories]).sort((a, b) => a.localeCompare(b));
     const known = new Set(normalize(Object.keys(registry.categories)));
-    if (info.status === 'idle' || info.status === 'loading') nodes.push(el('p', 'text-muted', '正在加载分类…'));
+    if (info.status === 'idle' || info.status === 'loading') nodes.push(el('p', 'text-muted', t('picker.categories.loading')));
     if (info.status === 'error') {
-      const message = el('p', 'text-danger', '分类加载失败：' + info.error?.message);
-      message.setAttribute('role', 'alert'); nodes.push(message, makeButton('Retry', onRetryCategories, 'retry'));
+      const message = el('p', 'text-danger', t('picker.categories.failed',{error:info.error?.message}));
+      message.setAttribute('role', 'alert'); nodes.push(message, makeButton(t('picker.retry'), onRetryCategories, 'retry'));
     }
-    if (state.categories.length >= cap('categories')) nodes.push(el('p', 'text-muted', '最多选择 ' + cap('categories') + ' 个分类；可取消已选项'));
+    if (state.categories.length >= cap('categories')) nodes.push(el('p', 'text-muted', t('picker.categories.max',{count:cap('categories')})));
     for (const value of values.filter(value => value.includes(query))) {
       const label = el('label', 'memory-category-option'), checkbox = el('input'); checkbox.type = 'checkbox';
       label.id = prefix + '-category-option-' + encodeURIComponent(value);
@@ -166,19 +167,19 @@ export function createValuePickers({root, onChange, onReset = () => {}, onRetryC
       checkbox.dataset.focusKey = value; checkbox.dataset.value = value;
       checkbox.onchange = () => onChange({categories: checkbox.checked
         ? [...state.categories, value] : state.categories.filter(category => typeof category !== "string" || category.trim().toLowerCase() !== value)});
-      label.append(checkbox, el('span', '', value + (!known.has(value) ? '（当前候选中不可用）' : '')));
+      label.append(checkbox, el('span', '', value + (!known.has(value) ? t('picker.categories.unavailable') : '')));
       nodes.push(label);
     }
-    if (info.hasData && !values.some(value => value.includes(query))) nodes.push(el('p', 'text-muted', '没有匹配的分类'));
-    if (allowCreate && query && !known.has(query) && !state.categories.includes(query)) { const add = makeButton('新增此值：' + query, () => onChange({categories: [...state.categories, query]})); add.id = prefix + '-categories-create'; add.disabled = state.categories.length >= cap('categories'); nodes.push(add); }
+    if (info.hasData && !values.some(value => value.includes(query))) nodes.push(el('p', 'text-muted', t('picker.categories.empty')));
+    if (allowCreate && query && !known.has(query) && !state.categories.includes(query)) { const add = makeButton(t('picker.create',{value:query}), () => onChange({categories: [...state.categories, query]})); add.id = prefix + '-categories-create'; add.disabled = state.categories.length >= cap('categories'); nodes.push(add); }
     replaceKeepingFocus(body, nodes, input); position();
   }
   function renderSuggestions() {
     if (popup?.kind !== 'keywords') return;
-    const heading = el('span', 'memory-filter-suggestions-title', 'Suggestions');
+    const heading = el('span', 'memory-filter-suggestions-title', t('picker.suggestions'));
     heading.id = prefix + '-keywords-suggestions-title';
     const nodes = [heading];
-    if (state.keywords.length >= cap('keywords')) nodes.push(el('p', 'text-muted', '最多选择 ' + cap('keywords') + ' 个关键词；可移除已选项'));
+    if (state.keywords.length >= cap('keywords')) nodes.push(el('p', 'text-muted', t('picker.keywords.max',{count:cap('keywords')})));
     for (const item of suggestions) {
       const chosen = normalize(state.keywords).includes(item.keyword);
       const add = makeButton('',
@@ -189,19 +190,19 @@ export function createValuePickers({root, onChange, onReset = () => {}, onRetryC
       add.append(icon, el('span', 'memory-keyword-suggestion-text', item.keyword),
         el('span', 'memory-keyword-suggestion-count', '(' + item.count + ')'));
       add.disabled = chosen || state.keywords.length >= cap('keywords');
-      add.title = item.keyword; add.setAttribute('aria-label', (chosen ? '已选择 ' : '添加关键词 ') + item.keyword);
+      add.title = item.keyword; add.setAttribute('aria-label', chosen ? t('picker.keyword.selected',{value:item.keyword}) : t('picker.keyword.add',{value:item.keyword}));
       add.dataset.keyword = item.keyword; nodes.push(add);
     }
-    const message = el('p', 'text-muted', status === 'idle' ? '输入关键词查找' : status === 'loading' ? '正在查找…'
-      : status === 'error' ? '关键词加载失败：' + error.message : status === 'unknown' ? '新 Namespace 尚未创建，可手动新增关键词' : total ? total + ' matches' : '没有匹配的关键词');
+    const message = el('p', 'text-muted', status === 'idle' ? t('picker.status.idle') : status === 'loading' ? t('picker.status.loading')
+      : status === 'error' ? t('picker.status.error',{error:error.message}) : status === 'unknown' ? t('picker.status.unknown') : total ? t('picker.status.matches',{count:total}) : t('picker.status.empty'));
     message.setAttribute('role', status === 'error' ? 'alert' : 'status'); nodes.push(message);
-    if (status === 'error') nodes.push(makeButton('Retry', () => querySuggestions(offset > 0), 'retry'));
+    if (status === 'error') nodes.push(makeButton(t('picker.retry'), () => querySuggestions(offset > 0), 'retry'));
     else if (offset < total) {
-      const more = makeButton('加载更多', () => querySuggestions(true), 'more');
+      const more = makeButton(t('picker.more'), () => querySuggestions(true), 'more');
       more.id = prefix + '-keywords-more'; more.disabled = status === 'loading'; nodes.push(more);
     }
     const query = popup.input.value.trim().toLowerCase();
-    if (allowCreate && query && !state.keywords.includes(query) && !suggestions.some(item => item.keyword === query)) { const add = makeButton('新增此值：' + query, () => onChange({keywords: [...state.keywords, query]})); add.id = prefix + '-keywords-create'; add.disabled = state.keywords.length >= cap('keywords'); nodes.push(add); }
+    if (allowCreate && query && !state.keywords.includes(query) && !suggestions.some(item => item.keyword === query)) { const add = makeButton(t('picker.create',{value:query}), () => onChange({keywords: [...state.keywords, query]})); add.id = prefix + '-keywords-create'; add.disabled = state.keywords.length >= cap('keywords'); nodes.push(add); }
     replaceKeepingFocus(popup.body, nodes, popup.input); position();
   }
   function resetSuggestions() {
@@ -238,16 +239,16 @@ export function createValuePickers({root, onChange, onReset = () => {}, onRetryC
     state = next; registry = candidates;
     const signature = JSON.stringify([registry.namespaces, state.namespace]);
     if (signature !== namespaceSignature) {
-      namespace.replaceChildren(new Option('All', ''), ...registry.namespaces.map(value => new Option(value, value)));
-      if (state.namespace && !registry.namespaces.includes(state.namespace)) namespace.append(new Option(state.namespace + '（已不可用）', state.namespace));
+      namespace.replaceChildren(new Option(t('picker.namespace.all'), ''), ...registry.namespaces.map(value => new Option(value, value)));
+      if (state.namespace && !registry.namespaces.includes(state.namespace)) namespace.append(new Option(t('picker.namespace.unavailable',{name:state.namespace}), state.namespace));
       namespace.value = state.namespace; namespaceSignature = signature;
     }
     nsLabel.classList.toggle('has-filter', Boolean(state.namespace));
     categories.classList.toggle('has-filter', state.categories.length > 0);
     keywords.classList.toggle('has-filter', state.keywords.length > 0);
-    categories.textContent = 'Categories' + (state.categories.length > CATEGORY_PREVIEW_LIMIT
+    categories.textContent = t('picker.categories') + (state.categories.length > CATEGORY_PREVIEW_LIMIT
       ? ' · +' + (state.categories.length - CATEGORY_PREVIEW_LIMIT) : '') + ' ▾';
-    categories.setAttribute('aria-label', '选择分类，已选 ' + state.categories.length + ' 项');
+    categories.setAttribute('aria-label', t('picker.categories.triggerAria',{count:state.categories.length}));
     const selectedCategorySignature = JSON.stringify(state.categories);
     if (categorySignature !== selectedCategorySignature) {
       replaceKeepingFocus(categoryPreview, state.categories.slice(0, CATEGORY_PREVIEW_LIMIT)
@@ -259,9 +260,9 @@ export function createValuePickers({root, onChange, onReset = () => {}, onRetryC
       const nodes = state.keywords.slice(0, KEYWORD_PREVIEW_LIMIT).map((value,index) => previewChip(value, 'keywords', index));
       replaceKeepingFocus(selectedPreview, nodes, keywords); keywordSignature = selectedSignature;
     }
-    keywords.textContent = 'Keywords' + (state.keywords.length > KEYWORD_PREVIEW_LIMIT
+    keywords.textContent = t('picker.keywords') + (state.keywords.length > KEYWORD_PREVIEW_LIMIT
       ? ' · +' + (state.keywords.length - KEYWORD_PREVIEW_LIMIT) : '') + ' ▾';
-    keywords.setAttribute('aria-label', '选择关键词，已选 ' + state.keywords.length + ' 项');
+    keywords.setAttribute('aria-label', t('picker.keywords.triggerAria',{count:state.keywords.length}));
     reset.hidden = !state.namespace && !state.categories.length && !state.keywords.length && !state.updatedAfter && !state.updatedBefore;
     reset.classList.toggle('has-filter', !reset.hidden);
     if (popup?.kind === 'categories') renderCategories();

@@ -1,9 +1,10 @@
 // Editable namespace field with a full candidate list bounded by the viewport.
+import { t } from './i18n.js';
 export function createNamespacePicker({control, input, onChoose, onOpen = () => {}, idPrefix = 'detail-namespace', popupRoot = document.getElementById('detail-panel')}) {
   const trigger=document.createElement('button'); trigger.id=idPrefix+'-select';
-  trigger.type='button'; trigger.textContent='⌄'; trigger.title='选择已有 Namespace';
+  trigger.type='button'; trigger.textContent='⌄'; trigger.title=t('picker.namespace.trigger');
   trigger.disabled=true;
-  trigger.setAttribute('aria-label','选择已有 Namespace'); trigger.setAttribute('aria-haspopup','listbox');
+  trigger.setAttribute('aria-label',t('picker.namespace.trigger')); trigger.setAttribute('aria-haspopup','listbox');
   trigger.setAttribute('aria-controls',idPrefix+'-options'); trigger.setAttribute('aria-expanded','false');
   control.append(trigger);
   let values=[], popup=null, anchor=null;
@@ -40,7 +41,7 @@ export function createNamespacePicker({control, input, onChoose, onOpen = () => 
     onOpen(); close();
     popup=document.createElement('div'); popup.id=idPrefix+'-options';
     popup.className='detail-namespace-options'; popup.setAttribute('role','listbox');
-    popup.setAttribute('aria-label','已有 Namespace');
+    popup.setAttribute('aria-label',t('picker.namespace.list'));
     popupRoot.append(popup); paint();
     const box=control.getBoundingClientRect(), margin=8;
     anchor=box;
