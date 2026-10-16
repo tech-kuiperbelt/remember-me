@@ -68,7 +68,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC
 .help-memory-quote{margin:0;padding:24px 0 24px 28px;border-left:2px solid var(--border-subtle);min-width:0}
 .help-memory-quote blockquote{margin:0}
 .help-memory-quote blockquote p{font-size:20px;line-height:1.8}
-.help-memory-quote blockquote p[lang=en]{font-size:13px;color:var(--text-secondary);margin-top:16px}
+html[lang="zh-CN"] .help-memory-quote blockquote p[lang=en]{font-size:13px;color:var(--text-secondary);margin-top:16px}
 .help-memory-quote figcaption{font-size:12px;color:var(--text-muted);margin-top:20px;max-width:30em}
 .help-memory-quote cite{font-style:normal}
 .help-home-section{margin-top:32px}
