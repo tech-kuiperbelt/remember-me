@@ -743,5 +743,17 @@
   "help.toc.stats.aria": "统计说明目录",
   "help.toc.configuration.aria": "配置说明目录",
   "help.toc.troubleshooting.aria": "常见问题目录",
-  "help.connect.prompt.static": "请读取当前服务的 /read-me，按其中的接入指引选择当前 AI 工具支持的连接方式，帮我连接已独立运行的 Remember Me，保留已有配置，避免重复连接。需要我操作时，逐步告诉我怎么做；完成后读取记忆数量验证。若不支持或连接失败，请说明原因。"
+  "help.connect.prompt.static": "请读取当前服务的 /read-me，按其中的接入指引选择当前 AI 工具支持的连接方式，帮我连接已独立运行的 Remember Me，保留已有配置，避免重复连接。需要我操作时，逐步告诉我怎么做；完成后读取记忆数量验证。若不支持或连接失败，请说明原因。",
+  "detail.technical.toggle": "技术详情",
+  "detail.technical.basic": "基本信息",
+  "detail.technical.id": "ID",
+  "detail.technical.created": "创建时间",
+  "detail.technical.updated": "更新时间",
+  "detail.technical.copyId": "复制 ID",
+  "detail.technical.rawMetadata": "原始 metadata",
+  "detail.technical.copyMetadata": "复制 metadata",
+  "common.copied": "已复制",
+  "api.namespace.confirm": "分组 “{requested}” 不存在。\n\n已有分组：{known}\n\n创建并继续？",
+  "api.namespace.requested": "该分组",
+  "api.namespace.none": "（无）"
 }

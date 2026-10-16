@@ -743,5 +743,17 @@
   "help.toc.stats.aria": "Statistics guide contents",
   "help.toc.configuration.aria": "Configuration guide contents",
   "help.toc.troubleshooting.aria": "Troubleshooting contents",
-  "help.connect.prompt.static": "Please read the /read-me guide for the running service and, following its setup guide, choose the connection method your AI tool supports to connect to the already running Remember Me. Keep the existing configuration and avoid duplicate connections. When I need to do something, tell me step by step; afterwards read the memory count to verify. If it is unsupported or the connection fails, explain why."
+  "help.connect.prompt.static": "Please read the /read-me guide for the running service and, following its setup guide, choose the connection method your AI tool supports to connect to the already running Remember Me. Keep the existing configuration and avoid duplicate connections. When I need to do something, tell me step by step; afterwards read the memory count to verify. If it is unsupported or the connection fails, explain why.",
+  "detail.technical.toggle": "Technical details",
+  "detail.technical.basic": "Basic technical information",
+  "detail.technical.id": "ID",
+  "detail.technical.created": "Created",
+  "detail.technical.updated": "Updated",
+  "detail.technical.copyId": "Copy ID",
+  "detail.technical.rawMetadata": "Raw metadata",
+  "detail.technical.copyMetadata": "Copy metadata",
+  "common.copied": "Copied",
+  "api.namespace.confirm": "Namespace \"{requested}\" does not exist.\n\nExisting namespaces: {known}\n\nCreate it and continue?",
+  "api.namespace.requested": "this namespace",
+  "api.namespace.none": "(none)"
 }

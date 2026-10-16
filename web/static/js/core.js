@@ -1,4 +1,5 @@
 // core.js — DOM lookup, escaping and formatting helpers. No application state.
+import { locale } from './i18n.js';
 
 export function $(id) { return document.getElementById(id) }
 
@@ -6,7 +7,7 @@ export function formatTime(isoStr) {
   if (!isoStr) return '';
   const d = new Date(isoStr);
   if (isNaN(d.getTime())) return isoStr;
-  return d.toLocaleString();
+  return d.toLocaleString(locale);
 }
 
 export function formatBytes(value) {

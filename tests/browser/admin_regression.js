@@ -355,12 +355,12 @@ try {
   lastOpen.focus(); lastOpen.click();
   await waitFor(() => $('detail-modal').style.display === 'flex', 'last item detail');
   await waitFor(() => $('detail-more'), 'detail loaded'); $('detail-more').click(); $('detail-delete').click(); $('detail-confirm-delete').click();
-  await waitFor(() => $('memories-pagination').textContent.includes('21–40 of 40'), 'delete adjusts page');
+  await waitFor(() => $('memories-pagination').textContent.includes(t('memories.range.browse',{start:21,end:40,total:40})), 'delete adjusts page');
   window.confirm = approveDelete;
   $('memories-page-size').value = '10'; fire($('memories-page-size'), 'change');
-  await waitFor(() => $('memories-pagination').textContent.includes('1–10 of 40'), 'page size resets page');
+  await waitFor(() => $('memories-pagination').textContent.includes(t('memories.range.browse',{start:1,end:10,total:40})), 'page size resets page');
   $('memories-page-size').value = '20'; fire($('memories-page-size'), 'change');
-  await waitFor(() => $('memories-pagination').textContent.includes('1–20 of 40'), 'restore page size');
+  await waitFor(() => $('memories-pagination').textContent.includes(t('memories.range.browse',{start:1,end:20,total:40})), 'restore page size');
 
   let releasePage;
   S.setOverride(url => {
@@ -431,7 +431,7 @@ try {
   assert(!$('edit-text'), 'view opens read-only detail');
 
   S.resetCalls();
-  Array.from($('detail-actions').children).find(el => el.textContent === 'Edit').click();
+  Array.from($('detail-actions').children).find(el => el.textContent === t('detail.action.edit')).click();
   await waitFor(() => $('edit-text'), 'edit modal');
   assert(!S.calls.some(c => c.url === detailUrl), 'editing reuses authoritative detail');
   assert($('edit-namespace').value === special, 'edit namespace value');
@@ -479,7 +479,7 @@ try {
 
   S.setOverride(url => url.startsWith('/api/stats/metadata') ? json({detail: special}, 500) : undefined);
   document.querySelector('.nav button[data-page="stats"]').click();
-  await waitFor(() => $('stats-content').textContent.includes('Unable to load statistics: ' + special), 'literal error stats-content');
+  await waitFor(() => $('stats-content').textContent.includes(t('stats.loadFailed',{error:special})), 'literal error stats-content');
   assert(!$('stats-content').querySelector('img'), 'literal error stats-content safe');
   S.reset();
 

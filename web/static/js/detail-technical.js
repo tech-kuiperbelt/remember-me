@@ -1,5 +1,6 @@
 import { copyText } from './markdown.js';
 import { toast } from './ui.js';
+import { t } from './i18n.js';
 
 function node(tag, id, text, cls = '') {
   const el = document.createElement(tag); el.id = id;
@@ -18,7 +19,7 @@ function copyButton(id, label, value) {
     try {
       await copyText(value);
       if (generation !== request) return;
-      button.textContent = '✓'; button.setAttribute('aria-label', 'Copied');
+      button.textContent = '✓'; button.setAttribute('aria-label', t('common.copied'));
       setTimeout(() => { if (generation === request) { button.innerHTML = icon; button.setAttribute('aria-label', label); } }, 1200);
     } catch (error) { toast(error.message, 'error'); }
   };
@@ -32,19 +33,19 @@ function localTime(value) {
 }
 export function renderTechnicalDetails(memory) {
   const details = node('details', 'detail-technical', undefined, 'detail-technical');
-  const toggle = node('summary', 'detail-technical-toggle', 'Technical details');
+  const toggle = node('summary', 'detail-technical-toggle', t('detail.technical.toggle'));
   toggle.dataset.debugNavigation = ''; details.append(toggle);
-  details.append(node('h3', 'detail-technical-basic-label', 'Basic technical information'));
+  details.append(node('h3', 'detail-technical-basic-label', t('detail.technical.basic')));
   const list = node('dl', 'detail-technical-values');
-  for (const [label, value] of [['ID', memory.id], ['Created', memory.created_at], ['Updated', memory.updated_at]]) {
-    const key = label.toLowerCase(), cell = node('dd', 'detail-' + key + '-cell');
+  for (const [key, label, value] of [['id', t('detail.technical.id'), memory.id], ['created', t('detail.technical.created'), memory.created_at], ['updated', t('detail.technical.updated'), memory.updated_at]]) {
+    const cell = node('dd', 'detail-' + key + '-cell');
     const text = node('span', 'detail-' + key + '-value', key === 'id' ? value : localTime(value));
     if (key !== 'id') text.title = value || '';
     cell.append(text);
-    if (key === 'id') cell.append(copyButton('detail-copy-id', 'Copy ID', memory.id));
+    if (key === 'id') cell.append(copyButton('detail-copy-id', t('detail.technical.copyId'), memory.id));
     list.append(node('dt', 'detail-' + key + '-label', label), cell);
   }
-  details.append(list, node('h3', 'detail-raw-metadata-label', 'Raw metadata'));
+  details.append(list, node('h3', 'detail-raw-metadata-label', t('detail.technical.rawMetadata')));
   const raw = JSON.stringify(memory.metadata || {}, null, 2);
   const box = node('div', 'detail-metadata-box', undefined, 'detail-metadata-box');
   const pre = node('pre', 'detail-metadata');
@@ -57,7 +58,7 @@ export function renderTechnicalDetails(memory) {
     offset = match.index + value.length;
   }
   pre.append(document.createTextNode(raw.slice(offset)));
-  box.append(pre, copyButton('detail-copy-metadata', 'Copy metadata', raw));
+  box.append(pre, copyButton('detail-copy-metadata', t('detail.technical.copyMetadata'), raw));
   details.append(box);
   return details;
 }

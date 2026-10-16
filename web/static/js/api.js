@@ -1,4 +1,5 @@
 // api.js — JSON fetch wrapper and namespace confirmation flow.
+import { t } from './i18n.js';
 
 export async function api(path, opts = {}) {
   const r = await fetch('/api' + path, {
@@ -27,11 +28,7 @@ export function isNamespaceNotFound(e) {
 
 export function confirmNamespaceCreation(e) {
   const meta = (e.payload && e.payload.response_meta) || {};
-  const requested = meta.requested_namespace || 'this namespace';
-  const known = (meta.known_namespaces || []).join(', ') || '(none)';
-  return confirm(
-    'Namespace "' + requested + '" does not exist.\n\n' +
-    'Existing namespaces: ' + known + '\n\n' +
-    'Create it and continue?'
-  );
+  const requested = meta.requested_namespace || t('api.namespace.requested');
+  const known = (meta.known_namespaces || []).join(', ') || t('api.namespace.none');
+  return confirm(t('api.namespace.confirm',{requested,known}));
 }
