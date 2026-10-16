@@ -6,6 +6,7 @@ import { getNamespaces, onNamespacesChanged } from './store.js';
 import { createNamespacePicker } from './namespace-picker.js';
 import { createDrawerAnimator } from './drawer-motion.js';
 import { presentAudit } from './audit-presentation.js';
+import { t } from './i18n.js';
 
 let version = 0, events = [], eventKeys = [], recent = null, picker, opened = false, background, priorFocus;
 const animate = createDrawerAnimator($('audit-modal'), $('audit-panel'));
@@ -22,7 +23,7 @@ export async function loadAudit() {
   if ($('audit-namespace').value.trim()) params.set('namespace', $('audit-namespace').value.trim());
   const list = $('audit-list');
   list.setAttribute('aria-busy', 'true');
-  list.innerHTML = '<div class="empty-state">Loading...</div>';
+  list.innerHTML = '<div class="empty-state">' + esc(t('audit.loading')) + '</div>';
   try {
     const data = await api('/audit?' + params);
     if (request !== version) return;
@@ -48,7 +49,7 @@ function markRecent(key) {
 }
 function render() {
   const list = $('audit-list');
-  if (!events.length) { list.innerHTML = '<div class="empty-state">暂无审计记录</div>'; return; }
+  if (!events.length) { list.innerHTML = '<div class="empty-state">' + esc(t('audit.empty')) + '</div>'; return; }
   const occurrences = new Map();
   eventKeys = [];
   list.innerHTML = events.map((ev, i) => {
@@ -58,13 +59,13 @@ function render() {
     const row = 'audit-row-' + (i + 1), view = presentAudit(ev);
     const cell = (name, label, content, cls = '') => `<div id="${row}-${name}" class="audit-cell audit-cell-${name} ${cls}"><span class="audit-cell-label">${label}</span><span class="audit-cell-value">${esc(content)}</span></div>`;
     return `<article id="${row}" class="memory-row audit-row">
-      ${cell('time', '时间', formatTime(ev.ts) || '—')}
-      ${cell('action', 'Action', ev.tool || '—')}
-      ${cell('namespace', 'Namespace', view.namespace)}
-      ${cell('summary', '关键信息', view.summary)}
-      <div id="${row}-result" class="audit-cell audit-cell-result"><span class="audit-cell-label">结果</span><span id="${row}-status" class="audit-row-status ${view.status === 'error' ? 'text-danger' : view.status === 'ok' ? 'text-success' : 'text-muted'}">${esc(view.status)}</span></div>
-      ${cell('duration', '耗时', view.duration)}
-      <button id="${row}-detail" class="audit-row-open" aria-label="查看 ${esc(ev.tool || 'Audit')} 详情"><span class="memory-row-detail-arrow" aria-hidden="true">›</span></button>
+      ${cell('time', t('audit.col.time'), formatTime(ev.ts) || '—')}
+      ${cell('action', t('audit.col.action'), ev.tool || '—')}
+      ${cell('namespace', t('audit.col.namespace'), view.namespace)}
+      ${cell('summary', t('audit.col.info'), view.summary)}
+      <div id="${row}-result" class="audit-cell audit-cell-result"><span class="audit-cell-label">${t('audit.col.result')}</span><span id="${row}-status" class="audit-row-status ${view.status === 'error' ? 'text-danger' : view.status === 'ok' ? 'text-success' : 'text-muted'}">${esc(view.status)}</span></div>
+      ${cell('duration', t('audit.col.duration'), view.duration)}
+      <button id="${row}-detail" class="audit-row-open" aria-label="${esc(t('audit.detail.open', {tool: ev.tool || 'Audit'}))}"><span class="memory-row-detail-arrow" aria-hidden="true">›</span></button>
     </article>`;
   }).join('');
   list.querySelectorAll('.audit-row-open').forEach((button, i) => button.onclick = () => openDetail(events[i], eventKeys[i]));

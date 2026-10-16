@@ -18,12 +18,29 @@ import socket
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+argv = sys.argv[1:]
+
+if '--lang' not in argv:
+    # Without --lang, run the whole matrix once per language as isolated
+    # subprocesses. Use --lang to run a single language pass (e.g. for a
+    # narrowed --case/--case-prefix run).
+    languages = ('zh-CN', 'en')
+    failures = 0
+    for language in languages:
+        print('=== language: %s ===' % language, flush=True)
+        failures += subprocess.call([sys.executable, str(Path(__file__).resolve()), *argv, '--lang', language])
+    sys.exit(1 if failures else 0)
+
+LANG = sys.argv[sys.argv.index('--lang') + 1]
+del sys.argv[sys.argv.index('--lang'):sys.argv.index('--lang') + 2]
+print('Running browser regression in %s' % LANG, flush=True)
 for key in list(os.environ):
     if key.startswith(("MEMORY_", "EMBED_", "OLLAMA_", "FASTEMBED_", "SENTENCE_TRANSFORMERS_")):
         os.environ.pop(key)
 work = tempfile.TemporaryDirectory(prefix="remember-ui-test-")
 os.environ.update({"MEMORY_STORAGE":"sqlite", "MEMORY_STORAGE_PATH":":memory:",
                    "MEMORY_DATA_DIR": work.name,
+                   "MEMORY_LANGUAGE": LANG,
                    "MEMORY_AUDIT_PATH":str(Path(work.name) / "audit.jsonl"),
                    "EMBED_PROVIDER":"ollama", "EMBED_PRELOAD":"false",
                    "OLLAMA_BASE_URL":"http://127.0.0.1:1"})
@@ -52,7 +69,7 @@ config_debug_case = sys.argv[1:] == ['--case', 'config-debug']
 browser_runtime = None
 if config_debug_case:
     from app.runtime import Runtime
-    (Path(work.name) / 'config.jsonc').write_text('{"debug":true}')
+    (Path(work.name) / 'config.jsonc').write_text(json.dumps({"debug": True, "language": LANG}))
     browser_runtime = Runtime(Settings.from_config(work.name, create=True),
                               provider_factory=lambda **_: BrowserProvider(), configure_logging=False)
     browser_runtime.start()
@@ -84,6 +101,8 @@ checks += '\n' + (ROOT / 'tests/browser/audit_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/config_debug_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/ops_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/help_regression.js').read_text()
+# t() resolves catalog keys so one regression script asserts in either language.
+checks = 'const t = window.__smoke.t;\n' + checks
 HEAD_SCRIPT = '<script>' + harness + '</script>'
 BODY_SCRIPT = '<script type="module">' + checks + '</script>'
 

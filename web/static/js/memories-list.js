@@ -1,6 +1,7 @@
 // Safe memory row and page rendering. All data/actions arrive through callbacks.
 import { deriveSummary, formatTime } from './core.js';
 import { createMemoryIcon } from './memory-icons.js';
+import { t } from './i18n.js';
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -90,7 +91,7 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
     }
     const hidden = tags.length - low;
     more.textContent = '+' + hidden; more.hidden = !hidden;
-    more.setAttribute('aria-label', '查看记忆，另有 ' + hidden + ' 个标签');
+    more.setAttribute('aria-label', t('memories.tags.more', {count: hidden}));
     metadata.dataset.hiddenCount = String(hidden);
     if (hadFocus && hidden) more.focus({preventScroll: true});
   }
@@ -99,7 +100,7 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
     // Position-based IDs let callers identify regions of the current page.
     // dataset.memoryId continues to identify the underlying memory record.
     const rowId = 'memory-row-' + (index + 1);
-    const title = clean(memory.summary) || deriveSummary(memory.text) || '空内容记忆';
+    const title = clean(memory.summary) || deriveSummary(memory.text) || t('memories.emptyContent');
     const body = clean(memory.text), prefix = title.replace(/…$/, '');
     const remainder = body.startsWith(prefix) ? body.slice(prefix.length).trim() : body;
     const preview = Array.from(remainder).slice(0, 256).join('');
@@ -107,7 +108,7 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
     item.id = rowId;
     item.dataset.memoryId = memory.id;
     const open = el('button', 'memory-open'); open.type = 'button';
-    open.setAttribute('aria-label', '查看记忆：' + title);
+    open.setAttribute('aria-label', t('memories.open.aria', {title}));
     open.title = title;
     open.onclick = () => onOpen(memory.id);
     const icon = el('span', 'memory-row-icon'); icon.setAttribute('aria-hidden', 'true');
@@ -129,7 +130,7 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
     const footer = el('div', 'memory-row-footer');
     const metadata = el('div', 'memory-row-metadata');
     if (searchMode) {
-      const label = ({semantic: 'Semantic', lexical: 'FTS', anchor: 'Anchor'})[searchMode];
+      const label = ({semantic: t('memories.mode.semantic'), lexical: t('memories.mode.lexical'), anchor: t('memories.mode.anchor')})[searchMode];
       const score = el('span', 'memory-chip memory-search-score',
         label + ' ' + memory.score.toFixed(3));
       score.title = label + ' ' + String(memory.score);
@@ -139,12 +140,12 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
     const namespace = memory.namespace ? el('div', 'memory-tag-group memory-namespace') : null;
     if (namespace) {
       namespace.title = memory.namespace;
-      namespace.setAttribute('aria-label', '空间：' + memory.namespace);
+      namespace.setAttribute('aria-label', t('memories.namespace.aria', {name: memory.namespace}));
       namespace.append(createMemoryIcon('namespace'), el('span', 'memory-namespace-value', memory.namespace));
       metadata.append(namespace);
     }
     const tagNodes = [], groups = [];
-    for (const [field, dimension, label] of [['categories', 'category', '分类'], ['keywords', 'keyword', '关键词'], ['anchors', 'anchor', '锚点']]) {
+    for (const [field, dimension, label] of [['categories', 'category', t('field.categories')], ['keywords', 'keyword', t('field.keywords')], ['anchors', 'anchor', t('field.anchors')]]) {
       const tags = values(memory.metadata?.[field], field === 'anchors');
       if (!tags.length) continue;
       const group = el('span', 'memory-tag-group'); group.id = rowId + '-' + field;
@@ -152,7 +153,7 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
       const groupLabel = el('span', 'memory-group-label');
       groupLabel.title = label;
       groupLabel.append(createMemoryIcon(dimension));
-      group.setAttribute('aria-label', label + '：' + tags.join('、'));
+      group.setAttribute('aria-label', label + ': ' + tags.join(', '));
       firstPair.append(groupLabel); group.append(firstPair);
       tags.forEach((value, tagIndex) => {
         const chip = el('span', 'memory-chip memory-' + dimension + '-chip', value);
@@ -168,15 +169,15 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
     more.onclick = () => onOpen(memory.id); metadata.append(more);
     layouts.push({metadata, tags: tagNodes, groups, more, namespace});
     const stamp = memoryDate(memory), time = el('span', 'memory-row-time', displayDate(stamp));
-    time.title = stamp ? formatTime(stamp) : '无有效时间';
+    time.title = stamp ? formatTime(stamp) : t('memories.time.invalid');
     for (const [region, node] of Object.entries({open, icon, content, title: heading, summary,
       footer, metadata, namespace, date: time})) if (node) node.id = rowId + '-' + region;
-    if (stamp) open.setAttribute('aria-label', '查看记忆：' + title + '，更新于 ' + formatTime(stamp));
+    if (stamp) open.setAttribute('aria-label', t('memories.open.time.aria', {title, time: formatTime(stamp)}));
     footer.append(metadata, time); content.append(footer);
     const detailArrow = el('button', 'memory-row-detail-arrow', '›');
     detailArrow.id = rowId + '-detail-arrow';
     detailArrow.type = 'button'; detailArrow.tabIndex = -1; detailArrow.dataset.debugNavigation = '';
-    detailArrow.setAttribute('aria-label', '查看记忆明细：' + title);
+    detailArrow.setAttribute('aria-label', t('memories.detail.aria', {title}));
     detailArrow.onclick = () => onOpen(memory.id);
     item.append(open, icon, content, detailArrow);
     item.addEventListener('click', event => {
@@ -196,43 +197,43 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
     const searching = Boolean(state.submittedQuery);
     const resolution = document.getElementById('memories-filter-resolution'); resolution.replaceChildren();
     if (searching && state.searchMode === 'semantic' && state.status === 'ready' && state.filterResolution) {
-      for (const [dimension, label] of [['keywords', '关键词'], ['categories', '分类']]) {
+      for (const [dimension, label] of [['keywords', t('field.keywords')], ['categories', t('field.categories')]]) {
         for (const mapping of state.filterResolution[dimension] || []) {
           if (mapping.match_type === 'exact') continue;
-          const text = mapping.match_type === 'none' ? label + ' ' + mapping.input + ' 未找到匹配值'
-            : label + '：' + mapping.input + ' → ' + mapping.matches.filter(match => match.accepted).map(match => match.value).join('、');
+          const text = mapping.match_type === 'none' ? t('memories.filter.notfound', {label, input: mapping.input})
+            : label + ': ' + mapping.input + ' → ' + mapping.matches.filter(match => match.accepted).map(match => match.value).join(', ');
           resolution.append(el('div', '', text));
         }
       }
     }
-    count.textContent = state.status === 'ready' ? (searching ? '本次搜索 ' + state.total + ' 条 · 最多 ' + state.k + ' 条' : state.total + ' memories') : state.status === 'error' ? '加载失败' : 'Loading...';
+    count.textContent = state.status === 'ready' ? (searching ? t('memories.count.search', {total: state.total, k: state.k}) : t('memories.count.browse', {total: state.total})) : state.status === 'error' ? t('memories.count.error') : t('memories.count.loading');
     if (state.status === 'loading' || state.status === 'idle') {
-      const skeleton = el('div', 'memory-skeletons'); skeleton.setAttribute('aria-label', '正在加载记忆');
+      const skeleton = el('div', 'memory-skeletons'); skeleton.setAttribute('aria-label', t('memories.list.loading.aria'));
       for (let i = 0; i < 5; i++) skeleton.append(el('div', 'memory-skeleton'));
       root.append(skeleton);
     } else if (state.status === 'error') {
       const error = el('div', 'memory-state'); error.setAttribute('role', 'alert');
-      error.append(el('p', '', 'Error: ' + state.error.message), button('Retry', onRetry));
-      if (state.error.payload?.response_code === 'namespace_not_found') error.append(button('返回全部范围', onAll));
+      error.append(el('p', '', 'Error: ' + state.error.message), button(t('memories.retry'), onRetry));
+      if (state.error.payload?.response_code === 'namespace_not_found') error.append(button(t('memories.back.all'), onAll));
       root.append(error);
     } else if (!state.items.length) {
       const filtered = state.namespace || state.categories.length || state.keywords.length
         || state.updatedAfter || state.updatedBefore;
       const empty = el('div', 'memory-state');
-      empty.append(el('p', '', filtered || searching ? '当前搜索或筛选没有匹配的记忆' : '暂无记忆'));
-      if (filtered) empty.append(button('Clear filters', onReset));
-      else if (searching) empty.append(button('清空搜索', onClearSearch));
+      empty.append(el('p', '', filtered || searching ? t('memories.empty.filtered') : t('memories.empty.none')));
+      if (filtered) empty.append(button(t('memories.clearFilters'), onReset));
+      else if (searching) empty.append(button(t('memories.clearSearch'), onClearSearch));
       root.append(empty);
     } else state.items.forEach((memory, index) => root.append(row(memory, searching ? state.searchMode : null, index)));
 
     const ready = state.status === 'ready', last = Math.max(1, Math.ceil(state.total / state.pageSize));
     const start = ready && state.total ? (state.page - 1) * state.pageSize + 1 : 0;
     const end = ready ? Math.min(state.page * state.pageSize, state.total) : 0;
-    pagination.append(el('span', 'memories-range', ready ? start + '–' + end + ' of ' + state.total + (searching ? ' 本次搜索结果' : ' memories') : ''));
-    const nav = el('nav', 'memories-pages'); nav.setAttribute('aria-label', '记忆分页');
+    pagination.append(el('span', 'memories-range', ready ? (searching ? t('memories.range.search', {start, end, total: state.total}) : t('memories.range.browse', {start, end, total: state.total})) : ''));
+    const nav = el('nav', 'memories-pages'); nav.setAttribute('aria-label', t('memories.pagination.aria'));
     if (ready && state.total) {
       nav.append(button('‹', () => onPage(state.page - 1), state.page === 1));
-      nav.lastChild.setAttribute('aria-label', '上一页');
+      nav.lastChild.setAttribute('aria-label', t('memories.pagination.prev'));
       const pages = [...new Set([1, last, state.page - 1, state.page, state.page + 1])]
         .filter(page => page > 0 && page <= last).sort((a, b) => a - b);
       let previous = 0;
@@ -243,12 +244,12 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
         nav.append(current); previous = page;
       }
       nav.append(button('›', () => onPage(state.page + 1), state.page === last));
-      nav.lastChild.setAttribute('aria-label', '下一页');
+      nav.lastChild.setAttribute('aria-label', t('memories.pagination.next'));
     }
     observer.observe(root); layouts.forEach(({metadata}) => observer.observe(metadata));
     layouts.forEach(fitMetadata);
     pagination.append(nav);
-    const size = el('label', 'memories-size', 'Show '), select = el('select'); select.id = 'memories-page-size';
+    const size = el('label', 'memories-size', t('memories.pageSize') + ' '), select = el('select'); select.id = 'memories-page-size';
     for (const number of [10, 20, 50]) select.append(new Option(String(number), String(number)));
     select.value = state.pageSize;
     select.onchange = () => onPageSize(Number(select.value)); size.append(select); pagination.append(size);

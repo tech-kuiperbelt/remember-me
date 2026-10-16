@@ -28,6 +28,23 @@
     resetCalls() { calls.length = 0; },
     freezeMaintenance() { maintenanceFrozen = true; },
     unfreezeMaintenance() { maintenanceFrozen = false; },
+    // Resolve a semantic key from the server-injected catalog so the same
+    // regression script asserts correctly in both zh-CN and en.
+    t(key, params) {
+      const node = document.getElementById('i18n-catalog');
+      let messages = {}, fallback = {};
+      if (node) {
+        try {
+          const parsed = JSON.parse(node.textContent) || {};
+          messages = parsed.messages || {};
+          fallback = parsed.fallbackMessages || {};
+        } catch (e) {}
+      }
+      let value = messages[key] != null ? messages[key] : (fallback[key] != null ? fallback[key] : key);
+      if (params) value = value.replace(/\{(\w+)\}/g,
+        (match, name) => (params[name] == null ? match : String(params[name])));
+      return value;
+    },
   };
 
   window.fetch = function (input, init) {

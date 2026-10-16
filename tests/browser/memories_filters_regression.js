@@ -17,39 +17,39 @@ async function runMemoriesFiltersRegression() {
     assert(node && !node.disabled, 'keyword selectable: ' + value); node.focus(); node.click();
   };
   assert(getComputedStyle($('memories-reset')).display === 'none', 'Reset hidden without filters');
-  $('memories-pagination').querySelector('[aria-label="下一页"]').click();
+  $('memories-pagination').querySelector('[aria-label="' + t('memories.pagination.next') + '"]').click();
   await waitFor(() => $('memories-pagination').textContent.includes('21–40'), 'filter starts from second page');
   $('memories-categories').click();
   assert(document.activeElement === $('memories-categories-query'), 'category opening focuses search');
   chooseCategory('design');
-  await waitFor(() => $('memories-count').textContent === '32 memories', 'real category filter count');
+  await waitFor(() => $('memories-count').textContent === t('memories.count.browse',{total:32}), 'real category filter count');
   assert($('memories-categories').classList.contains('has-filter') && $('memories-reset').classList.contains('has-filter'),
     'applied category and Reset highlighted');
   assert($('memories-pagination').textContent.includes('1–20'), 'filter resets page');
   chooseCategory('bugfix');
-  await waitFor(() => $('memories-count').textContent === '63 memories', 'real category OR');
+  await waitFor(() => $('memories-count').textContent === t('memories.count.browse',{total:63}), 'real category OR');
   const categoryPreview = $('memories-selected-categories');
   assert(categoryPreview.children.length === 2 && categoryPreview.textContent.includes('design')
     && categoryPreview.textContent.includes('bugfix'), 'selected categories visible beside trigger');
   assert([...categoryPreview.children].every(node => node.id), 'category preview controls have IDs');
   const removeDesign = [...categoryPreview.children].find(node => node.title === 'design');
   removeDesign.focus(); removeDesign.click();
-  await waitFor(() => $('memories-count').textContent === '31 memories', 'category chip removes applied filter');
+  await waitFor(() => $('memories-count').textContent === t('memories.count.browse',{total:31}), 'category chip removes applied filter');
   assert(categoryPreview.children.length === 1 && categoryPreview.contains(document.activeElement),
     'category removal preserves remaining chip focus');
   $('memories-categories').click(); chooseCategory('design');
-  await waitFor(() => $('memories-count').textContent === '63 memories', 'restore category OR');
+  await waitFor(() => $('memories-count').textContent === t('memories.count.browse',{total:63}), 'restore category OR');
   escape(); assert(document.activeElement === $('memories-categories'), 'category Escape focus');
   S.resetCalls(); $('memories-keywords').click(); await settle(300);
   assert(!S.calls.some(call => call.url === '/api/keywords/query'), 'empty keyword input sends no requests');
   await enterKeyword('CACHE'); addKeyword('cache');
-  await waitFor(() => $('memories-count').textContent === '1 memories', 'real cross-dimension AND');
+  await waitFor(() => $('memories-count').textContent === t('memories.count.browse',{total:1}), 'real cross-dimension AND');
   addKeyword('cache clear');
-  await waitFor(() => $('memories-count').textContent === '2 memories', 'real keyword OR');
+  await waitFor(() => $('memories-count').textContent === t('memories.count.browse',{total:2}), 'real keyword OR');
   const input = $('memories-keywords-query'); assert(input.value === 'CACHE', 'adding keeps query');
   escape();
   $('memories-categories').click(); chooseCategory('bugfix');
-  await waitFor(() => $('memories-count').textContent === '1 memories', 'AND narrows keyword OR');
+  await waitFor(() => $('memories-count').textContent === t('memories.count.browse',{total:1}), 'AND narrows keyword OR');
   escape();
   $('memories-categories').click();
   $('memories-namespace').value = 'a'; fire($('memories-namespace'), 'change');
@@ -72,7 +72,7 @@ async function runMemoriesFiltersRegression() {
   $('memories-keywords').click();
   S.resetCalls(); $('memories-reset').click();
   assert(!document.querySelector('.memory-filter-popover') && document.activeElement === $('memories-namespace'), 'Reset closes popup and restores focus');
-  await waitFor(() => $('memories-count').textContent === '63 memories', 'real reset');
+  await waitFor(() => $('memories-count').textContent === t('memories.count.browse',{total:63}), 'real reset');
   assert(['memories-namespace-control','memories-categories','memories-keywords','memories-reset']
     .every(id => !$(id).classList.contains('has-filter')), 'Reset clears all applied filter highlights');
   assert(S.calls.filter(call => call.url.startsWith('/api/memories/page?')).length === 1, 'Reset makes one request');
@@ -123,7 +123,7 @@ async function runMemoriesFiltersRegression() {
   await waitFor(() => $('memories-list').getAttribute('aria-busy') === 'false', 'comma filter applied');
   const pageCall = S.calls.filter(call => call.url.startsWith('/api/memories/page?')).at(-1);
   assert(new URL(pageCall.url, location.origin).searchParams.getAll('keywords').join('|') === 'a,b', 'comma keyword remains one parameter');
-  assert($('memories-list').textContent.includes('Clear filters'), 'filtered empty result offers reset');
+  assert($('memories-list').textContent.includes(t('memories.clearFilters')), 'filtered empty result offers reset');
   $('memories-keywords-more').click();
   await waitFor(() => $('memories-keywords-popover').textContent.includes('More failed'), 'more failure');
   assert(document.querySelectorAll('[data-keyword]').length === 20, 'failed more retains suggestions');
@@ -180,13 +180,13 @@ async function runMemoriesFiltersRegression() {
   await waitFor(() => $('memories-categories-popover').textContent.includes('当前候选中不可用'), 'selected unavailable category retained');
   escape();
   S.resetCalls(); $('memories-reset').click();
-  await waitFor(() => $('memories-count').textContent === '63 memories', 'reset cap fixture');
+  await waitFor(() => $('memories-count').textContent === t('memories.count.browse',{total:63}), 'reset cap fixture');
   $('memories-keywords').click(); inputQuery('word');
   document.querySelector('.nav button[data-page="stats"]').click(); await settle(300);
   assert(!document.querySelector('.memory-filter-popover'), 'leaving page closes popup');
   assert(!S.calls.some(call => call.url === '/api/keywords/query' && JSON.parse(call.body).limit === 20), 'leaving cancels candidate debounce');
   document.querySelector('.nav button[data-page="memories"]').click();
-  S.reset(); await waitFor(() => $('memories-count').textContent === '63 memories', 'filters restored to default');
+  S.reset(); await waitFor(() => $('memories-count').textContent === t('memories.count.browse',{total:63}), 'filters restored to default');
 
   function inputQuery(value) {
     $('memories-keywords-query').value = value; fire($('memories-keywords-query'), 'input');

@@ -145,7 +145,7 @@ async function runOpsRegression(scenario) {
   assert($('model-progress').value===40&&$('model-progress-detail').textContent.includes('40.0%'),'known byte progress');
   await setState({...ready,required_reason:'model_not_ready',model:{status:'failed',ready:false,error:'<img src=x onerror=bad>'}});
   assert(!$('model-progress').hasAttribute('value')&&!$('model-error').querySelector('img'),'unknown progress and literal error');
-  down=true;await ops.refreshMaintenance();assert($('btn-sync').disabled&&$('btn-model-save').disabled&&$('btn-status').textContent==='状态不可用','offline fail closed');down=false;
+  down=true;await ops.refreshMaintenance();assert($('btn-sync').disabled&&$('btn-model-save').disabled&&$('btn-status').textContent===t('status.unavailable'),'offline fail closed');down=false;
   await setState(ready);holdSync=true;$('btn-sync').click();await waitFor(()=>typeof holdSync==='function','sync held');await ops.refreshMaintenance();assert($('btn-sync').disabled&&$('btn-maintenance-exit').disabled,'local action lock survives idle poll');holdSync();holdSync=null;await waitFor(()=>!$('btn-sync').disabled,'sync finished');
   $('ops-clear').open=true;input('clear-ns','a');$('btn-clear').click();await waitFor(()=>$('clear-modal').style.display==='flex','clear opened');
   assert($('app-shell').inert&&document.activeElement===$('clear-confirm-input'),'confirmation focus and inert');

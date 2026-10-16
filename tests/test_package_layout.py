@@ -135,7 +135,10 @@ runtime = Runtime(settings, provider_factory=lambda **kw: FakeProvider(), config
 with TestClient(create_http_app(runtime, port=2345), base_url='http://127.0.0.1:2345') as client:
     admin = client.get('/admin/console')
     assert admin.status_code == 200
-    assert admin.text == (PROJECT_ROOT / 'web/index.html').read_text()
+    # The console serves the real template localized for the saved language.
+    assert '<html lang="zh-CN"' in admin.text
+    assert 'id="i18n-catalog"' in admin.text
+    assert 'id="page-memories"' in admin.text
     guide = client.get('/read-me')
     assert guide.status_code == 200
     assert guide.text == (PROJECT_ROOT / 'app/read_me.md').read_text().replace('{base}', 'http://127.0.0.1:2345')

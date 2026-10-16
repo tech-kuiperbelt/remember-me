@@ -229,3 +229,18 @@ def test_export_routes_after_service_split(tmp_path):
             assert response.status_code == 200
             assert response.headers['x-memory-count'] == '1'
             assert json.loads(response.text)['text'] == 'export body'
+
+
+def test_save_model_config_applies_language_without_restart(tmp_path):
+    rt = runtime(tmp_path).start()
+    try:
+        assert rt.language_effective == "zh-CN"
+        result = rt.save_model_config({"language": "en"})
+        assert result["language"] == "en"
+        # The console render reads this mutable snapshot, so the page reflects the
+        # new language on the next load without restarting the service.
+        assert rt.language_effective == "en"
+        # settings stays an immutable startup snapshot, like debug_effective.
+        assert rt.settings.LANGUAGE == "zh-CN"
+    finally:
+        rt.close()

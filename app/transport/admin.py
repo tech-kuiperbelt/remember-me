@@ -30,6 +30,7 @@ from app.operations.retrieval_stats import (SUPPORTED_DAYS, RetrievalStatsReadEr
                                             collect_retrieval_stats, journal_paths,
                                             resolve_timezone)
 from app.config.configuration import PROJECT_ROOT
+from app.transport.ui_i18n import render_localized_html
 
 logger = logging.getLogger("admin")
 
@@ -457,8 +458,13 @@ class AdminAPI:
         def render():
             html = ADMIN_HTML_PATH.read_text(encoding="utf-8")
             debug = self.runtime.debug_effective if self.runtime is not None else self.debug
-            return html.replace('data-ui-debug="false"',
+            if self.runtime is not None:
+                locale = self.runtime.language_effective
+            else:
+                locale = getattr(getattr(self.service, "settings", None), "LANGUAGE", None)
+            html = html.replace('data-ui-debug="false"',
                                 'data-ui-debug="true"' if debug else 'data-ui-debug="false"', 1)
+            return render_localized_html(html, locale)
         html = await self._run(render, control=True)
         return Response(html, media_type="text/html", headers={
             "Cache-Control": "no-store",

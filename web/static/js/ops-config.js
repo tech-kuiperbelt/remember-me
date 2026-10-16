@@ -1,5 +1,6 @@
 import { $ } from './core.js';
 import { api } from './api.js';
+import { t } from './i18n.js';
 
 export function createConfiguration({available, refresh, changed, retryModel}) {
   let baseline=null, saving=false, loading=null;
@@ -46,6 +47,8 @@ export function createConfiguration({available, refresh, changed, retryModel}) {
     $('model-proxy-url').value='';
     $('model-proxy-saved').textContent=config.proxy.url ? '已配置代理；留空保留已保存地址。' : '尚未配置代理，请输入地址。';
     $('config-debug-refresh').hidden=(config.debug_effective ?? config.debug)===(document.documentElement.dataset.uiDebug==='true');
+    // Language applies on the next page load, so offer a refresh (not a restart).
+    $('config-language-refresh').hidden=config.language===(document.documentElement.lang||'zh-CN');
     $('config-load-retry').hidden=true;
     update();
   }
@@ -67,11 +70,11 @@ export function createConfiguration({available, refresh, changed, retryModel}) {
       await refresh();
       if(!available())throw new Error('服务状态不可用，请恢复后重试。');
       const saved=await api('/config',{method:'POST',body:JSON.stringify(value)});
-      for(const k of ['port','language','local_only'])if(value[k]!==before[k])restartKeys.add(k);
+      for(const k of ['port','local_only'])if(value[k]!==before[k])restartKeys.add(k);
       fill(saved);
       result.textContent='配置已保存。';
       if(restartKeys.size){
-        $('config-restart-text').textContent='本页修改的端口、语言或访问范围需重启后生效；语言目前仅保存偏好。';
+        $('config-restart-text').textContent=t('ops.config.restartNeeded');
         $('config-restart-notice').hidden=false;
       }
       const state=await refresh();
@@ -86,5 +89,9 @@ export function createConfiguration({available, refresh, changed, retryModel}) {
   $('ops-config-fields').addEventListener('change',update);
   $('btn-model-save').onclick=save;
   $('config-load-retry').onclick=()=>load(true);
+  $('config-language-refresh-btn').onclick=()=>{
+    if(dirty()&&!confirm(t('ops.config.discardConfirm')))return;
+    location.reload();
+  };
   return {load,update,isSaving:()=>saving,config:()=>baseline,hasDraft:dirty};
 }

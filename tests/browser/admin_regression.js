@@ -94,7 +94,7 @@ async function runThemeScenario(scenario) {
       assert($('memories-categories-popover').textContent.includes('Initial Stats failure'), 'category initial error visible');
       assert(!document.querySelector('.memory-category-option'), 'initial failure is not an empty vocabulary');
       S.reset();
-      [...$('memories-categories-popover').querySelectorAll('button')].find(node => node.textContent === 'Retry').click();
+      [...$('memories-categories-popover').querySelectorAll('button')].find(node => node.textContent === t('memories.retry')).click();
       await waitFor(() => document.querySelectorAll('.memory-category-option').length > 0, 'category retry recovers');
       result.textContent = 'PASS: category first-load failure and recovery'; return true;
     }
@@ -212,7 +212,7 @@ async function runThemeScenario(scenario) {
     // Appearance control stays usable while the service is unavailable.
     S.setOverride(url => url === '/api/maintenance' ? Promise.reject(new Error('down')) : undefined);
     document.querySelector('.nav button[data-page="ops"]').click();
-    await waitFor(() => $('btn-status').textContent === '状态不可用', 'status unavailable');
+    await waitFor(() => $('btn-status').textContent === t('status.unavailable'), 'status unavailable');
     assert(!$('theme-select').disabled, 'appearance control usable when status unavailable');
     select.value = 'system'; select.dispatchEvent(new Event('change', {bubbles: true}));
     await settle();
@@ -317,7 +317,7 @@ try {
     return undefined;
   });
   $('btn-refresh').click();
-  await waitFor(() => $('memories-count').textContent === '41 memories', 'browse total');
+  await waitFor(() => $('memories-count').textContent === t('memories.count.browse',{total:41}), 'browse total');
   assert($('memories-list').querySelectorAll('.memory-row').length === 20, 'first page length');
   const firstOpen = $('memories-list').querySelector('.memory-open');
   assert(firstOpen.tagName === 'BUTTON', 'row opening has native keyboard activation');
@@ -331,7 +331,7 @@ try {
   $('memories-list').querySelector('.memory-row-time').click();
   await waitFor(() => $('detail-modal').style.display === 'flex', 'time area opens detail');
   $('btn-detail-close').click();
-  assert($('memory-row-1-namespace').textContent === 'a' && $('memory-row-1-namespace').getAttribute('aria-label') === '空间：a' && $('memory-row-1-namespace').querySelector('svg'), 'namespace uses icon with accessible group label');
+  assert($('memory-row-1-namespace').textContent === 'a' && $('memory-row-1-namespace').getAttribute('aria-label') === t('memories.namespace.aria',{name:'a'}) && $('memory-row-1-namespace').querySelector('svg'), 'namespace uses icon with accessible group label');
   $('memory-row-1').scrollIntoView({block:'center'});
   for (const id of ['memory-row-1-date', 'memory-row-1-namespace', 'memory-row-1-category-1', 'memory-row-1-keyword-1']) {
     const node = $(id), box = node.getBoundingClientRect();
@@ -346,10 +346,10 @@ try {
   await waitFor(() => $('memories-list').querySelector('.memory-row-title')?.textContent === 'Browse 40', 'global sort');
   $('memories-sort').value = 'updated_at'; fire($('memories-sort'), 'change');
   await waitFor(() => $('memories-list').querySelector('.memory-row-title')?.textContent === 'Browse 0', 'browse sort reset');
-  $('memories-pagination').querySelector('[aria-label="下一页"]').click();
-  await waitFor(() => $('memories-pagination').textContent.includes('21–40 of 41'), 'second page');
-  $('memories-pagination').querySelector('[aria-label="下一页"]').click();
-  await waitFor(() => $('memories-pagination').textContent.includes('41–41 of 41'), 'last page');
+  $('memories-pagination').querySelector('[aria-label="' + t('memories.pagination.next') + '"]').click();
+  await waitFor(() => $('memories-pagination').textContent.includes(t('memories.range.browse',{start:21,end:40,total:41})), 'second page');
+  $('memories-pagination').querySelector('[aria-label="' + t('memories.pagination.next') + '"]').click();
+  await waitFor(() => $('memories-pagination').textContent.includes(t('memories.range.browse',{start:41,end:41,total:41})), 'last page');
   const approveDelete = window.confirm; window.confirm = () => true;
   const lastOpen = $('memories-list').querySelector('.memory-open');
   lastOpen.focus(); lastOpen.click();
@@ -373,15 +373,15 @@ try {
   $('memories-sort').value = 'updated_at'; fire($('memories-sort'), 'change');
   await waitFor(() => $('memories-list').textContent.includes('Latest result'), 'latest browse response');
   releasePage(json({items: inventory.slice(0, 20), total: 41})); await settle(50);
-  assert($('memories-count').textContent === '1 memories' && $('memories-list').textContent.includes('Latest result'), 'stale browse ignored');
+  assert($('memories-count').textContent === t('memories.count.browse',{total:1}) && $('memories-list').textContent.includes('Latest result'), 'stale browse ignored');
   let failPage = true;
   S.setOverride(url => url.startsWith('/api/memories/page?')
     ? failPage ? json({detail: 'Temporary failure'}, 500) : json({items: inventory.slice(0, 20), total: 41}) : undefined);
   $('btn-refresh').click();
   await waitFor(() => $('memories-list').textContent.includes('Temporary failure'), 'browse error');
   failPage = false;
-  Array.from($('memories-list').querySelectorAll('button')).find(el => el.textContent === 'Retry').click();
-  await waitFor(() => $('memories-count').textContent === '41 memories', 'browse retry');
+  Array.from($('memories-list').querySelectorAll('button')).find(el => el.textContent === t('memories.retry')).click();
+  await waitFor(() => $('memories-count').textContent === t('memories.count.browse',{total:41}), 'browse retry');
   assert($('memories-sort').value === 'updated_at', 'retry retains sort');
   S.reset();
 
@@ -408,7 +408,7 @@ try {
     return undefined;
   });
   $('memories-namespace').value = special; fire($('memories-namespace'), 'change');
-  await waitFor(() => $('memories-list').textContent.includes('当前搜索或筛选没有匹配的记忆'), 'special list');
+  await waitFor(() => $('memories-list').textContent.includes(t('memories.empty.filtered')), 'special list');
   assert($('memories-namespace').value === special, 'namespace selection roundtrip');
 
   const record = {id: specialId, namespace: special, text: special, summary: special,
@@ -496,13 +496,13 @@ try {
   // Status chip states + control gating (aligned with maintenance.py).
   const statusCases = [
     {snap: {state: 'normal', action: null, required_reason: null, model: {status: 'ready', ready: true}},
-     label: '运行中', enter: false, exit: true, sync: true, bulk: true},
+     label: t('status.normal'), enter: false, exit: true, sync: true, bulk: true},
     {snap: {state: 'maintenance', action: null, required_reason: null, model: {status: 'ready', ready: true}},
-     label: '维护中', enter: true, exit: false, sync: false, bulk: false},
+     label: t('status.maintenance'), enter: true, exit: false, sync: false, bulk: false},
     {snap: {state: 'maintenance', action: null, required_reason: 'model_not_ready', model: {status: 'downloading', ready: false}},
-     label: '模型未就绪', enter: true, exit: true, sync: true, bulk: true},
+     label: t('status.model_not_ready'), enter: true, exit: true, sync: true, bulk: true},
     {snap: {state: 'maintenance', action: null, required_reason: null, error: 'boom', model: {status: 'ready', ready: true}},
-     label: '维护异常', enter: true, exit: true, sync: false, bulk: true},
+     label: t('status.error'), enter: true, exit: true, sync: false, bulk: true},
   ];
   for (const c of statusCases) {
     S.setOverride(url => url === '/api/maintenance' ? json(c.snap) : undefined);
@@ -516,13 +516,13 @@ try {
   // Sticky error still allows sync/restart/shutdown (maintenance.py:113).
   S.setOverride(url => url === '/api/maintenance' ? json({state: 'maintenance', action: null, required_reason: null, error: 'boom', model: {status: 'ready', ready: true}}) : undefined);
   document.querySelector('.nav button[data-page="ops"]').click();
-  await waitFor(() => $('btn-status').textContent === '维护异常', 'error state');
+  await waitFor(() => $('btn-status').textContent === t('status.error'), 'error state');
   assert(!$('btn-sync').disabled && !$('btn-restart').disabled && !$('btn-shutdown').disabled, 'error allows sync/restart/shutdown');
 
   // Failed poll => 状态不可用 and all writers disabled until recovery.
   S.setOverride(url => url === '/api/maintenance' ? Promise.reject(new Error('down')) : undefined);
   document.querySelector('.nav button[data-page="ops"]').click();
-  await waitFor(() => $('btn-status').textContent === '状态不可用', 'unavailable status');
+    await waitFor(() => $('btn-status').textContent === t('status.unavailable'), 'unavailable status');
   assert($('btn-sync').disabled && $('btn-import').disabled, 'unavailable disables writes');
   assert($('btn-refresh') && !$('btn-refresh').disabled && !$('btn-debug').disabled, 'global controls stay enabled');
 
@@ -534,7 +534,7 @@ try {
     return undefined;
   });
   document.querySelector('.nav button[data-page="ops"]').click();
-  await waitFor(() => $('btn-status').textContent === '运行中' && $('btn-sync').disabled, 'status recovers');
+  await waitFor(() => $('btn-status').textContent === t('status.normal') && $('btn-sync').disabled, 'status recovers');
   assert($('btn-maintenance-enter').disabled === false, 'enter re-enabled after recovery');
   S.reset();
 
@@ -543,7 +543,7 @@ try {
   assert($('app-shell').contains($('content')), 'work area inside shell');
   assert(document.title === 'Remember Me' && document.querySelector('.brand h1').textContent.trim() === 'Remember Me', 'shell brand name');
   assert(getComputedStyle(document.querySelector('.brand')).flexDirection === 'row', 'brand and server info share one line');
-  assert($('server-info').textContent.trim() === 'MCP Server', 'server info remains available');
+  assert($('server-info').textContent.trim() === t('app.serverInfo'), 'server info remains available');
   assert(document.querySelector('#btn-refresh svg') && document.querySelector('#btn-debug svg'), 'global actions have inline icons');
   assert(getComputedStyle(document.querySelector('.app-header')).minHeight === '54px', 'compact shell header baseline');
   const sidebarRect = $('nav').getBoundingClientRect();
@@ -568,18 +568,18 @@ try {
   $('memories-query').value = 'draft-kept';
   $('btn-refresh').focus();
   const nav = $('nav');
-  assert(nav.getAttribute('aria-label').includes('已展开'), 'sidebar starts expanded');
+  assert(nav.getAttribute('aria-label') === t('nav.aria'), 'sidebar starts expanded');
   nav.click();
   await settle();
   assert($('app-shell').classList.contains('sidebar-collapsed'), 'collapse toggles class');
-  assert(nav.getAttribute('aria-label').includes('已折叠'), 'collapse updates accessible state');
+  assert(nav.getAttribute('aria-label') === t('nav.aria.collapsed'), 'collapse updates accessible state');
   const memBtn = document.querySelector('.nav button[data-page="memories"]');
   const collapsedMemoriesRect = memBtn.getBoundingClientRect();
   assert(Math.abs(collapsedMemoriesRect.top - sidebarRect.top) <= 1, 'collapsed Memories item starts at top');
-  assert(memBtn.getAttribute('aria-label') === 'Memories', 'collapsed nav keeps accessible name');
+  assert(memBtn.getAttribute('aria-label') === t('nav.memories'), 'collapsed nav keeps accessible name');
   memBtn.blur();
   memBtn.focus();
-  assert(!$('nav-tooltip').hidden && $('nav-tooltip').textContent === 'Memories', 'collapsed nav tooltip appears on keyboard focus');
+  assert(!$('nav-tooltip').hidden && $('nav-tooltip').textContent === t('nav.memories'), 'collapsed nav tooltip appears on keyboard focus');
   assert(memBtn.getAttribute('aria-describedby') === 'nav-tooltip', 'collapsed tooltip is announced');
   assert($('memories-query').value === 'draft-kept', 'collapse preserves form content');
   assert(localStorage.getItem('remember-me.sidebar.collapsed.v1') === 'true', 'collapse persisted');

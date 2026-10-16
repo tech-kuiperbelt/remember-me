@@ -117,8 +117,8 @@ async function runMemoriesSearchRegression() {
   $('memories-k').value = '25'; S.resetCalls(); query('A'); await settle(30); assert(searchCalls().length === 0, 'typing is not search');
   submit($('memories-search-form')); await ready();
   assert(searchCalls().length === 1 && JSON.parse(searchCalls()[0].body).include_resolution === true, 'one envelope request');
-  assert($('memories-count').textContent === '本次搜索 25 条 · 最多 25 条', 'Top-K count not full inventory');
-  assert($('memories-list').textContent.includes('Semantic 0.99'), 'raw cosine not probability');
+  assert($('memories-count').textContent === t('memories.count.search',{total:25,k:25}), 'Top-K count not full inventory');
+  assert($('memories-list').textContent.includes(t('memories.mode.semantic') + ' 0.99'), 'raw cosine not probability');
   const regionIds = ['memory-row-1', 'memory-row-1-open', 'memory-row-1-title',
     'memory-row-1-summary', 'memory-row-1-footer', 'memory-row-1-score', 'memory-row-1-date'].filter(id => $(id));
   const geometry = id => {
@@ -150,11 +150,11 @@ async function runMemoriesSearchRegression() {
   document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape',bubbles:true,cancelable:true}));
   assert(!document.body.classList.contains('debug-ids') && document.activeElement === $('btn-debug'), 'Escape exits Debug and restores button focus');
   assert(!document.querySelector('.debug-id-label') && !$('memories-list').querySelector('.debug-focus'), 'Debug cleanup removes overlay and selection');
-  assert($('memories-filter-resolution').textContent.includes('<locking> → optimistic-lock、lock'), 'semantic accepted values shown');
-  assert($('memories-filter-resolution').textContent.includes('absent 未找到匹配值'), 'none explained');
+  assert($('memories-filter-resolution').textContent.includes('<locking> → optimistic-lock, lock'), 'semantic accepted values shown');
+  assert($('memories-filter-resolution').textContent.includes(t('memories.filter.notfound',{label:'',input:'absent'}).trim()), 'none explained');
   assert(!$('memories-filter-resolution').textContent.includes('design') && !$('memories-filter-resolution').querySelector('locking'), 'exact hidden and text safe');
   $('memories-page-size').value = '10'; fire($('memories-page-size'), 'change');
-  $('memories-pagination').querySelector('[aria-label="下一页"]').click();
+  $('memories-pagination').querySelector('[aria-label="' + t('memories.pagination.next') + '"]').click();
   assert($('memories-pagination').textContent.includes('11–20'), 'local search page');
   assert($('memories-sort').disabled && $('memories-sort').options.length === 1, 'search sort fixed to relevance');
   assert($('memories-list').querySelector('.memory-row').dataset.memoryId === 'search-10', 'server order retained on local page');
@@ -206,8 +206,8 @@ async function runMemoriesSearchRegression() {
   assert(lastBody().namespace==='a' && lastBody().categories[0]==='design' && lastBody().keywords[0]==='cache'
     && lastBody().updated_after===new Date('2020-01-01T00:00:00').toISOString(), 'mode carries applied public filters and date');
   assert($('memories-query').value==='unsubmitted' && $('memories-k').value==='10' && $('memories-threshold').value==='', 'switch preserves query and restores mode draft');
-  assert($('memories-list').textContent.includes('FTS 0.000')
-    && $('memories-list').querySelector('.memory-search-score').title === 'FTS 1e-9'
+  assert($('memories-list').textContent.includes(t('memories.mode.lexical') + ' 0.000')
+    && $('memories-list').querySelector('.memory-search-score').title === t('memories.mode.lexical') + ' 1e-9'
     && !$('memories-filter-resolution').textContent, 'FTS three decimals, full score tooltip and mappings cleared');
   $('memories-k').value='13'; $('memories-threshold').value='2e0'; submit($('memories-advanced-form')); await ready();
   assert(lastBody().query==='A' && lastBody().k===13 && lastBody().min_score===2, 'BM25 scientific notation above one and Apply query');
@@ -217,8 +217,8 @@ async function runMemoriesSearchRegression() {
   }
   $('memories-threshold').value='-1'; S.resetCalls(); selectMode('anchor'); await ready();
   assert(allSearchCalls()[0].url.endsWith('/anchor') && lastBody().k===10 && !('min_score' in lastBody()), 'Anchor defaults isolated');
-  assert($('memory-row-1-score').textContent === 'Anchor 0.000'
-    && $('memory-row-1-score').title === 'Anchor 1e-9', 'Anchor three decimals with full score tooltip');
+  assert($('memory-row-1-score').textContent === t('memories.mode.anchor') + ' 0.000'
+    && $('memory-row-1-score').title === t('memories.mode.anchor') + ' 1e-9', 'Anchor three decimals with full score tooltip');
   $('memories-k').value='7'; $('memories-threshold').value='1e-8'; submit($('memories-advanced-form')); await ready();
   assert(lastBody().k===7 && lastBody().min_score===1e-8, 'Anchor independent applied values');
   selectMode('lexical'); await ready();
@@ -236,10 +236,10 @@ async function runMemoriesSearchRegression() {
     selectMode(name); await ready();
     assert($('memories-list').textContent.includes('Invalid search response'), 'terms envelope rejected: '+name);
     S.setOverride(url => url.endsWith('/'+name) ? json([{...bm25[0],score:'1e-9'}]) : undefined);
-    [...$('memories-list').querySelectorAll('button')].find(b=>b.textContent==='Retry').click(); await ready();
+    [...$('memories-list').querySelectorAll('button')].find(b=>b.textContent===t('memories.retry')).click(); await ready();
     assert($('memories-list').textContent.includes('Invalid search response'), 'non-number score rejected: '+name);
     S.setOverride(url => url.endsWith('/'+name) ? json(bm25) : undefined);
-    S.resetCalls(); [...$('memories-list').querySelectorAll('button')].find(b=>b.textContent==='Retry').click(); await ready();
+    S.resetCalls(); [...$('memories-list').querySelectorAll('button')].find(b=>b.textContent===t('memories.retry')).click(); await ready();
     assert(allSearchCalls().length===1 && lastBody().query==='A' && lastBody().k===(name==='lexical'?13:7), 'Retry keeps terms mode applied values');
   }
   S.setOverride(url => url === '/api/memories/search' ? json({items:records,filter_resolution:null}) : undefined);
@@ -253,7 +253,7 @@ async function runMemoriesSearchRegression() {
     selectMode('anchor');
     assert(!$('memories-list').querySelector('.memory-search-score'), 'mode loading clears old scores');
     await ready(); old(failure ? json({detail:'stale mode failure'},500) : json({items:records,filter_resolution:mapped})); await settle(25);
-    assert($('memories-list').textContent.includes('Anchor 0.000') && !$('memories-filter-resolution').textContent, 'stale mode response ignored');
+    assert($('memories-list').textContent.includes(t('memories.mode.anchor') + ' 0.000') && !$('memories-filter-resolution').textContent, 'stale mode response ignored');
     S.setOverride(url => url === '/api/memories/search' ? json({items:records,filter_resolution:null}) : undefined);
     selectMode('semantic'); await ready();
   }
@@ -309,7 +309,7 @@ async function runMemoriesSearchRegression() {
   $('memories-updated-after').value = '2022-01-01T00:00:00'; submit($('memories-advanced-form')); await ready();
   oldDate(json({items:records,filter_resolution:mapped})); await settle(25);
   assert(!$('memories-list').querySelector('.memory-row') && !$('memories-filter-resolution').textContent, 'old date response cannot replace latest window');
-  assert([...$('memories-list').querySelectorAll('button')].some(node => node.textContent === 'Clear filters'), 'time-filtered empty search can clear filters');
+  assert([...$('memories-list').querySelectorAll('button')].some(node => node.textContent === t('memories.clearFilters')), 'time-filtered empty search can clear filters');
   S.setOverride(url => url === '/api/memories/search' ? json({items:records,filter_resolution:null}) : undefined);
   $('memories-updated-after').value = '2023-01-01T00:00:00'; S.resetCalls(); $('btn-refresh').click(); await ready();
   assert(JSON.parse(searchCalls()[0].body).updated_after === new Date('2022-01-01T00:00:00').toISOString(), 'Refresh uses applied date');
@@ -335,9 +335,9 @@ async function runMemoriesSearchRegression() {
   search('failure'); await ready(); $('memories-sort').value = 'updated_at'; fire($('memories-sort'),'change');
   assert($('memories-list').textContent.includes('search unavailable') && !$('memories-list').querySelector('.memory-row'), 'error remains after local sort');
   S.setOverride(url => url === '/api/memories/search' ? json({items:[],filter_resolution:mapped}) : undefined);
-  [...$('memories-list').querySelectorAll('button')].find(b => b.textContent === 'Retry').click(); await ready();
-  assert($('memories-filter-resolution').textContent.includes('未找到匹配值'), 'empty search still explains mapping');
-  assert([...$('memories-list').querySelectorAll('button')].some(b => b.textContent === '清空搜索'), 'pure empty search has clear action');
+  [...$('memories-list').querySelectorAll('button')].find(b => b.textContent === t('memories.retry')).click(); await ready();
+  assert($('memories-filter-resolution').textContent.includes(t('memories.filter.notfound',{label:'',input:''}).trim()), 'empty search still explains mapping');
+  assert([...$('memories-list').querySelectorAll('button')].some(b => b.textContent === t('memories.clearSearch')), 'pure empty search has clear action');
   assert(!$('nav-search') && !$('page-search'), 'old search page removed');
   const {switchPage} = await import('/admin/console/static/js/router.js');
   assert(switchPage('search') === false && $('page-memories').classList.contains('active'), 'retired route preserves page');

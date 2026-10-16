@@ -26,6 +26,9 @@ class Runtime:
                  configure_logging=True, log_dir=None):
         self.settings = settings
         self.debug_effective = settings.UI_DEBUG
+        # UI language is a mutable snapshot like debug: saving config applies it to
+        # the next page load without requiring a restart.
+        self.language_effective = settings.LANGUAGE
         self.provider_factory = provider_factory
         self.storage_factory = storage_factory
         self.configure_logging = configure_logging
@@ -135,6 +138,8 @@ class Runtime:
             replace(validated, source_text=config.source_text).save()
             if "debug" in changes:
                 self.debug_effective = validated.debug
+            if "language" in changes:
+                self.language_effective = validated.language
             self.audit.record("model_config", {}, validated.as_dict(redact=True), 0)
             return {**validated.as_dict(redact=True), "debug_effective": self.debug_effective}
 
@@ -164,6 +169,7 @@ class Runtime:
                         return
                     config = Configuration.load(self.settings.DATA_DIR)
                     self.settings = Settings.from_env(config.runtime_environment(self.settings.environment))
+                    self.language_effective = self.settings.LANGUAGE
                     activate_environment(self.settings.environment)
                     self._model_cancel.clear()
                     self._model_retry_requested = False

@@ -2,6 +2,7 @@
 // Blank-nav clicks and focused-nav keyboard activation toggle the sidebar.
 
 import { $ } from './core.js';
+import { t } from './i18n.js';
 
 const STORAGE_KEY = 'remember-me.sidebar.collapsed.v1';
 
@@ -29,9 +30,7 @@ function apply() {
   const shell = $('app-shell');
   const nav = $('nav');
   shell.classList.toggle('sidebar-collapsed', collapsed);
-  nav.setAttribute('aria-label', collapsed
-    ? '主导航，已折叠；按 Enter 或点击导航空白处展开'
-    : '主导航，已展开；按 Enter 或点击导航空白处折叠');
+  nav.setAttribute('aria-label', collapsed ? t('nav.aria.collapsed') : t('nav.aria'));
   if (!collapsed) hideNavTooltip();
 }
 

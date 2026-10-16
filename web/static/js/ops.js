@@ -5,6 +5,7 @@ import { setMaintenance, emitMemoriesChanged, emitStatsChanged, onNamespacesChan
 import { deriveStatus, statusText, statusDetail } from './ops-state.js';
 import { createConfiguration } from './ops-config.js';
 import { confirmDestructive } from './clear.js';
+import { t } from './i18n.js';
 
 let status=deriveStatus(null), config, busy=null, job=null, power=null, pollVersion=0, reconnecting=false;
 let namespaceCounts={}, maintenanceRequest=null, needsRegistry=false;
@@ -67,14 +68,17 @@ export function refreshMaintenance() {
 }
 
 function renderModelStatus(model) {
-  const labels={waiting:'模型缓存缺失',downloading:'正在下载 / 加载模型',validating:'正在验证模型与数据库',ready:'模型已就绪',failed:'模型准备失败',cancelling:'正在结束上一次任务'};
-  $('model-status').textContent=model?(labels[model.status]||model.status):'模型状态暂不可用';
+  const labels={waiting:t('model.waiting'),downloading:t('model.downloading'),validating:t('model.validating'),ready:t('model.ready'),failed:t('model.failed'),cancelling:t('model.cancelling')};
+  $('model-status').textContent=model?(labels[model.status]||model.status):t('model.unavailable');
   $('model-progress-area').hidden=!model||!!model.ready;
   const bar=$('model-progress');
   if(model?.ready)bar.value=100;
   else if(Number.isFinite(model?.percent))bar.value=model.percent;
   else bar.removeAttribute('value');
-  $('model-progress-detail').textContent=model?.total ? `${model.file||'当前文件'}：${formatBytes(model.completed||0)} / ${formatBytes(model.total)}${Number.isFinite(model.percent)?' ('+model.percent.toFixed(1)+'%)':''}`:'总量尚未确定，请等待模型准备。';
+  const percent=Number.isFinite(model?.percent)?' ('+model.percent.toFixed(1)+'%)':'';
+  $('model-progress-detail').textContent=model?.total
+    ? t('model.progress.detail',{file:model.file||t('model.progress.file'),completed:formatBytes(model.completed||0),total:formatBytes(model.total),percent})
+    : t('model.progress.unknown');
   $('model-error').textContent=model?.error||'';
 }
 function updateNamespaces() {

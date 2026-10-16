@@ -39,8 +39,8 @@ async function runMemoriesAcceptanceRegression() {
     $('memories-namespace').value='a'; fire($('memories-namespace'),'change'); await ready();
     $('memories-k').value='25'; query('acceptance'); submit($('memories-search-form')); await ready();
     $('memories-page-size').value='10'; fire($('memories-page-size'),'change');
-    $('memories-pagination').querySelector('[aria-label="下一页"]').click();
-    $('memories-pagination').querySelector('[aria-label="下一页"]').click();
+    $('memories-pagination').querySelector('[aria-label="' + t('memories.pagination.next') + '"]').click();
+    $('memories-pagination').querySelector('[aria-label="' + t('memories.pagination.next') + '"]').click();
     const last=$('memories-list').querySelector('.memory-open'); last.focus(); last.click();
     await waitFor(()=>$('detail-edit'),'last search detail');
     assert(document.activeElement===$('btn-detail-close'),'detail receives focus on opening');
@@ -51,14 +51,14 @@ async function runMemoriesAcceptanceRegression() {
     assert(document.activeElement===$('detail-edit'),'Tab wraps to first control');
     const confirm = window.confirm; window.confirm=()=>true;
     S.resetCalls(); try { action('Delete'); } finally { window.confirm=confirm; }
-    await waitFor(()=>$('memories-count').textContent.includes('20 条') && $('memories-list').getAttribute('aria-busy')==='false','search deletion refresh').catch(e=>{throw Error(e.message+'; count='+$('memories-count').textContent+'; requests='+JSON.stringify(S.calls)+'; live='+rows.length);});
+    await waitFor(()=>$('memories-count').textContent.includes(String(20)) && $('memories-list').getAttribute('aria-busy')==='false','search deletion refresh').catch(e=>{throw Error(e.message+'; count='+$('memories-count').textContent+'; requests='+JSON.stringify(S.calls)+'; live='+rows.length);});
     assert(searchCalls().length===1 && $('memories-pagination').textContent.includes('11–20'),'search deletion corrects last page without second inference');
     assert(document.activeElement === $('memories-count'),'deleted search row restores result focus');
     assert($('memories-namespace').value==='a' && $('memories-query').value==='acceptance','deletion preserves scope and query');
     $('memories-list').querySelector('.memory-open').click();
     await waitFor(()=>$('detail-edit'),'edit detail'); action('Edit');
     await waitFor(()=>$('edit-text'),'edit form'); assert(document.activeElement===$('edit-namespace'),'editing receives namespace focus'); $('edit-text').value='no longer matches'; fire($('edit-text'),'input'); S.resetCalls(); action('Save');
-    await waitFor(()=>$('memories-count').textContent.includes('19 条') && $('memories-list').getAttribute('aria-busy')==='false','edit removes search hit');
+    await waitFor(()=>$('memories-count').textContent.includes(String(19)) && $('memories-list').getAttribute('aria-busy')==='false','edit removes search hit');
     assert(searchCalls().length===1 && !$('memories-list').querySelector('[data-memory-id="accept-10"]'),'edit refresh removes stale row');
     await waitFor(()=>$('detail-edit'),'saved view'); assert($('app-shell').inert,'saved drawer remains modal'); action('Close'); assert(document.activeElement === $('memories-count'),'edited-away row restores result focus');
 
@@ -69,10 +69,10 @@ async function runMemoriesAcceptanceRegression() {
     let release; pending=resolve=>{release=resolve;}; $('btn-refresh').click();
     await waitFor(()=>release,'pending before leaving'); $('nav-stats').click(); $('nav-memories').click(); await ready();
     release(json({items:[],filter_resolution:null})); await settle();
-    assert($('memories-count').textContent.includes('19 条'),'old response across navigation ignored');
+    assert($('memories-count').textContent.includes(String(19)),'old response across navigation ignored');
 
     maintenance={...normal,state:'maintenance'}; writeError=true;
-    await waitFor(()=>$('btn-status').textContent==='维护中','maintenance status');
+    await waitFor(()=>$('btn-status').textContent===t('status.maintenance'),'maintenance status');
     S.resetCalls(); $('btn-refresh').click(); await ready();
     assert(searchCalls().length===1 && $('memories-list').querySelector('.memory-row'),'maintenance search remains readable');
     $('memories-list').querySelector('.memory-open').click(); await waitFor(()=>$('detail-edit'),'maintenance detail');
@@ -85,15 +85,15 @@ async function runMemoriesAcceptanceRegression() {
     for (const reason of ['model_not_ready','database switching']) {
       readError=reason; $('btn-refresh').click(); await ready();
       assert($('memories-list').textContent.includes(reason) && !$('memories-list').querySelector('.memory-row'),'read refusal is an error: '+reason);
-      readError=null; [...$('memories-list').querySelectorAll('button')].find(b=>b.textContent==='Retry').click(); await ready();
+      readError=null; [...$('memories-list').querySelectorAll('button')].find(b=>b.textContent===t('memories.retry')).click(); await ready();
       assert($('memories-list').querySelector('.memory-row'),'read retry restores search');
     }
-    maintenance=null; await waitFor(()=>$('btn-status').textContent==='状态不可用','unavailable status');
+    maintenance=null; await waitFor(()=>$('btn-status').textContent===t('status.unavailable'),'unavailable status');
     $('btn-refresh').click(); await ready(); assert($('memories-list').querySelector('.memory-row'),'status outage does not gate working search');
     for (const broken of [[], {items:[{...rows[0],score:'invalid'}],filter_resolution:null},
       {items:rows,filter_resolution:{keywords:'invalid'}}]) {
       invalid=broken; $('btn-refresh').click(); await ready();
-      assert($('memories-count').textContent==='加载失败' && !$('memories-filter-resolution').textContent,'bad response fails safely');
+      assert($('memories-count').textContent===t('memories.count.error') && !$('memories-filter-resolution').textContent,'bad response fails safely');
     }
     invalid=null; maintenance=normal; writeError=false; $('btn-refresh').click(); await ready();
     // IME composition Enter is cancelled and never submits a partial query.

@@ -17,8 +17,8 @@ async function runAuditRegression(scenario) {
   assert(!$('audit-list').textContent.includes('params:'), 'JSON stays in drawer');
   assert($('audit-row-1-summary').textContent.includes('中文'), 'search query appears in list');
   assert($('audit-row-1-namespace').textContent.includes('historical-space'), 'namespace has dedicated cell');
-  assert($('audit-row-1-result').textContent === '结果ok', 'result shows call status only');
-  assert($('audit-row-2-result').textContent === '结果error', 'error result shows status only');
+  assert($('audit-row-1-result').textContent === t('audit.col.result') + 'ok', 'result shows call status only');
+  assert($('audit-row-2-result').textContent === t('audit.col.result') + 'error', 'error result shows status only');
   assert(!document.querySelector('[id^=audit-row-][id$=-outcome]'), 'business outcomes omitted from list');
   assert(!$('audit-row-1-summary').querySelector('script'), 'list summary is escaped');
   const width = $('audit-results').getBoundingClientRect().width;
@@ -90,7 +90,7 @@ async function runAuditRegression(scenario) {
     $('audit-namespace').value = 'slow'; $('btn-audit-refresh').click();
     await waitFor(() => resolveOld, 'slow request');
     $('audit-namespace').value = ''; $('btn-audit-refresh').click();
-    await waitFor(() => $('audit-list').textContent.includes('暂无'), 'empty state');
+    await waitFor(() => $('audit-list').textContent.includes(t('audit.empty')), 'empty state');
     resolveOld(json([event])); await settle(); assert(!$('audit-row-1'), 'stale response ignored');
     S.setOverride(url => url.startsWith('/api/audit?') ? json({error: 'audit unavailable'}, 500) : undefined);
     $('btn-audit-refresh').click(); await waitFor(() => $('audit-list').textContent.includes('Error:'), 'error state');
@@ -109,42 +109,42 @@ async function runAuditPresentationChecks() {
   const {presentAudit: view} = await import('/admin/console/static/js/audit-presentation.js');
   const cases = [
     [{tool:'search_semantic',params:{query:'缓存',keywords:['a','b','c','d']},result:{items:[],total:0}}, 'summary', 'keywords: a, b, c · +1'],
-    [{tool:'search_lexical',params:{query:'ERR_ID'},result:{items:[{}],total:10}}, 'outcome', '返回 1 条 · total 10'],
-    [{tool:'search_anchor',result:{total:0}}, 'outcome', '返回 0 条'],
+    [{tool:'search_lexical',params:{query:'ERR_ID'},result:{items:[{}],total:10}}, 'outcome', t('audit.outcome.returned',{count:1}) + ' · total 10'],
+    [{tool:'search_anchor',result:{total:0}}, 'outcome', t('audit.outcome.returned',{count:0})],
     [{tool:'search_meta',params:{categories:['design'],updated_after:'2026-10-01'}}, 'summary', 'updated_after: 2026-10-01'],
     [{tool:'search_meta',status:'ok',response_code:'namespace_not_found',result:{items:[]}}, 'outcome', 'namespace_not_found'],
-    [{tool:'add',result:{id:'m1',created:false}}, 'outcome', '已存在'],
+    [{tool:'add',result:{id:'m1',created:false}}, 'outcome', t('audit.exists')],
     [{tool:'add',memory_refs:[{id:'m2'}],params:{metadata:{anchors:['SomeAPI']}}}, 'summary', 'm2 · anchors: SomeAPI'],
     [{tool:'update',params:{memory_id:'m3'},result:{success:true},memory_refs:[{namespace_before:'old',namespace:'new'}]}, 'summary', 'old → new'],
-    [{tool:'update',result:{success:false}}, 'outcome', '未更新'],
-    [{tool:'delete',status:'ok',params:{memory_id:'m4'},result:{success:false}}, 'outcome', '未删除'],
-    [{tool:'delete',result:{success:true}}, 'outcome', '已删除'],
-    [{tool:'get_details',params:{memory_ids:['a','b','c','d']},result:{found:[{id:'a'}],missing:['b']}}, 'outcome', '找到 1 / 缺失 1'],
-    [{tool:'get_details',result:{found:[]}}, 'outcome', '找到 0'],
+    [{tool:'update',result:{success:false}}, 'outcome', t('audit.notUpdated')],
+    [{tool:'delete',status:'ok',params:{memory_id:'m4'},result:{success:false}}, 'outcome', t('audit.notDeleted')],
+    [{tool:'delete',result:{success:true}}, 'outcome', t('audit.deleted')],
+    [{tool:'get_details',params:{memory_ids:['a','b','c','d']},result:{found:[{id:'a'}],missing:['b']}}, 'outcome', t('audit.found',{count:1}) + ' / ' + t('audit.missing',{count:1})],
+    [{tool:'get_details',result:{found:[]}}, 'outcome', t('audit.found',{count:0})],
     [{tool:'report',search_id:'s1',params:{ratings:[{m_id:'a',rating:-10},{m_id:'b',rating:0}]},result:{recorded:true,count:2}}, 'summary', 'a: -10, b: 0'],
     [{tool:'list_keywords',result:{results:[{query:'cache',total:12,items:[{}]},{query:'mem',total:0}]}}, 'outcome', 'cache: 12, mem: 0'],
-    [{tool:'stats',result:{total:0}}, 'outcome', '0 条记忆'],
+    [{tool:'stats',result:{total:0}}, 'outcome', t('audit.memoriesCount',{count:0})],
     [{tool:'memory_import',params:{filename:'input.jsonl'},result:{status:'running',import_id:'i1'}}, 'outcome', 'status: running'],
     [{tool:'memory_export',result:{records:0}}, 'outcome', 'records: 0'],
     [{tool:'online_recover_start',params:{filename:'recover.jsonl'},result:{job_id:'j1',phase:'waiting'}}, 'summary', 'job_id: j1'],
     [{tool:'online_recover',result:{phase:'done',count:3}}, 'outcome', 'phase: done'],
     [{tool:'maintenance_enter',result:{state:'maintenance'}}, 'outcome', 'maintenance'],
     [{tool:'maintenance_exit',result:{state:'running'}}, 'outcome', 'running'],
-    [{tool:'ndjson_health_check',result:{in_sync:false}}, 'outcome', '不一致'],
+    [{tool:'ndjson_health_check',result:{in_sync:false}}, 'outcome', t('audit.inconsistent')],
     [{tool:'ndjson_compact',result:{outcome:'skipped',file_bytes:123}}, 'outcome', 'outcome: skipped'],
     [{tool:'model_config',result:{port:1314,language:'zh-CN',auto_download_model:false,proxy:{url:'secret'}}}, 'summary', 'auto_download_model: false'],
     [{tool:'model_prepare',result:{ready:false,status:'loading'}}, 'outcome', 'ready: false'],
-    [{tool:'model_retry',result:{status:'loading'}}, 'summary', '重试准备模型'],
+    [{tool:'model_retry',result:{status:'loading'}}, 'summary', t('audit.retryModel')],
     [{tool:'embedding_reindex',params:{profile:{provider:'local',model:'m'},batch_size:8},result:{completed:0,total:12}}, 'outcome', 'completed: 0'],
     [{tool:'index_value_reindex',params:{profile:{model:'m'}}}, 'summary', 'model: m'],
     [{tool:'new_action',params:{query:'hello',path:'/private/file'},result:{count:0}}, 'summary', 'query: hello'],
-    [{params:{query:{bad:'type'}},result:{count:-1}}, 'summary', '查看 JSON'],
+    [{params:{query:{bad:'type'}},result:{count:-1}}, 'summary', t('audit.viewJson')],
     [{params:{namespace:'scope'}}, 'namespace', 'scope'],
-    [{memory_refs:[{namespace:'a'},{namespace:'b'},{namespace:'a'}]}, 'namespace', '多空间 · a, b'],
+    [{memory_refs:[{namespace:'a'},{namespace:'b'},{namespace:'a'}]}, 'namespace', t('audit.multiNamespace',{list:'a, b'})],
     [{duration_ms:0}, 'duration', '0 ms'],
     [{duration_ms:'0'}, 'duration', '—'],
     [{tool:'search_meta',params:{keywords:['a','b','c'],keywords_total:20,keywords_truncated:true}}, 'summary', '+17'],
-    [{tool:'search_meta',params:{keywords:['a'],keywords_truncated:true}}, 'summary', '日志已截断'],
+    [{tool:'search_meta',params:{keywords:['a'],keywords_truncated:true}}, 'summary', t('audit.truncated')],
     [{tool:'search_meta',params:{keywords:['a',{},'b','c','d']}}, 'summary', 'keywords: a, b, c · +1'],
     [{tool:'delete',status:'error',error:{type:'ValueError',message:'bad'},result:{success:true}}, 'outcome', 'ValueError · bad'],
   ];
@@ -156,5 +156,5 @@ async function runAuditPresentationChecks() {
   assert(view({}).namespace==='—', 'missing namespace never called All');
   assert(view({status:'ok',result:{items:[]}}).status==='ok', 'status never inferred from result');
   assert(!view({tool:'model_config',result:{proxy:{url:'secret'}}}).summary.includes('secret'), 'config secrets not in summary');
-  assert(!view({tool:'get_details',result:{found:[]}}).outcome.includes('缺失'), 'missing array never fabricated');
+  assert(view({tool:'get_details',result:{found:[]}}).outcome === t('audit.found',{count:0}), 'missing array never fabricated');
 }

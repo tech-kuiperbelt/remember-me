@@ -12,6 +12,7 @@
 - [50.11] 配置页 Settings / Maintenance 与响应式布局已实施，待用户视觉验收。见[实施计划](plans/50.11-configuration-ui-refinement.md)。
 
 - [50] 前端重构与 UI 调整：模块拆分、桌面布局、主题基础、Shell 视觉、Memory List、Memory Detail 及 [50.7 新增抽屉](plans/50.7-memory-create-drawer.md) 已完成。2026-10-09 完成 Debug 入口和 Edit／Preview 标签页反馈调整，用户验收并授权提交；验证范围见各实施记录。**当前待办：后续页面调整及布局稳定后的结构复核**，见[路线图](plans/50-frontend-refactoring-and-ui-roadmap.md)。
+- [50.15] 中英文界面国际化（实施中，未提交）：`config.language`（zh-CN/en）驱动管理界面语言，保存后刷新生效、无需重启。已完成：服务端首屏本地化（`app/transport/ui_i18n.py` + `admin.py`）、前端 `i18n.js`、全局 Shell／记忆列表／统计页头／配置常规设置／审计静态标记，以及相关动态消息（状态、模型、记忆列表、审计展示、侧栏）接入；浏览器回归支持 `--lang` 双语言跑（`tests/run_admin_browser.py`）。**待办：Help 正文、配置维护卡片、统计图表、详情/新建抽屉、值选择器、ops 其余提示的翻译与静态标记；断言 `t()` 化覆盖剩余模块**。2026-10-16 起实施。原 50.15 草稿曾被清出工作区，本计划改为从零实现，详见[计划](plans/50.15-chinese-english-i18n.md)。
 
 ### 其他开放项
 

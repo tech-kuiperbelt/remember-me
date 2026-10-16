@@ -1,4 +1,6 @@
 // One presentation policy for the existing maintenance snapshot.
+import { t } from './i18n.js';
+
 export function deriveStatus(snapshot) {
   const s = snapshot || {}, valid = ['normal','maintenance','entering','switching'].includes(s.state);
   const idle = !s.action, hasError = !!s.error, modelPending = !!s.required_reason;
@@ -12,13 +14,19 @@ export function deriveStatus(snapshot) {
     sync: maintenance && idle && !modelPending,
     bulkActions: maintenance && idle && !hasError && !modelPending};
 }
-export const statusText = {normal:'运行中',maintenance:'维护中',model_not_ready:'模型未就绪',error:'维护异常',unavailable:'状态不可用'};
+export const statusText = {
+  normal: t('status.normal'),
+  maintenance: t('status.maintenance'),
+  model_not_ready: t('status.model_not_ready'),
+  error: t('status.error'),
+  unavailable: t('status.unavailable'),
+};
 export function statusDetail(status) {
-  const s=status.snapshot, action=s.action ? ` · 当前动作：${s.action}` : '';
-  if(status.kind==='unavailable')return '服务状态暂不可用，执行控件已禁用。';
-  if(status.hasError)return `维护异常：${s.error}${action}`;
-  if(status.modelPending)return `模型未就绪：${s.model?.error || s.model?.status || '等待准备'}${action}`;
-  if(s.state==='entering')return '正在等待活动写入结束…';
-  if(s.state==='switching')return '正在切换数据库…';
-  return (s.state==='normal' ? '服务正常运行。' : '写入暂停，操作结束后请手动退出维护。') + action;
+  const s=status.snapshot, action=s.action ? t('status.detail.action', {action: s.action}) : '';
+  if(status.kind==='unavailable')return t('status.detail.unavailable');
+  if(status.hasError)return t('status.detail.error', {error: s.error, action});
+  if(status.modelPending)return t('status.detail.model', {reason: s.model?.error || s.model?.status || t('status.detail.model.fallback'), action});
+  if(s.state==='entering')return t('status.detail.entering');
+  if(s.state==='switching')return t('status.detail.switching');
+  return (s.state==='normal' ? t('status.detail.normal') : t('status.detail.maintenance')) + action;
 }

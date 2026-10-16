@@ -85,10 +85,10 @@ async function runCardsScenario(scenario) {
     await open($('memory-row-1-detail-arrow'));
     $('btn-debug').click(); $('memory-row-1-tags-more').click(); assert(!detail.isOpen(),'Debug blocks overflow business action'); $('btn-debug').click();
     $('btn-refresh').click();await waitFor(()=>$('memory-row-1')?.classList.contains('is-recent'),'refresh retains marker by ID');
-    $('memories-pagination').querySelector('[aria-label="下一页"]').click();
+    $('memories-pagination').querySelector('[aria-label="' + t('memories.pagination.next') + '"]').click();
     await waitFor(()=>$('memory-row-1')?.dataset.memoryId==='card-20','next page');
     assert(!document.querySelector('.memory-row.is-recent'),'other page does not inherit position marker');
-    $('memories-pagination').querySelector('[aria-label="上一页"]').click();
+    $('memories-pagination').querySelector('[aria-label="' + t('memories.pagination.prev') + '"]').click();
     await waitFor(()=>$('memory-row-1')?.classList.contains('is-recent'),'return restores marker');
     detail.openMemory('card-0');await waitFor(()=>$('detail-edit'),'edit for navigation guard');
     $('detail-edit').click();$('edit-text').value+='\nunsaved';fire($('edit-text'),'input');

@@ -17,48 +17,48 @@
       <span class="brand-logo" aria-hidden="true"></span>
       <div class="brand-copy">
         <h1>Remember Me</h1>
-        <span class="sub" id="server-info">MCP Server</span>
+        <span class="sub" id="server-info" data-i18n="app.serverInfo">MCP Server</span>
       </div>
     </div>
     <div class="header-status">
       <button id="btn-status" class="status-chip" type="button" data-state="loading"
-              aria-describedby="status-tooltip">读取中…</button>
-      <div id="status-tooltip" class="status-tooltip" role="tooltip">正在读取服务状态…</div>
+              aria-describedby="status-tooltip" data-i18n="header.status.loading">读取中…</button>
+      <div id="status-tooltip" class="status-tooltip" role="tooltip" data-i18n="header.status.tooltip">正在读取服务状态…</div>
       <button id="btn-refresh" class="btn btn-outline">
         <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 9a7 7 0 0 1 11.8-2L20 12M4 12l2.6 5a7 7 0 0 0 11.8-2"/></svg>
-        <span>Refresh</span>
+        <span data-i18n="header.refresh">Refresh</span>
       </button>
       <button id="btn-debug" data-debug-toggle class="btn btn-outline" hidden>
         <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.6 9a2.5 2.5 0 0 1 4.8 1c0 1.7-2.4 2-2.4 3.5M12 17h.01"/></svg>
-        <span>Debug</span>
+        <span data-i18n="header.debug">Debug</span>
       </button>
     </div>
   </header>
 
   <div class="app-main">
     <nav class="nav" id="nav" tabindex="0"
-         aria-label="主导航，已展开；按 Enter 或点击导航空白处折叠"
-         title="点击导航空白处折叠或展开">
+         aria-label="主导航，已展开；按 Enter 或点击导航空白处折叠" data-i18n-aria-label="nav.aria"
+         title="点击导航空白处折叠或展开" data-i18n-title="nav.title">
       <div class="nav-items">
         <button id="nav-memories" class="nav-item active" data-page="memories" aria-current="page">
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
-          <span class="nav-label">Memories</span>
+          <span class="nav-label" data-i18n="nav.memories">Memories</span>
         </button>
         <button id="nav-stats" class="nav-item" data-page="stats">
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 20V10M12 20V4M19 20v-6"/></svg>
-          <span class="nav-label">Stats</span>
+          <span class="nav-label" data-i18n="nav.stats">Stats</span>
         </button>
         <button id="nav-ops" class="nav-item" data-page="ops">
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 3h5l.5 2.5 2 1.2 2.4-.8 2.5 4.2L20 12l1.9 1.9-2.5 4.2-2.4-.8-2 1.2-.5 2.5h-5L9 18.5l-2-1.2-2.4.8-2.5-4.2L4 12l-1.9-1.9 2.5-4.2 2.4.8 2-1.2z"/><circle cx="12" cy="12" r="3"/></svg>
-          <span class="nav-label">配置</span>
+          <span class="nav-label" data-i18n="nav.ops">配置</span>
         </button>
         <button id="nav-audit" hidden class="nav-item" data-page="audit">
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h9l4 4v14H6z"/><path d="M9 12h6M9 16h6"/></svg>
-          <span class="nav-label">Audit</span>
+          <span class="nav-label" data-i18n="nav.audit">Audit</span>
         </button>
         <button id="nav-help" class="nav-item" data-page="help">
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4M12 17h.01"/></svg>
-          <span class="nav-label">Help</span>
+          <span class="nav-label" data-i18n="nav.help">Help</span>
         </button>
       </div>
     </nav>
@@ -68,44 +68,44 @@
 <div class="page active" id="page-memories">
   <section class="memories-workspace" aria-labelledby="memories-title">
     <div class="memories-heading">
-      <h2 id="memories-title">Memories</h2>
+      <h2 id="memories-title" data-i18n="memories.title">Memories</h2>
     </div>
     <div class="memories-search-bar">
       <form id="memories-search-form" class="memories-search-form" novalidate>
         <div id="memories-search-input" class="memories-search-input">
-          <select id="memories-search-mode" aria-label="搜索模式">
-            <option value="semantic">Semantic</option>
-            <option value="lexical">Lexical</option>
-            <option value="anchor">Anchor</option>
+          <select id="memories-search-mode" aria-label="搜索模式" data-i18n-aria-label="memories.searchMode.aria">
+            <option value="semantic" data-i18n="memories.mode.semantic">Semantic</option>
+            <option value="lexical" data-i18n="memories.mode.lexical">Lexical</option>
+            <option value="anchor" data-i18n="memories.mode.anchor">Anchor</option>
           </select>
           <svg class="memories-search-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg>
-          <input id="memories-query" type="search" aria-label="Search memories" placeholder="Search memories…">
+          <input id="memories-query" type="search" aria-label="Search memories" data-i18n-aria-label="memories.search.aria" placeholder="Search memories…" data-i18n-placeholder="memories.search.placeholder">
         </div>
       </form>
-      <button id="memories-search-submit" class="btn btn-primary" type="submit" form="memories-search-form">Search</button>
-      <button id="memories-search-clear" class="btn btn-outline" type="button" disabled>Clear search</button>
+      <button id="memories-search-submit" class="btn btn-primary" type="submit" form="memories-search-form" data-i18n="memories.search.submit">Search</button>
+      <button id="memories-search-clear" class="btn btn-outline" type="button" disabled data-i18n="memories.search.clear">Clear search</button>
       <div id="memories-filter-row" class="memories-filter-row">
-        <div class="memories-filters" id="memories-filters" aria-label="记忆筛选"></div>
+        <div class="memories-filters" id="memories-filters" aria-label="记忆筛选" data-i18n-aria-label="memories.filters.aria"></div>
       </div>
       <button id="memories-advanced-toggle" class="btn btn-outline" type="button" aria-expanded="false" aria-controls="memories-advanced">
         <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M4 17h16"/><path d="M9 4v6M15 14v6"/></svg>
-        <span>Advanced</span><svg class="memories-advanced-chevron" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m3 4.5 3 3 3-3"/></svg>
+        <span data-i18n="memories.advanced">Advanced</span><svg class="memories-advanced-chevron" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m3 4.5 3 3 3-3"/></svg>
       </button>
     </div>
     <div id="memories-advanced" class="memories-advanced" hidden>
       <form id="memories-advanced-form" class="memories-advanced-fields" novalidate>
-        <label>Top-K <input id="memories-k" type="text" inputmode="numeric" value="10"><span id="memories-k-error" class="text-danger"></span><small>仅搜索时生效</small></label>
-        <label><span id="memories-threshold-label">最低相似度</span><input id="memories-threshold" type="text" inputmode="decimal" value="0" aria-describedby="memories-threshold-help"><span id="memories-threshold-error" class="text-danger"></span><small id="memories-threshold-help">仅搜索时生效 · 0–1</small></label>
-        <label>Updated after <input id="memories-updated-after" type="datetime-local" step="1"><span id="memories-updated-after-error" class="text-danger"></span><small>浏览与搜索均生效</small></label>
-        <label>Updated before <input id="memories-updated-before" type="datetime-local" step="1"><span id="memories-updated-before-error" class="text-danger"></span><small>浏览与搜索均生效</small></label>
-        <button id="memories-advanced-apply" class="btn btn-outline" type="submit">Apply</button>
+        <label><span data-i18n="memories.advanced.k">Top-K</span> <input id="memories-k" type="text" inputmode="numeric" value="10"><span id="memories-k-error" class="text-danger"></span><small data-i18n="memories.advanced.searchOnly">仅搜索时生效</small></label>
+        <label><span id="memories-threshold-label" data-i18n="memories.advanced.threshold">最低相似度</span><input id="memories-threshold" type="text" inputmode="decimal" value="0" aria-describedby="memories-threshold-help"><span id="memories-threshold-error" class="text-danger"></span><small id="memories-threshold-help" data-i18n="memories.advanced.thresholdHelp">仅搜索时生效 · 0–1</small></label>
+        <label><span data-i18n="memories.advanced.updatedAfter">Updated after</span> <input id="memories-updated-after" type="datetime-local" step="1"><span id="memories-updated-after-error" class="text-danger"></span><small data-i18n="memories.advanced.timeHelp">浏览与搜索均生效</small></label>
+        <label><span data-i18n="memories.advanced.updatedBefore">Updated before</span> <input id="memories-updated-before" type="datetime-local" step="1"><span id="memories-updated-before-error" class="text-danger"></span><small data-i18n="memories.advanced.timeHelp">浏览与搜索均生效</small></label>
+        <button id="memories-advanced-apply" class="btn btn-outline" type="submit" data-i18n="memories.advanced.apply">Apply</button>
       </form>
     </div>
     <div class="memories-result-header">
-      <span id="memories-count" tabindex="-1" role="status">Loading...</span>
+      <span id="memories-count" tabindex="-1" role="status" data-i18n="memories.count.loading">Loading...</span>
       <div class="memories-result-actions">
-        <label>Sort <select id="memories-sort"><option value="updated_at">Updated time ↓</option><option value="created_at">Created time ↓</option></select></label>
-        <button id="memories-create" class="btn btn-primary" type="button" aria-label="New Memory" title="New Memory"><span aria-hidden="true">+</span></button>
+        <label><span data-i18n="memories.sort.label">Sort</span> <select id="memories-sort"><option value="updated_at" data-i18n="memories.sort.updated">Updated time ↓</option><option value="created_at" data-i18n="memories.sort.created">Created time ↓</option></select></label>
+        <button id="memories-create" class="btn btn-primary" type="button" aria-label="New Memory" data-i18n-aria-label="memories.create.aria" title="New Memory" data-i18n-title="memories.create.title"><span aria-hidden="true">+</span></button>
       </div>
     </div>
     <div id="memories-filter-resolution" class="memories-filter-resolution" role="status" aria-live="polite"></div>
@@ -116,21 +116,21 @@
 
 <div class="page" id="page-stats">
   <div class="stats-heading">
-    <h2>Statistics</h2>
+    <h2 data-i18n="stats.title">Statistics</h2>
     <div class="stats-heading-controls">
-      <label for="stats-namespace">Namespace</label>
-      <select id="stats-namespace"><option value="">All Namespaces</option></select>
+      <label for="stats-namespace" data-i18n="stats.namespace">Namespace</label>
+      <select id="stats-namespace"><option value="" data-i18n="stats.namespace.all">All Namespaces</option></select>
     </div>
   </div>
   <div class="stats-view-controls">
-    <div class="stats-view-switch" role="tablist" aria-label="Statistics view">
-      <button id="stats-tab-memory" type="button" role="tab" aria-selected="true" aria-controls="stats-content">Memory</button>
-      <button id="stats-tab-retrieval" type="button" role="tab" aria-selected="false" aria-controls="stats-content" tabindex="-1">LLM Retrieval</button>
+    <div class="stats-view-switch" role="tablist" aria-label="Statistics view" data-i18n-aria-label="stats.view.aria">
+      <button id="stats-tab-memory" type="button" role="tab" aria-selected="true" aria-controls="stats-content" data-i18n="stats.tab.memory">Memory</button>
+      <button id="stats-tab-retrieval" type="button" role="tab" aria-selected="false" aria-controls="stats-content" tabindex="-1" data-i18n="stats.tab.retrieval">LLM Retrieval</button>
     </div>
-    <div id="stats-days" class="stats-days" role="group" aria-label="Retrieval period" hidden>
-      <button id="stats-days-7" type="button" aria-pressed="true">7 Days</button>
-      <button id="stats-days-30" type="button" aria-pressed="false">30 Days</button>
-      <button id="stats-days-90" type="button" aria-pressed="false">90 Days</button>
+    <div id="stats-days" class="stats-days" role="group" aria-label="Retrieval period" data-i18n-aria-label="stats.days.aria" hidden>
+      <button id="stats-days-7" type="button" aria-pressed="true" data-i18n="stats.days.7">7 Days</button>
+      <button id="stats-days-30" type="button" aria-pressed="false" data-i18n="stats.days.30">30 Days</button>
+      <button id="stats-days-90" type="button" aria-pressed="false" data-i18n="stats.days.90">90 Days</button>
     </div>
   </div>
   <p id="stats-options-status" class="stats-options-status" role="status"></p>
@@ -139,38 +139,39 @@
 
 <!-- Ops (运维) -->
 <div class="page" id="page-ops">
-  <h2 id="ops-title">Configuration</h2>
-  <div id="ops-tabs" class="ops-tabs" role="tablist" aria-label="Configuration">
-    <button id="ops-tab-settings" role="tab" aria-selected="true" aria-controls="ops-settings">常规设置 <span>Settings</span></button>
-    <button id="ops-tab-maintenance" role="tab" aria-selected="false" aria-controls="ops-maintenance" tabindex="-1">维护工具 <span>Maintenance</span></button>
+  <h2 id="ops-title" data-i18n="ops.title">Configuration</h2>
+  <div id="ops-tabs" class="ops-tabs" role="tablist" aria-label="Configuration" data-i18n-aria-label="ops.tabs.aria">
+    <button id="ops-tab-settings" role="tab" aria-selected="true" aria-controls="ops-settings" data-i18n="ops.tab.settings">常规设置</button>
+    <button id="ops-tab-maintenance" role="tab" aria-selected="false" aria-controls="ops-maintenance" tabindex="-1" data-i18n="ops.tab.maintenance">维护工具</button>
   </div>
   <div id="ops-settings" role="tabpanel" aria-labelledby="ops-tab-settings">
     <section class="ops-card" id="appearance-card">
-      <div class="ops-card-heading"><h3>Appearance</h3><p>选择当前浏览器的外观。</p></div>
-      <div class="ops-card-content"><fieldset id="theme-select" class="ops-theme"><legend class="sr-only">主题</legend>
-        <label><input type="radio" name="theme" value="system"> 跟随系统</label><label><input type="radio" name="theme" value="light"> 浅色</label><label><input type="radio" name="theme" value="neutral"> 岩石灰</label><label><input type="radio" name="theme" value="dark"> 深色</label>
-      </fieldset><p class="ops-help">立即生效，无需保存。</p></div>
+      <div class="ops-card-heading"><h3 data-i18n="ops.appearance.title">Appearance</h3><p data-i18n="ops.appearance.desc">选择当前浏览器的外观。</p></div>
+      <div class="ops-card-content"><fieldset id="theme-select" class="ops-theme"><legend class="sr-only" data-i18n="ops.theme.legend">主题</legend>
+        <label><input type="radio" name="theme" value="system"> <span data-i18n="ops.theme.system">跟随系统</span></label><label><input type="radio" name="theme" value="light"> <span data-i18n="ops.theme.light">浅色</span></label><label><input type="radio" name="theme" value="neutral"> <span data-i18n="ops.theme.neutral">岩石灰</span></label><label><input type="radio" name="theme" value="dark"> <span data-i18n="ops.theme.dark">深色</span></label>
+      </fieldset><p class="ops-help" data-i18n="ops.appearance.help">立即生效，无需保存。</p></div>
     </section>
     <section class="ops-card" id="model-card">
-      <div class="ops-card-heading"><h3>Service Configuration</h3><p>配置服务访问与模型准备。</p></div>
+      <div class="ops-card-heading"><h3 data-i18n="ops.config.title">Service Configuration</h3><p data-i18n="ops.config.desc">配置服务访问与模型准备。</p></div>
       <div class="ops-card-content">
         <fieldset id="ops-config-fields" disabled>
           <div class="ops-field-grid">
-            <div class="form-group"><label for="config-port">HTTP 端口</label><input id="config-port" type="number" min="1" max="65535" step="1" value="1314"><p class="ops-help">重启后生效；--port 优先。</p></div>
-            <div class="form-group"><label for="config-language">语言</label><select id="config-language"><option value="zh-CN">中文</option><option value="en">English</option></select><p class="ops-help">仅保存偏好，尚未接入界面翻译。</p></div>
+            <div class="form-group"><label for="config-port" data-i18n="ops.config.port">HTTP 端口</label><input id="config-port" type="number" min="1" max="65535" step="1" value="1314"><p class="ops-help" data-i18n="ops.config.portHelp">重启后生效；--port 优先。</p></div>
+            <div class="form-group"><label for="config-language" data-i18n="ops.config.language">语言</label><select id="config-language"><option value="zh-CN">中文</option><option value="en">English</option></select><p class="ops-help" data-i18n="ops.config.languageHelp">选择界面语言；保存后刷新页面生效。</p></div>
           </div>
-          <div class="ops-setting"><label><input id="config-local-only" type="checkbox" checked aria-describedby="config-local-only-help"> 仅本机服务（推荐）</label><p id="config-local-only-help" class="ops-help">监听 127.0.0.1；取消后监听 0.0.0.0。需重启生效。</p></div>
-          <p id="config-local-only-warning" class="ops-warning" role="alert" hidden>取消“仅本机服务”将对局域网开放管理页面、SSE、MCP 与全部 /api，并关闭 /mcp 的 Host/Origin 防护。服务无账号密码，其他设备可读写、删除记忆、导入导出及控制服务。仅在完全可信的网络中启用。</p>
-          <div class="ops-setting"><label><input id="config-debug" type="checkbox" aria-describedby="config-debug-help"> 启用 Debug 模式</label><p id="config-debug-help" class="ops-help">显示 Debug、Audit 和诊断入口；元素检查需点击 Debug。保存后刷新页面生效，无需重启。</p></div>
-          <div class="ops-setting"><label><input id="model-auto-download" type="checkbox"> 缓存缺失时自动下载</label><p class="ops-help">用于下一次模型准备。</p></div>
-          <div class="ops-setting"><label><input id="model-proxy-enabled" type="checkbox"> 使用 HTTP/HTTPS 代理</label><p class="ops-help">关闭时直连，保留已保存的代理地址。</p></div>
-          <div id="model-proxy-fields" class="form-group" hidden><label for="model-proxy-url">代理地址</label><input id="model-proxy-url" type="password" autocomplete="off" placeholder="http://127.0.0.1:7890" aria-describedby="model-proxy-saved"><p id="model-proxy-saved" class="ops-help"></p></div>
+          <div class="ops-setting"><label><input id="config-local-only" type="checkbox" checked aria-describedby="config-local-only-help"> <span data-i18n="ops.config.localOnly">仅本机服务（推荐）</span></label><p id="config-local-only-help" class="ops-help" data-i18n="ops.config.localOnlyHelp">监听 127.0.0.1；取消后监听 0.0.0.0。需重启生效。</p></div>
+          <p id="config-local-only-warning" class="ops-warning" role="alert" hidden data-i18n="ops.config.localOnlyWarning">取消“仅本机服务”将对局域网开放管理页面、SSE、MCP 与全部 /api，并关闭 /mcp 的 Host/Origin 防护。服务无账号密码，其他设备可读写、删除记忆、导入导出及控制服务。仅在完全可信的网络中启用。</p>
+          <div class="ops-setting"><label><input id="config-debug" type="checkbox" aria-describedby="config-debug-help"> <span data-i18n="ops.config.debug">启用 Debug 模式</span></label><p id="config-debug-help" class="ops-help" data-i18n="ops.config.debugHelp">显示 Debug、Audit 和诊断入口；元素检查需点击 Debug。保存后刷新页面生效，无需重启。</p></div>
+          <div class="ops-setting"><label><input id="model-auto-download" type="checkbox"> <span data-i18n="ops.config.autoDownload">缓存缺失时自动下载</span></label><p class="ops-help" data-i18n="ops.config.autoDownloadHelp">用于下一次模型准备。</p></div>
+          <div class="ops-setting"><label><input id="model-proxy-enabled" type="checkbox"> <span data-i18n="ops.config.proxy">使用 HTTP/HTTPS 代理</span></label><p class="ops-help" data-i18n="ops.config.proxyHelp">关闭时直连，保留已保存的代理地址。</p></div>
+          <div id="model-proxy-fields" class="form-group" hidden><label for="model-proxy-url" data-i18n="ops.config.proxyUrl">代理地址</label><input id="model-proxy-url" type="password" autocomplete="off" placeholder="http://127.0.0.1:7890" aria-describedby="model-proxy-saved"><p id="model-proxy-saved" class="ops-help"></p></div>
         </fieldset>
         <p id="config-validation" class="text-danger" role="status"></p>
-        <div class="ops-actions"><button id="btn-model-save" class="btn btn-primary" disabled>保存配置</button><button id="config-load-retry" class="btn btn-outline" hidden>重新读取配置</button></div>
+        <div class="ops-actions"><button id="btn-model-save" class="btn btn-primary" disabled data-i18n="ops.config.save">保存配置</button><button id="config-load-retry" class="btn btn-outline" hidden data-i18n="ops.config.reload">重新读取配置</button></div>
         <p id="model-config-result" class="ops-result" role="status"></p>
-        <p id="config-debug-refresh" class="ops-notice" role="status" hidden>Debug 设置已保存，刷新页面后生效。</p>
-        <div id="config-restart-notice" class="ops-notice" hidden><span id="config-restart-text"></span> <button id="config-open-maintenance" class="ops-link">前往维护工具</button></div>
+        <p id="config-debug-refresh" class="ops-notice" role="status" hidden data-i18n="ops.config.debugRefresh">Debug 设置已保存，刷新页面后生效。</p>
+        <p id="config-language-refresh" class="ops-notice" role="status" hidden><span data-i18n="ops.config.languageRefresh">语言设置已保存，刷新页面后生效。</span> <button id="config-language-refresh-btn" class="ops-link" data-i18n="ops.config.refresh">刷新页面</button></p>
+        <div id="config-restart-notice" class="ops-notice" hidden><span id="config-restart-text"></span> <button id="config-open-maintenance" class="ops-link" data-i18n="ops.config.goMaintenance">前往维护工具</button></div>
       </div>
     </section>
   </div>
@@ -728,15 +729,15 @@
 <div class="page" id="page-audit">
   <div class="card">
     <div class="card-header">
-      <span>Audit（工具调用与后台任务日志）</span>
-      <button id="btn-audit-refresh" class="btn btn-outline btn-sm">Refresh</button>
+      <span data-i18n="audit.title">Audit（工具调用与后台任务日志）</span>
+      <button id="btn-audit-refresh" class="btn btn-outline btn-sm" data-i18n="audit.refresh">Refresh</button>
     </div>
     <div class="card-body">
       <div id="audit-filters" class="audit-filters">
         <div class="form-group">
-          <label for="audit-tool">工具</label>
+          <label for="audit-tool" data-i18n="audit.filter.tool">工具</label>
           <select id="audit-tool">
-            <option value="">全部</option>
+            <option value="" data-i18n="audit.filter.all">全部</option>
             <option value="add">add</option>
             <option value="search_semantic">search_semantic</option>
             <option value="search_meta">search_meta</option>
@@ -748,16 +749,16 @@
           </select>
         </div>
         <div class="form-group">
-          <label for="audit-namespace">Namespace</label>
-          <div id="audit-namespace-control" class="audit-namespace-control"><input id="audit-namespace" placeholder="全部" autocomplete="off"></div>
+          <label for="audit-namespace" data-i18n="audit.filter.namespace">Namespace</label>
+          <div id="audit-namespace-control" class="audit-namespace-control"><input id="audit-namespace" placeholder="全部" data-i18n-placeholder="audit.filter.all" autocomplete="off"></div>
         </div>
         <div class="form-group">
-          <label for="audit-limit">条数</label>
+          <label for="audit-limit" data-i18n="audit.filter.limit">条数</label>
           <input id="audit-limit" type="number" value="200" min="1" max="5000">
         </div>
       </div>
       <div id="audit-results" class="audit-results">
-        <div id="audit-list-header" class="audit-list-header" aria-hidden="true"><span>时间</span><span>Action</span><span>Namespace</span><span>关键信息</span><span>结果</span><span>耗时</span><span></span></div>
+        <div id="audit-list-header" class="audit-list-header" aria-hidden="true"><span data-i18n="audit.col.time">时间</span><span data-i18n="audit.col.action">Action</span><span data-i18n="audit.col.namespace">Namespace</span><span data-i18n="audit.col.info">关键信息</span><span data-i18n="audit.col.result">结果</span><span data-i18n="audit.col.duration">耗时</span><span></span></div>
         <div id="audit-list" class="memory-list" aria-busy="false"></div>
       </div>
     </div>
@@ -771,9 +772,9 @@
 <div id="detail-modal" class="modal-overlay detail-overlay" role="dialog" aria-modal="true" aria-labelledby="detail-title" style="display:none">
   <div id="detail-panel" class="detail-panel">
     <header id="detail-header" class="detail-header">
-      <div id="detail-heading" class="detail-heading"><strong id="detail-title">Memory Detail</strong><div id="detail-subtitle" class="text-muted"></div></div>
+      <div id="detail-heading" class="detail-heading"><strong id="detail-title" data-i18n="detail.title">Memory Detail</strong><div id="detail-subtitle" class="text-muted"></div></div>
       <div id="detail-actions" class="detail-actions"></div>
-      <button id="btn-detail-close" data-debug-navigation class="btn btn-sm btn-outline" aria-label="Close memory detail">✕</button>
+      <button id="btn-detail-close" data-debug-navigation class="btn btn-sm btn-outline" aria-label="Close memory detail" data-i18n-aria-label="detail.close.aria">✕</button>
     </header>
     <div id="detail-body" class="detail-body"></div>
   </div>
@@ -783,8 +784,8 @@
 <div id="audit-modal" class="modal-overlay detail-overlay" role="dialog" aria-modal="true" aria-labelledby="audit-detail-title" style="display:none">
   <div id="audit-panel" class="detail-panel">
     <header id="audit-detail-header" class="detail-header">
-      <div class="detail-heading"><strong id="audit-detail-title">Audit Details</strong></div>
-      <button id="btn-audit-close" data-debug-navigation class="btn btn-sm btn-outline" aria-label="Close audit detail">✕</button>
+      <div class="detail-heading"><strong id="audit-detail-title" data-i18n="audit.detail.title">Audit Details</strong></div>
+      <button id="btn-audit-close" data-debug-navigation class="btn btn-sm btn-outline" aria-label="Close audit detail" data-i18n-aria-label="audit.detail.close.aria">✕</button>
     </header>
     <div id="audit-detail-body" class="detail-body"><pre id="audit-json" tabindex="0"></pre></div>
   </div>
@@ -793,15 +794,15 @@
 <!-- Clear confirmation modal (outside the shell; fixed overlay) -->
 <div id="clear-modal" class="modal-overlay ops-confirm" role="dialog" aria-modal="true" aria-labelledby="clear-confirm-title" aria-describedby="clear-confirm-description" style="display:none;z-index:200">
   <div class="modal-panel" style="width:480px;max-width:92vw;padding:24px">
-    <h2 id="clear-confirm-title">Confirm Clear</h2>
-    <p id="clear-confirm-description">确认操作：<strong id="clear-confirm-scope"></strong></p>
+    <h2 id="clear-confirm-title" data-i18n="clear.title">Confirm Clear</h2>
+    <p id="clear-confirm-description"><span data-i18n="clear.description">确认操作：</span><strong id="clear-confirm-scope"></strong></p>
     <div style="text-align:center;font-size:28px;font-weight:700;letter-spacing:6px;font-family:monospace;background:var(--bg-code);padding:12px;border-radius:8px;margin-bottom:16px;user-select:text" id="clear-confirm-code">ABCDef12</div>
     <div class="form-group">
-      <input aria-label="输入上方8位确认码" id="clear-confirm-input" placeholder="Enter the code above" style="text-align:center;font-size:18px;font-family:monospace;letter-spacing:4px;text-transform:none">
+      <input aria-label="输入上方8位确认码" data-i18n-aria-label="clear.input.aria" id="clear-confirm-input" placeholder="Enter the code above" data-i18n-placeholder="clear.input.placeholder" style="text-align:center;font-size:18px;font-family:monospace;letter-spacing:4px;text-transform:none">
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button id="btn-clear-cancel" class="btn btn-outline">Cancel</button>
-      <button id="btn-clear-confirm" class="btn btn-danger" disabled>Confirm Clear</button>
+      <button id="btn-clear-cancel" class="btn btn-outline" data-i18n="clear.cancel">Cancel</button>
+      <button id="btn-clear-confirm" class="btn btn-danger" disabled data-i18n="clear.confirm">Confirm Clear</button>
     </div>
   </div>
 </div>
