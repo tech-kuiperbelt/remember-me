@@ -5,7 +5,19 @@ Only the static ``web/index.html`` template is translated here, using explicit
 modules, and machine-facing payloads are never touched. Translation resources
 live in ``web/static/locales/<locale>.json`` and are also injected into the page
 as a non-executing JSON node for the frontend ``i18n.js`` module.
+
+Marker contract:
+
+* ``data-i18n`` marks an element whose **text content** is replaced. The element
+  must contain text only; a child element is a template error (see
+  ``TemplateMarkerError``). Empty containers are filled with the translation.
+* ``data-i18n-placeholder`` / ``data-i18n-title`` / ``data-i18n-aria-label``
+  replace the named attribute; the element may contain anything.
+
+Translated values are escaped for their destination context so catalog text is
+always shown literally, never interpreted as markup or entities.
 """
+import html
 import json
 import re
 from functools import lru_cache
@@ -18,12 +30,24 @@ DEFAULT_LOCALE = "zh-CN"
 LOCALES_DIR = PROJECT_ROOT / "web" / "static" / "locales"
 CATALOG_ELEMENT_ID = "i18n-catalog"
 
+TEXT_MARKER = "data-i18n"
+
+# Void elements never have separate end tags, so they must not open a frame.
+_VOID_ELEMENTS = frozenset({
+    "area", "base", "br", "col", "embed", "hr", "img", "input", "link",
+    "meta", "param", "source", "track", "wbr",
+})
+
 # Marker -> destination attribute for attribute translation.
 _ATTR_MARKERS = (
     ("data-i18n-placeholder", "placeholder"),
     ("data-i18n-title", "title"),
     ("data-i18n-aria-label", "aria-label"),
 )
+
+
+class TemplateMarkerError(ValueError):
+    """Raised when a ``data-i18n`` marker cannot be applied unambiguously."""
 
 
 def normalize_locale(locale):
@@ -51,10 +75,23 @@ def _lookup(catalog, key, fallback):
     return key if value is None else value
 
 
+def _escape_text(value):
+    return (value.replace("&", "&amp;")
+                 .replace("<", "&lt;")
+                 .replace(">", "&gt;"))
+
+
+def _escape_attr(value):
+    return (value.replace("&", "&amp;")
+                 .replace('"', "&quot;")
+                 .replace("<", "&lt;")
+                 .replace(">", "&gt;"))
+
+
 def _set_attr(raw_start_tag, attr, value):
     """Set/replace a double-quoted attribute inside a raw start tag string."""
     pattern = re.compile(r'(\s' + re.escape(attr) + r'\s*=\s*)"[^"]*"')
-    escaped = value.replace('"', "&quot;")
+    escaped = _escape_attr(value)
     if pattern.search(raw_start_tag):
         return pattern.sub(
             lambda m: m.group(1) + '"' + escaped + '"', raw_start_tag, count=1)
@@ -71,14 +108,16 @@ def _set_attr(raw_start_tag, attr, value):
 class _TemplateTranslator(HTMLParser):
     """Rewrites ``data-i18n*`` markers while preserving the original markup."""
 
-    _ATTR_NAMES = {marker for marker, _ in _ATTR_MARKERS}
-
-    def __init__(self, catalog, fallback):
+    def __init__(self, catalog, fallback, locale):
         super().__init__(convert_charrefs=False)
         self.catalog = catalog
         self.fallback = fallback
+        self.locale = locale
         self.out = []
+        # Open non-void elements. Each frame keeps its tag and, for a text
+        # marker, the decoded text collected so far.
         self.stack = []
+        self.marked = None  # innermost frame whose text is being replaced
 
     def _translate(self, key):
         return _lookup(self.catalog, key, self.fallback)
@@ -87,47 +126,85 @@ class _TemplateTranslator(HTMLParser):
         raw = self.get_starttag_text() or f"<{tag}>"
         attrd = {name: (value if value is not None else "") for name, value in attrs}
         if tag == "html":
-            raw = _set_attr(raw, "lang", normalize_locale(self.catalog.get("_locale")))
+            raw = _set_attr(raw, "lang", normalize_locale(self.locale))
         for marker, attr in _ATTR_MARKERS:
             key = attrd.get(marker)
             if key:
                 raw = _set_attr(raw, attr, self._translate(key))
-        return raw, attrd.get("data-i18n")
+        return raw, attrd.get(TEXT_MARKER)
+
+    def _open(self, tag, attrs):
+        if self.marked is not None:
+            raise TemplateMarkerError(
+                f"<{self.marked['tag']} {TEXT_MARKER}={self.marked['key']!r}> "
+                f"contains child <{tag}>; put the text in its own element")
+        raw, key = self._localize_start(tag, attrs)
+        self.out.append(raw)
+        if tag in _VOID_ELEMENTS:
+            if key:
+                raise TemplateMarkerError(
+                    f"<{tag}> is a void element and cannot carry {TEXT_MARKER}={key!r}")
+            return
+        frame = {"tag": tag, "key": key, "text": []}
+        self.stack.append(frame)
+        if key:
+            self.marked = frame
 
     def handle_starttag(self, tag, attrs):
-        raw, key = self._localize_start(tag, attrs)
-        self.stack.append({"tag": tag, "key": key})
-        self.out.append(raw)
+        self._open(tag, attrs)
 
     def handle_startendtag(self, tag, attrs):
-        raw, _ = self._localize_start(tag, attrs)
+        if self.marked is not None:
+            raise TemplateMarkerError(
+                f"<{self.marked['tag']} {TEXT_MARKER}={self.marked['key']!r}> "
+                f"contains child <{tag}/>; put the text in its own element")
+        raw, key = self._localize_start(tag, attrs)
+        if key:
+            raise TemplateMarkerError(
+                f"<{tag}/> is self-closing and cannot carry {TEXT_MARKER}={key!r}")
         self.out.append(raw)
 
     def handle_endtag(self, tag):
-        if self.stack:
-            self.stack.pop()
+        frame = None
+        if self.stack and self.stack[-1]["tag"] == tag:
+            frame = self.stack.pop()
+        if frame is not None and frame is self.marked:
+            self.out.append(_escape_text(self._translate(frame["key"])))
+            self.marked = None
         self.out.append(f"</{tag}>")
 
     def handle_data(self, data):
-        if self.stack and self.stack[-1]["key"] and data.strip():
-            self.out.append(self._translate(self.stack[-1]["key"]))
+        if self.marked is not None:
+            self.marked["text"].append(data)
         else:
             self.out.append(data)
 
     def handle_entityref(self, name):
-        self.out.append(f"&{name};")
+        self._append_ref(f"&{name};")
 
     def handle_charref(self, name):
-        self.out.append(f"&#{name};")
+        self._append_ref(f"&#{name};")
+
+    def _append_ref(self, raw_ref):
+        if self.marked is not None:
+            # Decode so the reconstructed text matches what the browser shows,
+            # then re-escape the final translation as text.
+            self.marked["text"].append(html.unescape(raw_ref))
+        else:
+            self.out.append(raw_ref)
 
     def handle_comment(self, data):
-        self.out.append(f"<!--{data}-->")
+        if self.marked is None:
+            self.out.append(f"<!--{data}-->")
 
     def handle_decl(self, decl):
         self.out.append(f"<!{decl}>")
 
     def handle_pi(self, data):
         self.out.append(f"<?{data}>")
+
+    def handle_unknown_decl(self, data):
+        self.out.append(f"<![{data}]>")
 
 
 def _json_for_script(payload):
@@ -139,14 +216,13 @@ def _json_for_script(payload):
                 .replace("\u2029", "\\u2029"))
 
 
-def render_localized_html(html, locale):
+def render_localized_html(html_text, locale):
     """Translate the fixed template and inject the catalog + ``<html lang>``."""
     resolved = normalize_locale(locale)
     catalog = load_catalog(resolved)
     fallback = load_catalog(DEFAULT_LOCALE)
-    # _locale is consumed by the translator for <html lang>; not emitted to JS.
-    translator = _TemplateTranslator({**catalog, "_locale": resolved}, fallback)
-    translator.feed(html)
+    translator = _TemplateTranslator(catalog, fallback, resolved)
+    translator.feed(html_text)
     translator.close()
     output = "".join(translator.out)
 

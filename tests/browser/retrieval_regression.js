@@ -49,7 +49,7 @@ async function runRetrievalScenario(scenario) {
   assert(getComputedStyle($('stats-search-modes').querySelector('.stats-retrieval-bar')).height==='8px','mode bar weight matches mockup');
   const modeCard=$('stats-search-modes');
   if(modeCard.clientWidth-2*parseFloat(getComputedStyle(modeCard).paddingLeft)>=360)assert(getComputedStyle(modeCard.querySelector('.stats-retrieval-bar')).gridRowStart==='1','wide mode bars share text row');
-  assert($('stats-tab-retrieval').textContent==='LLM Retrieval'&&$('stats-retrieval-source').textContent==='MCP search activity and reported feedback','Retrieval identifies LLM and MCP source');
+  assert($('stats-tab-retrieval').textContent===t('stats.tab.retrieval')&&$('stats-retrieval-source').textContent==='MCP search activity and reported feedback','Retrieval identifies LLM and MCP source');
   assert(!document.getElementById('btn-stats-refresh'),'no local Refresh');
   assert($('stats-search-modes').querySelectorAll('.stats-retrieval-row').length===4,'four modes');
   assert(new Set([...$('stats-search-modes').querySelectorAll('.stats-retrieval-bar>span')].map(e=>getComputedStyle(e).backgroundColor)).size===4,'four distinct mode identity colors');

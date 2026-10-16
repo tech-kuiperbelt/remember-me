@@ -3,7 +3,7 @@ async function runOpsRegression(scenario) {
   const ops=await import('/admin/console/static/js/ops.js');
   const normal={state:'normal',action:null,error:null,required_reason:null,model:{status:'ready',ready:true}};
   const ready={...normal,state:'maintenance'};
-  let snapshot={...normal}, config={port:1314,language:'zh-CN',local_only:true,debug:true,debug_effective:true,auto_download_model:true,proxy:{enabled:false,url:'http://***@proxy:8080'}};
+  let snapshot={...normal}, config={port:1314,language:(document.documentElement.lang||'zh-CN'),local_only:true,debug:true,debug_effective:true,auto_download_model:true,proxy:{enabled:false,url:'http://***@proxy:8080'}};
   let down=false, saveError=false, retryError=false, holdSync=null, holdSave=null, holdMaintenance=null, jobReadFail=false, importPosts=0, recoverPosts=0, clearScope=null;
   const writes=[], saved=[];
   S.setOverride((url,init)=>{
@@ -127,6 +127,21 @@ async function runOpsRegression(scenario) {
   await waitFor(()=>typeof holdSave==='function','save held');await ops.refreshMaintenance();assert($('btn-model-save').disabled&&$('btn-maintenance-enter').disabled,'poll cannot unlock save');
   holdSave();holdSave=null;await waitFor(()=>!$('ops-config-fields').disabled,'saved');
   assert(!('url' in saved[0].proxy),'blank proxy omitted');assert($('btn-model-save').disabled,'saved becomes clean');assert(!$('config-restart-notice').hidden,'known restart changes flagged');
+  // Language applies on refresh only; the restart notice never mentions it.
+  const pageLang=document.documentElement.lang||'zh-CN';
+  const otherLang=pageLang==='en'?'zh-CN':'en';
+  input('config-language',otherLang);$('btn-model-save').click();
+  await waitFor(()=>!$('config-language-refresh').hidden&&!$('ops-config-fields').disabled,'language refresh notice');
+  assert($('config-restart-text').textContent===t('ops.config.restartNeeded'),'restart notice excludes language');
+  // Language together with a port change flags both, restart still port-only.
+  input('config-port','1416');$('btn-model-save').click();
+  await waitFor(()=>!$('ops-config-fields').disabled&&$('config-port').value==='1416','combined save');
+  assert(!$('config-language-refresh').hidden&&!$('config-restart-notice').hidden,'combined save shows both notices');
+  // The refresh button honours the unsaved-draft guard before reloading.
+  input('config-port','1515');window.confirm=()=>false;$('config-language-refresh-btn').click();await settle();
+  assert($('config-port').value==='1515','refresh aborted while config dirty');window.confirm=()=>true;
+  input('config-port','1414');input('config-language','zh-CN');$('btn-model-save').click();
+  await waitFor(()=>$('btn-model-save').disabled,'baseline restored');
   input('config-language','en');saveError=true;$('btn-model-save').click();await waitFor(()=>$('model-config-result').textContent.includes('disk error'),'save error');
   assert($('config-language').value==='en'&&!$('btn-model-save').disabled,'failed save preserves editable draft');saveError=false;
   await setState({...ready,required_reason:'model_not_ready',model:{status:'failed',ready:false,error:'missing'}});retryError=true;$('btn-model-save').click();

@@ -63,6 +63,16 @@ def test_render_localized_sets_lang_and_injects_catalog(locale):
     assert payload["messages"]
 
 
+def test_real_template_marker_targets():
+    html = INDEX_PATH.read_text(encoding="utf-8")
+    en = ui_i18n.render_localized_html(html, "en")
+    assert ">Configuration<" in en  # text node translated
+    zh = ui_i18n.render_localized_html(html, "zh-CN")
+    assert 'placeholder="搜索记忆…"' in zh  # attribute marker applied
+    assert 'aria-label="新建记忆"' in zh  # attribute marker applied
+    assert 'value="semantic"' in zh  # fixed option value untouched
+
+
 def test_english_payload_includes_chinese_fallback():
     html = INDEX_PATH.read_text(encoding="utf-8")
     pattern = r'id="i18n-catalog"[^>]*>(.*?)</script>'
@@ -72,6 +82,61 @@ def test_english_payload_includes_chinese_fallback():
     # The default locale does not duplicate its own messages as a fallback.
     zh_payload = json.loads(re.search(pattern, ui_i18n.render_localized_html(html, "zh-CN"), re.S).group(1))
     assert "fallbackMessages" not in zh_payload
+
+
+def _translate_fragment(fragment, catalog, locale="zh-CN"):
+    """Run the template translator over a minimal fragment with a fixed catalog."""
+    translator = ui_i18n._TemplateTranslator(catalog, {}, locale)
+    translator.feed(fragment)
+    translator.close()
+    return "".join(translator.out)
+
+
+def test_text_marker_escapes_markup():
+    out = _translate_fragment('<p data-i18n="x">old</p>', {"x": "<project namespace>"})
+    assert out == '<p data-i18n="x">&lt;project namespace&gt;</p>'
+
+
+def test_text_marker_escapes_ampersand():
+    out = _translate_fragment('<p data-i18n="x">old</p>', {"x": "A & B"})
+    assert out == '<p data-i18n="x">A &amp; B</p>'
+
+
+def test_attr_marker_escapes_entities_and_quotes():
+    out = _translate_fragment(
+        '<input data-i18n-placeholder="x" placeholder="old">',
+        {"x": 'a"b &lt;literal&gt;'})
+    assert 'placeholder="a&quot;b &amp;lt;literal&amp;gt;"' in out
+    # The catalog text must not be left decodable as markup/entities.
+    assert "&lt;literal&gt;" not in out
+
+
+def test_entity_split_in_marker_replaces_once():
+    out = _translate_fragment('<p data-i18n="x">A &amp; B</p>', {"x": "Translated"})
+    assert out == '<p data-i18n="x">Translated</p>'
+    assert out.count("Translated") == 1
+
+
+def test_empty_marker_is_filled():
+    out = _translate_fragment('<span data-i18n="x"></span>', {"x": "Hi"})
+    assert out == '<span data-i18n="x">Hi</span>'
+
+
+def test_marker_with_child_element_is_rejected():
+    with pytest.raises(ui_i18n.TemplateMarkerError):
+        _translate_fragment('<label data-i18n="x">Text <input></label>', {"x": "Hi"})
+
+
+def test_marker_on_void_element_is_rejected():
+    with pytest.raises(ui_i18n.TemplateMarkerError):
+        _translate_fragment('<input data-i18n="x">', {"x": "Hi"})
+
+
+def test_attr_marker_may_have_children():
+    out = _translate_fragment(
+        '<button data-i18n-aria-label="x"><span>+</span></button>', {"x": "New"})
+    assert 'aria-label="New"' in out
+    assert "<span>+</span>" in out
 
 
 def test_unknown_locale_falls_back_to_default():

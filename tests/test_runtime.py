@@ -231,6 +231,18 @@ def test_export_routes_after_service_split(tmp_path):
             assert json.loads(response.text)['text'] == 'export body'
 
 
+def test_language_save_applies_to_console_without_restart(tmp_path):
+    rt = runtime(tmp_path).start()
+    try:
+        with TestClient(create_http_app(rt)) as client:
+            assert '<html lang="zh-CN"' in client.get('/admin/console').text
+            assert client.post('/api/config', json={'language': 'en'}).status_code == 200
+            # Next page load uses the new language; the service is not restarted.
+            assert '<html lang="en"' in client.get('/admin/console').text
+    finally:
+        rt.close()
+
+
 def test_save_model_config_applies_language_without_restart(tmp_path):
     rt = runtime(tmp_path).start()
     try:
