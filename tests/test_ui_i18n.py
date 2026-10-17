@@ -73,6 +73,20 @@ def test_real_template_marker_targets():
     assert 'value="semantic"' in zh  # fixed option value untouched
 
 
+def test_help_quote_and_attribution_are_present_in_both_languages():
+    expected = {
+        "en": ("What's past is prologue.", "William Shakespeare"),
+        "zh-CN": ("过去的一切，皆为序章。", "William Shakespeare"),
+    }
+    for locale, (quote, attribution) in expected.items():
+        rendered = ui_i18n.render_localized_html(
+            INDEX_PATH.read_text(encoding="utf-8"), locale)
+        assert quote in rendered
+        assert attribution in rendered
+        assert "The Tempest, Act II, Scene I" in rendered
+        assert "westworld" not in rendered.lower()
+
+
 def test_english_payload_includes_chinese_fallback():
     html = INDEX_PATH.read_text(encoding="utf-8")
     pattern = r'id="i18n-catalog"[^>]*>(.*?)</script>'

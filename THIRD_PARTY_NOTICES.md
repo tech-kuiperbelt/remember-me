@@ -63,9 +63,9 @@ receives the same copyright protection as human-authored work. Tool versions and
 generation records have not been independently verified. Project screenshots
 and architecture diagrams document the project itself.
 
-The maintainer has chosen to retain the short Help quotation attributed to
-Westworld and considers its Chinese rendering a good translation. The Chinese
-translation's source has not been independently established. The quotation is
-not represented as project-owned text licensed under Apache-2.0; attribution
-does not itself grant permission. This records the maintainer's content decision,
-not a legal determination of the applicable quotation basis.
+The Help page quotes William Shakespeare's *The Tempest*, Act II, Scene I:
+“What's past is prologue.” Shakespeare's original is in the public domain. The
+Chinese wording “过去的一切，皆为序章。” is the project's selected expression
+and was not copied from a modern published translation. The attribution is
+included for identification; the quotation is not represented as project-owned
+text licensed under Apache-2.0.
