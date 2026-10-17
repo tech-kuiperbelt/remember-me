@@ -1,4 +1,6 @@
 {
+  "help.license": "Remember Me 自有源码采用 Apache-2.0；第三方组件与模型适用各自条款。模型不随源码分发；具体来源、下载方式及许可见第三方声明。",
+  "help.thirdParty": "第三方声明",
   "app.serverInfo": "MCP 服务",
   "header.status.loading": "读取中…",
   "header.status.tooltip": "正在读取服务状态…",
@@ -696,7 +698,7 @@
   "help.troubleshooting.22": "服务尚未完成模型加载与验证，记忆访问暂不可用。到配置 → Maintenance → Model Management 查看准备状态，完成准备后手动退出维护。",
   "help.troubleshooting.23": "服务与配置",
   "help.troubleshooting.24": "模型下载失败怎么办？",
-  "help.troubleshooting.25": "检查网络、代理、自动下载选项及模型状态。在配置 → Maintenance → Model Management 查看错误并重试；仍失败时，按提示检查网络、磁盘或模型初始化问题。关闭自动下载不会免除模型准备；Ollama 模型需由安装者在 Ollama 中准备。",
+  "help.troubleshooting.25": "检查网络、代理、自动下载选项及模型状态。在配置 → Maintenance → Model Management 查看错误并重试；仍失败时，按提示检查网络、磁盘或模型初始化问题。关闭自动下载不会免除模型准备。",
   "help.troubleshooting.26": "为什么看不到 Audit 或 Debug？",
   "help.troubleshooting.27": "这些入口仅在配置中启用 Debug 并保存、刷新页面后显示。普通使用不需要开启 Debug。",
   "help.troubleshooting.28": "代理地址为什么没有显示出来？",

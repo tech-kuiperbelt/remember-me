@@ -1,3 +1,6 @@
+# Historical OpenMemory evaluation configuration; NOT a Remember Me deployment.
+# These third-party images are not built or distributed by this project.
+# Start Remember Me with bin/start.sh; see README.md.
 services:
   openmemory:
     image: mem0/openmemory-mcp

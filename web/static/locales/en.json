@@ -1,4 +1,6 @@
 {
+  "help.license": "Remember Me’s own source code is licensed under Apache-2.0. Third-party components and models retain their own terms. Models are not bundled with the source; see the third-party notices for sources, download methods and licenses.",
+  "help.thirdParty": "Third-party notices",
   "app.serverInfo": "MCP Server",
   "header.status.loading": "Loading…",
   "header.status.tooltip": "Reading service status…",
@@ -699,7 +701,7 @@
   "help.troubleshooting.22": "The service has not finished loading and validating the model, so memory access is unavailable. Go to Configuration → Maintenance → Model Management to see the status and exit maintenance manually once preparation finishes.",
   "help.troubleshooting.23": "Service and configuration",
   "help.troubleshooting.24": "What if the model download fails?",
-  "help.troubleshooting.25": "Check the network, proxy, auto-download option and model status. In Configuration → Maintenance → Model Management, view the error and retry; if it still fails, follow the prompts to check network, disk or model initialization. Turning off auto-download does not skip preparation; Ollama models must be prepared in Ollama by the installer.",
+  "help.troubleshooting.25": "Check the network, proxy, auto-download option and model status. In Configuration → Maintenance → Model Management, view the error and retry; if it still fails, follow the prompts to check network, disk or model initialization. Turning off auto-download does not skip preparation.",
   "help.troubleshooting.26": "Why can't I see Audit or Debug?",
   "help.troubleshooting.27": "These entries only appear after you enable Debug in configuration, save and refresh the page. Ordinary use does not need Debug.",
   "help.troubleshooting.28": "Why is the proxy address not shown?",

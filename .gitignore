@@ -8,3 +8,32 @@ data/
 logs/
 memories.db
 memories.json
+
+# Local overrides (keep distributable example templates visible).
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+
+# Default runtime files if the repository root is used as the data directory.
+/memories.db-*
+/memories.db.writer.lock
+/memories.jsonl*
+/memories.ndjson*
+/audit.jsonl*
+/config.json
+/config.jsonc
+/models/
+/cache/
+/tmp/
+/anchor-backfill/
+
+# Test caches and coverage output; do not ignore fixtures or design screenshots.
+.pytest_cache/
+.coverage
+.coverage.*
+/htmlcov/
+
+# Local development documents (historical versions remain in Git history).
+/docs/design/
+/docs/project-management/
