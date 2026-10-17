@@ -63,7 +63,9 @@ receives the same copyright protection as human-authored work. Tool versions and
 generation records have not been independently verified. Project screenshots
 and architecture diagrams document the project itself.
 
-The short Help quotation attributed to Westworld and its Chinese rendering are
-retained pending review of the applicable quotation basis and translation
-provenance. They are not represented as project-owned text licensed under
-Apache-2.0. A source link establishes attribution, not a separate copyright grant.
+The maintainer has chosen to retain the short Help quotation attributed to
+Westworld and considers its Chinese rendering a good translation. The Chinese
+translation's source has not been independently established. The quotation is
+not represented as project-owned text licensed under Apache-2.0; attribution
+does not itself grant permission. This records the maintainer's content decision,
+not a legal determination of the applicable quotation basis.
