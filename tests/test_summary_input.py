@@ -290,7 +290,7 @@ def test_online_summary_generation_route_and_ui_are_removed(admin):
 
 def test_online_recover_route_and_ui_are_present(admin):
     admin_routes = admin.routes
-    assert any(route.path == "/api/recover" for route in admin_routes)
+    assert any(route.path == "/api/recover" and "POST" in route.methods for route in admin_routes)
+    assert any(route.path == "/api/recover/{recover_id}" and "GET" in route.methods for route in admin_routes)
     ui = frontend_source()
-    assert "doRecover" in ui
     assert "btn-recover" in ui

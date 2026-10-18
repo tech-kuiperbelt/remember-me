@@ -52,23 +52,38 @@ function render() {
   if (!events.length) { list.innerHTML = '<div class="empty-state">' + esc(t('audit.empty')) + '</div>'; return; }
   const occurrences = new Map();
   eventKeys = [];
-  list.innerHTML = events.map((ev, i) => {
+  const rows = events.map((ev, i) => {
     const identity = eventIdentity(ev), occurrence = occurrences.get(identity) || 0;
     occurrences.set(identity, occurrence + 1);
-    eventKeys.push({identity, occurrence});
-    const row = 'audit-row-' + (i + 1), view = presentAudit(ev);
-    const cell = (name, label, content, cls = '') => `<div id="${row}-${name}" class="audit-cell audit-cell-${name} ${cls}"><span class="audit-cell-label">${label}</span><span class="audit-cell-value">${esc(content)}</span></div>`;
-    return `<article id="${row}" class="memory-row audit-row">
-      ${cell('time', t('audit.col.time'), formatTime(ev.ts) || '—')}
-      ${cell('action', t('audit.col.action'), ev.tool || '—')}
-      ${cell('namespace', t('audit.col.namespace'), view.namespace)}
-      ${cell('summary', t('audit.col.info'), view.summary)}
-      <div id="${row}-result" class="audit-cell audit-cell-result"><span class="audit-cell-label">${t('audit.col.result')}</span><span id="${row}-status" class="audit-row-status ${view.status === 'error' ? 'text-danger' : view.status === 'ok' ? 'text-success' : 'text-muted'}">${esc(view.status)}</span></div>
-      ${cell('duration', t('audit.col.duration'), view.duration)}
-      <button id="${row}-detail" class="audit-row-open" aria-label="${esc(t('audit.detail.open', {tool: ev.tool || 'Audit'}))}"><span class="memory-row-detail-arrow" aria-hidden="true">›</span></button>
-    </article>`;
-  }).join('');
-  list.querySelectorAll('.audit-row-open').forEach((button, i) => button.onclick = () => openDetail(events[i], eventKeys[i]));
+    const key = {identity, occurrence};
+    eventKeys.push(key);
+    const id = 'audit-row-' + (i + 1), view = presentAudit(ev);
+    const row = document.createElement('article');
+    row.id = id; row.className = 'memory-row audit-row';
+    const cell = (name, label, content) => {
+      const el = document.createElement('div'), heading = document.createElement('span'), value = document.createElement('span');
+      el.id = id + '-' + name; el.className = 'audit-cell audit-cell-' + name;
+      heading.className = 'audit-cell-label'; heading.textContent = label;
+      value.className = 'audit-cell-value'; value.textContent = content;
+      el.append(heading, value); row.append(el);
+      return value;
+    };
+    cell('time', t('audit.col.time'), formatTime(ev.ts) || '—');
+    cell('action', t('audit.col.action'), ev.tool || '—');
+    cell('namespace', t('audit.col.namespace'), view.namespace);
+    cell('summary', t('audit.col.info'), view.summary);
+    const status = cell('result', t('audit.col.result'), view.status);
+    status.id = id + '-status';
+    status.className = 'audit-row-status ' + (view.status === 'error' ? 'text-danger' : view.status === 'ok' ? 'text-success' : 'text-muted');
+    cell('duration', t('audit.col.duration'), view.duration);
+    const button = document.createElement('button'), arrow = document.createElement('span');
+    button.id = id + '-detail'; button.className = 'audit-row-open'; button.type = 'button';
+    button.setAttribute('aria-label', t('audit.detail.open', {tool: ev.tool || 'Audit'}));
+    arrow.className = 'memory-row-detail-arrow'; arrow.setAttribute('aria-hidden', 'true'); arrow.textContent = '›';
+    button.append(arrow); button.onclick = () => openDetail(ev, key); row.append(button);
+    return row;
+  });
+  list.replaceChildren(...rows);
   markRecent();
 }
 function openDetail(event, key) {

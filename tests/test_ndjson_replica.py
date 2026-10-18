@@ -13,7 +13,6 @@ from app.storage.ndjson import NDJSONReplica
 from app.storage.sqlite import SQLiteStorage
 from app.storage.dual import DualStorage
 import app.storage.dual as storage_dual_module
-from tests.conftest import frontend_source
 
 
 def _lines(path):
@@ -443,11 +442,24 @@ def test_health_check_error_retries_after_one_hour(tmp_path, fake_emb, monkeypat
         dual.stop()
 
 
-def test_admin_stats_renders_replica_health_fields():
-    ui = frontend_source()
+def test_admin_exposes_manual_replica_maintenance_controls():
+    # Health fields are an API contract (tested above). Manual repair is now in
+    # Configuration / Maintenance, not the redesigned Statistics workspace.
+    from html.parser import HTMLParser
 
-    for label in ("Replica Health", "Recovery Action", "Run Full Export below",
-                  "The service will not repair replica drift automatically",
-                  "Pending", "Replica Integrity", "Last Automatic Check",
-                  "Next Automatic Check"):
-        assert label in ui
+    class Controls(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.controls = {}
+
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            if "id" in attrs:
+                self.controls[attrs["id"]] = (tag, attrs)
+
+    page = Controls()
+    page.feed((Path(__file__).resolve().parents[1] / "web/index.html").read_text())
+    for control in ("btn-sync", "btn-export-full", "btn-recover"):
+        tag, attrs = page.controls[control]
+        assert tag == "button"
+        assert "disabled" in attrs  # Admission is enabled only after state loads.

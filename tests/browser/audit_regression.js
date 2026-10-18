@@ -38,7 +38,7 @@ async function runAuditRegression(scenario) {
   $('audit-namespace').dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}));
   await waitFor(() => $('audit-list').getAttribute('aria-busy') === 'false', 'typed namespace');
   assert(S.calls.some(call => call.url.includes('namespace=older-space')), 'arbitrary namespace supported');
-  const trigger = $('audit-row-1-detail'); trigger.focus(); trigger.click();
+  let trigger = $('audit-row-1-detail'); trigger.focus(); trigger.click();
   assert($('audit-row-1').classList.contains('is-recent'), 'opened event marked as last viewed');
   assert(getComputedStyle($('audit-row-1'), '::before').width === '2px', 'same blue line as Memory');
   assert($('audit-json').textContent === JSON.stringify(event, null, 2), 'pretty JSON retains all returned fields');
@@ -59,6 +59,22 @@ async function runAuditRegression(scenario) {
   assert(!document.body.classList.contains('debug-ids') && document.activeElement === $('btn-audit-close'), 'inspector Escape retains drawer focus');
   $('audit-modal').click(); await waitFor(() => $('audit-modal').style.display === 'none', 'backdrop closes');
   if (scenario === 'audit-functional') {
+    const maliciousTool = 'unknown" onpointerover="window.auditInjected=true" data-probe="';
+    S.setOverride(url => url.startsWith('/api/audit?') ? json([{...event, tool: maliciousTool}]) : undefined);
+    $('btn-audit-refresh').click();
+    await waitFor(() => $('audit-row-1-action')?.textContent.includes(maliciousTool), 'unknown tool rendered');
+    const unsafeButton = $('audit-row-1-detail');
+    assert(unsafeButton.getAttribute('aria-label') === t('audit.detail.open', {tool: maliciousTool}), 'tool name stays entirely in accessible label');
+    assert(!unsafeButton.hasAttribute('onpointerover') && !unsafeButton.hasAttribute('data-probe'), 'tool name cannot introduce attributes');
+    unsafeButton.dispatchEvent(new Event('pointerover'));
+    assert(!window.auditInjected, 'tool name cannot execute script');
+    unsafeButton.click();
+    assert(JSON.parse($('audit-json').textContent).tool === maliciousTool, 'unknown tool retains full audit evidence');
+    $('btn-audit-close').click();
+    S.setOverride(url => url.startsWith('/api/audit?') ? json([event, error]) : undefined);
+    $('btn-audit-refresh').click(); await waitFor(() => $('audit-row-2'), 'restore audit fixture');
+    trigger = $('audit-row-1-detail');
+
     const originalMatchMedia = window.matchMedia;
     window.matchMedia = query => query === '(prefers-reduced-motion: reduce)' ? {matches: true} : originalMatchMedia.call(window, query);
     trigger.click(); $('btn-audit-close').click();

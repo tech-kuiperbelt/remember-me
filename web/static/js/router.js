@@ -4,7 +4,7 @@ import { $ } from './core.js';
 const pages = new Map();
 const historyKey = 'rememberNavigation';
 let leaveGuard = action => { action(); return true; };
-let current = null, traversal = null;
+let current = null, traversal = null, navigationVersion = 0;
 export function setLeaveGuard(guard) { leaveGuard = guard; }
 export function register(id, { onShow, onHide, normalizeTopic }) {
   pages.set(id, { onShow, onHide, normalizeTopic });
@@ -47,7 +47,8 @@ export function switchPage(name, prepare = () => {}, options = {}) {
     showPage(target, options);
   });
 }
-function showPage(target, options = {}) {
+async function showPage(target, options = {}) {
+  const request = ++navigationVersion;
   const previous = document.querySelector('.page.active')?.id.replace('page-', '');
   if (previous && previous !== target.page) pages.get(previous)?.onHide?.();
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -58,7 +59,10 @@ function showPage(target, options = {}) {
   const nav = document.querySelector(`.nav button[data-page="${target.page}"]`);
   if (nav) { nav.classList.add('active'); nav.setAttribute('aria-current', 'page'); }
   $('content').scrollTop = 0;
-  pages.get(target.page)?.onShow?.(target.topic, options);
+  // Loading replaces list rows and may restore its own refresh position first.
+  // History restoration runs last, and only for the still-current navigation.
+  await pages.get(target.page)?.onShow?.(target.topic, options);
+  if (request !== navigationVersion) return;
   if (options.restore) {
     const focus = target.focus && $(target.focus);
     if (focus?.getClientRects().length) focus.focus({ preventScroll: true });

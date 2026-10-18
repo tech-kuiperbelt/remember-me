@@ -1,4 +1,5 @@
 // Shared create/update form; the drawer owns requests, dirty state and focus.
+import { node, button } from './detail-dom.js';
 import { $ } from './core.js';
 import { getNamespaces, getDefaultNamespace, getCategories, getCategoryState } from './store.js';
 import { normalizeAnchors } from './detail-model.js';
@@ -7,8 +8,6 @@ import { createValuePickers } from './memory-value-picker.js';
 import { createNamespacePicker } from './namespace-picker.js';
 import { createMemoryIcon } from './memory-icons.js';
 import { t } from './i18n.js';
-const node = (tag, id, text, cls = '') => { const el = document.createElement(tag); if (id) el.id = id; if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
-function button(id, text, action, cls = 'btn-outline') { const el=node('button',id,text,'btn btn-sm '+cls);el.type='button';el.onclick=action;return el; }
 function field(id,title,content) {
   const section=node('section',id,undefined,'detail-section'), label=node('h2',id+'-label',title);
   const dimension = id.endsWith('categories') ? 'category' : id.endsWith('keywords') ? 'keyword' : id.endsWith('anchors') ? 'anchor' : null;

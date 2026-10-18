@@ -49,6 +49,7 @@ async function runDetailScenario(scenario) {
     $('btn-debug').click();
   }
   await open('detail-a');
+  for (const kind of ['categories','keywords','anchors']) assert($('detail-'+kind+'-label').querySelector('svg'), 'localized metadata icon: '+kind);
   if(scenario==='detail-functional') {
     const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
     detail.requestLeave();

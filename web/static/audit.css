@@ -1,0 +1,39 @@
+/* Audit uses the accepted Memory list and drawer surfaces. */
+.audit-filters{display:flex;flex-wrap:wrap;align-items:flex-end;gap:16px;margin-bottom:16px}
+.audit-filters .form-group{margin:0;min-width:0}
+.audit-filters input,.audit-filters select{height:40px;box-sizing:border-box;padding:8px 12px;border:1px solid var(--border-control);border-radius:7px;font:inherit;font-size:13px;background:var(--bg-surface);color:var(--text-primary)}
+#audit-tool{width:200px;max-width:100%}#audit-limit{width:90px}
+.audit-namespace-control{position:relative;width:240px;max-width:100%}
+#audit-namespace{width:100%;padding-right:40px}
+#audit-namespace-select{position:absolute;inset:1px 8px 1px auto;width:28px;padding:0;border:0;background:transparent;color:var(--text-primary);font:inherit;cursor:pointer}
+#audit-namespace-select:disabled{opacity:.5;cursor:default}
+#audit-namespace-select:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+/* Container-based columns retain the same widths in the header and records. */
+.audit-results{container-type:inline-size;min-width:0}
+.audit-list-header{display:none}
+.audit-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 12px}
+.audit-cell{min-width:0;font-size:12px;line-height:18px;color:var(--text-secondary);pointer-events:none;overflow-wrap:anywhere}
+.audit-cell-label{font-weight:500;color:var(--text-muted);margin-right:6px}
+.audit-cell-value{min-width:0}
+.audit-cell-action{grid-column:1;grid-row:1;font-size:14px;font-weight:600;line-height:21px;color:var(--text-primary);padding-right:24px}
+.audit-cell-action .audit-cell-label{display:none}
+.audit-cell-result{grid-column:1 / -1;grid-row:6;display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;padding-right:24px}
+.audit-cell-result .audit-cell-value{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden}
+.audit-row-status{font-size:12px;line-height:18px}
+.audit-cell-time,.audit-cell-namespace,.audit-cell-duration,.audit-cell-summary{grid-column:1 / -1;padding-right:24px}
+.audit-cell-namespace{grid-row:2}.audit-cell-time{grid-row:3}.audit-cell-duration{grid-row:4}.audit-cell-summary{grid-row:5;font-size:13px;line-height:20px}
+.audit-cell-summary .audit-cell-value{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden}
+@container(min-width:1100px){
+  .audit-list-header,.audit-row{display:grid;grid-template-columns:140px 176px 144px minmax(220px,1fr) 140px 72px 24px;column-gap:12px}
+  .audit-list-header{padding:0 16px 10px;font-size:12px;line-height:18px;color:var(--text-secondary);box-sizing:border-box}
+  .audit-row{align-items:start}
+  .audit-row .audit-cell{grid-column:auto;grid-row:auto;padding-right:0}
+  .audit-cell-label{display:none}
+  .audit-cell-result{display:flex;flex-direction:column;gap:4px;align-items:flex-start}
+  .audit-cell-summary{font-size:13px;line-height:20px}
+}
+.audit-row-open{position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:8px;background:transparent;cursor:pointer}
+.audit-row-open:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#audit-detail-title{font-size:17px}
+#audit-json{margin:0;max-width:100%;overflow:auto;white-space:pre;font-family:monospace;font-size:13px;line-height:20px}
+@media(max-width:600px){.audit-filters .form-group{max-width:100%}.audit-namespace-control{width:220px}#audit-detail-body{padding:16px}}

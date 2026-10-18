@@ -1,5 +1,6 @@
 // Memories assembly: state/rendering stay in dedicated modules.
 import { $ } from './core.js';
+import { t } from './i18n.js';
 import { getNamespaces, getCategories, getCategoryState, getMaintenance, onNamespacesChanged,
   onCategoriesChanged, onMaintenanceChanged, onMemoriesChanged } from './store.js';
 import { createMemoriesData } from './memories-data.js';
@@ -65,8 +66,8 @@ export function mount({openMemory = () => {}, openCreate = () => {}, retryCatego
     if (visible && state.status === 'loading' && savedScroll === null) { savedScroll = content.scrollTop; $('memories-list').style.minHeight = $('memories-list').offsetHeight + 'px'; }
     view.render(state); updateFilters(state); searchControls.update(state); updateCreate();
     const sort = $('memories-sort'), searching = Boolean(state.submittedQuery);
-    const options = searching ? [['relevance', 'Relevance']]
-      : [['updated_at', 'Updated time ↓'], ['created_at', 'Created time ↓']];
+    const options = searching ? [['relevance', t('memories.sort.relevance')]]
+      : [['updated_at', t('memories.sort.updated')], ['created_at', t('memories.sort.created')]];
     if (sort.dataset.mode !== String(searching)) {
       sort.replaceChildren(...options.map(([value, label]) => new Option(label, value))); sort.dataset.mode = String(searching);
     }

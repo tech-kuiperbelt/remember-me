@@ -58,6 +58,28 @@ async function runHelpRegression(scenario) {
     history.back();await waitFor(()=>visible('home')&&location.hash==='#help','back to home');
     history.forward();await waitFor(()=>visible('connect')&&location.hash==='#help/connect','forward to topic');
     $('nav-memories').click();await waitFor(()=>$('memories-list').getAttribute('aria-busy')==='false','Memories loaded');
+    assert($('memories-sort').options[0].text === t('memories.sort.updated') && $('memories-sort').options[1].text === t('memories.sort.created'), 'browse sort uses current locale');
+    const memoryFocus = document.querySelector('.memory-open');
+    memoryFocus.focus({preventScroll:true});
+    $('content').scrollTop = 700;
+    const memoryScroll = $('content').scrollTop, memoryFocusId = memoryFocus.id;
+    assert(memoryScroll > 0 && memoryFocusId, 'scroll and focus restoration fixture');
+    $('nav-help').click();
+    history.back();
+    await waitFor(() => $('page-memories').classList.contains('active') && $('memories-list').getAttribute('aria-busy') === 'false', 'history reloads memories');
+    await settle();
+    assert(Math.abs($('content').scrollTop-memoryScroll) <= 1, 'history restores scroll after asynchronous list rendering');
+    assert(document.activeElement.id === memoryFocusId, 'history restores replaced row focus');
+    // A later route owns scroll even if the previous route finishes afterwards.
+    let releaseList;
+    S.setOverride(url => url.startsWith('/api/memories/page?') ? new Promise(resolve => { releaseList = resolve; }) : undefined);
+    $('nav-help').click(); history.back();
+    await waitFor(() => releaseList && $('page-memories').classList.contains('active'), 'held history load');
+    open('connect'); $('content').scrollTop = 0;
+    releaseList(json({items:[],total:0})); await settle();
+    assert(visible('connect') && $('content').scrollTop === 0, 'late navigation cannot restore another page scroll');
+    S.setOverride(url=>url==='/api/maintenance'?json({state:'normal',action:null,error:null,required_reason:null,model:{status:'ready',ready:true}}):undefined);
+    $('nav-memories').click(); await waitFor(() => $('memories-list').getAttribute('aria-busy') === 'false', 'restore memories');
     const memoryURL=location.href;
     $('memories-create').click();
     await waitFor(()=>$('edit-text'),'create draft');

@@ -1,13 +1,8 @@
+import { node } from './detail-dom.js';
 import { copyText } from './markdown.js';
 import { toast } from './ui.js';
 import { t } from './i18n.js';
 
-function node(tag, id, text, cls = '') {
-  const el = document.createElement(tag); el.id = id;
-  if (text !== undefined) el.textContent = text;
-  if (cls) el.className = cls;
-  return el;
-}
 function copyButton(id, label, value) {
   const button = node('button', id, undefined, 'detail-copy-icon');
   button.type = 'button'; button.title = label; button.setAttribute('aria-label', label);

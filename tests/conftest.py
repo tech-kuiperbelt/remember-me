@@ -5,6 +5,7 @@ The environment override remains a guard for CLI and subprocess tests.
 """
 
 import os
+import re
 import sys
 import tempfile
 import json
@@ -62,8 +63,11 @@ def frontend_source():
     modules; UI assertions should not depend on which file holds it.
     """
     web = Path(__file__).resolve().parents[1] / "web"
-    parts = [(web / "index.html").read_text(encoding="utf-8"),
-             (web / "static" / "app.css").read_text(encoding="utf-8")]
+    html = (web / "index.html").read_text(encoding="utf-8")
+    parts = [html]
+    # Use the document's stylesheet order, including feature-owned styles.
+    parts.extend((web / "static" / path).read_text(encoding="utf-8")
+                 for path in re.findall(r'href="/admin/console/static/([^"?]+\.css)"', html))
     parts.extend(path.read_text(encoding="utf-8")
                  for path in sorted((web / "static" / "js").glob("*.js")))
     return "\n".join(parts)

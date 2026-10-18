@@ -156,7 +156,7 @@ async function runMemoriesSearchRegression() {
   $('memories-page-size').value = '10'; fire($('memories-page-size'), 'change');
   $('memories-pagination').querySelector('[aria-label="' + t('memories.pagination.next') + '"]').click();
   assert($('memories-pagination').textContent.includes('11–20'), 'local search page');
-  assert($('memories-sort').disabled && $('memories-sort').options.length === 1, 'search sort fixed to relevance');
+  assert($('memories-sort').disabled && $('memories-sort').options.length === 1 && $('memories-sort').options[0].text === t('memories.sort.relevance'), 'search sort fixed to localized relevance');
   assert($('memories-list').querySelector('.memory-row').dataset.memoryId === 'search-10', 'server order retained on local page');
   assert(searchCalls().length === 1, 'paging and sorting avoid repeated inference');
   query('B'); S.resetCalls(); $('btn-refresh').click(); await ready();
