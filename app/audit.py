@@ -70,6 +70,25 @@ def _now_utc_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _iter_lines_reversed(path, chunk_size: int = 65536):
+    """Yield a file's raw lines newest-first without reading it all at once."""
+    with open(path, "rb") as handle:
+        handle.seek(0, os.SEEK_END)
+        position = handle.tell()
+        buffer = b""
+        while position > 0:
+            read = min(chunk_size, position)
+            position -= read
+            handle.seek(position)
+            buffer = handle.read(read) + buffer
+            lines = buffer.split(b"\n")
+            buffer = lines.pop(0)
+            for line in reversed(lines):
+                yield line
+        if buffer:
+            yield buffer
+
+
 def _params_default(args, result):
     """No tool-specific params handling; the common text/id rules still apply."""
     return args
@@ -331,7 +350,9 @@ class AuditJournal:
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._file = self.path.open("a", encoding="utf-8")
-        if self.path.stat().st_size:
+        # Only count events when a count-based rotation is configured; otherwise
+        # the whole-file read at open is pure startup cost.
+        if self.max_events > 0 and self.path.stat().st_size:
             with self.path.open("r", encoding="utf-8") as handle:
                 self._count = sum(1 for _ in handle)
 
@@ -407,11 +428,14 @@ class AuditJournal:
             try:
                 if not candidate.exists():
                     continue
-                with candidate.open("r", encoding="utf-8") as handle:
-                    lines = handle.readlines()
-                for line in reversed(lines):
+                # Read newest-first incrementally; stop as soon as the limit is
+                # met instead of loading each whole file into memory.
+                for raw in _iter_lines_reversed(candidate):
+                    text = raw.decode("utf-8", "replace").strip()
+                    if not text:
+                        continue
                     try:
-                        event = json.loads(line)
+                        event = json.loads(text)
                     except (TypeError, ValueError):
                         continue
                     if tool and event.get("tool") != tool:

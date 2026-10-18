@@ -463,3 +463,15 @@ def test_admin_exposes_manual_replica_maintenance_controls():
         tag, attrs = page.controls[control]
         assert tag == "button"
         assert "disabled" in attrs  # Admission is enabled only after state loads.
+
+
+def test_scan_lines_orders_by_parsed_instant_not_lexicographic(tmp_path):
+    """[55] A later UTC instant must win even when its offset string sorts lower."""
+    path = tmp_path / "replica.jsonl"
+    earlier = _record("m1", "wrong-old", updated_at="2026-01-01T09:00:00+09:00")
+    later = _record("m1", "correct-new", updated_at="2026-01-01T01:00:00+00:00")
+    path.write_text(json.dumps(earlier) + "\n" + json.dumps(later) + "\n", encoding="utf-8")
+    replica = NDJSONReplica(str(path))
+    records = replica.list_records()
+    assert len(records) == 1
+    assert records[0]["text"] == "correct-new"

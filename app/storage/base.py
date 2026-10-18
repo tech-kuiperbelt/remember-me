@@ -174,6 +174,16 @@ class MemoryStorage(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def rename_namespace(self, source: str, target: str) -> int:
+        """Move every live record from ``source`` to ``target`` atomically.
+
+        Returns the number of moved records. The whole move is one transaction,
+        so a failure never leaves records split across two namespaces. Namespace
+        is not part of any derived index, so no index re-sync is required.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
     def live_memory_ids(self) -> list[str]:
         """Return the ids of live records only.
 

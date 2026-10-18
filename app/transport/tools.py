@@ -10,6 +10,7 @@ search receipts and audit are shared here.
 
 import json
 import logging
+import math
 import secrets
 import time
 from dataclasses import dataclass, field
@@ -29,6 +30,30 @@ from app.transport.tool_definitions import build_tools
 logger = logging.getLogger("server")
 
 _DEFINITIONS = {tool.name: tool for tool in build_tools()}
+
+
+class InvalidArgument(ValueError):
+    """A tool argument failed numeric/type validation before business work."""
+
+
+def _int_arg(arguments: dict, key: str, default, minimum: int, maximum: int) -> int:
+    """Return an in-range integer argument, rejecting bools and out-of-range."""
+    value = arguments.get(key, default)
+    if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
+        raise InvalidArgument(f"{key} must be an integer between {minimum} and {maximum}")
+    return value
+
+
+def _number_arg(arguments: dict, key: str, default, minimum: float, maximum: float) -> float:
+    """Return a finite in-range numeric argument, rejecting bools/strings/NaN."""
+    value = arguments.get(key, default)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise InvalidArgument(f"{key} must be a number between {minimum} and {maximum}")
+    number = float(value)
+    if not math.isfinite(number) or not minimum <= number <= maximum:
+        raise InvalidArgument(f"{key} must be a number between {minimum} and {maximum}")
+    return number
+
 
 
 @dataclass
@@ -75,7 +100,7 @@ def _handle_add(ctx, a):
 
 def _handle_search_semantic(ctx, a):
     result = ctx.service.memory_search(
-        a["query"], int(a.get("k", 5)), float(a.get("threshold", 0.0)),
+        a["query"], _int_arg(a, "k", 5, 1, 100), _number_arg(a, "threshold", 0.0, 0.0, 1.0),
         a.get("namespace"), keywords=a.get("keywords"),
         categories=a.get("categories"), return_resolution=True,
         updated_after=a.get("updated_after"), updated_before=a.get("updated_before"))
@@ -103,8 +128,8 @@ def _handle_search_anchor(ctx, a):
 
 def _handle_search_meta(ctx, a):
     ns = a.get("namespace")
-    limit = int(a.get("limit", 100))
-    offset = int(a.get("offset", 0))
+    limit = _int_arg(a, "limit", 100, 1, 1000)
+    offset = _int_arg(a, "offset", 0, 0, 2**63 - 1)
     sort_by = a.get("sort_by", "created_at")
     items = _prepare_for_llm(ctx.service.memory_list(
         ns, limit, offset, sort_by, a.get("updated_after"), a.get("updated_before"),
@@ -120,11 +145,12 @@ def _handle_get_details(ctx, a):
 
 
 def _handle_update(ctx, a):
-    old = ctx.service.storage.get(a["memory_id"])
+    # Audit refs come through the service boundary, not the storage internals.
+    old = ctx.service.memory_get(a["memory_id"])
     data = ctx.service.memory_update(a["memory_id"], a.get("text"), a.get("metadata"),
                                      a.get("namespace"), a.get("summary"),
                                      a.get("confirm_codes"))
-    new = ctx.service.storage.get(a["memory_id"])
+    new = ctx.service.memory_get(a["memory_id"])
     refs = [{"id": a["memory_id"],
              "namespace_before": old.get("namespace") if old else None,
              "namespace": new.get("namespace") if new else None}]
@@ -289,6 +315,17 @@ def execute_tool(ctx: ToolContext, name: str, arguments: dict) -> types.CallTool
         code = "invalid_query"
         data = {"response_code": code, "detail": str(exc)}
         hint = "Fix the query or k and retry."
+        ctx.audit.record(name, arguments, data, (time.perf_counter() - start) * 1000,
+                         error={"type": type(exc).__name__, "message": str(exc)},
+                         response_code=code, context=ctx.context)
+        return _ok(data, hint)
+    except InvalidArgument as exc:
+        # Numeric/type validation of a tool argument: a correctable request
+        # error rather than a protocol failure. Time-range filters keep their
+        # existing propagation contract (InvalidSearchFilter).
+        code = "invalid_request"
+        data = {"response_code": code, "detail": str(exc)}
+        hint = "Fix the argument value and retry."
         ctx.audit.record(name, arguments, data, (time.perf_counter() - start) * 1000,
                          error={"type": type(exc).__name__, "message": str(exc)},
                          response_code=code, context=ctx.context)

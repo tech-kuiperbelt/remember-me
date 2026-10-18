@@ -246,6 +246,17 @@ def test_migrate_namespace_unknown_source_reports_no_memories(service):
     assert "no memories" in result["error"]
 
 
+def test_rename_namespace_moves_every_live_record_in_one_call(service):
+    """[55] The move is a single storage transaction, not per-record updates."""
+    ids = [service.memory_add(f"body {i}", namespace="src",
+                              confirm_codes=[NAMESPACE_NOT_FOUND])["id"]
+           for i in range(4)]
+    moved = service.storage.rename_namespace("src", "dst")
+    assert moved == 4
+    assert all(service.storage.get(mid)["namespace"] == "dst" for mid in ids)
+    assert "src" not in service.storage.list_namespaces()
+
+
 # ---------------------------------------------------------------------------
 # MCP boundary: unified envelope + audit
 # ---------------------------------------------------------------------------

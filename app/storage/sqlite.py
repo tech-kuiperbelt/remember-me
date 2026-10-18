@@ -912,22 +912,31 @@ class SQLiteStorage(SQLitePrimaryStorage):
     def _deserialize(self, blob: bytes) -> list[float]:
         return decode_embedding(blob)
 
-    def _row_to_dict(self, row: sqlite3.Row) -> dict:
+    def _row_to_dict(self, row: sqlite3.Row, *, load_embedding: bool = True) -> dict:
+        """Materialize one memories row.
+
+        ``load_embedding=False`` skips the per-row profile-vector lookup and
+        decode for read paths that discard the vector (list/page/FTS/outbox/
+        get_details). This avoids an N+1 query and a needless BLOB read per row.
+        """
         d = dict(row)
         blob = d.pop("_profile_embedding", None)
-        if blob is None and self._active_profile_id and d.get("id"):
-            # Self-locking fallback so helper callers cannot bypass the
-            # shared-connection contract (RLock re-enters under public locks).
-            with self._lock:
-                profile_row = self.conn.execute(
-                    "SELECT embedding FROM memory_embeddings "
-                    "WHERE memory_id = ? AND profile_id = ?",
-                    (d["id"], self._active_profile_id),
-                ).fetchone()
-            blob = profile_row["embedding"] if profile_row else None
-        if blob is None:
-            blob = d.get("embedding")
-        d["embedding"] = self._deserialize(blob)
+        if not load_embedding:
+            d["embedding"] = None
+        else:
+            if blob is None and self._active_profile_id and d.get("id"):
+                # Self-locking fallback so helper callers cannot bypass the
+                # shared-connection contract (RLock re-enters under public locks).
+                with self._lock:
+                    profile_row = self.conn.execute(
+                        "SELECT embedding FROM memory_embeddings "
+                        "WHERE memory_id = ? AND profile_id = ?",
+                        (d["id"], self._active_profile_id),
+                    ).fetchone()
+                blob = profile_row["embedding"] if profile_row else None
+            if blob is None:
+                blob = d.get("embedding")
+            d["embedding"] = self._deserialize(blob)
         d["metadata"] = json.loads(d["metadata"])
         return d
 
@@ -1354,7 +1363,7 @@ class SQLiteStorage(SQLitePrimaryStorage):
                 "SELECT * FROM memories WHERE synced = 0 ORDER BY updated_at ASC LIMIT ?",
                 (limit,),
             ).fetchall()
-            return [self._row_to_dict(r) for r in rows]
+            return [self._row_to_dict(r, load_embedding=False) for r in rows]
 
     def mark_synced_batch(self, memory_ids):
         """Batch-mark records as synced. Internal use only."""
@@ -1502,7 +1511,7 @@ class SQLiteStorage(SQLitePrimaryStorage):
             results = []
             for row in rows:
                 raw = float(row["_bm25_raw"])
-                record = self._row_to_dict(row)
+                record = self._row_to_dict(row, load_embedding=False)
                 record.pop("_bm25_raw", None)
                 record["score"] = -raw
                 record["match_info"] = {"type": match_type, "score_type": "fts5_bm25",
@@ -1540,7 +1549,7 @@ class SQLiteStorage(SQLitePrimaryStorage):
                 f"ORDER BY {sort_col} DESC LIMIT ? OFFSET ?",
                 [*params, limit, offset],
             ).fetchall()
-            return [self._row_to_dict(r) for r in rows]
+            return [self._row_to_dict(r, load_embedding=False) for r in rows]
 
     def _memory_filter_conditions(self, namespace, updated_after, updated_before, keywords, categories,
                                   alias: str = ""):
@@ -1581,7 +1590,7 @@ class SQLiteStorage(SQLitePrimaryStorage):
                     f"SELECT * FROM memories WHERE {where} "
                     f"ORDER BY {order} DESC, id ASC LIMIT ? OFFSET ?",
                     [*params, limit, offset]).fetchall()
-                items = [self._row_to_dict(row) for row in rows]
+                items = [self._row_to_dict(row, load_embedding=False) for row in rows]
             except BaseException:
                 self.conn.execute("ROLLBACK TO memories_page")
                 raise
@@ -1597,6 +1606,27 @@ class SQLiteStorage(SQLitePrimaryStorage):
                 "ORDER BY namespace"
             ).fetchall()
         return [r["namespace"] for r in rows]
+
+    def rename_namespace(self, source, target):
+        """Move every live record from source to target in one transaction.
+
+        Namespace is a plain column with no derived index, so only the column,
+        the outbox version and ``updated_at`` change; soft-deleted source rows
+        stay behind (invisible to live queries) and a later compact drops them.
+        """
+        with self._lock:
+            try:
+                cursor = self.conn.execute(
+                    "UPDATE memories SET namespace = ?, updated_at = ?, "
+                    "synced = 0, version = version + 1 "
+                    "WHERE namespace = ? AND deleted = 0",
+                    (target, _now(), source),
+                )
+                self.conn.commit()
+                return cursor.rowcount
+            except Exception:
+                self.conn.rollback()
+                raise
 
     def live_memory_ids(self):
         """Ids of live records only; never loads text, metadata or vectors."""
@@ -1750,7 +1780,7 @@ class SQLiteStorage(SQLitePrimaryStorage):
                 f"SELECT * FROM memories WHERE deleted = 0 AND id IN ({placeholders})",
                 memory_ids,
             ).fetchall()
-            by_id = {r["id"]: self._row_to_dict(r) for r in rows}
+            by_id = {r["id"]: self._row_to_dict(r, load_embedding=False) for r in rows}
         for mid in memory_ids:
             if mid in by_id:
                 found.append(by_id[mid])
@@ -1918,17 +1948,17 @@ class SQLiteStorage(SQLitePrimaryStorage):
                 "WHERE iv.dimension = 'anchors' AND m.deleted = 0"
             ).fetchone()[0]
             if self._active_profile_id:
-                embedding_rows = self.conn.execute(
+                embedding_cursor = self.conn.execute(
                     "SELECT me.embedding FROM memory_embeddings me "
                     "JOIN memories m ON m.id = me.memory_id "
                     "WHERE m.deleted = 0 AND me.profile_id = ?",
                     (self._active_profile_id,),
-                ).fetchall()
+                )
             else:
-                embedding_rows = self.conn.execute(
+                embedding_cursor = self.conn.execute(
                     "SELECT embedding FROM memories "
                     "WHERE deleted = 0 AND embedding IS NOT NULL"
-                ).fetchall()
+                )
             profile_rows = self.conn.execute(
                 "SELECT ep.profile_id, ep.provider, ep.model, ep.dimension, ep.normalized, "
                 "ep.codec, ep.dtype, ep.status, "
@@ -1944,12 +1974,16 @@ class SQLiteStorage(SQLitePrimaryStorage):
             ).fetchall()
             embedding_formats = {}
             embedding_bytes = 0
+            embedding_count = 0
             embedding_dimensions = set()
-            for row in embedding_rows:
+            # Stream the cursor instead of fetchall(): peak memory is one BLOB,
+            # not every stored vector, on a call the UI may make often.
+            for row in embedding_cursor:
                 info = inspect_embedding_blob(row["embedding"])
                 key = f"{info.format}:{info.dtype}"
                 embedding_formats[key] = embedding_formats.get(key, 0) + 1
                 embedding_bytes += info.byte_length
+                embedding_count += 1
                 if info.dimension:
                     embedding_dimensions.add(info.dimension)
         return {
@@ -1963,7 +1997,7 @@ class SQLiteStorage(SQLitePrimaryStorage):
             "memories_with_anchors": memories_with_anchors,
             "lexical_index_version": LEXICAL_INDEX_VERSION,
             "embedding_storage": {
-                "count": len(embedding_rows),
+                "count": embedding_count,
                 "bytes": embedding_bytes,
                 "formats": embedding_formats,
                 "dimensions": sorted(embedding_dimensions),

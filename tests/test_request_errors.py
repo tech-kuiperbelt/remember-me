@@ -135,3 +135,62 @@ def test_search_filter_limit_is_request_error(dimension, admin):
     status, data = invoke(admin.handle_search_memories,
                           Request({'query':'hello', dimension:[str(i) for i in range(21)]}))
     assert status == 400 and data['response_code'] == 'invalid_request'
+
+
+# -- [55] malformed/typed bodies must be request errors, not 500s -------------
+
+@pytest.mark.parametrize('req', [Request(malformed=True), Request([]), Request('hello')])
+def test_get_details_bad_json_objects(req, admin):
+    status, data = invoke(admin.handle_get_details, req)
+    assert status == 400 and data['response_code'] == 'invalid_request'
+
+
+def test_get_details_rejects_non_string_ids(admin):
+    status, data = invoke(admin.handle_get_details, Request({'memory_ids': [1, 2]}))
+    assert status == 400 and data['response_code'] == 'invalid_request'
+    assert 'memory_ids' in data['detail']
+
+
+@pytest.mark.parametrize('req', [Request(malformed=True), Request([]), Request('hello'),
+                                 Request({'source': 'known'}), Request({'target': 'known'})])
+def test_migrate_namespace_bad_json_objects(req, admin):
+    """Migrate keeps its plain envelope but must still reject malformed bodies as 400."""
+    status, data = invoke(admin.handle_migrate_namespace, req)
+    assert status == 400
+    assert 'response_code' not in data
+    assert data['detail']
+
+
+def test_list_negative_limit_is_request_error(admin):
+    """A negative limit must not silently mean 'no SQL limit'."""
+    status, data = invoke(admin.handle_list_memories, Request(params={'limit': '-1'}))
+    assert status == 400 and data['response_code'] == 'invalid_request'
+
+
+def test_list_zero_and_oversized_limit_is_request_error(admin):
+    for value in ('0', '1001'):
+        status, data = invoke(admin.handle_list_memories, Request(params={'limit': value}))
+        assert status == 400 and data['response_code'] == 'invalid_request', value
+
+
+# -- [55] MCP numeric arguments are correctable request errors ----------------
+
+def _mcp(service, tool, arguments):
+    import asyncio, json as _json
+    from tests.conftest import server_namespace
+    ns = server_namespace(service)
+    result = asyncio.run(ns['handle_call_tool'](tool, arguments))
+    return _json.loads(result.content[0].text)
+
+
+@pytest.mark.parametrize('tool,arguments', [
+    ('search_semantic', {'query': 'hello', 'k': 'abc'}),
+    ('search_semantic', {'query': 'hello', 'threshold': 'x'}),
+    ('search_semantic', {'query': 'hello', 'k': -1}),
+    ('search_meta', {'limit': 'abc'}),
+    ('search_meta', {'limit': -1}),
+    ('search_meta', {'offset': -1}),
+])
+def test_mcp_numeric_arguments_are_structured(tool, arguments, service):
+    data = _mcp(service, tool, arguments)
+    assert data['response_code'] == 'invalid_request'

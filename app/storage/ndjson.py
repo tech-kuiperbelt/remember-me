@@ -12,6 +12,25 @@ logger = logging.getLogger("storage_ndjson")
 from app.storage.base import ReplicaStorage, _now
 
 
+def _timestamp_key(value):
+    """Order key for a replica ``updated_at`` using the parsed instant.
+
+    Lexicographic comparison is wrong across timezone offsets (e.g. ``Z`` vs
+    ``+08:00``); a parsed UTC instant matches the import/recovery ordering.
+    Unparseable values sort before parsed ones, then by raw string.
+    """
+    if isinstance(value, str) and value:
+        try:
+            stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            stamp = None
+        if stamp is not None:
+            if stamp.tzinfo is None:
+                stamp = stamp.replace(tzinfo=timezone.utc)
+            return (True, stamp, value)
+    return (False, datetime.min.replace(tzinfo=timezone.utc), value or "")
+
+
 class NDJSONReplica(ReplicaStorage):
     """Line-delimited JSON disaster-recovery replica (.jsonl/.ndjson).
 
@@ -105,7 +124,7 @@ class NDJSONReplica(ReplicaStorage):
                     # so the next compact/full sync rewrites the portable form.
                     m = self._without_embedding(m)
                     existing = records.get(rid)
-                    if not existing or m["updated_at"] >= existing["updated_at"]:
+                    if not existing or _timestamp_key(m["updated_at"]) >= _timestamp_key(existing["updated_at"]):
                         records[rid] = m
         self._data = records
         self._tombstones = tombstones

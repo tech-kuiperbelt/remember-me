@@ -21,8 +21,7 @@ from app.operations.calls import INLINE_RUNNER, ServiceClosing
 from app.embedding.embed import EmbeddingInputTooLong
 from app.domain.lexical import LexicalQueryError
 from app.domain.anchors import InvalidAnchors
-from app.domain.namespace_policy import (NamespaceNotFound, InvalidNamespace,
-                                         normalize_namespace, validate_namespace_name)
+from app.domain.namespace_policy import (NamespaceNotFound, InvalidNamespace)
 from app.storage.jsonl_transfer import safe_filename_part, unlink_quietly
 from app.operations.maintenance import MaintenanceRejected
 from app.operations.retrieval_stats import (SUPPORTED_DAYS, RetrievalStatsReadError,
@@ -548,8 +547,10 @@ class AdminAPI:
 
     @_maps_domain_errors
     async def handle_get_details(self, request: Request):
-        body = await request.json()
+        body = await _request_object(request)
         ids = body.get("memory_ids", [])
+        if not isinstance(ids, list) or any(not isinstance(item, str) for item in ids):
+            raise InvalidRequest("memory_ids must be a list of strings")
         logger.info("POST /api/memories/details count=%d", len(ids))
         result = await self._run(lambda: self.service.memory_get_details(ids))
         return json_response(result)
@@ -902,15 +903,7 @@ class AdminAPI:
             # database / storage, so they run in the worker (inside the runtime
             # admission gate), never on the event loop.
             tz = resolve_timezone(tz_raw)
-            namespace = None
-            if namespace_raw is not None:
-                namespace = normalize_namespace(namespace_raw)
-                if namespace is None:
-                    raise InvalidNamespace("namespace must not be blank")
-                validate_namespace_name(namespace)
-                known = self.service.known_namespaces()
-                if namespace not in known:
-                    raise NamespaceNotFound(namespace, known)
+            namespace = self.service.resolve_scope_namespace(namespace_raw)
             path, max_files = journal_paths(self.audit)
             return collect_retrieval_stats(path, max_files, days=days, tz=tz,
                                            namespace=namespace)
@@ -972,7 +965,8 @@ class AdminAPI:
 
     @_maps_domain_errors(domain=False, extras=((ValueError, lambda exc: error_response(400, str(exc))),))
     async def handle_migrate_namespace(self, request: Request):
-        body = await request.json()
+        body = await _request_object(request, required=("source", "target"),
+                                     string_fields=("source", "target"))
         source = body["source"]
         target = body["target"]
         logger.info("POST /api/namespaces/migrate source=%s target=%s", source, target)

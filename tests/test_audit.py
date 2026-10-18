@@ -339,3 +339,13 @@ def test_confirm_codes_are_capped_and_type_filtered(journal):
                  {"id": "1", "created": True}, 1.0)
     recorded = _read_lines(journal)[0]["confirm_codes"]
     assert recorded == [f"code-{i}" for i in range(10)]
+
+
+def test_read_events_streams_reversed_without_trailing_newline(tmp_path):
+    """[55] Newest-first read must handle a file with no trailing newline."""
+    from app.audit import AuditJournal
+    path = tmp_path / "audit.jsonl"
+    path.write_text('{"tool": "add", "n": 1}\n{"tool": "add", "n": 2}', encoding="utf-8")
+    journal = AuditJournal({"MEMORY_AUDIT_PATH": str(path)})
+    events = journal.read_events(limit=10)
+    assert [event["n"] for event in events] == [2, 1]

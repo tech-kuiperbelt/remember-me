@@ -236,8 +236,9 @@ def run_list():
             if len(rows) != 25:
                 raise AssertionError("expected 25 rows, got %d" % len(rows))
             for row in rows:
-                if len(row["embedding"]) != 3:
-                    raise AssertionError("unexpected embedding dimension")
+                # Browse/list rows must not load vectors (read-path N+1 fix).
+                if row["embedding"] is not None:
+                    raise AssertionError("list rows must not carry embeddings")
     except BaseException as exc:
         record_error(exc)
 

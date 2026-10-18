@@ -107,3 +107,31 @@ def test_dual_term_search_forwards_filters(dual, mock_primary, method):
     assert result == [{"id": "hit"}]
     getattr(mock_primary, method).assert_called_once_with("query", **kwargs)
 
+
+
+def test_dual_rename_namespace_delegates_to_primary(dual, mock_primary):
+    """[55] Namespace move is one primary transaction."""
+    mock_primary.rename_namespace.return_value = 3
+    assert dual.rename_namespace("src", "dst") == 3
+    mock_primary.rename_namespace.assert_called_once_with("src", "dst")
+
+
+def test_incremental_sync_respects_stop_event(dual, mock_primary, mock_secondary):
+    """[55] The background drain exits promptly when asked to stop."""
+    import threading
+    stop = threading.Event()
+    stop.set()  # already stopping: must not read or publish anything
+    dual._incremental_sync(stop_event=stop)
+    mock_primary.get_unsynced_records.assert_not_called()
+    mock_secondary.append_batch.assert_not_called()
+
+
+def test_incremental_sync_drains_when_no_stop_event(dual, mock_primary, mock_secondary):
+    """Without a stop event (final shutdown sync) the drain runs to completion."""
+    mock_primary.get_unsynced_records.side_effect = [
+        [{"id": "a", "text": "t", "updated_at": "2026-01-01T00:00:00Z", "version": 1}],
+        [],
+    ]
+    dual._incremental_sync()
+    mock_secondary.append_batch.assert_called_once()
+    mock_primary.mark_synced_versions.assert_called_once()

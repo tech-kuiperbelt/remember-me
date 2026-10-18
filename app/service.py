@@ -1,5 +1,6 @@
 import os
 import logging
+import math
 import time
 from pathlib import Path
 from datetime import datetime, timezone
@@ -70,17 +71,36 @@ def _normalize_summary(summary) -> str | None:
     return normalize_summary(summary)
 
 
-def _sanitize_k(k) -> int:
-    """Coerce k to a positive int.
+class InvalidSearchFilter(ValueError):
+    """Caller supplied an invalid retrieval filter, numeric bound or Top-K."""
 
-    Non-positive k (e.g. k=-1) would slice scored[:-1] and return nearly
-    everything in Python; non-int k breaks the sort/slice entirely.
+
+# Semantic Top-K and paged-list limit windows, shared by every transport so an
+# out-of-range value is rejected instead of silently widening the query.
+MAX_SEMANTIC_K = 100
+MAX_LIST_LIMIT = 1000
+
+
+def _sanitize_k(k) -> int:
+    """Validate a semantic-search Top-K strictly (1..MAX_SEMANTIC_K).
+
+    Non-int, boolean and out-of-range values are rejected rather than coerced so
+    every transport reports the same structured error; the lexical/anchor terms
+    search already validates through :func:`normalize_k`.
     """
-    try:
-        k = int(k)
-    except (TypeError, ValueError):
-        return 100
-    return k if k > 0 else 100
+    if type(k) is not int or not 1 <= k <= MAX_SEMANTIC_K:
+        raise InvalidSearchFilter(f"k must be an integer between 1 and {MAX_SEMANTIC_K}")
+    return k
+
+
+def _sanitize_threshold(value) -> float:
+    """Validate the semantic similarity floor (finite, 0..1)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise InvalidSearchFilter("threshold must be a number between 0 and 1")
+    number = float(value)
+    if not math.isfinite(number) or not 0.0 <= number <= 1.0:
+        raise InvalidSearchFilter("threshold must be a number between 0 and 1")
+    return number
 
 
 def _normalize_keywords(keywords) -> list[str] | None:
@@ -142,10 +162,6 @@ def _apply_anchors_to_metadata(metadata: dict | None) -> dict | None:
         return metadata
     metadata["anchors"] = normalize_anchors(metadata.get("anchors"))
     return metadata
-
-
-class InvalidSearchFilter(ValueError):
-    """Caller supplied more filter values than the supported search limit."""
 
 
 def _deduplicate_source(records):
@@ -243,6 +259,26 @@ class MemoryService:
             return ns
         raise NamespaceNotFound(ns, self.known_namespaces())
 
+    def resolve_scope_namespace(self, namespace):
+        """Validate an explicit scope filter; ``None`` means "all namespaces".
+
+        Unlike :meth:`check_namespace`, an omitted value is not resolved to the
+        default namespace and a blank value is rejected rather than ignored.
+        Shared by read-only scoped aggregates (e.g. retrieval stats).
+        """
+        if namespace is None:
+            return None
+        if not isinstance(namespace, str):
+            raise InvalidNamespace("namespace must be a string")
+        normalized = normalize_namespace(namespace)
+        if normalized is None:
+            raise InvalidNamespace("namespace must not be blank")
+        validate_namespace_name(normalized)
+        known = self.known_namespaces()
+        if normalized not in known:
+            raise NamespaceNotFound(normalized, known)
+        return normalized
+
     def memory_add(self, text: str, metadata: dict | None = None,
                    namespace: str | None = None, summary: str | None = None,
                    confirm_codes: list | None = None) -> dict:
@@ -285,6 +321,7 @@ class MemoryService:
                       return_resolution: bool = False,
                       updated_after: str | None = None, updated_before: str | None = None):
         k = _sanitize_k(k)
+        threshold = _sanitize_threshold(threshold)
         # Reject an unknown namespace before embedding: an empty result must not
         # be confused with "namespace does not exist".
         if namespace is not None and not isinstance(namespace, str):
@@ -427,6 +464,10 @@ class MemoryService:
                     updated_before: str | None = None,
                     keywords: list | None = None,
                     categories: list | None = None) -> list[dict]:
+        if type(limit) is not int or not 1 <= limit <= MAX_LIST_LIMIT:
+            raise InvalidSearchFilter(f"limit must be an integer between 1 and {MAX_LIST_LIMIT}")
+        if type(offset) is not int or not 0 <= offset <= 2**63 - 1:
+            raise InvalidSearchFilter("offset must be a non-negative integer")
         if sort_by not in ("created_at", "updated_at"):
             sort_by = "created_at"
         if namespace is not None and not isinstance(namespace, str):
@@ -887,12 +928,13 @@ class MemoryService:
         return value
 
     def memory_migrate_namespace(self, source: str, target: str) -> dict:
-        """Move all memories from source namespace to target namespace.
+        """Move all live memories from source to target in one transaction.
 
         This is an explicit admin operation, so the confirmation needed to create
         a brand-new target namespace is supplied internally and the operator sees
         no behavior change. An unknown *source* is reported as "no memories"
-        rather than as a namespace error.
+        rather than as a namespace error. The whole move is a single storage
+        transaction, so a failure cannot leave memories split across namespaces.
         """
         source_ns = normalize_namespace(source)
         target_ns = normalize_namespace(target)
@@ -901,17 +943,11 @@ class MemoryService:
         validate_namespace_name(target_ns)
         if source_ns == target_ns:
             return {"error": "source and target are the same", "migrated": 0}
-        try:
-            memories = self.memory_list(namespace=source_ns, limit=10 ** 9)
-        except NamespaceNotFound:
+        if source_ns not in self.storage.list_namespaces():
             return {"error": f"no memories found in namespace '{source_ns}'", "migrated": 0}
-        if not memories:
+        migrated = self.storage.rename_namespace(source_ns, target_ns)
+        if not migrated:
             return {"error": f"no memories found in namespace '{source_ns}'", "migrated": 0}
-        migrated = 0
-        for m in memories:
-            self.memory_update(m["id"], namespace=target_ns,
-                          confirm_codes=[NAMESPACE_NOT_FOUND])
-            migrated += 1
         return {"migrated": migrated, "source": source_ns, "target": target_ns}
 
     def memory_report(self, search_id, ratings) -> dict:

@@ -17,6 +17,9 @@ _COMPACT_STATE_KEY = "ndjson_compact"
 _COMPACT_RETRY_SECONDS = 60 * 60
 _HEALTH_STATE_KEY = "ndjson_health_check"
 _HEALTH_RETRY_SECONDS = 60 * 60
+# Upper bound on batches drained per background pass, so a continuing writer
+# cannot keep the sync loop (and its _sync_mutex) busy indefinitely.
+_MAX_SYNC_BATCHES = 50
 
 
 class DualStorage(MemoryStorage):
@@ -97,7 +100,7 @@ class DualStorage(MemoryStorage):
             try:
                 self._sync_count += 1
                 with self._sync_mutex:
-                    self._incremental_sync()
+                    self._incremental_sync(stop_event=self._stop)
             except Exception:
                 logger.error("background sync failed", exc_info=True)
             self._run_due_health_check("scheduled")
@@ -357,10 +360,19 @@ class DualStorage(MemoryStorage):
                                         if before_bytes else 0.0),
         })
 
-    def _incremental_sync(self):
-        """Durably publish an outbox batch, then conditionally acknowledge it."""
+    def _incremental_sync(self, *, stop_event=None):
+        """Durably publish outbox batches, then conditionally acknowledge.
+
+        With ``stop_event`` (the background loop) the drain is bounded and
+        exits promptly on shutdown so ``stop()`` and ``get_stats`` are not
+        starved by a continuing writer; the leftover rows sync next cycle.
+        Without it (startup / final shutdown sync) it drains fully.
+        """
         synced = 0
+        batches = 0
         while True:
+            if stop_event is not None and stop_event.is_set():
+                break
             batch = self.primary.get_unsynced_records(limit=500)
             if not batch:
                 break
@@ -381,6 +393,11 @@ class DualStorage(MemoryStorage):
                 logger.warning("incremental sync: failed to durably publish batch", exc_info=True)
                 return
             synced += self.primary.mark_synced_versions(versions)
+            batches += 1
+            if len(batch) < 500:
+                break
+            if stop_event is not None and batches >= _MAX_SYNC_BATCHES:
+                break
         if synced:
             self._last_sync_mono = time.monotonic()
             logger.info("incremental sync: %d synced", synced)
@@ -479,6 +496,10 @@ class DualStorage(MemoryStorage):
 
     def list_namespaces(self, *args, **kwargs):
         return self.primary.list_namespaces(*args, **kwargs)
+
+    def rename_namespace(self, source, target):
+        with self._lock:
+            return self.primary.rename_namespace(source, target)
 
     def get_metadata_stats(self, namespace=None):
         """Scoped metadata aggregate from the primary; no replica scan."""

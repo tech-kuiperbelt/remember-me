@@ -198,6 +198,32 @@ def test_memory_service_wraps_injected_provider_for_serialization():
         storage.stop()
 
 
+def test_list_and_outbox_reads_avoid_per_row_vector_lookups(tmp_path):
+    """[55] Read paths that discard vectors must not trigger an N+1 lookup."""
+    store = create_storage("sqlite", path=":memory:", embedding_spec=SPEC)
+    try:
+        for index in range(30):
+            store.add(f"memory {index}", [1.0, 0.0], namespace="ns")
+        statements = []
+        store.conn.set_trace_callback(statements.append)
+
+        rows = store.list_memories(namespace="ns", limit=30)
+        assert len(rows) == 30
+        assert all(row["embedding"] is None for row in rows)
+        assert not any("memory_embeddings" in sql for sql in statements)
+
+        statements.clear()
+        outbox = store.get_unsynced_records(limit=30)
+        assert len(outbox) == 30
+        assert not any("memory_embeddings" in sql for sql in statements)
+
+        # A point read still exposes the vector (needed by legacy updates).
+        point = store.get(rows[0]["id"])
+        assert point["embedding"] is not None
+    finally:
+        store.stop()
+
+
 def test_runtime_provider_is_wrapped_once(tmp_path):
     from tests.test_runtime import runtime
 
