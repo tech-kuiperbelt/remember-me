@@ -21,6 +21,7 @@ from contextlib import nullcontext
 
 from app import audit
 from app.embedding.embed import create_embedder
+from app.embedding.provider_resolution import resolve_embedding_environment
 from app.storage.sqlite import SQLiteStorage
 from app.storage.database_lock import DatabaseWriterLock
 
@@ -84,7 +85,11 @@ def _main(journal) -> None:
         args.database = output_path(args.database)
 
     if args.command == "download-model":
-        provider = create_embedder(allow_download=True)
+        # An explicit provider is a download target; otherwise adopt the profile.
+        environment = resolve_embedding_environment(
+            os.environ, db_path=os.environ.get("MEMORY_STORAGE_PATH"),
+            explicit_is_target=True)
+        provider = create_embedder(environment=environment, allow_download=True)
         provider.warmup()
         print(json.dumps(provider.spec.as_dict(), ensure_ascii=False, indent=2))
         return
@@ -107,7 +112,10 @@ def _main(journal) -> None:
             elif args.command == "activate":
                 result = storage.activate_embedding_profile(args.profile_id)
             elif args.command == "reindex-index-values":
-                provider = create_embedder()
+                # Repair the target profile's index values, loading the model that
+                # profile defines rather than the current active provider.
+                provider = create_embedder(environment=resolve_embedding_environment(
+                    os.environ, db_path=args.database, profile_id=args.profile_id))
                 target_profile = args.profile_id or storage.get_stats()["embedding_profile"]["active"]
                 if not target_profile:
                     raise RuntimeError("database has no active embedding profile")
@@ -146,7 +154,11 @@ def _main(journal) -> None:
                     )
                     raise
             else:
-                provider = create_embedder()
+                # `reindex` treats an explicit provider as the migration target, so
+                # the same provider can switch model/revision. Without an explicit
+                # provider it adopts the active profile (a no-op).
+                provider = create_embedder(environment=resolve_embedding_environment(
+                    os.environ, db_path=args.database, explicit_is_target=True))
                 started = time.perf_counter()
 
                 def show_progress(completed: int, total: int) -> None:

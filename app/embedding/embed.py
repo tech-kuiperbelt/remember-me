@@ -1,8 +1,10 @@
 """Embedding providers used by the memory service.
 
-Ollama remains the default. FastEmbed and Sentence Transformers are optional
-and imported only when selected, so the base server keeps its small dependency
-set.
+The product default provider is Sentence Transformers (installed with the base
+requirements). Provider selection happens upstream in
+``app.embedding.provider_resolution``; when that environment carries no explicit
+provider (a low-level caller), ``create_embedder`` falls back to Ollama. FastEmbed
+and Sentence Transformers import their dependency only when selected.
 """
 
 from __future__ import annotations

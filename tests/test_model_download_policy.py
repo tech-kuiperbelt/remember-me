@@ -191,6 +191,10 @@ def test_download_cli_explicitly_allows_download(monkeypatch, capsys):
         return provider
     monkeypatch.setattr(embedding_cli, "create_embedder", factory)
     monkeypatch.setattr(sys, "argv", ["embedding_cli", "download-model"])
+    monkeypatch.delenv("EMBED_PROVIDER", raising=False)
     embedding_cli._main(None)
-    assert calls == [{"allow_download": True}, "warmup"]
+    assert calls[0]["allow_download"] is True
+    # The resolver adopts the new-database default when no provider/profile exists.
+    assert calls[0]["environment"]["EMBED_PROVIDER"] == "sentence_transformers"
+    assert calls[1] == "warmup"
     assert json.loads(capsys.readouterr().out)["model"] == "test/model"

@@ -4,5 +4,9 @@ numpy>=1.24.0
 uvicorn>=0.29.0
 python-multipart>=0.0.9
 
+# Recommended default embedding provider (Sentence Transformers + BAAI/bge-m3).
+# Pulls in torch/transformers; on a CPU-only host this may install large wheels.
+sentence-transformers>=5.0,<6.0
+
 # Test
 pytest>=9.0.0

@@ -8,7 +8,7 @@ Remember Me 自有源码采用 [Apache-2.0](LICENSE)，版权署名为 shenyu199
 
 ## 快速开始
 
-从仓库根目录创建环境并安装基础依赖：
+从仓库根目录创建环境并安装基础依赖（已包含默认的 Sentence Transformers Provider 依赖）：
 
 ```bash
 python3 -m venv .venv
@@ -16,9 +16,14 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-默认使用本机 Ollama 的 bge-m3。先安装并启动 Ollama，再执行
-`ollama pull bge-m3`，最后运行 `bin/start.sh`。如已有数据，提供方和模型必须匹配
-数据库的活动 embedding profile；切换提供方需按运维手册离线 reindex/activate。
+默认使用本机 CPU 上的 **Sentence Transformers + `BAAI/bge-m3`**：直接运行
+`bin/start.sh` 即可，不需要 Ollama，也不需要创建 `.env`。首次运行会在数据目录下从
+Hugging Face 下载模型（体积较大，需要联网）；下载失败时可打开配置页保存代理后重试，
+模型准备完成后需手动退出维护。之后优先离线加载缓存。
+
+如已有数据，默认沿用数据库的活动 embedding profile，不会因默认值变化而切换模型。
+要切换到其它 Provider（Ollama / FastEmbed）必须显式设置 `EMBED_PROVIDER`，并按运维
+手册离线 reindex/activate。
 
 默认管理界面为 http://127.0.0.1:1314/admin/console，接入说明为
 http://127.0.0.1:1314/read-me。Codex 使用 Streamable HTTP 地址
@@ -32,9 +37,9 @@ http://127.0.0.1:1314/sse。具体客户端配置见[运维手册](docs/operatio
 
 | 提供方 | 默认模型／来源 | 获取方式 |
 |---|---|---|
-| ollama | Ollama bge-m3 | 见上方快速开始 |
-| sentence_transformers（可选） | Hugging Face BAAI/bge-m3 | 安装 requirements-sentence-transformers.txt 并配置提供方；按缓存及下载设置加载 |
-| fastembed（可选） | intfloat/multilingual-e5-large；FastEmbed 0.8.0 映射到 Qdrant ONNX 制品 | 安装 requirements-fastembed.txt 并配置提供方；来源随模型及 FastEmbed 版本变化 |
+| sentence_transformers（默认） | Hugging Face BAAI/bge-m3 | 基础依赖已包含，安装后直接启动；缓存缺失且允许时自动下载 |
+| ollama（可选） | Ollama bge-m3 | 显式设置 `EMBED_PROVIDER=ollama`；安装并启动 Ollama 后 `ollama pull bge-m3` |
+| fastembed（可选） | intfloat/multilingual-e5-large；FastEmbed 0.8.0 映射到 Qdrant ONNX 制品 | 安装 requirements-fastembed.txt 并显式配置提供方；来源随模型及 FastEmbed 版本变化 |
 
 本地提供方优先读取缓存。缓存缺失且 `auto_download_model` 允许时才下载；
 HTTP 模式会进入模型准备维护状态，成功后需手动退出维护。

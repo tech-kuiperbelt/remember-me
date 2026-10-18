@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 MAX_FILTER_VALUES = 20
 
 
@@ -87,6 +89,12 @@ class IndexValueResolver:
         ]
 
 
+def _storage_database_path(storage):
+    """SQLite primary path for a sqlite or dual store (None when unknown)."""
+    primary = getattr(storage, "primary", storage)
+    return getattr(primary, "path", None)
+
+
 def resolver_for_configured_profile(storage):
     """Build a write resolver for an offline migration, or None when the store
     has no active embedding profile."""
@@ -96,8 +104,10 @@ def resolver_for_configured_profile(storage):
         return None
 
     from app.embedding.embed import create_embedder
+    from app.embedding.provider_resolution import resolve_embedding_environment
 
-    provider = create_embedder()
+    provider = create_embedder(environment=resolve_embedding_environment(
+        os.environ, db_path=_storage_database_path(storage)))
     if provider.spec.profile_id != active:
         raise RuntimeError(
             "configured embedding provider does not match the active database profile: "

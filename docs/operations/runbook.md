@@ -111,6 +111,12 @@ Host/Origin。服务没有任何账号或密码，`local_only: false` 等同于�
 及重启/关机接口暴露给整个网络，请仅在完全可信的网络中启用。已有远程部署升级后默认回到
 仅本机，需要远程访问时必须显式设置 `local_only: false`；修改访问范围需重启服务生效。
 
+新库默认使用 Sentence Transformers + `BAAI/bge-m3`（CPU），基础依赖已包含该 Provider。
+未显式设置 `EMBED_PROVIDER` 时，已有数据库沿用其活动 embedding profile，不会因默认值
+变化而静默切换模型；显式 provider/model 与活动 profile 冲突时拒绝启动。数据库已有记忆
+却没有活动 profile 时明确报错，需显式指定原 Provider 后离线 reindex/activate，绝不按
+维度猜测模型。
+
 旧配置缺少新字段时自动使用默认值。Sentence Transformers / FastEmbed 优先仅从本地缓存
 加载；缓存缺失时 HTTP 服务先开放配置页并强制进入维护状态，若 `auto_download_model=true`
 则后台下载。完整缓存启动不联网。禁止自动下载时等待操作，下载失败时保留配置页并显示错误；不会自动更换模型
@@ -209,7 +215,12 @@ bin/manage embedding migrate-codec --dtype float16
 bin/manage embedding activate PROFILE_ID
 ```
 
-切换 provider 或 model 前，先准备对应的本地模型和 `.env`，再执行完整 `reindex`。
+切换 provider 或 model 时必须在命令环境中显式设置 `EMBED_PROVIDER`（及目标 model），
+否则 `reindex` 会沿用当前活动 profile，等于空操作。显式指定后再执行完整 `reindex`，
+并按需准备本地模型或 `.env` 缓存配置。同一 Provider 内更换 model/revision 也走同一路径，
+显式配置即目标，不会被活动 profile 拒绝。
+`reindex-index-values --profile-id ID` 会按该 profile 的 provider/model 加载模型，可修复
+历史（retired）profile 的索引值；不指定时使用当前 active profile。
 active profile 必须与服务启动时的 provider、model、dimension 和 dtype 一致。
 
 ## Keyword/category 离线回填
@@ -237,7 +248,10 @@ bin/manage recover
 bin/manage recover /path/to/backup/memories.jsonl recovered.db
 ```
 
-恢复前确认服务已关闭，并确认 source 是可信的 JSONL。恢复后启动服务，检查 active
+恢复前确认服务已关闭，并确认 source 是可信的 JSONL。恢复时显式配置的 Provider 直接用于
+重建并跳过目标探测；未显式配置时沿用目标库已有的 active profile，目标库不存在则使用产品
+默认（Sentence Transformers）。目标库存在却损坏、不可读或无法识别 profile 且未显式指定
+Provider 时明确报错并要求指定，不会静默改用新模型。恢复后启动服务，检查 active
 embedding profile 和 Stats；如果 provider/profile 不匹配，先按 Embedding 维护章节重新
 索引。
 

@@ -33,4 +33,4 @@ fi
 
 source "$VENV_DIR/bin/activate"
 pip install -r requirements.txt
-echo "Done. Run ./start.sh to start the server."
+echo "Done. Run bin/start.sh to start the server."

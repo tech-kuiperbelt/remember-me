@@ -3,12 +3,15 @@ import logging
 import os
 import tempfile
 import threading
+from dataclasses import replace
 from pathlib import Path
+from types import MappingProxyType
 
 from app import audit
 from app import log_config
 from app.operations.calls import AsyncCallAdapter
 from app.embedding.embed import create_embedder, ModelCacheMissing
+from app.embedding.provider_resolution import resolve_embedding_environment
 from app.config.configuration import Configuration, activate_environment
 from app.config.settings import Settings
 from app.operations.model_preparation import ModelProgress, PreparationCancelled, download_progress
@@ -61,6 +64,7 @@ class Runtime:
                 if self.configure_logging:
                     self._handlers = log_config.configure(self.log_dir or self.settings.LOG_DIR)
                 self.audit = audit.AuditJournal(self.settings.environment)
+                self._resolve_provider_environment()
                 try:
                     options = {"environment": self.settings.environment}
                     if background_model and self.provider_factory is create_embedder:
@@ -84,6 +88,21 @@ class Runtime:
                 except BaseException:
                     logger.exception("cleanup after startup failure failed")
                 raise
+
+    def _resolve_provider_environment(self):
+        """Adopt the database profile (or the new default) for the real provider.
+
+        Injected provider factories (tests) keep the environment unchanged. The
+        resolved environment is also activated so in-process helpers that build
+        their own provider from ``os.environ`` see the same configuration.
+        """
+        if self.provider_factory is not create_embedder:
+            return
+        resolved = resolve_embedding_environment(
+            self.settings.environment, db_path=self.settings.STORAGE_PATH)
+        if dict(self.settings.environment) != resolved:
+            self.settings = replace(self.settings, environment=MappingProxyType(resolved))
+        activate_environment(resolved)
 
     def _start_business(self):
         s = self.settings
@@ -171,6 +190,7 @@ class Runtime:
                     self.settings = Settings.from_env(config.runtime_environment(self.settings.environment))
                     self.language_effective = self.settings.LANGUAGE
                     activate_environment(self.settings.environment)
+                    self._resolve_provider_environment()
                     self._model_cancel.clear()
                     self._model_retry_requested = False
                     self.model_progress.set("downloading")
