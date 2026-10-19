@@ -94,6 +94,7 @@ class Embedder(Protocol):
     def embed_query(self, text: str) -> list[float]: ...
     def embed_documents(self, texts: Iterable[str]) -> list[list[float]]: ...
     def warmup(self) -> None: ...
+    def close(self) -> None: ...
 
 
 def _bypass_proxy(url: str) -> dict | None:
@@ -122,6 +123,38 @@ def _missing_cached_model(exc):
     return False
 
 
+def _reset_download_sessions() -> None:
+    """Best-effort release of dependency HTTP sessions after a failed load.
+
+    Cancellation can unwind through third-party download code, so the session
+    must be reset here rather than relying solely on the caller's context. The
+    reset touches a process-global client, which is safe because model
+    preparation is a single owned worker; concurrent loaders would need it
+    serialized.
+    """
+    try:
+        import importlib
+        http = importlib.import_module("huggingface_hub.utils._http")
+    except Exception:
+        return
+    reset = getattr(http, "close_session", None) or getattr(http, "reset_sessions", None)
+    if callable(reset):
+        try:
+            reset()
+        except Exception:
+            logging.getLogger(__name__).debug("could not reset download session", exc_info=True)
+
+
+def _close_quietly(resource) -> None:
+    """Close a provider resource if it supports it; never raise."""
+    close = getattr(resource, "close", None)
+    if callable(close):
+        try:
+            close()
+        except BaseException:
+            logging.getLogger(__name__).warning("failed to close provider resource", exc_info=True)
+
+
 def _load_local_model(load, model, cache_dir, offline, auto_download):
     if auto_download is None:
         return load(offline)  # Compatibility for direct low-level callers.
@@ -141,16 +174,28 @@ def _load_local_model(load, model, cache_dir, offline, auto_download):
     logging.getLogger(__name__).info("Model %s missing from cache %s; downloading before startup", model, cache_dir)
     try:
         return load(False)
-    except Exception as exc:
-        raise EmbeddingError(
-            f"Could not download/load model {model} into {cache_dir}. "
-            "Check config.jsonc proxy, network access and model availability; "
-            "retry bin/manage embedding download-model."
-        ) from exc
+    except BaseException as exc:
+        # Cancellation (a BaseException) can interrupt third-party download
+        # code; release its session before propagating either error class.
+        _reset_download_sessions()
+        if isinstance(exc, Exception):
+            raise EmbeddingError(
+                f"Could not download/load model {model} into {cache_dir}. "
+                "Check config.jsonc proxy, network access and model availability; "
+                "retry bin/manage embedding download-model."
+            ) from exc
+        raise
 
 
 class _BaseEmbedder:
     spec: EmbeddingSpec
+
+    def close(self) -> None:
+        """Release held model resources; idempotent and safe to call repeatedly."""
+        model = getattr(self, "_model", None)
+        if model is not None:
+            _close_quietly(model)
+            self._model = None
 
     def _prepare(self, text: str, prefix: str) -> str:
         if not isinstance(text, str) or not text.strip():
@@ -354,14 +399,20 @@ class SentenceTransformersEmbedder(_BaseEmbedder):
             return SentenceTransformer(model, **options)
 
         self._model = _load_local_model(load, model, cache_dir, offline, auto_download)
-        dimension_fn = getattr(self._model, "get_embedding_dimension", None)
-        if dimension_fn is None:
-            dimension_fn = self._model.get_sentence_embedding_dimension
-        dimension = dimension_fn()
-        if dimension is None:
-            raise EmbeddingError(
-                f"Sentence Transformers returned no embedding dimension for {model}"
-            )
+        try:
+            dimension_fn = getattr(self._model, "get_embedding_dimension", None)
+            if dimension_fn is None:
+                dimension_fn = self._model.get_sentence_embedding_dimension
+            dimension = dimension_fn()
+            if dimension is None:
+                raise EmbeddingError(
+                    f"Sentence Transformers returned no embedding dimension for {model}"
+                )
+        except BaseException:
+            # A later construction step failed after the model was acquired;
+            # release it before failing so nothing is left half-constructed.
+            self.close()
+            raise
         self.batch_size = batch_size
         model_identity = f"{model}@{revision}" if revision else model
         self.spec = EmbeddingSpec(

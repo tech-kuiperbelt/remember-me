@@ -195,17 +195,27 @@ class Runtime:
                     self._model_retry_requested = False
                     self.model_progress.set("downloading")
                 provider_name = self.settings.environment.get("EMBED_PROVIDER", "ollama").replace("-", "_")
-                with download_progress(provider_name, self.model_progress, self._model_cancel):
-                    self.provider = wrap_provider(
-                        self.provider_factory(environment=self.settings.environment, allow_download=True))
-                with self._lock:
-                    if self.state != "running" or self._model_cancel.is_set():
-                        raise PreparationCancelled()
-                    self.model_progress.set("validating")
-                    self._start_business()
-                    self.maintenance.release_requirement()
-                    self.model_progress.set("ready")
-                    self.audit.record("model_prepare", {}, self.model_status(), 0)
+                provider = None
+                try:
+                    with download_progress(provider_name, self.model_progress, self._model_cancel):
+                        provider = wrap_provider(
+                            self.provider_factory(environment=self.settings.environment, allow_download=True))
+                    # Ownership transfers to ``self.provider`` here; anything not
+                    # yet handed over is closed in the finally, so a cancellation
+                    # raised around construction can never orphan a provider.
+                    self.provider = provider
+                    provider = None
+                    with self._lock:
+                        if self.state != "running" or self._model_cancel.is_set():
+                            raise PreparationCancelled()
+                        self.model_progress.set("validating")
+                        self._start_business()
+                        self.maintenance.release_requirement()
+                        self.model_progress.set("ready")
+                        self.audit.record("model_prepare", {}, self.model_status(), 0)
+                finally:
+                    if provider is not None:
+                        self._close_provider_quietly(provider)
             except PreparationCancelled:
                 self._release_model_business()
             except Exception as exc:
@@ -235,6 +245,16 @@ class Runtime:
         close = getattr(self.provider, "close", None)
         if callable(close):
             close()
+
+    @staticmethod
+    def _close_provider_quietly(provider):
+        """Release a provider during failure cleanup without masking the cause."""
+        close = getattr(provider, "close", None)
+        if callable(close):
+            try:
+                close()
+            except BaseException:
+                logger.exception("failed to close embedding provider")
 
     def _close_business(self):
         """Release business resources; every closer runs even if one fails.
