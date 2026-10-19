@@ -261,3 +261,91 @@ def test_hf_stream_download_reports_real_bytes_without_external_network(monkeypa
     assert progress.snapshot()['completed'] == len(content)
     assert progress.snapshot()['total'] == len(content)
     assert progress.snapshot()['percent'] == 100
+
+
+def test_unusable_cache_keeps_http_ui_and_can_be_repaired(tmp_path):
+    from app.embedding.embed import ModelCacheUnusable
+
+    provider = FakeProvider()
+    provider.warmup = Mock()
+
+    def factory(**kwargs):
+        if not kwargs.get('allow_download'):
+            raise ModelCacheUnusable(
+                "Cached model BAAI/bge-m3 is incomplete or unusable: Unrecognized processing class")
+        return provider
+
+    rt = make_runtime(tmp_path, factory, automatic=False)
+    with TestClient(create_http_app(rt)) as client:
+        wait_for(rt, 'failed')
+        assert rt.provider is None and rt.storage is None and rt.service is None
+        assert client.get('/admin/console').status_code == 200
+        status = client.get('/api/maintenance').json()
+        assert status['state'] == 'maintenance'
+        assert status['required_reason'] == 'model_not_ready'
+        assert 'incomplete' in client.get('/api/model').json()['error']
+        # The UI retry re-attempts the download, which repairs the cache.
+        assert client.post('/api/model/retry').status_code == 202
+        wait_for(rt, 'ready')
+        provider.warmup.assert_called_once()
+        assert client.post('/api/maintenance/exit').status_code == 200
+
+
+def test_model_load_error_keeps_http_ui_without_auto_download(tmp_path):
+    from app.embedding.embed import EmbeddingError
+
+    def factory(**kwargs):
+        raise EmbeddingError(
+            "Sentence Transformers provider requires the optional dependency: pip install ...")
+
+    rt = make_runtime(tmp_path, factory, automatic=False)
+    with TestClient(create_http_app(rt)) as client:
+        wait_for(rt, 'failed')
+        status = client.get('/api/maintenance').json()
+        assert status['state'] == 'maintenance'
+        assert status['required_reason'] == 'model_not_ready'
+        assert 'dependency' in client.get('/api/model').json()['error']
+        assert client.get('/admin/console').status_code == 200
+    assert rt.state == 'closed'
+
+
+def test_stdio_still_fails_fast_on_unusable_cache(tmp_path):
+    from app.embedding.embed import ModelCacheUnusable
+
+    def factory(**kwargs):
+        raise ModelCacheUnusable("Cached model is incomplete")
+
+    rt = make_runtime(tmp_path, factory, automatic=False)
+    with pytest.raises(ModelCacheUnusable):
+        rt.start()
+    rt.close()
+    assert rt.state == 'closed'
+
+
+def test_redact_error_strips_proxy_credentials():
+    from app.runtime import Runtime
+
+    env = {"HTTPS_PROXY": "http://user:secret@127.0.0.1:7890"}
+    message = "download failed using http://user:secret@127.0.0.1:7890 and http://other:tok@proxy:1"
+    redacted = Runtime._redact_error(message, env)
+    assert "secret" not in redacted and "tok" not in redacted
+    assert "[proxy]" in redacted
+
+
+def test_warmup_failure_keeps_http_ui(tmp_path):
+    provider = FakeProvider()
+    provider.warmup = Mock(side_effect=OSError("error while deserializing header"))
+    provider.close = Mock()
+
+    def factory(**kwargs):
+        return provider
+
+    rt = make_runtime(tmp_path, factory, automatic=False)
+    with TestClient(create_http_app(rt)) as client:
+        wait_for(rt, 'failed')
+        assert rt.provider is None and rt.storage is None and rt.service is None
+        assert client.get('/admin/console').status_code == 200
+        assert client.get('/api/maintenance').json()['required_reason'] == 'model_not_ready'
+        assert 'deserializing' in client.get('/api/model').json()['error']
+    provider.close.assert_called_once()
+    assert rt.state == 'closed'

@@ -79,7 +79,7 @@ function renderModelStatus(model) {
   $('model-progress-detail').textContent=model?.total
     ? t('model.progress.detail',{file:model.file||t('model.progress.file'),completed:formatBytes(model.completed||0),total:formatBytes(model.total),percent})
     : t('model.progress.unknown');
-  $('model-error').textContent=model?.error||'';
+  $('model-error').textContent=(model?.error||'')+((model&&model.status==='failed')?' '+t('model.retry_hint'):'');
 }
 function updateNamespaces() {
   namespaceCounts=getNamespaceCounts();

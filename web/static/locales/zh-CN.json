@@ -35,6 +35,7 @@
   "model.failed": "模型准备失败",
   "model.cancelling": "正在结束上一次任务",
   "model.unavailable": "模型状态暂不可用",
+  "model.retry_hint": "请点击“重试准备”重新加载模型；缓存不完整时会重新下载。",
   "model.progress.detail": "{file}：{completed} / {total}{percent}",
   "model.progress.file": "当前文件",
   "model.progress.unknown": "总量尚未确定，请等待模型准备。",

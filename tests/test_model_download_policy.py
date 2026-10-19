@@ -231,3 +231,86 @@ def test_download_cli_explicitly_allows_download(monkeypatch, capsys):
     assert calls[0]["environment"]["EMBED_PROVIDER"] == "sentence_transformers"
     assert calls[1] == "warmup"
     assert json.loads(capsys.readouterr().out)["model"] == "test/model"
+
+
+def test_incomplete_local_cache_is_classified_and_repaired(monkeypatch, tmp_path):
+    from app.embedding.embed import ModelCacheUnusable
+
+    attempts = []
+
+    class Model:
+        def __init__(self, model, **kwargs):
+            attempts.append(kwargs.get("local_files_only"))
+            if kwargs.get("local_files_only"):
+                raise ValueError(
+                    "Unrecognized processing class in test/model. Can't instantiate a processor, "
+                    "a tokenizer, an image processor, a video processor or a feature extractor.")
+
+        def get_sentence_embedding_dimension(self):
+            return 3
+
+    monkeypatch.setitem(sys.modules, "sentence_transformers",
+                        SimpleNamespace(SentenceTransformer=Model))
+    base = {"EMBED_PROVIDER": "sentence_transformers", "SENTENCE_TRANSFORMERS_MODEL": "test/model"}
+
+    with pytest.raises(ModelCacheUnusable, match="incomplete or unusable"):
+        create_embedder(environment=dict(base), cache_only=True)
+    assert attempts == [True]
+
+    attempts.clear()
+    provider = create_embedder(environment=dict(base), allow_download=True)
+    assert provider.spec.dimension == 3
+    assert attempts == [True, False]
+
+
+def test_unusable_cache_detector_matches_partial_snapshot_errors():
+    from app.embedding.embed import _corrupt_cached_model, _unusable_cached_model
+
+    assert _unusable_cached_model(ValueError("Unrecognized processing class in BAAI/bge-m3"))
+    chained = RuntimeError("could not load the model")
+    chained.__cause__ = ValueError("error while deserializing header")
+    assert _corrupt_cached_model(chained)
+    assert not _unusable_cached_model(ValueError("some unrelated failure"))
+    assert not _corrupt_cached_model(ValueError("some unrelated failure"))
+
+
+def test_corrupt_local_cache_forces_redownload(monkeypatch, tmp_path):
+    calls = []
+
+    class Model:
+        def __init__(self, model, **kwargs):
+            calls.append(kwargs)
+            if kwargs.get("local_files_only"):
+                raise RuntimeError("Error while deserializing header: PytorchStreamReader failed")
+
+        def get_sentence_embedding_dimension(self):
+            return 3
+
+    monkeypatch.setitem(sys.modules, "sentence_transformers",
+                        SimpleNamespace(SentenceTransformer=Model))
+    provider = create_embedder(environment={
+        "EMBED_PROVIDER": "sentence_transformers", "SENTENCE_TRANSFORMERS_MODEL": "test/model",
+    }, allow_download=True)
+    assert provider.spec.dimension == 3
+    assert calls[0]["local_files_only"] is True
+    # A corrupt blob must be re-fetched, not silently reused.
+    assert calls[1]["model_kwargs"]["force_download"] is True
+    assert calls[1]["processor_kwargs"]["force_download"] is True
+
+
+def test_missing_dependency_is_reported_not_treated_as_cache_damage(monkeypatch, tmp_path):
+    class Model:
+        def __init__(self, model, **kwargs):
+            if kwargs.get("local_files_only"):
+                raise ValueError(
+                    "SentencePieceExtractor requires the SentencePiece library but it was not found")
+
+        def get_sentence_embedding_dimension(self):
+            return 3
+
+    monkeypatch.setitem(sys.modules, "sentence_transformers",
+                        SimpleNamespace(SentenceTransformer=Model))
+    with pytest.raises(EmbeddingError, match="required dependency is missing"):
+        create_embedder(environment={
+            "EMBED_PROVIDER": "sentence_transformers", "SENTENCE_TRANSFORMERS_MODEL": "test/model",
+        }, cache_only=True)

@@ -36,6 +36,10 @@ class ModelCacheMissing(EmbeddingError):
     """A supported local model needs downloading before business startup."""
 
 
+class ModelCacheUnusable(EmbeddingError):
+    """A cached model exists but is incomplete or corrupt and must be re-downloaded."""
+
+
 class EmbeddingInputTooLong(EmbeddingError):
     """The memory/query exceeds the configured model input safety limit."""
 
@@ -123,6 +127,60 @@ def _missing_cached_model(exc):
     return False
 
 
+_UNUSABLE_CACHE_MARKERS = (
+    "unrecognized processing class",
+    "can't instantiate a processor",
+    "does not appear to have a file named",
+)
+
+_CORRUPT_CACHE_MARKERS = (
+    "error while deserializing header",
+    "pytorchstreamreader failed",
+)
+
+_CORRUPT_EXCEPTION_TYPES = ("SafetensorError", "CorruptModelError")
+
+_DEPENDENCY_ERROR_MARKERS = (
+    "sentencepiece library but it was not found",
+    "requires the sentencepiece library",
+    "no module named",
+    "is not installed",
+)
+
+
+def _unusable_cached_model(exc):
+    """Recognize an existing but incomplete local model cache.
+
+    Distinct from :func:`_missing_cached_model`: the files may be present yet a
+    partial download (e.g. a missing tokenizer) makes the model unloadable. A
+    plain re-download repairs it.
+    """
+    return _marker_in_chain(exc, _UNUSABLE_CACHE_MARKERS, ())
+
+
+def _corrupt_cached_model(exc):
+    """Recognize an existing but corrupt blob, which needs a forced re-download."""
+    return _marker_in_chain(exc, _CORRUPT_CACHE_MARKERS, _CORRUPT_EXCEPTION_TYPES)
+
+
+def _dependency_error(exc):
+    """Recognize a missing dependency, which a download cannot repair."""
+    return _marker_in_chain(exc, _DEPENDENCY_ERROR_MARKERS, ("ImportError", "ModuleNotFoundError"))
+
+
+def _marker_in_chain(exc, markers, exception_types):
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        if type(exc).__name__ in exception_types:
+            return True
+        message = str(exc).lower()
+        if any(marker in message for marker in markers):
+            return True
+        exc = exc.__cause__ or exc.__context__
+    return False
+
+
 def _reset_download_sessions() -> None:
     """Best-effort release of dependency HTTP sessions after a failed load.
 
@@ -164,16 +222,42 @@ def _load_local_model(load, model, cache_dir, offline, auto_download):
     try:
         return load(True)
     except Exception as exc:
-        if not _missing_cached_model(exc) or local_path:
+        if local_path:
+            raise
+        if _dependency_error(exc):
+            raise EmbeddingError(
+                f"Model {model} could not be loaded because a required dependency is missing: {exc}. "
+                "Reinstall dependencies with bash bin/install.sh."
+            ) from exc
+        missing = _missing_cached_model(exc)
+        corrupt = not missing and _corrupt_cached_model(exc)
+        unusable = not missing and not corrupt and _unusable_cached_model(exc)
+        if not (missing or corrupt or unusable):
+            if not auto_download:
+                # HTTP bootstrap (cache_only): never abort the process for a
+                # local model-load failure; surface it through maintenance/UI.
+                raise ModelCacheUnusable(
+                    f"Cached model {model} in {cache_dir} could not be loaded: {exc}. "
+                    "Retry the download or clear the cache directory."
+                ) from exc
             raise
         if not auto_download:
-            raise ModelCacheMissing(
-                f"Model {model} is missing from cache {cache_dir}; auto_download_model=false. "
-                "Run bin/manage embedding download-model or enable auto_download_model."
+            if missing:
+                raise ModelCacheMissing(
+                    f"Model {model} is missing from cache {cache_dir}; auto_download_model=false. "
+                    "Run bin/manage embedding download-model or enable auto_download_model."
+                ) from exc
+            raise ModelCacheUnusable(
+                f"Cached model {model} in {cache_dir} is "
+                f"{'corrupt' if corrupt else 'incomplete or unusable'}: {exc}. "
+                "Retry the download to repair it."
             ) from exc
-    logging.getLogger(__name__).info("Model %s missing from cache %s; downloading before startup", model, cache_dir)
+    logging.getLogger(__name__).info(
+        "Model %s missing or incomplete in cache %s; downloading before startup", model, cache_dir)
     try:
-        return load(False)
+        # A corrupt blob needs a forced re-download; a missing/incomplete one is
+        # repaired by a normal download.
+        return load(False, force_download=True) if corrupt else load(False)
     except BaseException as exc:
         # Cancellation (a BaseException) can interrupt third-party download
         # code; release its session before propagating either error class.
@@ -302,7 +386,7 @@ class FastEmbedEmbedder(_BaseEmbedder):
         if auto_download is not None and not supports_offline:
             raise EmbeddingError("FastEmbed installation cannot enforce local_files_only; upgrade it")
 
-        def load(local_only):
+        def load(local_only, force_download=False):
             options = dict(kwargs)
             if supports_offline:
                 options["local_files_only"] = local_only
@@ -392,10 +476,19 @@ class SentenceTransformersEmbedder(_BaseEmbedder):
         if auto_download is not None and not supports_offline:
             raise EmbeddingError("Sentence Transformers installation cannot enforce local_files_only; upgrade it")
 
-        def load(local_only):
+        def load(local_only, force_download=False):
             options = dict(kwargs)
             if supports_offline:
                 options["local_files_only"] = local_only
+            if force_download:
+                # Force a re-download of a corrupt cached blob; forwarded to the
+                # underlying AutoModel/AutoProcessor loaders.
+                if supported("model_kwargs"):
+                    options["model_kwargs"] = {**(options.get("model_kwargs") or {}),
+                                               "force_download": True}
+                if supported("processor_kwargs"):
+                    options["processor_kwargs"] = {**(options.get("processor_kwargs") or {}),
+                                                   "force_download": True}
             return SentenceTransformer(model, **options)
 
         self._model = _load_local_model(load, model, cache_dir, offline, auto_download)

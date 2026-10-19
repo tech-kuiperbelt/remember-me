@@ -1,6 +1,7 @@
 """Resource ownership and lifecycle for one server process."""
 import logging
 import os
+import re
 import tempfile
 import threading
 from dataclasses import replace
@@ -10,7 +11,9 @@ from types import MappingProxyType
 from app import audit
 from app import log_config
 from app.operations.calls import AsyncCallAdapter
-from app.embedding.embed import create_embedder, ModelCacheMissing
+from app.embedding.embed import (
+    create_embedder, EmbeddingError, ModelCacheMissing, ModelCacheUnusable,
+)
 from app.embedding.provider_resolution import resolve_embedding_environment
 from app.config.configuration import Configuration, activate_environment
 from app.config.settings import Settings
@@ -79,7 +82,35 @@ class Runtime:
                     if self.settings.environment.get("MEMORY_AUTO_DOWNLOAD_MODEL", "true") == "true":
                         self.retry_model()
                     return self
-                self._start_business()
+                except (ModelCacheUnusable, EmbeddingError, OSError) as exc:
+                    if not background_model:
+                        raise
+                    # A model that cannot be loaded must not block the HTTP app:
+                    # open the maintenance/config UI so the user can retry.
+                    message = self._redact_error(str(exc), self.settings.environment)
+                    self.maintenance.require("model_not_ready")
+                    self.model_progress.set("failed", error=message)
+                    logger.error("Model preparation failed: %s", message)
+                    self.state = "running"
+                    if (isinstance(exc, ModelCacheUnusable)
+                            and self.settings.environment.get(
+                                "MEMORY_AUTO_DOWNLOAD_MODEL", "true") == "true"):
+                        self.retry_model()
+                    return self
+                try:
+                    self._start_business()
+                except (EmbeddingError, OSError) as exc:
+                    # Warmup/validation failure: release the partial business
+                    # resources and keep the UI available for a retry.
+                    if not background_model:
+                        raise
+                    self._release_model_business()
+                    message = self._redact_error(str(exc), self.settings.environment)
+                    self.maintenance.require("model_not_ready")
+                    self.model_progress.set("failed", error=message)
+                    logger.error("Model startup failed: %s", message)
+                    self.state = "running"
+                    return self
                 self.state = "running"
                 return self
             except BaseException:
@@ -103,6 +134,18 @@ class Runtime:
         if dict(self.settings.environment) != resolved:
             self.settings = replace(self.settings, environment=MappingProxyType(resolved))
         activate_environment(resolved)
+
+    @staticmethod
+    def _redact_error(message, environment):
+        """Remove proxy credentials before an error is exposed to the UI."""
+        if not message:
+            return message
+        for key in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy",
+                    "ALL_PROXY", "all_proxy"):
+            value = environment.get(key)
+            if value:
+                message = message.replace(value, "[proxy]")
+        return re.sub(r"(https?://)[^/@\s]+@", r"\1", message)
 
     def _start_business(self):
         s = self.settings

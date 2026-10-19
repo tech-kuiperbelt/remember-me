@@ -135,9 +135,9 @@ Historical Ollama profiles remain supported, but require a separately running Ol
 
 ### First download and retry
 
-Local providers try cached files first. A recognized cache miss in HTTP mode opens the configuration UI in forced maintenance (`model_not_ready`). Automatic preparation starts when permitted. Otherwise, request **Retry** explicitly. While preparation is pending, memory reads, writes, searches, and exiting maintenance are blocked. After download, loading, warmup, and database validation succeed, manually select **Exit Maintenance** to resume writes.
+Local providers try cached files first. In HTTP mode a missing or unusable/incomplete cached model enters forced maintenance (`model_not_ready`) and keeps the configuration UI available instead of aborting startup. Automatic preparation starts when permitted. Otherwise, request **Retry** explicitly. While preparation is pending, memory reads, writes, searches, and exiting maintenance are blocked. After download, loading, warmup, and database validation succeed, manually select **Exit Maintenance** to resume writes.
 
-A background preparation failure leaves the configuration UI available. Missing dependencies, invalid Provider settings, failures loading an existing cache, or other startup errors may prevent HTTP startup entirely. An explicit local model path that is missing must be restored; it is not treated as a downloadable repository ID. stdio and model-using CLI commands prepare synchronously and exit on failure; read-only status/help and codec/profile activation commands do not load a model.
+A background preparation failure leaves the configuration UI available. In HTTP mode a model that is missing, incomplete/corrupt, or fails to load or warm up (`EmbeddingError`/`OSError`) enters maintenance with the error shown; **Retry** re-loads the model and re-downloads an incomplete cache (a corrupt blob is re-fetched with a forced download). Missing dependencies report a reinstall message; invalid Provider settings and other startup errors still fail fast. An explicit local model path that is missing must be restored; it is not treated as a downloadable repository ID. stdio and model-using CLI commands prepare synchronously and exit on failure; read-only status/help and codec/profile activation commands do not load a model.
 
 ### Proxy
 
@@ -312,7 +312,7 @@ Draft leaves the database unchanged but, without `--dry-run`, invokes the extern
 
 | Symptom | Check and next action |
 |---|---|
-| No Web UI | Confirm process, effective port, and data directory; inspect startup errors and logs. Missing dependencies or cached-model initialization errors can stop HTTP startup. |
+| No Web UI | Confirm process, effective port, and data directory; inspect startup errors and logs. Model-preparation failures (missing/incomplete cache, load or warmup errors) keep the maintenance UI available; other startup errors such as invalid configuration can still stop HTTP startup. |
 | Model not ready / background download failed | Open Configuration, inspect the model error, save the correct proxy, and retry. Exit maintenance after successful preparation. |
 | Profile mismatch | Compare embedding status with `.env`. Restore matching settings or stop the service and explicitly reindex to the intended model. |
 | Ollama connection/model error | Start the independently installed matching Ollama service, obtain its model, or perform an explicit offline migration. |

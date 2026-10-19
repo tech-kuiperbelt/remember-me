@@ -35,6 +35,7 @@
   "model.failed": "Model preparation failed",
   "model.cancelling": "Cancelling the previous task",
   "model.unavailable": "Model status unavailable",
+  "model.retry_hint": "Click \"Retry preparation\" to load the model again; an incomplete cache is re-downloaded.",
   "model.progress.detail": "{file}: {completed} / {total}{percent}",
   "model.progress.file": "current file",
   "model.progress.unknown": "Total size not yet known; waiting for model preparation.",

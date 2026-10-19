@@ -8,6 +8,10 @@ python-multipart>=0.0.9
 # Use bash bin/install.sh to select CPU Torch before resolving these dependencies.
 torch>=2.6,<3
 sentence-transformers>=5.0,<6.0
+# BGE-M3 ships a SentencePiece tokenizer; transformers needs these to build it
+# when the cached model has no converted tokenizer.json.
+sentencepiece>=0.2.0
+protobuf>=3.20
 
 # Test
 pytest>=9.0.0
