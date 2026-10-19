@@ -322,8 +322,8 @@ class SentenceTransformersEmbedder(_BaseEmbedder):
             from sentence_transformers import SentenceTransformer
         except ImportError as exc:
             raise EmbeddingError(
-                "Sentence Transformers provider requires the optional dependency: "
-                "pip install -r requirements-sentence-transformers.txt"
+                "Sentence Transformers dependencies are missing. Run: "
+                "bash bin/install.sh"
             ) from exc
 
         kwargs = {}

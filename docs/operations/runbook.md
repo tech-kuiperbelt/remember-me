@@ -16,6 +16,8 @@ This guide covers operating an installed Remember Me service. For installation, 
 8. [Troubleshooting](#troubleshooting)
 9. [Appendix: code structure and compatible entry points](#appendix-code-structure-and-compatible-entry-points)
 
+Install dependencies with `bash bin/install.sh` before starting. The script selects CPU-only Torch and constrains its version while installing `requirements.txt`; installing that file alone does not guarantee CPU wheels. Python >=3.10 is required. Validated on Linux x86_64 with Python 3.12, using the official CPU index; macOS uses its non-CUDA PyPI build and still needs on-device validation. Native Windows is outside this Bash installer. Re-running reuses compatible CPU environments; GPU/NVIDIA packages or a broken `.venv` cause an error instead of automatic deletion. Preserve the old environment and create a clean one before retrying. Model files are prepared at service startup, separately from dependency installation.
+
 ## Start, connect, and stop
 
 ### Default startup

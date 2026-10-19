@@ -16,6 +16,8 @@
 8. [常见故障](#常见故障)
 9. [附录：代码结构与兼容入口](#附录代码结构与兼容入口)
 
+启动前通过 `bash bin/install.sh` 安装依赖。脚本选择 CPU-only Torch，并在安装 `requirements.txt` 时约束其版本；单独安装该文件不保证获取 CPU wheel。要求 Python >=3.10。已在 Linux x86_64、Python 3.12 上验收，使用官方 CPU 索引；macOS 使用 PyPI 上的无 CUDA 版本，尚待实机验证；此 Bash 安装脚本不覆盖原生 Windows。重复执行可复用兼容 CPU 环境；发现 GPU／NVIDIA 包或损坏的 `.venv` 时会报错，不自动删除。请先保留旧环境，再创建干净环境重试。模型文件在启动服务时另行准备，与依赖安装分开。
+
 ## 启动、接入与关闭
 
 ### 默认启动

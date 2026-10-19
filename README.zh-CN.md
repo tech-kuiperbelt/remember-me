@@ -75,17 +75,17 @@ Web UI 主要用于**透明性和可观察性**，而不是让用户每天手动
 
 ### 1. 安装
 
-需要 Git、支持 `venv` 的 Python，以及足够运行 BGE-M3 的磁盘空间和内存。以下命令适用于 Linux/macOS 风格的 Shell。
+需要 Git、支持 `venv` 的 Python 3.10 或更新版本，以及足够运行 BGE-M3 的磁盘空间和内存。以下命令适用于 Linux/macOS 风格的 Shell。
 
 ```bash
 git clone https://github.com/tech-kuiperbelt/remember-me.git
 cd remember-me
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
+bash bin/install.sh
 ```
 
-标准安装流程已包含 Sentence Transformers 依赖。**模型权重不包含在 GitHub 源码仓库中。**
+安装脚本创建 `.venv`，先安装 CPU-only PyTorch，再锁定该 Torch 版本安装其余依赖。Linux 使用 PyTorch 官方 CPU wheel 索引，macOS 使用 PyPI 上的无 CUDA 发行包。已在 Linux x86_64、Python 3.12 上验收；macOS 尚待实机验证，此 Bash 脚本暂不支持原生 Windows。
+
+CPU 安装请使用脚本：仅执行 `pip install -r requirements.txt` 不能保证选择 CPU wheel。已有 GPU 或损坏环境会使脚本停止；请先保留或重命名原环境，再运行脚本创建干净的 `.venv`。兼容的 CPU 环境可复用。安装流程已包含 Sentence Transformers 依赖。**模型权重不包含在 GitHub 源码仓库中。**
 
 ### 2. 启动服务
 

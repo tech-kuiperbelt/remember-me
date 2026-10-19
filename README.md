@@ -75,17 +75,17 @@ The recommended setup is **Python + Sentence Transformers + BAAI/bge-m3**. You d
 
 ### 1. Install
 
-You will need Git, Python with `venv` support, and sufficient disk space and memory for BGE-M3. The commands below use a Linux/macOS-style shell.
+You will need Git, Python 3.10 or newer with `venv` support, and sufficient disk space and memory for BGE-M3. The commands below use a Linux/macOS-style shell.
 
 ```bash
 git clone https://github.com/tech-kuiperbelt/remember-me.git
 cd remember-me
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
+bash bin/install.sh
 ```
 
-The standard installation includes the Sentence Transformers runtime. Model weights are **not** bundled in the GitHub repository.
+The installer creates `.venv`, installs CPU-only PyTorch, then installs the remaining dependencies while keeping that Torch version fixed. On Linux it uses the official PyTorch CPU wheel index; macOS uses its non-CUDA distribution from PyPI. Validated on Linux x86_64 with Python 3.12; macOS still needs on-device validation, and native Windows is not supported by this Bash installer.
+
+Use the installer for CPU setup: running `pip install -r requirements.txt` alone does not select a CPU wheel. An existing GPU or broken environment causes the installer to stop; preserve or rename it and rerun to create a clean `.venv`. Compatible CPU environments can be reused. The installation includes the Sentence Transformers runtime. Model weights are **not** bundled in the GitHub repository.
 
 ### 2. Start the service
 

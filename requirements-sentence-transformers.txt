@@ -1,6 +1,2 @@
+# Compatibility entry point; CPU installation: bash bin/install.sh
 -r requirements.txt
-# Compatibility entry point. Sentence Transformers is now part of the base
-# requirements, so this file is only kept for existing install instructions.
-# On a CPU-only host, install torch from the official CPU wheel index first:
-# pip install torch --index-url https://download.pytorch.org/whl/cpu
-sentence-transformers>=5.0,<6.0
