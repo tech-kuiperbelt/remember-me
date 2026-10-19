@@ -1,259 +1,338 @@
-# remember-me 运维手册
+# Remember Me Operations Guide
 
-## 代码结构
+[English](runbook.md) · [简体中文](runbook.zh-CN.md)
 
-`app/` 按职责组织；`server.py` 是传输启动入口，`runtime.py` 负责资源装配与生命周期，
-`service.py` 是业务入口，`audit.py` 和 `log_config.py` 保留在根目录。
+This guide covers operating an installed Remember Me service. For installation, see the [README](../../README.md). Commands use a Bash-style shell and run from the repository root. Replace example paths and profile IDs with your actual values.
 
-| 包 | 职责 |
-|---|---|
-| `config/` | 配置、Settings 快照、JSONC 与数据根目录解析 |
-| `domain/` | anchors、categories、namespace、summary 与词法查询规则 |
-| `storage/` | 存储契约、工厂、SQLite/dual/NDJSON、锁、JSONL 与恢复 |
-| `embedding/` | provider、串行适配器、向量 codec 与索引值语义解析 |
-| `transport/` | MCP 工具定义和分发、反馈回执、Admin HTTP 接口 |
-| `operations/` | 调用线程池、维护状态、导入协调与模型准备 |
-| `cli/` | 离线管理、embedding、恢复、配置迁移及 DeepSeek 回填 |
+## Contents
 
-内部代码与测试直接导入新模块；Storage 对外通过 `app.storage` 导出契约和工厂，
-工厂延迟加载具体后端。Domain 不依赖服务或传输层，在线业务不依赖 CLI。
+1. [Start, connect, and stop](#start-connect-and-stop)
+2. [Configuration and data directory](#configuration-and-data-directory)
+3. [Model preparation and proxy](#model-preparation-and-proxy)
+4. [Checks, backups, and standard maintenance](#checks-backups-and-standard-maintenance)
+5. [Embedding maintenance](#embedding-maintenance)
+6. [Data migration and recovery](#data-migration-and-recovery)
+7. [Offline metadata backfills](#offline-metadata-backfills)
+8. [Troubleshooting](#troubleshooting)
+9. [Appendix: code structure and compatible entry points](#appendix-code-structure-and-compatible-entry-points)
 
-现有 `bin/start.sh`、`bin/manage`、`bin/recover.sh` 及 `python -m app.server` 不变。
-根目录保留 `manage_cli`、`embedding_cli`、`recover_cli` 和三种 `*_migrate_deepseek`
-的薄入口，原来的 `python -m app.<命令>` 继续可用；实现位于 `app.cli.<命令>`。
-其他旧的内部模块导入路径不保留兼容层。分包不改变数据格式或数据目录，无需迁移数据。
+## Start, connect, and stop
 
-## 启动和关闭
-
-Admin Debug 模式默认关闭。配置页勾选“启用 Debug 模式”并保存，刷新页面后显示
-顶部及新增／明细抽屉的 Debug 按钮、Audit 导航和 Stats 诊断入口；点击 Debug
-按钮才开启元素 ID 检查。配置持久保存为 `config.jsonc` 的 `debug` 布尔字段。
-Debug 完全由配置控制，Restart Server 重新读取已保存的设置；不再支持 `--debug` 启动参数。
-更新后首次启动需从原命令或启动配置中移除该参数。Debug 不调整日志级别或 MCP，
-stdio 模式没有界面效果。
-
-从仓库根目录运行 `bin/start.sh`。Ops 页面执行任何运维动作前，先点 **Enter
-Maintenance**；此时普通记忆写入暂停，查询继续。动作完成后点 **Exit Maintenance**。
-Restart Server 和 Shut Down Server 也要求先进入维护状态。需要执行独立 CLI 时，
-在维护状态下点击 Shut Down Server，等待服务退出。
-
-关闭后也可以从终端执行：
+### Default startup
 
 ```bash
-bin/start.sh
+bash bin/start.sh
 ```
 
-## MCP 客户端接入
+The launcher loads the repository's local `.env` when present, activates `.venv`, and defaults `MEMORY_STORAGE` to `dual`. HTTP binds to `127.0.0.1` by default and uses the saved port, initially `1314`.
 
-默认 HTTP 模式同时提供旧版 HTTP+SSE 与新版 Streamable HTTP，两者共用同一实例。
-默认仅监听 `127.0.0.1`（`local_only: true`），只有本机可访问。让 LLM agent 自行读取接入
-说明：`GET http://127.0.0.1:<port>/read-me`（只读、无鉴权，端口跟随启动参数）。
+| Purpose | Default URL |
+|---|---|
+| Configuration, memories, statistics, and Help | `http://127.0.0.1:1314/admin/console` |
+| Connection instructions for agents | `http://127.0.0.1:1314/read-me` |
+| MCP Streamable HTTP | `http://127.0.0.1:1314/mcp` |
+| Legacy MCP SSE | `http://127.0.0.1:1314/sse` |
 
-推荐（多客户端并发共享、Codex 原生直连）——`~/.codex/config.toml`：
+### Custom startup
+
+```bash
+bash bin/start.sh --port 8080
+bash bin/start.sh --data-dir /path/to/remember-me-data
+bash bin/start.sh --port 8080 --data-dir /path/to/remember-me-data
+bash bin/start.sh --stdio
+```
+
+`--port` overrides the saved port for this launch; it does not change the configuration file. Update browser and MCP URLs accordingly. `--stdio` explicitly selects subprocess transport and cannot be combined with `--port`. Selecting a different data directory does not move existing data.
+
+### MCP clients
+
+HTTP serves both transports from one runtime. `/read-me` is a read-only connection guide, not an MCP protocol endpoint. Web UI **Help** contains client setup instructions and memory prompts.
+
+For Codex, the project's Streamable HTTP configuration example is:
 
 ```toml
 [mcp_servers.memory-server]
 url = "http://127.0.0.1:1314/mcp"
 ```
 
-若原条目使用 `command`/`args` 的 `mcp-remote` 桥接，请替换该条目，避免同一服务重复注册。
-现有 opencode 的 `type: remote` + `/sse` 连接保持不变。默认仅接受 loopback
-（`127.0.0.1`/`localhost`）Host/Origin：非法 Host 返回 421，非法 Origin 返回 403，
-非 POST 方法返回 405（`Allow: POST`）。设置 `local_only: false` 后监听 `0.0.0.0`，局域网
-可访问全部 HTTP 入口，且 `/mcp` 不再校验 Host/Origin；服务无鉴权，仅限可信网络。
+Place it in the client's configuration (normally `~/.codex/config.toml`). Replace an existing `command`/`args` bridge entry for the same service instead of registering it twice. For OpenCode, merge this example into its configuration:
 
-## 维护入口
+```json
+{
+  "mcp": {
+    "memory-server": {
+      "type": "remote",
+      "url": "http://127.0.0.1:1314/sse",
+      "enabled": true
+    }
+  }
+}
+```
 
-`bin/manage` 会定位仓库、加载 `.env`、激活 `.venv`，然后调用已有的维护 CLI。默认
-主库是数据目录下的 `memories.db`，副本是同目录下的 `memories.jsonl`；路径可以在 `.env` 或
-命令参数中覆盖，但输出必须位于数据目录内。
+Use the client version's setup guidance if its configuration format differs. A remote client cannot use your machine's loopback address directly.
 
-## 配置与数据目录
+### Restart and shutdown
 
-默认数据目录是当前用户的持久目录，与启动时的工作目录无关：
+In **Configuration**, select **Enter Maintenance**. Ordinary maintenance pauses memory writes while reads continue; model preparation and database switching have additional restrictions. When no maintenance action is running, use **Restart** or **Shut Down**. Shutdown waits for owned work and resource cleanup; wait for the process to exit before running an offline writer. After shutdown, start from the terminal with the same data directory and any original port override.
 
-| 操作系统 | 默认数据目录 |
+## Configuration and data directory
+
+### Select the data directory
+
+| OS | Default |
 |---|---|
 | Linux | `~/.remember-me/` |
-| Windows | `%LOCALAPPDATA%\remember-me\`（未设置时回退到 `%USERPROFILE%\AppData\Local\remember-me`） |
+| Windows | `%LOCALAPPDATA%\remember-me\`; otherwise `%USERPROFILE%\AppData\Local\remember-me` |
 | macOS | `~/Library/Application Support/remember-me/` |
 
-可通过 `--data-dir DIR` 或 `MEMORY_DATA_DIR` 覆盖；相对目录按仓库根目录解析，优先级
-`--data-dir` > `MEMORY_DATA_DIR` > 系统默认。配置固定在选中目录的 `config.jsonc`，
-首次正常启动会创建：
+Precedence is `--data-dir` > `MEMORY_DATA_DIR` > OS default. Relative data-directory paths resolve against the repository root. The selected directory contains `config.jsonc`, the database, replica, audit files, logs, temporary files, backfill outputs, and model caches.
+
+Default storage paths are `memories.db` and `memories.jsonl`. Default Sentence Transformers cache is `models/sentence-transformers/`; the historical FastEmbed cache is `models/fastembed/`. Runtime path overrides and CLI output paths resolve inside the data directory; paths escaping it, including through symlinks, are rejected. Repository assets, `.env`, external read-only import sources, and an independent Ollama service's storage are outside this rule.
+
+### Configuration fields
+
+Normal startup creates this configuration when absent:
 
 ```jsonc
 {
-  // HTTP 端口
   "port": 1314,
   "language": "zh-CN",
   "auto_download_model": true,
-  // true=仅监听 127.0.0.1；false=监听 0.0.0.0 并对局域网开放全部 HTTP 接口
   "local_only": true,
-  // Debug 按钮、Audit 与诊断入口；配置页保存后刷新生效
   "debug": false,
-  // 代理地址可以包含端口
   "proxy": {"enabled": false, "url": ""}
 }
 ```
 
-支持 `//` 单行注释、`/* … */` 块注释及尾随逗号；配置页面保存时保留已有注释。
-仅存在旧 `config.json` 时，正常启动会沿用原值并生成 `config.jsonc`，旧文件保留作备份。
-两者同时存在时只读取 `config.jsonc`；新文件出错不会退回旧文件。只读状态及帮助不迁移文件。
+| Field | Meaning | When a UI-saved change applies |
+|---|---|---|
+| `port` | HTTP port, 1–65535 | Restart; explicit `--port` still wins |
+| `language` | `zh-CN` or `en` UI | Refresh the page |
+| `auto_download_model` | Download missing model files automatically | Next model preparation/startup; explicit Retry can request a download |
+| `local_only` | Bind to loopback or all interfaces | Restart |
+| `debug` | Debug buttons, Audit navigation, diagnostic entries | Refresh the page |
+| `proxy` | Model download HTTP/HTTPS proxy | Next preparation/retry |
 
-端口允许 1–65535，语言允许 `zh-CN` 和 `en`；本版只保存语言选择，尚未进行界面翻译。
-修改配置后重启生效。`--port PORT` 临时覆盖端口（0 表示随机可用端口），`--stdio` 显式
-启动标准输入输出模式，两者互斥。模块导入和 `--help` 不会创建配置或其他文件。
+Saving ordinary settings does not require maintenance. For direct file edits, restart to load the changes. Debug does not change logging or MCP tools; element inspection additionally requires clicking a Debug button. There is no `--debug` startup option or stdio UI.
 
-`local_only` 控制监听地址与访问范围：`true`（默认）仅监听 `127.0.0.1`；`false` 监听
-`0.0.0.0`，局域网可访问全部 HTTP 入口（含管理页面与 `/mcp`），且 `/mcp` 不再校验
-Host/Origin。服务没有任何账号或密码，`local_only: false` 等同于把读/写/删除记忆、导入导出
-及重启/关机接口暴露给整个网络，请仅在完全可信的网络中启用。已有远程部署升级后默认回到
-仅本机，需要远程访问时必须显式设置 `local_only: false`；修改访问范围需重启服务生效。
+JSONC accepts line/block comments and trailing commas; UI saves preserve comments. Normal startup adopts legacy `config.json` only if `config.jsonc` is absent, retaining the old file. When both exist, JSONC is authoritative; invalid JSONC never falls back to JSON. Help and read-only configuration inspection do not migrate files. CLI `--port 0` requests an available ephemeral port, unlike the saved configuration field.
 
-新库默认使用 Sentence Transformers + `BAAI/bge-m3`（CPU），基础依赖已包含该 Provider。
-未显式设置 `EMBED_PROVIDER` 时，已有数据库沿用其活动 embedding profile，不会因默认值
-变化而静默切换模型；显式 provider/model 与活动 profile 冲突时拒绝启动。数据库已有记忆
-却没有活动 profile 时明确报错，需显式指定原 Provider 后离线 reindex/activate，绝不按
-维度猜测模型。
+### Network access
 
-旧配置缺少新字段时自动使用默认值。Sentence Transformers / FastEmbed 优先仅从本地缓存
-加载；缓存缺失时 HTTP 服务先开放配置页并强制进入维护状态，若 `auto_download_model=true`
-则后台下载。完整缓存启动不联网。禁止自动下载时等待操作，下载失败时保留配置页并显示错误；不会自动更换模型
-或数据库 embedding profile。显式本地模型路径缺失时请恢复该目录，服务不把路径当作远程模型名。
+`local_only: true` binds to `127.0.0.1`. Setting it to `false` binds to `0.0.0.0` and exposes all HTTP endpoints, including administration, to reachable network clients. The service has no authentication; use this only on a trusted network with appropriate access controls. Namespaces are not authorization boundaries.
 
-代理默认关闭，直连且忽略系统的 `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY`（含小写）。
-启用时设置 `"proxy": {"enabled": true, "url": "http://127.0.0.1:7890"}`；只支持 HTTP/HTTPS
-代理，允许 URL 中的用户名/密码，`config status` 隐藏凭据。本地 Ollama 请求始终直连。
-该策略用于 Memory 进程及其模型下载，不修改独立 Ollama 服务的代理设置。
-配置入口以 `auto_download_model` 为准，覆盖旧 `.env` 的 `FASTEMBED_OFFLINE`、
-`SENTENCE_TRANSFORMERS_OFFLINE`、`HF_HUB_OFFLINE`、`TRANSFORMERS_OFFLINE`；
-模型库在加载时通过 `local_files_only` 控制联网。禁用独立 Xet 下载通道，让模型下载统一遵循 HTTP 代理配置。
+In local-only mode, `/mcp` restricts Host/Origin to loopback: invalid Host returns 421 and invalid Origin returns 403. After security checks, methods other than POST return 405 with `Allow: POST`. LAN mode disables this Host/Origin protection. `/read-me` advertises a loopback URL with the effective port even in LAN mode.
 
-首次模型缺失时，浏览器打开 `/admin/console` 自动进入配置页，可保存代理并重试，不需要
-为代理变更重启。页面每两秒更新真实字节进度（当前文件或下载批次）；总量未知、等待网络
-或验证期间显示不确定进度。保存后重试会先结束旧任务，再使用新配置准备，保持一个任务运行。
-模型下载、加载及数据库校验完成前，记忆读写/搜索不可用，后端拒绝退出维护；完成后仍保持维护，
-由操作者手动退出。重启、关机始终可用，并等待模型任务取消和资源清理。
-配置页面上方可修改端口、语言、访问范围（“仅本机服务”）、自动下载和代理，保存无需进入维护，
-也不暂停当前记忆服务。取消“仅本机服务”会显示局域网暴露警告。
-端口、语言与访问范围重启后生效（显式 `--port` 仍优先），下载策略供下次模型准备/启动使用。
-页面下方集中提供需要维护模式的操作，包括模型重试、重启/关机、导入/恢复、导出、Sync、清空及 namespace 迁移。
-stdio 和维护 CLI 仍同步准备模型，失败退出；没有 Web 配置页。也可预先执行
-`bin/manage embedding download-model`：该命令明确允许下载，即使自动下载关闭，也使用同一代理
-和 data 下的缓存。Ollama 模型仍由其服务管理，缺失时执行 `ollama pull MODEL`。
+## Model preparation and proxy
 
-```bash
-bin/start.sh --data-dir /path/to/runtime-data
-bin/start.sh --stdio
-bin/manage --data-dir /path/to/runtime-data config status
+### Default and existing profiles
+
+New installations use **Sentence Transformers + BAAI/bge-m3 + CPU**, included in the base dependencies. When `EMBED_PROVIDER` is unset, an existing database adopts its active embedding profile. Startup refuses conflicting model identities; a populated database without an identifiable active profile requires explicit original Provider/model settings.
+
+Historical Ollama profiles remain supported, but require a separately running Ollama service with the matching model; Remember Me does not install or start it. Use `ollama pull MODEL` on that service's host if needed. FastEmbed remains an optional historical backend, installed with `requirements-fastembed.txt`; it is not the recommended new-install path.
+
+### First download and retry
+
+Local providers try cached files first. A recognized cache miss in HTTP mode opens the configuration UI in forced maintenance (`model_not_ready`). Automatic preparation starts when permitted. Otherwise, request **Retry** explicitly. While preparation is pending, memory reads, writes, searches, and exiting maintenance are blocked. After download, loading, warmup, and database validation succeed, manually select **Exit Maintenance** to resume writes.
+
+A background preparation failure leaves the configuration UI available. Missing dependencies, invalid Provider settings, failures loading an existing cache, or other startup errors may prevent HTTP startup entirely. An explicit local model path that is missing must be restored; it is not treated as a downloadable repository ID. stdio and model-using CLI commands prepare synchronously and exit on failure; read-only status/help and codec/profile activation commands do not load a model.
+
+### Proxy
+
+Configure the download proxy in **Configuration**, save, then retry:
+
+```json
+{"proxy": {"enabled": true, "url": "http://127.0.0.1:7890"}}
 ```
 
-数据库、副本、audit 及轮转文件、`logs/`、`tmp/`、`anchor-backfill/`、模型缓存都归数据目录。
-本地模型缓存默认在 `models/fastembed/` 和 `models/sentence-transformers/`；其他依赖缓存也
-归该目录。路径环境变量和维护命令的输出参数以数据目录为根解析，越界路径（包括符号链接）
-被拒绝；安装资源、`.env`、外部只读导入源和独立 Ollama 服务的模型目录不受此规则约束。
-管理界面显示数据目录内的相对路径，内部执行使用绝对路径。
+Only HTTP/HTTPS proxies are supported. Disabled means direct access, ignoring inherited `HTTP_PROXY`, `HTTPS_PROXY`, and `ALL_PROXY` variables, including lowercase variants. Loopback Ollama requests bypass proxies; an independent Ollama service has its own download configuration. Proxy URLs may contain credentials; `config status` redacts them.
 
-旧配置先预览，再停服迁移。迁移保留源文件，复制校验成功后更新 `.env` 路径和配置。
-迁移源、目标的缺省值都按上面的优先级选择；迁移仓库旧 `data/` 时显式传源目录，
-`bin/manage` 会加载 `.env`，因此还需显式指定目标（或先移除 `MEMORY_DATA_DIR`）。
-迁移到系统默认目录时，成功后从 `.env` 删除 `MEMORY_DATA_DIR`，让后续启动采用默认规则；
-迁移到自定义目录时保留显式覆盖项：
+Retry uses the saved configuration without restarting the server. A retry requested during preparation cancels the previous task before starting another. Progress reflects dependency-reported bytes, or an indeterminate state when totals are unavailable. Configuration-based startup overrides legacy provider/Hugging Face offline variables, uses cache-first loading, and disables the separate Xet download transport.
 
-```bash
-# 迁移仓库 data/ 到当前系统默认目录
-bin/manage --data-dir ~/.remember-me config migrate --source-data-dir data --dry-run
-# 在配置页面进入 Maintenance 并 Shut Down Server，等待退出
-bin/manage --data-dir ~/.remember-me config migrate --source-data-dir data
-bin/start.sh
-```
+These settings do not configure pip installation networking. To explicitly download a missing model even when automatic downloads are disabled, use `bin/manage --data-dir "$RM_DATA_DIR" embedding download-model` after selecting the data directory as described below.
 
-更换数据目录：`bin/manage --data-dir NEW config migrate --source-data-dir OLD --dry-run`，
-确认后去掉 `--dry-run`。迁移会拒绝覆盖冲突文件和正在使用的数据库。异常时回退；进程
-崩溃留下迁移日志时，服务拒绝启动，重新运行相同迁移命令先恢复，再预览和执行迁移。
-验收模型加载及主副本健康后，可自行清理保留的旧日志和缓存；不要删除仍在使用的共享缓存。
+## Checks, backups, and standard maintenance
 
-先看帮助：
+### Keep every command on the same data directory
+
+Set this shell variable to the directory actually used by the service, not a new example directory:
 
 ```bash
-bin/manage --help
-bin/manage embedding --help
+RM_DATA_DIR="/absolute/path/to/your/current/remember-me-data"
+bin/manage --data-dir "$RM_DATA_DIR" config status
+bin/manage --data-dir "$RM_DATA_DIR" status
+bin/manage --data-dir "$RM_DATA_DIR" embedding status
 ```
 
-只读状态检查可以在服务运行时执行。它会显示当前配置的路径和 embedding profile；副本
-是否完全同步以管理台 Stats 的 `pending`、`in_sync`、`missing`、`extra` 和
-`corrupt_lines` 为准：
+`bin/manage` loads `.env` and activates `.venv`. An assignment in `.env` can override a variable supplied before the command. Before model-changing commands, align Provider/model settings there; CLI `--data-dir` still wins. Keep this same `RM_DATA_DIR` for subsequent examples. Help is available through `bin/manage --help` and `bin/manage embedding --help`.
+
+| Operation | Service state / effects |
+|---|---|
+| Status, config status, help | May run while the service is active; no model loading |
+| Model download | Writes model cache, not memory records; coordinate with any active preparation |
+| UI export, sync, import, recovery, clear, namespace migration | Enter maintenance; the UI enables actions when their prerequisites hold |
+| Offline reindex, codec conversion, activation, recovery, applied backfills, data-directory migration | Stop the service and wait for exit |
+
+Writable offline processes acquire the primary database writer lock; they do not stop an existing service for you. Do not delete `.writer.lock` to bypass it: the file's existence does not mean a process currently holds the OS lock.
+
+### Backups and health
+
+For dual storage, **Full Export** syncs and verifies the JSONL replica before downloading a snapshot. Store that download independently before maintenance. **Sync** refreshes the current replica; it is not a historical backup because it follows subsequent changes. Namespace Export is a partial snapshot, not a full disaster-recovery backup. JSONL contains records and metadata, not embeddings; restoring it needs model inference.
+
+If using SQLite-only storage, replica-based Full Export/Sync are unavailable. Stop the service cleanly before making a separate database backup; preserve the relevant configuration and Provider/model settings as well. Protect backup files as private memory data.
+
+In dual mode, inspect available Statistics diagnostics: `pending=0`, `in_sync=true`, `missing=0`, `extra=0`, and `corrupt_lines=0`. Pending writes reaching zero alone do not prove replica health. Debug exposes diagnostic entries. SQLite-only installations have no replica to validate.
+
+### Standard sequence
+
+1. Confirm the service's data directory and startup overrides. Enter maintenance in Configuration.
+2. For dual mode, download Full Export and retain it as an independent backup.
+3. Select Shut Down and wait for exit. For SQLite-only storage, now make an independent database backup before any offline write.
+4. Check the chosen root with the status commands above, then perform the required operation.
+5. Restart with `bash bin/start.sh --data-dir "$RM_DATA_DIR"`, preserving any prior `--port` override.
+6. Check the active Profile, memory availability, and dual replica health where applicable. If startup entered model-preparation maintenance, exit it manually after preparation succeeds.
+
+## Embedding maintenance
+
+### Inspect and prepare
 
 ```bash
-bin/manage status
-bin/manage embedding status
+bin/manage --data-dir "$RM_DATA_DIR" embedding status
+bin/manage --data-dir "$RM_DATA_DIR" embedding download-model
 ```
 
-需要写 SQLite 或副本的命令必须在服务关闭后执行。它们会获取现有的 primary writer
-lock；服务仍运行时会快速失败，不会自动终止服务，也不要手工删除 `.writer.lock`：锁
-文件存在不等于锁当前被占用。
+Without an explicit Provider, these model-preparation defaults follow the existing active profile. An explicit Provider on `download-model` selects the model to prepare. Read status output before choosing a target or rollback Profile ID.
 
-## 标准维护流程
+### Switch Provider or model
 
-1. 在管理台执行 Full Export 或确认最近一次 Full Sync 成功。
-2. 执行 Shut Down Server，等待服务退出。
-3. 运行 `bin/manage status`，确认当前数据库和副本路径正确。
-4. 执行所需的离线命令。
-5. 重新运行 `bin/start.sh`。
-6. 查看管理台 Stats，确认 `pending=0`、`in_sync=true`、`missing=0`、`extra=0`、
-   `corrupt_lines=0`。
-
-## Embedding 维护
+Back up and stop the service first. Set the intended target in the repository's private `.env`, updating existing assignments rather than appending conflicting values. For the recommended target:
 
 ```bash
-bin/manage embedding status
-bin/manage embedding download-model
-bin/manage embedding reindex
-bin/manage embedding reindex-index-values
-bin/manage embedding migrate-codec --dtype float16
-bin/manage embedding activate PROFILE_ID
+EMBED_PROVIDER=sentence_transformers
+SENTENCE_TRANSFORMERS_MODEL=BAAI/bge-m3
+SENTENCE_TRANSFORMERS_DEVICE=cpu
 ```
 
-切换 provider 或 model 时必须在命令环境中显式设置 `EMBED_PROVIDER`（及目标 model），
-否则 `reindex` 会沿用当前活动 profile，等于空操作。显式指定后再执行完整 `reindex`，
-并按需准备本地模型或 `.env` 缓存配置。同一 Provider 内更换 model/revision 也走同一路径，
-显式配置即目标，不会被活动 profile 拒绝。
-`reindex-index-values --profile-id ID` 会按该 profile 的 provider/model 加载模型，可修复
-历史（retired）profile 的索引值；不指定时使用当前 active profile。
-active profile 必须与服务启动时的 provider、model、dimension 和 dtype 一致。
-
-## Keyword/category 离线回填
-
-这两项会调用外部 `opencode` CLI，并逐条更新数据库。先使用 dry-run 检查范围：
+Also review any revision and query/document-prefix overrides. Then run:
 
 ```bash
-bin/manage migrate keywords --dry-run --limit 20
-bin/manage migrate categories --dry-run --limit 20
+bin/manage --data-dir "$RM_DATA_DIR" embedding download-model
+bin/manage --data-dir "$RM_DATA_DIR" embedding reindex
+bin/manage --data-dir "$RM_DATA_DIR" embedding status
 ```
 
-确认后去掉 `--dry-run`。可以用 `--namespace`、`--memory-id`、`--limit` 和 `--db` 缩小
-范围；失败记录会在命令输出中列出，之后可以再次运行。
+Reindex builds memory-text and keyword/category vectors for the target, then activates the complete profile atomically. This also supports changing model or revision within the same Provider. Without an explicit target Provider, it adopts the active profile and normally returns `already_active`. Keep startup configuration aligned with the new profile before restarting.
 
-## JSONL 恢复
+Profile identity includes Provider, model (and encoded revision), dimension, normalization, and query/document prefixes. Device and codec dtype are not part of that identity.
 
-服务运行时，可在 Ops 进入维护状态，上传完整 JSONL 备份并点击 Recover。重建期间查询
-继续；主库切换时查询会短暂收到重试提示。页面显示任务进度，成功后会对 dual 副本执行
-Full Sync。若副本同步失败，保持维护状态，使用 Ops 的 Sync 重试后再退出。
+### Repair index vectors and roll back
 
-离线恢复仍可用；它从不含 embedding 的 JSONL 重建 SQLite，并在成功前不替换目标数据库：
+Run with the service stopped:
 
 ```bash
-bin/manage recover
-bin/manage recover /path/to/backup/memories.jsonl recovered.db
+bin/manage --data-dir "$RM_DATA_DIR" embedding reindex-index-values
+bin/manage --data-dir "$RM_DATA_DIR" embedding reindex-index-values --profile-id PROFILE_ID
+bin/manage --data-dir "$RM_DATA_DIR" embedding activate PROFILE_ID
 ```
 
-恢复前确认服务已关闭，并确认 source 是可信的 JSONL。恢复时显式配置的 Provider 直接用于
-重建并跳过目标探测；未显式配置时沿用目标库已有的 active profile，目标库不存在则使用产品
-默认（Sentence Transformers）。目标库存在却损坏、不可读或无法识别 profile 且未显式指定
-Provider 时明确报错并要求指定，不会静默改用新模型。恢复后启动服务，检查 active
-embedding profile 和 Stats；如果 provider/profile 不匹配，先按 Embedding 维护章节重新
-索引。
+The first command repairs the active profile's keyword/category vectors; `--profile-id` selects a retained profile instead. Remove or align explicit Provider/model settings that conflict with that target. Activation requires complete memory and index vectors; it does not run inference to fill gaps. Before restarting after rollback, align `.env` with the activated model and ensure that model/service is available. Retained profiles are not guaranteed to remain complete after later memory changes.
 
-所有命令也可以直接使用对应的 `python -m app.*` 形式；`bin/manage` 只是统一了路径、
-环境和操作顺序。
+### Change vector encoding
+
+```bash
+bin/manage --data-dir "$RM_DATA_DIR" embedding migrate-codec --dtype float32
+```
+
+Stop the service first. This changes vector encoding, not the embedding model. To retain float32 on later startup, also set `EMBED_DTYPE=float32` in `.env`; use matching `float16` settings to switch back. Startup can re-encode existing vectors to the configured dtype, so a one-time codec command without matching startup configuration may be undone. Verify the stored codec/dtype using embedding status.
+
+## Data migration and recovery
+
+### Move the data directory
+
+Selecting `--data-dir` alone does not migrate files. Choose explicit source and destination directories:
+
+```bash
+RM_NEW_DATA_DIR="/absolute/path/to/new/remember-me-data"
+bin/manage --data-dir "$RM_NEW_DATA_DIR" config migrate --source-data-dir "$RM_DATA_DIR" --dry-run
+# Stop the service and wait for exit before the following command.
+bin/manage --data-dir "$RM_NEW_DATA_DIR" config migrate --source-data-dir "$RM_DATA_DIR"
+bash bin/start.sh --data-dir "$RM_NEW_DATA_DIR"
+```
+
+For a legacy repository `data/`, use `--source-data-dir data`. Migration copies and verifies files, retains sources, and updates configuration and `.env` paths. It refuses conflicting destinations and in-use databases. Review the preview before applying; confirm model loading and storage health in the new root before retiring old files. Preserve the original port override when needed and use the new root for subsequent maintenance.
+
+To rely on the OS default afterward, remove a stale `MEMORY_DATA_DIR` assignment from `.env` after migration; otherwise keep the custom root explicit. If a crash leaves a migration journal that blocks startup, rerun the same migration command to recover, then inspect the result before retrying. Do not manually delete the journal or shared caches to bypass recovery.
+
+### Online JSONL recovery
+
+In Configuration, enter maintenance, upload a trusted complete JSONL backup, and choose **Recover**. Reads continue during rebuilding; the final database switch briefly rejects queries with a retry response. Watch progress through completion. In dual mode, recovery also performs Full Sync; if that fails, stay in maintenance and retry Sync before exiting. Import adds records through the import workflow; Recover rebuilds the database and must not be treated as an append operation.
+
+### Offline JSONL recovery
+
+Stop the service and retain an independent backup of the source and existing target. Recovery builds a temporary database and replaces the target only after success:
+
+```bash
+# Rebuild the configured primary from its configured JSONL replica.
+bin/manage --data-dir "$RM_DATA_DIR" recover
+
+# Rebuild a separate target inside the selected data directory.
+bin/manage --data-dir "$RM_DATA_DIR" recover /path/to/backup/memories.jsonl recovered.db
+```
+
+With an explicit Provider, recovery uses that target without probing the old database. Otherwise, a readable target uses its active profile; a missing target uses the product default. An unreadable/corrupt target or populated target without an identifiable profile requires explicit Provider/model settings. A separate `recovered.db` is not selected automatically for later service startup; configure the primary path deliberately if it is to become the live database.
+
+Inspect the resulting profile and match startup settings before restarting. Verify memory records and, in dual mode, replica health. Keep the service in maintenance if synchronization needs repair.
+
+## Offline metadata backfills
+
+Keyword/category backfills use an external `opencode` CLI and the configured DeepSeek model. Actual generation sends selected memory content to that external workflow; use it only for data permitted there. Dry-run counts the eligible records without generating updates:
+
+```bash
+bin/manage --data-dir "$RM_DATA_DIR" migrate keywords --dry-run --limit 20
+bin/manage --data-dir "$RM_DATA_DIR" migrate categories --dry-run --limit 20
+```
+
+Inspect the scope, back up, and stop the service before removing `--dry-run`. Use `--namespace`, `--memory-id`, `--limit`, or `--db` to narrow scope. Review per-record failures before retrying.
+
+Anchor backfill separates model-generated drafts from applying a reviewed manifest. Use an explicit namespace, since the command has a project-specific default:
+
+```bash
+bin/manage --data-dir "$RM_DATA_DIR" migrate anchors draft --namespace PROJECT --limit 20 --dry-run
+bin/manage --data-dir "$RM_DATA_DIR" migrate anchors draft --namespace PROJECT --limit 20 --manifest anchor-backfill/review.jsonl
+# Review the generated manifest; stop the service before applying it.
+bin/manage --data-dir "$RM_DATA_DIR" migrate anchors apply --manifest "$RM_DATA_DIR/anchor-backfill/review.jsonl" --dry-run
+bin/manage --data-dir "$RM_DATA_DIR" migrate anchors apply --manifest "$RM_DATA_DIR/anchor-backfill/review.jsonl"
+```
+
+Draft leaves the database unchanged but, without `--dry-run`, invokes the external model and writes a manifest. Apply uses the reviewed manifest and commits the batch transactionally. Use command-specific `--help` for supported options; the three backfills do not share every flag.
+
+## Troubleshooting
+
+| Symptom | Check and next action |
+|---|---|
+| No Web UI | Confirm process, effective port, and data directory; inspect startup errors and logs. Missing dependencies or cached-model initialization errors can stop HTTP startup. |
+| Model not ready / background download failed | Open Configuration, inspect the model error, save the correct proxy, and retry. Exit maintenance after successful preparation. |
+| Profile mismatch | Compare embedding status with `.env`. Restore matching settings or stop the service and explicitly reindex to the intended model. |
+| Ollama connection/model error | Start the independently installed matching Ollama service, obtain its model, or perform an explicit offline migration. |
+| Writer lock busy | Identify and gracefully stop the process using that primary/replica; do not delete lock files. |
+| Replica drift or failed post-recovery sync | Retain an independent backup, inspect diagnostics, then run Sync in maintenance. Check health before exiting. |
+| Corrupt recovery target cannot be identified | Supply the intended Provider/model explicitly, then rerun offline recovery from a trusted JSONL backup. |
+| Pending data migration journal | Rerun the same migration command to recover; inspect the resulting paths before starting. |
+| Data seems missing after restart | Verify `--data-dir`, `MEMORY_DATA_DIR`, `.env`, and the primary path before creating new records or attempting recovery. |
+
+## Appendix: code structure and compatible entry points
+
+| Location | Responsibility |
+|---|---|
+| `app/config/` | Settings, JSONC, data-root resolution |
+| `app/domain/` | Pure validation and retrieval rules |
+| `app/storage/` | SQLite/dual contracts, replica, locks, JSONL and recovery |
+| `app/embedding/` | Providers, profile resolution, vector codec and index-value resolution |
+| `app/transport/` | MCP tools and Admin HTTP |
+| `app/operations/` | Worker pools, maintenance, imports and model preparation |
+| `app/cli/` | Offline administration and backfills |
+| `app/server.py`, `runtime.py`, `service.py` | Transport startup, resource lifecycle and business logic |
+
+`app/audit.py` and `app/log_config.py` own audit/logging support. Domain does not depend on services/transports; online business does not import CLI. Package imports acquire no runtime resources.
+
+`bin/start.sh`, `bin/manage`, `bin/recover.sh`, and the root `python -m app.*` command launchers remain available. CLI implementations live under `app.cli`; old internal import paths are not compatibility APIs. Prefer `bin/manage` for the examples above: direct module commands can use different argument ordering and do not source the repository `.env` automatically.

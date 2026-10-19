@@ -86,7 +86,7 @@ bash bin/start.sh
 
 全新安装的默认配置为 **Sentence Transformers + BAAI/bge-m3 + CPU**。已有模型缓存会直接复用；如果缺少模型文件，在支持的“模型尚未就绪”状态下，HTTP/Web UI 仍可启动，模型准备成功后，还需在 Web UI 中手动退出维护模式，才能写入记忆。
 
-已有安装在未显式配置 Provider 时沿用数据库的活动 Embedding Profile，包括历史 Ollama Profile。`bin/start.sh` 会加载本机 `.env`（如存在）。切换 Provider 或模型需要显式指定目标并离线重建索引，详见[运维手册](docs/operations/runbook.md)。
+已有安装在未显式配置 Provider 时沿用数据库的活动 Embedding Profile，包括历史 Ollama Profile。`bin/start.sh` 会加载本机 `.env`（如存在）。切换 Provider 或模型需要显式指定目标并离线重建索引，详见[运维手册](docs/operations/runbook.zh-CN.md)。
 
 使用默认本地地址和端口时：
 
@@ -182,7 +182,7 @@ Web UI 的 **Help** 页面准备了可直接复制的记忆提示词。将其放
 
 - **Web UI → Help**：安装配置、Agent 接入、记忆提示词和故障排查。
 - **`/read-me`**：服务运行后提供的面向 Agent 的配置说明。
-- **[运维手册](docs/operations/runbook.md)**：备份、恢复和维护操作。
+- **[运维手册](docs/operations/runbook.zh-CN.md)**：备份、恢复和维护操作。
 
 Remember Me 默认以本地运行为目标。**没有身份认证及合适访问保护时，不要把记忆或管理接口直接暴露到公网。** Namespace 用于组织记忆，不等同于访问控制和身份认证。
 
