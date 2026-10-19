@@ -1,60 +1,177 @@
-# remember-me
+# Remember Me
 
-本项目提供可通过 MCP 使用的本地记忆服务，支持 HTTP（Streamable HTTP 与兼容 SSE）和 stdio。
+**Agent-first memory. Human-visible by design.**
 
-Remember Me 自有源码采用 [Apache-2.0](LICENSE)，版权署名为 shenyu1997。
-再分发时请遵守许可证及 [NOTICE](NOTICE) 中适用的归属保留要求；第三方组件与素材另见
-[第三方声明](THIRD_PARTY_NOTICES.md)。不要求派生产品在 UI 中突出署名，也不要求派生产品整体开源。
+[English](README.md) · [简体中文](README.zh-CN.md)
 
-## 快速开始
+Remember Me is a **local-first, persistent memory service for AI agents**, built on the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/).
 
-从仓库根目录创建环境并安装基础依赖（已包含默认的 Sentence Transformers Provider 依赖）：
+Agents are the primary creators and users of memory. They can preserve useful knowledge, recall earlier decisions, and update what they have learned across sessions. The Web UI gives people a way to see what their agents remember, how that information is organized, and how memory is retrieved and used.
+
+**Memory infrastructure for agents — with the knowledge remaining under the user's control.**
+
+## Why Remember Me?
+
+AI coding agents can work through complex problems, but their experience is often fragmented across sessions. An agent may investigate an issue, compare approaches, reach a decision, and learn from mistakes — yet struggle to reuse that work the next time around.
+
+Remember Me aims to make accumulated knowledge useful beyond a single conversation. Its design follows three principles:
+
+**Agent-first.** Agents drive the memory workflow: finding relevant memories, deciding what is worth keeping, and revising outdated knowledge. People shouldn't have to maintain a note collection just to give an agent continuity. Remember Me exposes the tools; an agent's instructions and behavior determine how it uses them.
+
+**Retrieval-oriented.** Memory is not a complete transcript archive. Its value lies in finding and reusing relevant experience when a new task calls for it. Different search methods help agents recall information through meaning, exact terms, or explicit anchors.
+
+**Human-owned.** Knowledge accumulated through work with an agent should remain visible and under the user's control, not be locked inside a particular client or platform. Remember Me separates memory from the agent that uses it, with readable data and portability as design principles. Its Web UI enables people to inspect and manage that memory.
+
+> Agents can change. Models can improve. Tools can evolve. The knowledge you've built should carry forward.
+
+## Features
+
+- **Agent-driven long-term memory.** MCP tools for creating, searching, updating, and deleting memories. Agents choose when to use them according to their tasks and instructions.
+- **Three retrieval methods.** Semantic search for meaning, lexical search for terms, and anchor search for explicit clues or identifiers.
+- **Structured organization.** Namespaces, categories, keywords, and anchors help organize knowledge across projects and contexts.
+- **Observable Web UI.** Browse and inspect memories, search and filter them, edit when needed, and review memory and retrieval statistics.
+- **Agent-independent access.** Compatible MCP clients can connect to the same standalone service and reuse memories in the appropriate namespace.
+- **Local-first operation.** SQLite stores memory data. Sentence Transformers runs the **BAAI/bge-m3** embedding model inside the Python process, without a separate model service.
+
+**Data portability:** User control, readable data, backup, and migration are important to the project. See the in-app Help and operational documentation for the operations and formats supported by your installed version; this README does not imply that every import/export workflow is available.
+
+## See What Your Agents Remember
+
+The Web UI exists primarily for **transparency and observability**, not to turn agent memory into another note-taking task.
+
+**Memory Explorer** — Browse and filter memories, switch among supported search methods, and inspect namespaces, categories, and keywords.
+
+**Memory Detail** — Read a memory's content and its associated categories, keywords, and anchors; make corrections when necessary.
+
+**Retrieval Statistics** — Observe available retrieval activity and feedback to better understand how the memory service is being used.
+
+<!-- When safe, real screenshots captured with synthetic demo data become available, insert:
+     assets/screenshots/memory-explorer.png (wide primary image)
+     assets/screenshots/memory-detail.png (secondary)
+     assets/screenshots/retrieval-stats.png (secondary)
+     Never publish the original screenshots containing real project memories. -->
+
+<a id="快速开始"></a>
+
+## Quick Start
+
+The recommended setup is **Python + Sentence Transformers + BAAI/bge-m3**. You do not need Ollama, Docker, or a separate embedding server.
+
+### 1. Install
+
+You will need Git, Python with `venv` support, and sufficient disk space and memory for BGE-M3. The commands below use a Linux/macOS-style shell.
 
 ```bash
+git clone https://github.com/tech-kuiperbelt/remember-me.git
+cd remember-me
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
-默认使用本机 CPU 上的 **Sentence Transformers + `BAAI/bge-m3`**：直接运行
-`bin/start.sh` 即可，不需要 Ollama，也不需要创建 `.env`。首次运行会在数据目录下从
-Hugging Face 下载模型（体积较大，需要联网）；下载失败时可打开配置页保存代理后重试，
-模型准备完成后需手动退出维护。之后优先离线加载缓存。
+The standard installation includes the Sentence Transformers runtime. Model weights are **not** bundled in the GitHub repository.
 
-如已有数据，默认沿用数据库的活动 embedding profile，不会因默认值变化而切换模型。
-要切换到其它 Provider（Ollama / FastEmbed）必须显式设置 `EMBED_PROVIDER`，并按运维
-手册离线 reindex/activate。
+### 2. Start the service
 
-默认管理界面为 http://127.0.0.1:1314/admin/console，接入说明为
-http://127.0.0.1:1314/read-me。Codex 使用 Streamable HTTP 地址
-http://127.0.0.1:1314/mcp，OpenCode 可使用兼容 SSE 地址
-http://127.0.0.1:1314/sse。具体客户端配置见[运维手册](docs/operations/runbook.md)。
+```bash
+bash bin/start.sh
+```
 
-## 模型与下载
+For a new installation, the default is **Sentence Transformers + BAAI/bge-m3 on CPU**. The service uses the local model cache when available. When model files are missing, the HTTP interface can start in a *model not ready* state while the model is prepared. After preparation succeeds, manually exit maintenance mode in the Web UI to enable memory writes.
 
-模型权重、tokenizer 和模型缓存**不随源码仓库分发**，也不由项目的 Apache-2.0
-重新授权；模型与推理依赖适用各自上游条款。
+Existing installations retain their active database embedding profile when no Provider is explicitly configured, including historical Ollama profiles. `bin/start.sh` loads a local `.env` if present. Changing Provider or model requires an explicit target and offline reindexing; see the [operations guide](docs/operations/runbook.md).
 
-| 提供方 | 默认模型／来源 | 获取方式 |
-|---|---|---|
-| sentence_transformers（默认） | Hugging Face BAAI/bge-m3 | 基础依赖已包含，安装后直接启动；缓存缺失且允许时自动下载 |
-| ollama（可选） | Ollama bge-m3 | 显式设置 `EMBED_PROVIDER=ollama`；安装并启动 Ollama 后 `ollama pull bge-m3` |
-| fastembed（可选） | intfloat/multilingual-e5-large；FastEmbed 0.8.0 映射到 Qdrant ONNX 制品 | 安装 requirements-fastembed.txt 并显式配置提供方；来源随模型及 FastEmbed 版本变化 |
+With the default local address and port:
 
-本地提供方优先读取缓存。缓存缺失且 `auto_download_model` 允许时才下载；
-HTTP 模式会进入模型准备维护状态，成功后需手动退出维护。
-本地提供方可通过 `bin/manage embedding download-model` 显式允许下载缺失模型。
-模型来源及转换制品的许可边界见[第三方声明](THIRD_PARTY_NOTICES.md#independently-downloaded-models)。
+| Purpose | URL |
+| --- | --- |
+| Web UI | `http://127.0.0.1:1314/admin/console` |
+| Instructions for agents | `http://127.0.0.1:1314/read-me` |
+| MCP — Streamable HTTP | `http://127.0.0.1:1314/mcp` |
+| MCP — SSE | `http://127.0.0.1:1314/sse` |
 
-根目录 `docker-compose.yml` 是旧 OpenMemory 调研配置，**不是 Remember Me 部署方式**；
-本仓库没有提供 Remember Me Docker 镜像发布流程。
+### 3. First model download and proxy setup
 
-## 配置与开发
+The first use may require downloading **BAAI/bge-m3** from its upstream source. The model is cached locally; after it has been downloaded, embedding inference runs on your machine without a continuously connected model service.
 
-`bin/start.sh` 会加载 gitignored 的本机 `.env`（如存在），默认采用 dual 存储。
-服务默认监听 1314 端口；配置、数据库及模型缓存位置见[运维手册](docs/operations/runbook.md)。
+If the download source is unreachable from your network, open the Web UI's **configuration page**, set an HTTP/HTTPS proxy for model downloads, save the settings, and choose **Retry**. A failed *background model download* does not require restarting the service just to retry after changing the proxy.
 
-需要界面元素 ID 调试时，在配置页启用 Debug，保存后刷新生效，默认关闭；
-不再支持 `--debug` 启动参数。
+**Important:** The Web UI remains available in the supported *missing model / background download failed* case. Other startup errors — such as missing Python dependencies, invalid provider settings, or failures while loading an already-cached model — may prevent the server from starting. Follow the displayed errors and Help documentation rather than expecting proxy settings to fix unrelated problems.
 
-开发计划与系统设计文档位于 [docs/](docs/)。全仓库开发约定见 [AGENTS.md](AGENTS.md)。
+**Resource note:** Allow sufficient disk space and memory for the model and its Python dependencies. Minimum hardware requirements remain to be validated.
+
+The Web UI proxy settings apply to model downloads. Installing Python dependencies with pip requires its own network or proxy configuration. Automatic model downloads are controlled by `auto_download_model`; when disabled, use the configuration page to request a retry explicitly.
+
+## Connect & Enable Agent Memory
+
+Connecting MCP gives an agent the **ability** to use memory. Giving it good memory instructions helps it decide **when and how** to do so. Both steps matter.
+
+### Recommended: let your coding agent set up MCP
+
+After starting Remember Me, ask a coding agent that can access the local service and edit its own configuration:
+
+> Read `http://127.0.0.1:1314/read-me`. Follow its instructions to configure Remember Me MCP for yourself and verify the connection. Ask me before modifying configuration files.
+
+The `/read-me` endpoint is written for agents. For manual setup and troubleshooting, the Web UI **Help** page provides detailed guidance.
+
+### Manual examples
+
+**Codex — Streamable HTTP**
+
+```bash
+codex mcp add remember-me --url http://127.0.0.1:1314/mcp
+codex mcp list
+```
+
+**OpenCode — SSE** (merge this example into your OpenCode configuration, preserving any existing MCP entries):
+
+```json
+{
+  "mcp": {
+    "remember-me": {
+      "type": "remote",
+      "url": "http://127.0.0.1:1314/sse",
+      "enabled": true
+    }
+  }
+}
+```
+
+For configuration file locations and client-version-specific details, use the Web UI Help. A remote agent cannot reach `127.0.0.1` on your computer unless an appropriate network path has been configured.
+
+### Give the agent a memory strategy
+
+**A successful MCP connection does not make an agent automatically remember everything or consistently recall the right experience.** Its memory strategy matters.
+
+The **Help** page includes a ready-to-copy memory instruction prompt. Place it in your agent's instruction file (for example, `AGENTS.md`) and adjust it for the project. The guidance covers proactive recall, saving useful decisions and lessons, avoiding duplicate memories, updating existing information, and selecting the right namespace.
+
+### Verify persistence across sessions
+
+1. Ask your agent to save a harmless test memory in a chosen project namespace.
+2. Start a new agent session and ask it to recall that memory from the same namespace.
+3. Open the Web UI to see the memory and any available retrieval activity.
+4. Remove the test memory when finished, if desired.
+
+## Documentation & Security
+
+- **Web UI → Help:** setup, agent configuration, memory prompts, and troubleshooting.
+- **`/read-me`:** machine-readable, agent-oriented connection guidance from the running service.
+- **[Operations guide](docs/operations/runbook.md):** backup, recovery, and maintenance procedures.
+
+Remember Me is intended to run locally by default. **Do not expose memory or administrative endpoints directly to the public internet without authentication and appropriate access controls.** Namespaces organize memory; they are not an authentication or authorization boundary.
+
+## About This Project
+
+Remember Me is an independent personal open-source project developed with the assistance of AI coding agents.
+
+## License
+
+Remember Me's original project code is released under the [Apache License 2.0](LICENSE), subject to its terms, including preservation of applicable attribution and notices.
+
+- [LICENSE](LICENSE) — project license.
+- [NOTICE](NOTICE) — original project attribution.
+- [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) — third-party code, models, and asset notices.
+
+Model weights, tokenizers, and caches are downloaded separately and remain subject to their upstream terms; the project license does not relicense them.
+
+Created by **shenyu1997** · Published via [tech-kuiperbelt](https://github.com/tech-kuiperbelt).
