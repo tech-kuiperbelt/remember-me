@@ -445,3 +445,58 @@ def test_recover_cli_rejects_corrupt_target_without_explicit_provider(tmp_path, 
     with pytest.raises(SystemExit) as excinfo:
         recover_cli.main()
     assert excinfo.value.code == 2
+
+
+def _legacy_database(path):
+    """A pre-profile database: a memories table only, no FTS/profile tables."""
+    connection = sqlite3.connect(str(path))
+    connection.execute(
+        "CREATE TABLE memories (id TEXT PRIMARY KEY, text TEXT, metadata TEXT DEFAULT '{}', "
+        "namespace TEXT DEFAULT 'default', created_at TEXT, updated_at TEXT, deleted INTEGER DEFAULT 0)"
+    )
+    connection.execute(
+        "INSERT INTO memories (id, text, namespace, created_at, updated_at, deleted) "
+        "VALUES ('one', 'legacy', 'default', '2026-01-01', '2026-01-01', 0)"
+    )
+    connection.commit()
+    connection.close()
+    return path
+
+
+def _tables(path):
+    connection = sqlite3.connect(str(path))
+    try:
+        return {row[0] for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'")}
+    finally:
+        connection.close()
+
+
+def test_reindex_resolution_failure_leaves_database_unchanged(tmp_path, monkeypatch):
+    from app.cli import embedding_cli
+
+    path = _legacy_database(tmp_path / "legacy.db")
+    before_bytes, before_tables = path.read_bytes(), _tables(path)
+    monkeypatch.delenv("EMBED_PROVIDER", raising=False)
+    monkeypatch.setattr(sys, "argv", ["embedding_cli", "reindex", str(path)])
+
+    with pytest.raises(EmbeddingResolutionError, match="no active embedding profile"):
+        embedding_cli._main(_Journal())
+
+    assert path.read_bytes() == before_bytes
+    assert _tables(path) == before_tables
+
+
+def test_reindex_index_values_unknown_profile_leaves_database_unchanged(tmp_path, monkeypatch):
+    from app.cli import embedding_cli
+
+    path = _legacy_database(tmp_path / "legacy.db")
+    before_bytes, before_tables = path.read_bytes(), _tables(path)
+    monkeypatch.setattr(sys, "argv", [
+        "embedding_cli", "reindex-index-values", str(path), "--profile-id", "ep_missing"])
+
+    with pytest.raises(EmbeddingResolutionError, match="unknown embedding profile"):
+        embedding_cli._main(_Journal())
+
+    assert path.read_bytes() == before_bytes
+    assert _tables(path) == before_tables

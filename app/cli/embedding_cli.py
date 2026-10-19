@@ -99,6 +99,16 @@ def _main(journal) -> None:
     )
     lock = _database_maintenance_lock(args.database) if mutating else nullcontext()
     with lock:
+        # Resolve the provider before opening writable storage: storage
+        # initialization migrates the schema and rebuilds indexes, so a failed
+        # resolution must leave an existing database untouched.
+        provider = None
+        if args.command == "reindex-index-values":
+            provider = create_embedder(environment=resolve_embedding_environment(
+                os.environ, db_path=args.database, profile_id=args.profile_id))
+        elif args.command == "reindex":
+            provider = create_embedder(environment=resolve_embedding_environment(
+                os.environ, db_path=args.database, explicit_is_target=True))
         storage = _storage(args.database, read_only=args.command == "status")
         try:
             if args.command == "status":
@@ -112,10 +122,8 @@ def _main(journal) -> None:
             elif args.command == "activate":
                 result = storage.activate_embedding_profile(args.profile_id)
             elif args.command == "reindex-index-values":
-                # Repair the target profile's index values, loading the model that
-                # profile defines rather than the current active provider.
-                provider = create_embedder(environment=resolve_embedding_environment(
-                    os.environ, db_path=args.database, profile_id=args.profile_id))
+                # The provider was resolved above from the target profile, before
+                # writable storage was opened.
                 target_profile = args.profile_id or storage.get_stats()["embedding_profile"]["active"]
                 if not target_profile:
                     raise RuntimeError("database has no active embedding profile")
@@ -157,8 +165,6 @@ def _main(journal) -> None:
                 # `reindex` treats an explicit provider as the migration target, so
                 # the same provider can switch model/revision. Without an explicit
                 # provider it adopts the active profile (a no-op).
-                provider = create_embedder(environment=resolve_embedding_environment(
-                    os.environ, db_path=args.database, explicit_is_target=True))
                 started = time.perf_counter()
 
                 def show_progress(completed: int, total: int) -> None:
