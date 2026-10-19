@@ -41,17 +41,22 @@ Remember Me 希望让有价值的知识超越单次对话，成为未来工作�
 
 Web UI 主要用于**透明性和可观察性**，而不是让用户每天手动管理笔记。
 
-**Memory Explorer** — 浏览、筛选记忆，选择检索方式，查看 Namespace、Category、Keyword 等组织信息。
+### Memory Explorer · 记忆浏览与检索
 
-**Memory Detail** — 阅读单条记忆及其分类、关键词、锚点，在需要时修正内容。
+浏览、筛选记忆，选择检索方式，查看 Namespace、Category、Keyword 和 Anchor 等组织信息。
 
-**Retrieval Statistics** — 查看可用的检索活动和反馈信息，了解记忆服务是如何被使用的。
+![使用虚构演示记忆制作的 Remember Me 记忆浏览界面示意图](assets/screenshots/memory-explorer.png)
 
-<!-- 等使用纯虚构演示数据拍摄的真实截图准备好后，再插入：
-     assets/screenshots/memory-explorer.png（主图）
-     assets/screenshots/memory-detail.png（辅助）
-     assets/screenshots/retrieval-stats.png（辅助）
-     不得将包含真实工作记忆的原始截图提交到公开仓库。 -->
+### Memory Detail & Retrieval Statistics · 记忆详情与检索统计
+
+查看单条记忆的内容与关联信息，必要时进行修正；同时观察记忆检索活动与反馈数据。
+
+<p align="center">
+  <a href="assets/screenshots/memory-detail.png"><img src="assets/screenshots/memory-detail.png" alt="使用虚构数据制作的记忆详情示意图" width="49%"></a>
+  <a href="assets/screenshots/retrieval-stats.png"><img src="assets/screenshots/retrieval-stats.png" alt="使用虚构数据制作的 AI 检索统计示意图" width="49%"></a>
+</p>
+
+*以上为基于项目现有界面风格制作的演示预览，使用虚构数据，并非从实际运行服务中直接截取的原始截图。*
 
 ## 快速开始
 

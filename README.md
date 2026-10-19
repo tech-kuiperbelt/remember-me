@@ -39,17 +39,22 @@ Remember Me aims to make accumulated knowledge useful beyond a single conversati
 
 The Web UI exists primarily for **transparency and observability**, not to turn agent memory into another note-taking task.
 
-**Memory Explorer** — Browse and filter memories, switch among supported search methods, and inspect namespaces, categories, and keywords.
+### Memory Explorer
 
-**Memory Detail** — Read a memory's content and its associated categories, keywords, and anchors; make corrections when necessary.
+Browse and filter memories, switch among supported search methods, and inspect namespaces, categories, keywords, and anchors.
 
-**Retrieval Statistics** — Observe available retrieval activity and feedback to better understand how the memory service is being used.
+![Illustrative Remember Me Memory Explorer with fictional demo memories](assets/screenshots/memory-explorer.png)
 
-<!-- When safe, real screenshots captured with synthetic demo data become available, insert:
-     assets/screenshots/memory-explorer.png (wide primary image)
-     assets/screenshots/memory-detail.png (secondary)
-     assets/screenshots/retrieval-stats.png (secondary)
-     Never publish the original screenshots containing real project memories. -->
+### Memory Detail & Retrieval Statistics
+
+Inspect the content of individual memories, make corrections when needed, and review retrieval activity and feedback.
+
+<p align="center">
+  <a href="assets/screenshots/memory-detail.png"><img src="assets/screenshots/memory-detail.png" alt="Illustrative Memory Detail with fictional demo data" width="49%"></a>
+  <a href="assets/screenshots/retrieval-stats.png"><img src="assets/screenshots/retrieval-stats.png" alt="Illustrative AI retrieval statistics with fictional demo values" width="49%"></a>
+</p>
+
+*The images above are illustrative UI previews using fictional data, based on the project's interface design. They are not screenshots captured from a running instance.*
 
 <a id="快速开始"></a>
 
