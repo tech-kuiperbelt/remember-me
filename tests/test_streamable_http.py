@@ -6,6 +6,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import httpx
+import pytest
 from starlette.testclient import TestClient
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
@@ -165,6 +166,39 @@ def test_lan_mode_disables_host_and_origin_checks(tmp_path):
                 assert response.status_code == 405
                 assert response.headers["allow"] == "POST"
     asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("base", ["http://localhost:5263", "http://localhost:5263/"])
+@pytest.mark.parametrize("headers,target", [
+    ({"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}, "/admin/console"),
+    ({"Sec-Fetch-Mode": "navigate"}, "/admin/console"),
+    ({"Accept": "application/xhtml+xml"}, "/admin/console"),
+    ({}, "/readme"),
+    ({"Accept": "application/json"}, "/readme"),
+    ({"Accept": "text/markdown"}, "/readme"),
+])
+def test_root_routes_browser_and_other_clients(tmp_path, base, headers, target):
+    rt = _runtime(tmp_path)
+    with TestClient(create_http_app(rt, port=5263)) as client:
+        response = client.get(base, headers=headers, follow_redirects=False)
+        assert response.status_code == 307
+        assert response.headers["location"] == target
+        assert response.headers["vary"] == "Accept, Sec-Fetch-Mode"
+        assert response.headers["cache-control"] == "no-store"
+        response = client.get(base, headers=headers)
+        assert response.status_code == 200
+        assert response.url.port == 5263
+        assert response.url.path == target
+        assert client.post(base, follow_redirects=False).status_code == 405
+
+
+def test_readme_alias_matches_existing_guide(tmp_path):
+    rt = _runtime(tmp_path)
+    with TestClient(create_http_app(rt, port=5263)) as client:
+        response = client.get("/readme")
+        assert response.status_code == 200
+        assert response.text == client.get("/read-me").text
+        assert "http://127.0.0.1:5263/mcp" in response.text
 
 
 def test_read_me_is_single_page_and_self_references(tmp_path):

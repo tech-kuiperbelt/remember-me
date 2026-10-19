@@ -75,6 +75,8 @@ HTTP endpoints (all share the same service/runtime/provider/storage):
 
 | Endpoint | Transport | Notes |
 |---|---|---|
+| `GET /` | redirect | Browser navigation (`Sec-Fetch-Mode: navigate` or HTML Accept) redirects to `/admin/console`; other clients to `/readme`. Relative redirects preserve the serving host/port. |
+| `GET /readme` | static page | Alias of `/read-me`, used by root discovery redirect. |
 | `GET /sse` + `POST /messages/?session_id=...` | legacy HTTP+SSE | retained for existing clients (e.g. opencode); Codex treats it as legacy |
 | `POST /mcp` | MCP Streamable HTTP | `stateless=True` + `json_response=True`; no `Mcp-Session-Id`; `GET`/`HEAD`/`DELETE`/other methods return `405` with `Allow: POST` (security is checked first); Host/Origin restricted to loopback (`127.0.0.1`/`localhost`) — illegal Host `421`, illegal Origin `403`; with `local_only: false` this DNS-rebinding protection is disabled entirely (no auth, trusted LAN only) |
 | `GET /read-me` | static page | LLM-facing config guide; self-references `http://127.0.0.1:<port>` (port follows `--port`; stays loopback even in LAN mode); read-only, no auth; `503` while closing |

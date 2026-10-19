@@ -19,7 +19,7 @@ import mcp.types as types
 from starlette.applications import Starlette
 from starlette.routing import Route, Mount
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import RedirectResponse, Response
 import uvicorn
 
 from app.service import _prepare_for_llm
@@ -298,8 +298,19 @@ def create_http_app(runtime, *, port=None, local_only=None):
                                 media_type="text/markdown; charset=utf-8")
             await response(request_scope, receive, send)
 
-    app = Starlette(routes=[Route("/sse", SSEEndpoint()),
+    async def root_redirect(request):
+        # Browser navigation advertises HTML; CLI/MCP discovery defaults to the guide.
+        accepts_html = any(part.split(";", 1)[0].strip().lower() in
+                           ("text/html", "application/xhtml+xml")
+                           for part in request.headers.get("accept", "").split(","))
+        browser = request.headers.get("sec-fetch-mode", "").lower() == "navigate" or accepts_html
+        return RedirectResponse("/admin/console" if browser else "/readme", status_code=307,
+                                headers={"Vary": "Accept, Sec-Fetch-Mode", "Cache-Control": "no-store"})
+
+    app = Starlette(routes=[Route("/", root_redirect, methods=["GET"]),
+                            Route("/sse", SSEEndpoint()),
                             Route("/mcp", StreamableHTTPEndpoint()),
+                            Route("/readme", ReadMeEndpoint(), methods=["GET"]),
                             Route("/read-me", ReadMeEndpoint(), methods=["GET"]),
                             Mount("/messages/", app=sse.handle_post_message)] +
                     create_admin_routes(runtime=runtime), lifespan=lifespan)
