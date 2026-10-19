@@ -1,8 +1,19 @@
-# Remember Me
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="web/static/img/brand/logo-dark-128.png">
+    <img src="web/static/img/brand/logo-light-128.png" alt="Remember Me seahorse logo" width="96" height="96">
+  </picture>
+</p>
 
-**Agent-first memory. Human-visible by design.**
+<h1 align="center">Remember Me</h1>
 
-[English](README.md) · [简体中文](README.zh-CN.md)
+<p align="center">
+  <strong>Agent-first memory. Human-visible by design.</strong>
+</p>
+
+<p align="center">
+  <a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a>
+</p>
 
 Remember Me is a **local-first, persistent memory service for AI agents**, built on the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/).
 

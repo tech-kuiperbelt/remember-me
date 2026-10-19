@@ -1,10 +1,21 @@
-# Remember Me
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="web/static/img/brand/logo-dark-128.png">
+    <img src="web/static/img/brand/logo-light-128.png" alt="Remember Me 海马 Logo" width="96" height="96">
+  </picture>
+</p>
 
-**Agent-first memory. Human-visible by design.**
+<h1 align="center">Remember Me</h1>
 
-**以 Agent 为中心构建记忆，让人类始终看得见。**
+<p align="center">
+  <strong>Agent-first memory. Human-visible by design.</strong>
+  <br>
+  <strong>以 Agent 为中心构建记忆，让人类始终看得见。</strong>
+</p>
 
-[English](README.md) · [简体中文](README.zh-CN.md)
+<p align="center">
+  <a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a>
+</p>
 
 Remember Me 是一个面向 AI Agent 的**本地优先持久化记忆服务**，通过 [Model Context Protocol（MCP）](https://modelcontextprotocol.io/) 为 Agent 提供跨会话的记忆能力。
 
