@@ -78,6 +78,8 @@ The standard installation includes the Sentence Transformers runtime. Model weig
 
 ### 2. Start the service
 
+**Default startup**
+
 ```bash
 bash bin/start.sh
 ```
@@ -94,6 +96,25 @@ With the default local address and port:
 | Instructions for agents | `http://127.0.0.1:1314/read-me` |
 | MCP — Streamable HTTP | `http://127.0.0.1:1314/mcp` |
 | MCP — SSE | `http://127.0.0.1:1314/sse` |
+
+**Custom port and data directory**
+
+You can pass startup options directly to `bin/start.sh`:
+
+```bash
+# Use a different HTTP port
+bash bin/start.sh --port 8080
+
+# Choose where configuration, the database, and model caches are stored
+bash bin/start.sh --data-dir /path/to/remember-me-data
+
+# Combine both options
+bash bin/start.sh --port 8080 --data-dir /path/to/remember-me-data
+```
+
+`--port` overrides the saved port for this launch without changing the configuration file. With `--port 8080`, open `http://127.0.0.1:8080/admin/console` and use port `8080` in your MCP client URL as well.
+
+`--data-dir` selects the data directory, including its `config.jsonc`, and takes precedence over `MEMORY_DATA_DIR`. Relative paths are resolved from the project root. Selecting a new directory starts with separate data; it does not move an existing database or model cache.
 
 ### 3. First model download and proxy setup
 

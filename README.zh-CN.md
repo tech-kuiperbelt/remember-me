@@ -78,6 +78,8 @@ python -m pip install -r requirements.txt
 
 ### 2. 启动服务
 
+**默认启动**
+
 ```bash
 bash bin/start.sh
 ```
@@ -94,6 +96,25 @@ bash bin/start.sh
 | 面向 Agent 的配置说明 | `http://127.0.0.1:1314/read-me` |
 | MCP — Streamable HTTP | `http://127.0.0.1:1314/mcp` |
 | MCP — SSE | `http://127.0.0.1:1314/sse` |
+
+**自定义端口和数据目录**
+
+可以直接向 `bin/start.sh` 传入启动参数：
+
+```bash
+# 指定 HTTP 端口
+bash bin/start.sh --port 8080
+
+# 指定配置、数据库和模型缓存所在的数据目录
+bash bin/start.sh --data-dir /path/to/remember-me-data
+
+# 同时指定端口和数据目录
+bash bin/start.sh --port 8080 --data-dir /path/to/remember-me-data
+```
+
+`--port` 仅覆盖本次启动使用的端口，不修改配置文件中的端口。使用 `--port 8080` 时，Web UI 地址为 `http://127.0.0.1:8080/admin/console`，MCP 客户端连接地址中的端口也需改为 `8080`。
+
+`--data-dir` 选择数据目录及其中的 `config.jsonc`，优先级高于 `MEMORY_DATA_DIR` 环境变量。相对路径以项目根目录为基准。选择新目录会使用独立的数据，不会自动搬迁已有数据库或模型缓存。
 
 ### 3. 首次下载模型与代理配置
 
