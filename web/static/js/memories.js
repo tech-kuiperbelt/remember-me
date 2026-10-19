@@ -42,7 +42,7 @@ function resetFilters() {
   $('memories-namespace').focus();
 }
 
-export function mount({openMemory = () => {}, openCreate = () => {}, retryCategories = () => {}, isDetailOpen = () => false, onDetailSelection = () => {}} = {}) {
+export function mount({openMemory = () => {}, openCreate = () => {}, openConfiguration = () => {}, retryCategories = () => {}, isDetailOpen = () => false, onDetailSelection = () => {}} = {}) {
   filters = createMemoriesFilters({root: $('memories-filters'),
     onChange: changes => data.change(changes), onReset: resetFilters, onRetryCategories: retryCategories});
   createMemoriesSearchLayout({bar: document.querySelector('.memories-search-bar'),
@@ -56,6 +56,7 @@ export function mount({openMemory = () => {}, openCreate = () => {}, retryCatego
     onPage: page => data.change({page}, false),
     onPageSize: pageSize => data.change({pageSize}),
     onRetry: () => data.refresh(),
+    onConfigure: openConfiguration,
     onAll: () => data.change({namespace: ''}), onReset: resetFilters, onClearSearch: () => { data.clearSearch(); $('memories-query').focus(); }});
   onDetailSelection(id => view.markRecent(id));
   let savedScroll = null;
@@ -78,7 +79,10 @@ export function mount({openMemory = () => {}, openCreate = () => {}, retryCatego
       if (!isDetailOpen() && document.activeElement === document.body) restoreFocus(focusId);
       focusId = null;
     }
-  });
+  }, {getModelPreparation: () => {
+    const maintenance = getMaintenance();
+    return maintenance?.required_reason === 'model_not_ready' ? maintenance.model || {status: 'waiting'} : null;
+  }});
   $('memories-create').onclick = () => {
     if(getMaintenance()?.state !== 'normal')return;
     filters.close();
@@ -87,7 +91,11 @@ export function mount({openMemory = () => {}, openCreate = () => {}, retryCatego
   $('memories-sort').addEventListener('change', event => data.change({sort: event.target.value}));
   onNamespacesChanged(() => updateFilters());
   onCategoriesChanged(() => updateFilters());
-  onMaintenanceChanged(updateCreate);
+  onMaintenanceChanged(state => {
+    updateCreate();
+    if (state?.required_reason === 'model_not_ready' ||
+        (data.snapshot().status === 'model_pending' && state?.model?.ready && !state.required_reason)) data.refresh();
+  });
   onMemoriesChanged(change => { if (change?.deletedId) view.clearRecent(change.deletedId); data.refresh(); });
   updateFilters(); updateCreate();
 }

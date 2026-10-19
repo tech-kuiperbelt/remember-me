@@ -1,5 +1,5 @@
 // Safe memory row and page rendering. All data/actions arrive through callbacks.
-import { deriveSummary, formatTime } from './core.js';
+import { deriveSummary, formatTime, formatBytes } from './core.js';
 import { createMemoryIcon } from './memory-icons.js';
 import { t } from './i18n.js';
 
@@ -27,7 +27,7 @@ function displayDate(stamp) {
   return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
 }
 
-export function createMemoriesList({root, pagination, count, onOpen, onPage, onPageSize, onRetry, onAll, onReset, onClearSearch}) {
+export function createMemoriesList({root, pagination, count, onOpen, onPage, onPageSize, onRetry, onConfigure, onAll, onReset, onClearSearch}) {
   let recentId = null, layouts = [], frame = null;
   const widths = new WeakMap();
   const observer = new ResizeObserver(entries => {
@@ -206,8 +206,24 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
         }
       }
     }
-    count.textContent = state.status === 'ready' ? (searching ? t('memories.count.search', {total: state.total, k: state.k}) : t('memories.count.browse', {total: state.total})) : state.status === 'error' ? t('memories.count.error') : t('memories.count.loading');
-    if (state.status === 'loading' || state.status === 'idle') {
+    count.textContent = state.status === 'ready' ? (searching ? t('memories.count.search', {total: state.total, k: state.k}) : t('memories.count.browse', {total: state.total})) : state.status === 'model_pending' ? t('memories.count.preparing') : state.status === 'error' ? t('memories.count.error') : t('memories.count.loading');
+    if (state.status === 'model_pending') {
+      const model = state.model || {}, pending = el('div', 'memory-state');
+      pending.setAttribute('role', 'status');
+      const labels = {waiting: 'model.waiting', downloading: 'model.downloading', validating: 'model.validating', cancelling: 'model.cancelling', failed: 'model.failed'};
+      pending.append(el('p', '', t(labels[model.status] || 'memories.count.preparing')),
+        el('p', '', t(model.status === 'failed' ? 'memories.model.failed' : 'memories.model.waiting')));
+      if (['downloading', 'validating', 'cancelling'].includes(model.status)) {
+        const progress = el('progress'); progress.max = 100;
+        progress.setAttribute('aria-label', t('ops.model.progress.aria'));
+        if (Number.isFinite(model.percent)) progress.value = model.percent;
+        pending.append(progress);
+        if (model.total) pending.append(el('p', '', t('model.progress.detail', {
+          file: model.file || t('model.progress.file'), completed: formatBytes(model.completed || 0),
+          total: formatBytes(model.total), percent: Number.isFinite(model.percent) ? ' (' + model.percent.toFixed(1) + '%)' : ''})));
+      }
+      pending.append(button(t('memories.model.configure'), onConfigure)); root.append(pending);
+    } else if (state.status === 'loading' || state.status === 'idle') {
       const skeleton = el('div', 'memory-skeletons'); skeleton.setAttribute('aria-label', t('memories.list.loading.aria'));
       for (let i = 0; i < 5; i++) skeleton.append(el('div', 'memory-skeleton'));
       root.append(skeleton);

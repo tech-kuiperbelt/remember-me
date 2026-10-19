@@ -5,7 +5,7 @@ async function runMemoriesAcceptanceRegression() {
   const query = value => { $('memories-query').value = value; fire($('memories-query'), 'input'); };
   const action = label => { if(label==='Delete') { $('detail-more').click(); $('detail-delete').click(); $('detail-confirm-delete').click(); } else $(label==='Save'?'detail-save':label==='Cancel'?'detail-cancel':label==='Close'?'btn-detail-close':'detail-edit').click(); };
   const normal = {state:'normal',action:null,required_reason:null,model:{status:'ready',ready:true}};
-  let maintenance = normal, readError = null, writeError = false, invalid = null, pending = null;
+  let maintenance = normal, readError = null, readErrorCode = 'maintenance_mode', writeError = false, invalid = null, pending = null;
   let rows = Array.from({length:21}, (_, i) => ({id:'accept-' + i, text:'Acceptance ' + i,
     summary:'Acceptance ' + i, namespace:'a', metadata:{categories:['design'],keywords:['cache']},
     score:1 - i / 100, created_at:'2026-01-01T00:00:00Z', updated_at:'2026-02-01T00:00:00Z'}));
@@ -20,10 +20,10 @@ async function runMemoriesAcceptanceRegression() {
     if (url === '/api/maintenance') return maintenance ? json(maintenance) : Promise.reject(Error('status unavailable'));
     if (url === '/api/memories/search') {
       if (pending) return new Promise(resolve => { const receive = pending; pending = null; receive(resolve); });
-      if (readError) return json({detail:readError,response_code:'maintenance_mode'},503);
+      if (readError) return json({detail:readError,response_code:readErrorCode},503);
       return json(invalid || {items:rows,filter_resolution:null});
     }
-    if (url.startsWith('/api/memories/page?') && readError) return json({detail:readError},503);
+    if (url.startsWith('/api/memories/page?') && readError) return json({detail:readError,response_code:readErrorCode},503);
     if (url.startsWith('/api/memories/accept-')) {
       const id = url.split('/').pop(), row = records.get(id);
       if (['PUT','DELETE'].includes(init?.method)) {
@@ -88,6 +88,31 @@ async function runMemoriesAcceptanceRegression() {
       readError=null; [...$('memories-list').querySelectorAll('button')].find(b=>b.textContent===t('memories.retry')).click(); await ready();
       assert($('memories-list').querySelector('.memory-row'),'read retry restores search');
     }
+    // A model-not-ready response can precede the next maintenance poll.
+    const ops = await import('/admin/console/static/js/ops.js');
+    readError='Model is not ready. Configure proxy and retry at /admin/console'; readErrorCode='model_not_ready';
+    $('btn-refresh').click(); await ready();
+    assert($('memories-count').textContent===t('memories.count.preparing')
+      && !$('memories-list').textContent.includes('Error:'),'cache miss waits instead of reporting an error');
+    maintenance={...normal,state:'maintenance',required_reason:'model_not_ready',model:{status:'downloading',ready:false,file:'weights.bin',completed:40,total:100,percent:40}};
+    S.resetCalls(); await ops.refreshMaintenance();
+    assert($('memories-list').textContent.includes(t('model.downloading'))
+      && $('memories-list').querySelector('progress').value===40,'download progress shown in Memories');
+    $('btn-refresh').click(); await ready();
+    assert(!searchCalls().length,'no memory requests while model preparation is known');
+    assert($('memories-query').value==='acceptance' && $('memories-namespace').value==='a','preparation preserves search and scope');
+    maintenance={...maintenance,model:{status:'validating',ready:false}}; await ops.refreshMaintenance();
+    assert($('memories-list').textContent.includes(t('model.validating'))
+      && !$('memories-list').querySelector('progress').hasAttribute('value'),'validation progress stays indeterminate');
+    maintenance={...maintenance,model:{status:'failed',ready:false,error:'download failed'}}; await ops.refreshMaintenance();
+    assert($('memories-list').textContent.includes(t('memories.model.failed')),'preparation failure explains how to retry');
+    [...$('memories-list').querySelectorAll('button')].find(b=>b.textContent===t('memories.model.configure')).click();
+    await waitFor(()=>$('page-ops').classList.contains('active'),'configuration link');
+    $('nav-memories').click(); await ready();
+    readError=null; readErrorCode='maintenance_mode'; maintenance={...normal,state:'maintenance'};
+    await ops.refreshMaintenance();
+    await waitFor(()=>$('memories-list').querySelector('.memory-row'),'model readiness automatically reloads search');
+    assert($('memories-query').value==='acceptance' && $('memories-namespace').value==='a','automatic reload preserves search and scope');
     maintenance=null; await waitFor(()=>$('btn-status').textContent===t('status.unavailable'),'unavailable status');
     $('btn-refresh').click(); await ready(); assert($('memories-list').querySelector('.memory-row'),'status outage does not gate working search');
     for (const broken of [[], {items:[{...rows[0],score:'invalid'}],filter_resolution:null},

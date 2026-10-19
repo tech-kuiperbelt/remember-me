@@ -115,6 +115,7 @@ def _missing_cached_model(exc):
         if isinstance(exc, (OSError, ValueError)) and any(marker in message for marker in (
             "from any source", "local_files_only=true", "couldn't find them in the cached files",
             "cannot find the requested files in the disk cache", "not found in the cached files",
+            "does not appear to have a file named pytorch_model.bin or model.safetensors",
         )):
             return True
         exc = exc.__cause__ or exc.__context__

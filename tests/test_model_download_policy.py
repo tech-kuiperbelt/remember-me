@@ -9,7 +9,7 @@ import pytest
 import requests
 
 from app.config.configuration import Configuration, PROXY_VARIABLES
-from app.embedding.embed import EmbeddingError, OllamaEmbedder, create_embedder
+from app.embedding.embed import EmbeddingError, ModelCacheMissing, OllamaEmbedder, create_embedder
 from app.cli.config_migrate import migrate
 from tests.test_configuration import legacy_layout
 
@@ -126,6 +126,39 @@ def test_provider_cache_first_and_manual_download_override(
     else:
         result = create_embedder(environment=env, allow_download=manual)
         assert result.spec.model == "test/model"
+    assert attempts == expected
+
+
+@pytest.mark.parametrize("automatic,manual,cache_only,expected", [
+    (True, False, False, [True, False]),
+    (False, False, False, [True]),
+    (False, True, False, [True, False]),
+    (True, False, True, [True]),
+])
+def test_partial_weight_cache_obeys_download_policy(
+        monkeypatch, tmp_path, automatic, manual, cache_only, expected):
+    attempts = []
+
+    class Model:
+        def __init__(self, model, **kwargs):
+            attempts.append(kwargs["local_files_only"])
+            if kwargs["local_files_only"]:
+                raise OSError(
+                    f"{model} does not appear to have a file named "
+                    "pytorch_model.bin or model.safetensors."
+                )
+
+        def get_sentence_embedding_dimension(self):
+            return 1024
+
+    monkeypatch.setitem(sys.modules, "sentence_transformers", SimpleNamespace(SentenceTransformer=Model))
+    (tmp_path / "config.jsonc").write_text(json.dumps({"auto_download_model": automatic}))
+    env = Configuration.load(tmp_path).runtime_environment({"EMBED_PROVIDER": "sentence_transformers"})
+    if expected == [True]:
+        with pytest.raises(ModelCacheMissing):
+            create_embedder(environment=env, allow_download=manual, cache_only=cache_only)
+    else:
+        assert create_embedder(environment=env, allow_download=manual).spec.dimension == 1024
     assert attempts == expected
 
 

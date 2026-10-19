@@ -27,6 +27,7 @@ function mountAll() {
   detail.mount({retryCategories: stats.loadStats});
   setLeaveGuard(detail.requestLeave);
   memories.mount({
+    openConfiguration: () => switchPage('ops'),
     openMemory: detail.openMemory, openCreate: detail.openCreate, isDetailOpen: detail.isOpen, onDetailSelection: detail.onSelectionChanged, retryCategories: stats.loadStats });
   stats.mount({onDrilldown: (dimension, value, namespace) => {
     switchPage('memories', () => memories.prepareMetadataDrilldown(dimension, value, namespace));

@@ -19,12 +19,12 @@ function validateSearch(response) {
   }
 }
 
-export function createMemoriesData(onChange) {
+export function createMemoriesData(onChange, {getModelPreparation = () => null} = {}) {
   const state = {inputQuery: '', submittedQuery: '', namespace: '', categories: [], keywords: [],
     browseSort: 'updated_at', searchMode: 'semantic', page: 1, pageSize: 20,
     searchParams: {semantic: {k: 10, threshold: 0}, lexical: {k: 10, minScore: null}, anchor: {k: 10, minScore: null}},
     updatedAfter: '', updatedBefore: '', items: [], total: 0, totalKind: 'exact', filterResolution: null,
-    status: 'idle', error: null};
+    status: 'idle', error: null, model: null};
   let version = 0, collection = [];
   const searching = () => Boolean(state.submittedQuery);
   const snapshot = () => ({...state, sort: searching() ? 'relevance' : state.browseSort,
@@ -32,6 +32,11 @@ export function createMemoriesData(onChange) {
     searchParams: Object.fromEntries(Object.entries(state.searchParams).map(([mode, params]) => [mode, {...params}])),
     categories: [...state.categories], keywords: [...state.keywords], items: [...state.items]});
   const emit = () => onChange(snapshot());
+  function preparing(model) {
+    state.status = 'model_pending'; state.model = model;
+    state.error = null; state.items = []; state.total = 0; state.filterResolution = null;
+    collection = []; emit();
+  }
   function localPage() {
     const items = collection;
     state.total = items.length;
@@ -40,6 +45,9 @@ export function createMemoriesData(onChange) {
   }
   async function refresh() {
     const request = ++version, query = snapshot();
+    const model = getModelPreparation();
+    if (model) { preparing(model); return; }
+    state.model = null;
     state.status = 'loading'; state.error = null; state.items = []; state.filterResolution = null;
     state.totalKind = searching() ? 'top_k_results' : 'exact'; collection = []; emit();
     try {
@@ -81,6 +89,9 @@ export function createMemoriesData(onChange) {
       state.status = 'ready'; emit();
     } catch (error) {
       if (request !== version) return;
+      if (error.payload?.response_code === 'model_not_ready') {
+        preparing(getModelPreparation() || {status: 'waiting'}); return;
+      }
       state.status = 'error'; state.error = error; emit();
     }
   }
