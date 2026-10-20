@@ -546,3 +546,22 @@ def test_migrate_copies_independent_links_to_same_directory(tmp_path):
             environment={MODEL_DIR_ENV: str(assets / "model")})
     assert (target / "assets" / "one" / "a.txt").read_text() == "a"
     assert (target / "assets" / "two" / "a.txt").read_text() == "a"
+
+
+def test_rollback_does_not_delete_through_changed_symlink(tmp_path):
+    from app.cli.config_migrate import _rollback
+    project = tmp_path / "project"
+    target = project / "data"
+    precious = target / "precious"
+    (precious / "docs").mkdir(parents=True)
+    (precious / "docs" / "keep.txt").write_text("keep")
+    (target / "assets").symlink_to(precious)
+    state = {
+        "project_root": str(project),
+        "old_env": None,
+        "old_config": None,
+        "config_file": "config.jsonc",
+        "published": [str(target / "assets" / "docs")],
+    }
+    _rollback(state, project, target)
+    assert (precious / "docs" / "keep.txt").read_text() == "keep"

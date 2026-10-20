@@ -2,6 +2,7 @@
 from contextlib import ExitStack
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -14,6 +15,8 @@ from app.config.configuration import (Configuration, DEFAULTS, MODEL_DIR_ENV, PA
                             PROJECT_ROOT, atomic_json, atomic_config, rooted_path,
                             default_data_dir, model_dir_is_explicit, resolve_model_dir)
 from app.storage.database_lock import DatabaseWriterLock
+
+logger = logging.getLogger("config_migrate")
 
 
 def _digest(path):
@@ -69,7 +72,15 @@ def _rollback(state, project_root, target_root):
         else:
             _atomic_text(path, original)
     for destination in reversed(state["published"]):
-        path = rooted_path(target_root, destination)
+        try:
+            path = rooted_path(target_root, destination)
+        except (ValueError, OSError):
+            # The tree changed underneath us; never delete through it.
+            continue
+        if path != Path(destination):
+            # A component was replaced by a link after publishing; deleting the
+            # resolved location could remove unrelated data.
+            continue
         if path.is_dir():
             shutil.rmtree(path)
         else:
@@ -433,9 +444,12 @@ def migrate(data_dir=None, source_data_dir=None, *, model_dir=None, dry_run=Fals
                 revalidate_destination(destination)
                 if destination.exists():
                     raise ValueError(f"Migration target appeared: {destination}")
+                # Record only a destination that still resolves to itself. A
+                # changed entry must never enter the rollback set, or rollback
+                # could delete through the replacement link.
+                revalidate_destination(destination)
                 state["published"].append(str(destination))
                 atomic_json(journal, state)
-                revalidate_destination(destination)
                 os.replace(temporary, destination)
             # Preserve all provider parameters; replace only application path settings.
             keys = set(path_updates) | strip_keys
@@ -451,8 +465,13 @@ def migrate(data_dir=None, source_data_dir=None, *, model_dir=None, dry_run=Fals
             state["phase"] = "committed"
             atomic_json(journal, state)
         except BaseException:
-            _rollback(state, project_root, target_root)
-            journal.unlink(missing_ok=True)
+            try:
+                _rollback(state, project_root, target_root)
+            except BaseException:
+                # Keep the journal for recovery; never mask the original error.
+                logger.exception("migration rollback failed; journal retained")
+            else:
+                journal.unlink(missing_ok=True)
             raise
         else:
             journal.unlink()
