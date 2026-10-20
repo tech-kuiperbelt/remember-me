@@ -340,7 +340,7 @@ try:
             ok, output = check(proc)
             print(('PASS ' if ok else 'FAIL ') + label + ' -> ' + str(shot) + ('' if ok else ' :: ' + output), flush=True)
             if not ok: failures.append(label)
-        ops_cases = [('ops-functional', '1440,1000', 'light'), ('ops-restart', '1440,900', 'light'), ('ops-shutdown', '1440,900', 'light'), ('ops-restart-timeout', '1440,900', 'light')]
+        ops_cases = [('ops-functional', '1440,1000', 'light'), ('ops-model-stall', '1440,1000', 'light'), ('ops-restart', '1440,900', 'light'), ('ops-shutdown', '1440,900', 'light'), ('ops-restart-timeout', '1440,900', 'light')]
         ops_cases += [('ops-layout-sidebar-390-maintenance-light', '390,1000', 'light'), ('ops-expanded-390-dark', '390,1000', 'dark'), ('ops-confirm-layout-390-light', '390,844', 'light')]
         ops_cases += [(f'ops-layout-{width}-{tab}-{scheme}', f'{width},1000', scheme) for width in (1440,1024,390) for tab in ('settings','maintenance') for scheme in ('light','dark')]
         for label, size, scheme in ops_cases:

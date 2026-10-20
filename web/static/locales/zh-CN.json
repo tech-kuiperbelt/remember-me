@@ -39,6 +39,8 @@
   "model.progress.detail": "{file}：{completed} / {total}{percent}",
   "model.progress.file": "当前文件",
   "model.progress.unknown": "总量尚未确定，请等待模型准备。",
+  "model.progress.networkHint": "模型下载暂时没有进展，可能正在等待网络响应。如无法访问 Hugging Face，请检查网络或 HTTP/HTTPS 代理设置。",
+  "model.progress.configureProxy": "配置代理",
   "memories.title": "记忆",
   "memories.searchMode.aria": "搜索模式",
   "memories.mode.semantic": "语义",

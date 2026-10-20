@@ -35,6 +35,42 @@ async function runOpsRegression(scenario) {
   const file=id=>{const dt=new DataTransfer();dt.items.add(new File(['{}\n'],'backup.jsonl'));$(id).files=dt.files;fire($(id),'change');};
   const setState=async value=>{snapshot=value;await ops.refreshMaintenance();};
   const code=async()=>{await waitFor(()=>$('clear-modal').style.display==='flex','confirmation');input('clear-confirm-input',$('clear-confirm-code').textContent);$('btn-clear-confirm').click();};
+  if(scenario==='ops-model-stall') {
+    const descriptor=Object.getOwnPropertyDescriptor(performance,'now');
+    let clock=0;
+    Object.defineProperty(performance,'now',{configurable:true,value:()=>clock});
+    const hint=$('model-network-hint');
+    const downloading={...ready,required_reason:'model_not_ready',model:{status:'downloading',ready:false,completed:0,total:null,file:''}};
+    try {
+      $('ops-tab-maintenance').click();
+      await setState(downloading);assert(hint.hidden,'no immediate network hint');
+      clock=14999;await setState(downloading);assert(hint.hidden,'wait full threshold');
+      clock=15000;await setState(downloading);assert(!hint.hidden,'unknown total and zero bytes show hint');
+      assert(hint.querySelector('p').textContent===S.t('model.progress.networkHint'),'translated network hint');
+      assert($('model-configure-proxy').textContent===S.t('model.progress.configureProxy'),'translated proxy button');
+      $('model-configure-proxy').click();
+      assert(!$('ops-settings').hidden&&document.activeElement===$('model-proxy-enabled'),'proxy shortcut switches tab and focuses');
+      assert(!$('model-proxy-enabled').checked&&saved.length===0,'shortcut does not change or save proxy');
+      const transfer={...downloading,model:{...downloading.model,completed:10,total:100,file:'weights'}};
+      await setState(transfer);assert(hint.hidden,'progress hides hint');
+      clock+=15000;await setState(transfer);assert(!hint.hidden,'stalled transfer shows hint');
+      const nextFile={...transfer,model:{...transfer.model,file:'tokenizer'}};
+      await setState(nextFile);assert(hint.hidden,'file switch resets threshold');
+      clock+=15000;await setState(nextFile);assert(!hint.hidden,'next file can stall');
+      await setState({...nextFile,model:{...nextFile.model,completed:0}});assert(hint.hidden,'counter reset hides hint');
+      for(const phase of ['waiting','validating','failed','cancelling','ready']) {
+        await setState({...downloading,model:{status:phase,ready:phase==='ready'}});
+        assert(hint.hidden,phase+' hides hint');
+      }
+      await setState(downloading);assert(hint.hidden,'new download starts a fresh threshold');
+      clock+=15000;await setState(downloading);assert(!hint.hidden,'hint appears again');
+      down=true;await ops.refreshMaintenance();assert(hint.hidden,'API failure clears hint');
+      down=false;await setState(downloading);assert(hint.hidden,'reconnect starts fresh');
+      result.textContent='PASS: '+scenario;return;
+    }finally{
+      if(descriptor)Object.defineProperty(performance,'now',descriptor);else delete performance.now;
+    }
+  }
   if(scenario.includes('confirm-layout')) {
     $('ops-tab-maintenance').click();await setState(ready);$('ops-recover').open=true;file('recover-file');$('btn-recover').click();
     await waitFor(()=>$('clear-modal').style.display==='flex','responsive confirmation');

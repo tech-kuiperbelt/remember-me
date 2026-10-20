@@ -39,6 +39,8 @@
   "model.progress.detail": "{file}: {completed} / {total}{percent}",
   "model.progress.file": "current file",
   "model.progress.unknown": "Total size not yet known; waiting for model preparation.",
+  "model.progress.networkHint": "Model download has shown no recent progress and may be waiting for a network response. If Hugging Face is unreachable, check your network or HTTP/HTTPS proxy settings.",
+  "model.progress.configureProxy": "Configure proxy",
   "memories.title": "Memories",
   "memories.searchMode.aria": "Search mode",
   "memories.mode.semantic": "Semantic",

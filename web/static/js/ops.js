@@ -9,6 +9,7 @@ import { t } from './i18n.js';
 
 let status=deriveStatus(null), config, busy=null, job=null, power=null, pollVersion=0, reconnecting=false;
 let namespaceCounts={}, maintenanceRequest=null, needsRegistry=false;
+let downloadObservation=null;
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const gates={enter:'enter',exit:'exit',retry:'retryModel',sync:'sync',restart:'restartShutdown',shutdown:'restartShutdown'};
 const controls={enter:'btn-maintenance-enter',exit:'btn-maintenance-exit',retry:'btn-model-retry',sync:'btn-sync',restart:'btn-restart',shutdown:'btn-shutdown',import:'btn-import',recover:'btn-recover',clear:'btn-clear',migrate:'btn-migrate',exportFull:'btn-export-full',exportNamespace:'btn-export-ns'};
@@ -67,7 +68,19 @@ export function refreshMaintenance() {
   return maintenanceRequest;
 }
 
+function resetDownloadHint() {
+  downloadObservation=null;
+  $('model-network-hint').hidden=true;
+}
+function renderDownloadHint(model) {
+  if(model?.status!=='downloading'||model.ready){resetDownloadHint();return;}
+  const now=performance.now(), completed=model.completed||0, file=model.file||'';
+  if(!downloadObservation||downloadObservation.completed!==completed||downloadObservation.file!==file)
+    downloadObservation={completed,file,since:now};
+  $('model-network-hint').hidden=now-downloadObservation.since<15000;
+}
 function renderModelStatus(model) {
+  renderDownloadHint(model);
   const labels={waiting:t('model.waiting'),downloading:t('model.downloading'),validating:t('model.validating'),ready:t('model.ready'),failed:t('model.failed'),cancelling:t('model.cancelling')};
   $('model-status').textContent=model?(labels[model.status]||model.status):t('model.unavailable');
   $('model-progress-area').hidden=!model||!!model.ready;
@@ -194,7 +207,8 @@ function exportMemories(full) {
 }
 function sync() {return run('sync','sync-result',async()=>{const r=await api('/sync',{method:'POST'});if(r.error)throw new Error(r.error);message('sync-result',t('ops.sync.result',{count:r.synced??'—',errors:r.errors??'—'}));emitStatsChanged();});}
 function maintenance(enter) {return run(enter?'enter':'exit','maintenance-result',async()=>{await api('/maintenance/'+(enter?'enter':'exit'),{method:'POST'});message('maintenance-result',enter?t('ops.maintenance.entered'):t('ops.maintenance.exited'));});}
-function retryModel(){return run('retry','model-retry-result',async()=>{await api('/model/retry',{method:'POST'});message('model-retry-result',t('ops.model.requested'));});}
+function requestModelRetry(){resetDownloadHint();return api('/model/retry',{method:'POST'});}
+function retryModel(){return run('retry','model-retry-result',async()=>{await requestModelRetry();message('model-retry-result',t('ops.model.requested'));});}
 
 function addressHint() {
   const c=config.config();if(!c)return;
@@ -222,6 +236,7 @@ async function reconnect() {
 }
 function controlServer(restart) {
   return run(restart?'restart':'shutdown','restart-result',async()=>{
+    resetDownloadHint();
     try{await api(restart?'/restart':'/shutdown',{method:'POST'});}
     catch(e){throw new Error(t('ops.error.resultUnknown',{error:e.message}));}
     power=restart?'restart':'shutdown';++pollVersion;
@@ -245,11 +260,16 @@ function cardIcons() {
   });
 }
 export function mount() {
-  config=createConfiguration({available:()=>status.kind!=='unavailable'&&!busy&&!job&&!power,refresh:refreshMaintenance,changed:applyControls,retryModel:()=>api('/model/retry',{method:'POST'})});
+  config=createConfiguration({available:()=>status.kind!=='unavailable'&&!busy&&!job&&!power,refresh:refreshMaintenance,changed:applyControls,retryModel:requestModelRetry});
   cardIcons();onNamespacesChanged(updateNamespaces);
   for(const name of ['settings','maintenance'])$('ops-tab-'+name).onclick=()=>selectTab(name);
   $('ops-tabs').onkeydown=e=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){e.preventDefault();selectTab(e.key==='Home'?'settings':e.key==='End'?'maintenance':$('ops-settings').hidden?'settings':'maintenance',true);}};
   $('config-open-maintenance').onclick=()=>selectTab('maintenance',true);
+  $('model-configure-proxy').onclick=()=>{
+    selectTab('settings');
+    $('model-proxy-enabled').scrollIntoView({block:'center'});
+    $('model-proxy-enabled').focus({preventScroll:true});
+  };
   const actions={enter:()=>maintenance(true),exit:()=>maintenance(false),retry:retryModel,sync,restart:()=>controlServer(true),shutdown:()=>controlServer(false),import:importMemories,recover,clear:clearMemories,migrate,exportFull:()=>exportMemories(true),exportNamespace:()=>exportMemories(false)};
   for(const [kind,id] of Object.entries(controls))$(id).onclick=actions[kind];
   $('ops-maintenance').addEventListener('input',applyControls);$('ops-maintenance').addEventListener('change',applyControls);
