@@ -227,10 +227,23 @@ def migrate(data_dir=None, source_data_dir=None, *, model_dir=None, dry_run=Fals
             # local-path form; an absolute path is the fallback for the root itself.
             path_updates[key] = f"./{relative}" if relative not in ("", ".") else str(resolved)
     def resolved(path):
+        """Resolve a path, turning resolution failures into an actionable error."""
         try:
             return path.resolve()
-        except OSError:
-            return path
+        except (OSError, RuntimeError) as exc:
+            raise ValueError(f"Cannot resolve {path} during migration: {exc}") from exc
+
+    def validated_destination(relative):
+        """Absolute, contained destination for a target-root-relative path."""
+        return rooted_path(target_root, str(relative))
+
+    def revalidate_destination(destination):
+        """Abort if an existing component no longer resolves to the same place."""
+        checked = rooted_path(target_root, str(destination))
+        if checked != destination:
+            raise ValueError(
+                f"Migration destination changed before publishing: "
+                f"{destination} -> {checked}")
 
     def in_model_tree(path):
         target = resolved(path)
@@ -260,45 +273,55 @@ def migrate(data_dir=None, source_data_dir=None, *, model_dir=None, dry_run=Fals
         return (target == selected_model or target.is_relative_to(selected_model)
                 or contains_model_alias(path))
 
-    def selective_mapping(source, destination):
+    def selective_mapping(source, destination_relative):
         """Map a tree while excluding the model tree and preserving other data.
 
         Traversal and copying share one rule: every child is judged by its
-        resolved path. Non-model symlinks are dereferenced like
-        ``copytree(..., symlinks=False)``; model aliases are skipped; unreadable
-        entries and broken links are reported instead of silently omitted.
+        resolved path, every destination goes through ``rooted_path``, and the
+        active traversal chain rejects directory cycles. Non-model symlinks are
+        dereferenced like ``copytree(..., symlinks=False)``; model aliases are
+        skipped; unreadable entries and broken links are reported.
         """
         result = {}
+        active = set()
 
-        def build(path, dest):
+        def build(path, dest_relative):
+            real = resolved(path)
+            if real in active:
+                raise ValueError(
+                    f"Symlink cycle in data directory: {path} resolves back to {real}")
+            active.add(real)
             try:
-                children = list(path.iterdir())
-            except OSError as exc:
-                raise ValueError(f"Cannot read {path} during migration: {exc}") from exc
-            for child in children:
-                if in_model_tree(child):
-                    continue
-                child_dest = dest / child.name
-                if child.is_symlink():
-                    if not child.exists():
-                        raise ValueError(f"Broken symlink in data directory: {child}")
-                    if child.is_dir():
-                        target = resolved(child)
-                        if needs_selective(target):
-                            build(target, child_dest)
+                try:
+                    children = list(path.iterdir())
+                except OSError as exc:
+                    raise ValueError(f"Cannot read {path} during migration: {exc}") from exc
+                for child in children:
+                    if in_model_tree(child):
+                        continue
+                    child_relative = str(Path(dest_relative) / child.name)
+                    if child.is_symlink():
+                        if not child.exists():
+                            raise ValueError(f"Broken symlink in data directory: {child}")
+                        if child.is_dir():
+                            target = resolved(child)
+                            if needs_selective(target):
+                                build(target, child_relative)
+                            else:
+                                result[validated_destination(child_relative)] = target
                         else:
-                            result[child_dest] = target
+                            result[validated_destination(child_relative)] = child
+                    elif child.is_dir():
+                        if needs_selective(child):
+                            build(child, child_relative)
+                        else:
+                            result[validated_destination(child_relative)] = child
                     else:
-                        result[child_dest] = child
-                elif child.is_dir():
-                    if needs_selective(child):
-                        build(child, child_dest)
-                    else:
-                        result[child_dest] = child
-                else:
-                    result[child_dest] = child
+                        result[validated_destination(child_relative)] = child
+            finally:
+                active.discard(real)
 
-        build(source, destination)
+        build(source, destination_relative)
         return result
 
     # Exclude the model tree only when it is not the data root itself (or an
@@ -314,7 +337,7 @@ def migrate(data_dir=None, source_data_dir=None, *, model_dir=None, dry_run=Fals
             if exclude_model_tree and source.name == "models":
                 # The legacy in-data models directory is intentionally left in place.
                 continue
-            destination = rooted_path(target_root, source.name)
+            destination = validated_destination(source.name)
             if exclude_model_tree:
                 if in_model_tree(source):
                     # Exclude the selected model root by resolved path, including
@@ -323,9 +346,14 @@ def migrate(data_dir=None, source_data_dir=None, *, model_dir=None, dry_run=Fals
                 if needs_selective(source):
                     # The model root or an alias to it is nested somewhere in this
                     # entry: copy siblings but not the model subtree.
-                    mappings.update(selective_mapping(source, destination))
+                    mappings.update(selective_mapping(source, source.name))
                     continue
-            mappings.setdefault(destination, source)
+            if source.is_symlink() and source.is_dir():
+                # Dereference non-model directory links consistently with the
+                # selective path so planning, copying and verification agree.
+                mappings.setdefault(destination, resolved(source))
+            else:
+                mappings.setdefault(destination, source)
     old_logs = project_root / "logs"
     if old_logs.exists() and old_logs.resolve() != target_root / "logs" and not (
             has_source_config and (source_root / "logs").exists()):
@@ -341,6 +369,13 @@ def migrate(data_dir=None, source_data_dir=None, *, model_dir=None, dry_run=Fals
                     raise ValueError(f"Overlapping migration targets: {parent}, {destination}")
                 mappings.pop(destination, None)
                 break
+    # Re-check every destination before preview or any write. An existing
+    # symlink component must not redirect the migration outside the target root.
+    for destination in mappings:
+        checked = rooted_path(target_root, str(destination))
+        if checked != destination:
+            raise ValueError(
+                f"Migration destination resolves outside or changed: {destination} -> {checked}")
     conflicts = [str(path) for path in mappings if path.exists()]
     preview = {"config": str(location), "source_data_dir": str(source_root),
                "target_data_dir": str(target_root), "copies": [
@@ -390,11 +425,17 @@ def migrate(data_dir=None, source_data_dir=None, *, model_dir=None, dry_run=Fals
                         os.fsync(stream.fileno())
                 staged[destination] = temporary
             for destination, temporary in staged.items():
+                # Re-check the destination (and its parents) before creating
+                # directories and again immediately before publishing. A link
+                # introduced after planning must abort, not redirect the write.
+                revalidate_destination(destination)
                 destination.parent.mkdir(parents=True, exist_ok=True)
+                revalidate_destination(destination)
                 if destination.exists():
                     raise ValueError(f"Migration target appeared: {destination}")
                 state["published"].append(str(destination))
                 atomic_json(journal, state)
+                revalidate_destination(destination)
                 os.replace(temporary, destination)
             # Preserve all provider parameters; replace only application path settings.
             keys = set(path_updates) | strip_keys

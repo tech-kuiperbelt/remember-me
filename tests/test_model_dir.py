@@ -461,3 +461,88 @@ def test_migrate_reports_broken_symlink_in_selective_tree(tmp_path):
     with pytest.raises(ValueError, match="Broken symlink"):
         migrate(tmp_path / "new-data", source, dry_run=True, project_root=project,
                 environment={MODEL_DIR_ENV: str(assets / "model")})
+
+
+def test_migrate_rejects_target_symlink_escape(tmp_path):
+    from app.cli.config_migrate import migrate
+    project, source, _ = _migration_layout(tmp_path)
+    assets = source / "assets"
+    (assets / "model").mkdir(parents=True)
+    (assets / "model" / "w.bin").write_bytes(b"w")
+    (assets / "docs").mkdir(parents=True)
+    (assets / "docs" / "readme.txt").write_text("x")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    target = tmp_path / "new-data"
+    (target / "assets").mkdir(parents=True)
+    (target / "assets" / "docs").symlink_to(outside)
+    env = {MODEL_DIR_ENV: str(assets / "model")}
+
+    for dry in (True, False):
+        with pytest.raises(ValueError, match="outside data_dir"):
+            migrate(target, source, dry_run=dry, project_root=project, environment=env)
+    assert list(outside.iterdir()) == []
+
+
+def test_migrate_rejects_target_dangling_symlink(tmp_path):
+    from app.cli.config_migrate import migrate
+    project, source, _ = _migration_layout(tmp_path)
+    assets = source / "assets"
+    (assets / "model").mkdir(parents=True)
+    (assets / "model" / "w.bin").write_bytes(b"w")
+    (assets / "docs").mkdir(parents=True)
+    (assets / "docs" / "readme.txt").write_text("x")
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    # Any symlink forces per-file selective traversal, so the target file path
+    # itself is validated (not just its parent directory).
+    (assets / "docs" / "alias").symlink_to(shared)
+    target = tmp_path / "new-data"
+    (target / "assets" / "docs").mkdir(parents=True)
+    (target / "assets" / "docs" / "readme.txt").symlink_to(tmp_path / "outside" / "missing")
+    with pytest.raises(ValueError, match="outside data_dir"):
+        migrate(target, source, dry_run=True, project_root=project,
+                environment={MODEL_DIR_ENV: str(assets / "model")})
+
+
+def test_migrate_reports_source_symlink_cycle(tmp_path):
+    from app.cli.config_migrate import migrate
+    project, source, _ = _migration_layout(tmp_path)
+    assets = source / "assets"
+    (assets / "model").mkdir(parents=True)
+    (assets / "model" / "w.bin").write_bytes(b"w")
+    (assets / "back").symlink_to(assets)
+    with pytest.raises(ValueError, match="Symlink cycle"):
+        migrate(tmp_path / "new-data", source, dry_run=True, project_root=project,
+                environment={MODEL_DIR_ENV: str(assets / "model")})
+
+
+def test_migrate_reports_ancestor_symlink_cycle(tmp_path):
+    from app.cli.config_migrate import migrate
+    project, source, _ = _migration_layout(tmp_path)
+    assets = source / "assets"
+    (assets / "model").mkdir(parents=True)
+    (assets / "model" / "w.bin").write_bytes(b"w")
+    (assets / "nested").mkdir()
+    (assets / "nested" / "back").symlink_to(assets)
+    with pytest.raises(ValueError, match="Symlink cycle"):
+        migrate(tmp_path / "new-data", source, dry_run=True, project_root=project,
+                environment={MODEL_DIR_ENV: str(assets / "model")})
+
+
+def test_migrate_copies_independent_links_to_same_directory(tmp_path):
+    from app.cli.config_migrate import migrate
+    project, source, _ = _migration_layout(tmp_path)
+    assets = source / "assets"
+    (assets / "model").mkdir(parents=True)
+    (assets / "model" / "w.bin").write_bytes(b"w")
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    (shared / "a.txt").write_text("a")
+    (assets / "one").symlink_to(shared)
+    (assets / "two").symlink_to(shared)
+    target = tmp_path / "new-data"
+    migrate(target, source, project_root=project,
+            environment={MODEL_DIR_ENV: str(assets / "model")})
+    assert (target / "assets" / "one" / "a.txt").read_text() == "a"
+    assert (target / "assets" / "two" / "a.txt").read_text() == "a"
