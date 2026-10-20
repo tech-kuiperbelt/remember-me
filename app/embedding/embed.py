@@ -213,15 +213,36 @@ def _close_quietly(resource) -> None:
             logging.getLogger(__name__).warning("failed to close provider resource", exc_info=True)
 
 
+def _model_cache_present(model, cache_dir):
+    """True when this model already has a local cache footprint.
+
+    Recognizes the Hugging Face repository layout used by the supported local
+    providers. A bare cache root is not enough: it may only contain other models.
+    """
+    if not cache_dir:
+        return False
+    root = Path(cache_dir).expanduser()
+    if not root.is_dir():
+        return False
+    path = Path(model).expanduser()
+    if path.is_absolute() or model.startswith((".", "~")):
+        return path.exists()
+    if "/" not in model:
+        return False
+    return (root / ("models--" + model.replace("/", "--"))).is_dir()
+
+
 def _load_local_model(load, model, cache_dir, offline, auto_download):
     if auto_download is None:
         return load(offline)  # Compatibility for direct low-level callers.
     local_path = Path(model).is_absolute() or model.startswith((".", "~"))
     if local_path and not Path(model).expanduser().exists():
         raise EmbeddingError(f"Local model path does not exist: {model}; restore it before starting")
+    initial_error = None
     try:
         return load(True)
     except Exception as exc:
+        initial_error = str(exc)
         if local_path:
             raise
         if _dependency_error(exc):
@@ -240,7 +261,13 @@ def _load_local_model(load, model, cache_dir, offline, auto_download):
                     f"Cached model {model} in {cache_dir} could not be loaded: {exc}. "
                     "Retry the download or clear the cache directory."
                 ) from exc
-            raise
+            if not _model_cache_present(model, cache_dir):
+                raise
+            # An existing cache failed to load in an unrecognized way (for
+            # example a missing module config). Make one bounded repair attempt.
+            logging.getLogger(__name__).info(
+                "Model %s failed to load from an existing cache (%s); retrying with download",
+                model, type(exc).__name__)
         if not auto_download:
             if missing:
                 raise ModelCacheMissing(
@@ -263,8 +290,10 @@ def _load_local_model(load, model, cache_dir, offline, auto_download):
         # code; release its session before propagating either error class.
         _reset_download_sessions()
         if isinstance(exc, Exception):
+            detail = (f" Initial local load error: {initial_error}."
+                      if initial_error is not None else "")
             raise EmbeddingError(
-                f"Could not download/load model {model} into {cache_dir}. "
+                f"Could not download/load model {model} into {cache_dir}.{detail} "
                 "Check config.jsonc proxy, network access and model availability; "
                 "retry bin/manage embedding download-model."
             ) from exc

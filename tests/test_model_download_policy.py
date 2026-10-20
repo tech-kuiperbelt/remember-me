@@ -314,3 +314,112 @@ def test_missing_dependency_is_reported_not_treated_as_cache_damage(monkeypatch,
         create_embedder(environment={
             "EMBED_PROVIDER": "sentence_transformers", "SENTENCE_TRANSFORMERS_MODEL": "test/model",
         }, cache_only=True)
+
+
+def _incomplete_cache_env(tmp_path):
+    env = {
+        "EMBED_PROVIDER": "sentence_transformers",
+        "SENTENCE_TRANSFORMERS_MODEL": "BAAI/bge-m3",
+        "SENTENCE_TRANSFORMERS_CACHE_DIR": str(tmp_path / "cache"),
+    }
+    return env
+
+
+def test_existing_cache_with_unrecognized_load_error_retries_download(monkeypatch, tmp_path):
+    attempts = []
+
+    class Model:
+        def __init__(self, model, **kwargs):
+            attempts.append(kwargs.get("local_files_only"))
+            if kwargs.get("local_files_only"):
+                raise TypeError("Pooling.__init__() missing 1 required positional argument: 'embedding_dimension'")
+
+        def get_sentence_embedding_dimension(self):
+            return 3
+
+    monkeypatch.setitem(sys.modules, "sentence_transformers",
+                        SimpleNamespace(SentenceTransformer=Model))
+    cache = tmp_path / "cache" / "models--BAAI--bge-m3"
+    cache.mkdir(parents=True)
+    provider = create_embedder(environment=_incomplete_cache_env(tmp_path), allow_download=True)
+    assert provider.spec.dimension == 3
+    assert attempts == [True, False]
+
+
+def test_unrecognized_error_without_cache_does_not_download(monkeypatch, tmp_path):
+    attempts = []
+
+    class Model:
+        def __init__(self, model, **kwargs):
+            attempts.append(kwargs.get("local_files_only"))
+            raise TypeError("Pooling.__init__() missing 1 required positional argument: 'embedding_dimension'")
+
+    monkeypatch.setitem(sys.modules, "sentence_transformers",
+                        SimpleNamespace(SentenceTransformer=Model))
+    (tmp_path / "cache").mkdir()
+    with pytest.raises(TypeError):
+        create_embedder(environment=_incomplete_cache_env(tmp_path), allow_download=True)
+    assert attempts == [True]
+
+
+def test_failed_repair_preserves_original_load_error(monkeypatch, tmp_path):
+    class Model:
+        def __init__(self, model, **kwargs):
+            if kwargs.get("local_files_only"):
+                raise TypeError("Pooling.__init__() missing 1 required positional argument: 'embedding_dimension'")
+            raise ConnectionError("offline")
+
+    monkeypatch.setitem(sys.modules, "sentence_transformers",
+                        SimpleNamespace(SentenceTransformer=Model))
+    (tmp_path / "cache" / "models--BAAI--bge-m3").mkdir(parents=True)
+    with pytest.raises(EmbeddingError, match="Initial local load error.*Pooling"):
+        create_embedder(environment=_incomplete_cache_env(tmp_path), allow_download=True)
+
+
+@pytest.mark.parametrize('repair_fails', [False, True])
+def test_failed_local_model_is_reclaimable_before_repair(tmp_path, monkeypatch, repair_fails):
+    import gc
+    import weakref
+    from app.embedding.embed import _load_local_model
+
+    class Allocation:
+        pass
+
+    references = []
+    (tmp_path / 'models--test--model').mkdir()
+    monkeypatch.setattr('app.embedding.embed._reset_download_sessions', lambda: None)
+
+    def load(local_only):
+        if local_only:
+            allocation = Allocation()
+            references.append(weakref.ref(allocation))
+            raise TypeError('Pooling missing embedding_dimension')
+        gc.collect()
+        assert references[0]() is None, 'first traceback retains the failed model'
+        if repair_fails:
+            raise ConnectionError('repair failed')
+        return 'loaded'
+
+    if repair_fails:
+        with pytest.raises(EmbeddingError, match='Initial local load error: Pooling') as error:
+            _load_local_model(load, 'test/model', str(tmp_path), False, True)
+        assert isinstance(error.value.__cause__, ConnectionError)
+        assert error.value.__cause__.__context__ is None
+    else:
+        assert _load_local_model(load, 'test/model', str(tmp_path), False, True) == 'loaded'
+
+
+def test_cache_retry_log_does_not_include_raw_error(tmp_path, caplog):
+    from app.embedding.embed import _load_local_model
+
+    (tmp_path / 'models--test--model').mkdir()
+
+    def load(local_only):
+        if local_only:
+            raise TypeError('failed through http://user:password@proxy:7890')
+        return 'loaded'
+
+    with caplog.at_level('INFO'):
+        assert _load_local_model(load, 'test/model', str(tmp_path), False, True) == 'loaded'
+    assert 'password' not in caplog.text
+    assert 'TypeError' in caplog.text

@@ -4,6 +4,7 @@ import os
 import re
 import tempfile
 import threading
+import traceback
 from dataclasses import replace
 from pathlib import Path
 from types import MappingProxyType
@@ -90,7 +91,7 @@ class Runtime:
                     message = self._redact_error(str(exc), self.settings.environment)
                     self.maintenance.require("model_not_ready")
                     self.model_progress.set("failed", error=message)
-                    logger.error("Model preparation failed: %s", message)
+                    self._log_model_error("Model preparation failed", exc)
                     self.state = "running"
                     if (isinstance(exc, ModelCacheUnusable)
                             and self.settings.environment.get(
@@ -108,7 +109,7 @@ class Runtime:
                     message = self._redact_error(str(exc), self.settings.environment)
                     self.maintenance.require("model_not_ready")
                     self.model_progress.set("failed", error=message)
-                    logger.error("Model startup failed: %s", message)
+                    self._log_model_error("Model startup failed", exc)
                     self.state = "running"
                     return self
                 self.state = "running"
@@ -137,7 +138,7 @@ class Runtime:
 
     @staticmethod
     def _redact_error(message, environment):
-        """Remove proxy credentials before an error is exposed to the UI."""
+        """Remove proxy credentials before errors reach status, audit or logs."""
         if not message:
             return message
         for key in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy",
@@ -146,6 +147,14 @@ class Runtime:
             if value:
                 message = message.replace(value, "[proxy]")
         return re.sub(r"(https?://)[^/@\s]+@", r"\1", message)
+
+    def _log_model_error(self, label, exc, environment=None):
+        # Format first so neither LogRecord.exc_info nor its cached traceback text
+        # can expose the original exception chain to downstream handlers.
+        detail = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+        detail = self._redact_error(
+            detail, self.settings.environment if environment is None else environment)
+        logger.error("%s:\n%s", label, detail)
 
     def _start_business(self):
         s = self.settings
@@ -263,13 +272,14 @@ class Runtime:
                 self._release_model_business()
             except Exception as exc:
                 self._release_model_business()
-                message = str(exc)
+                error_environment = dict(self.settings.environment)
                 if "config" in locals() and config.proxy_url:
-                    message = message.replace(config.proxy_url, "[proxy]")
+                    error_environment["HTTPS_PROXY"] = config.proxy_url
+                message = self._redact_error(str(exc), error_environment)
                 self.model_progress.set("failed", error=message)
                 self.audit.record("model_prepare", {}, self.model_status(), 0,
                                   error={"type": type(exc).__name__, "message": message})
-                logger.error("Model preparation failed: %s", message)
+                self._log_model_error("Model preparation failed", exc, error_environment)
             with self._lock:
                 if self.state == "running" and self._model_retry_requested:
                     continue

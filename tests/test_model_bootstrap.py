@@ -349,3 +349,53 @@ def test_warmup_failure_keeps_http_ui(tmp_path):
         assert 'deserializing' in client.get('/api/model').json()['error']
     provider.close.assert_called_once()
     assert rt.state == 'closed'
+
+
+@pytest.mark.parametrize('stage', ['construction', 'warmup', 'retry'])
+def test_model_failure_logs_redact_complete_exception_chain(
+        tmp_path, progress_context, caplog, monkeypatch, stage):
+    import logging
+    from app.embedding.embed import EmbeddingError
+
+    proxy = 'http://user:secret@proxy:7890'
+
+    def fail():
+        try:
+            raise ConnectionError('upstream ' + proxy)
+        except ConnectionError as cause:
+            raise EmbeddingError('load failed via http://other:token@other-proxy:1') from cause
+
+    def factory(**kwargs):
+        if stage == 'retry' and not kwargs.get('allow_download'):
+            raise ModelCacheMissing('not cached')
+        if stage in ('construction', 'retry'):
+            fail()
+        return FakeProvider()
+
+    rt = make_runtime(tmp_path, factory, automatic=False)
+    if stage == 'warmup':
+        monkeypatch.setattr(rt, '_start_business', fail)
+    with caplog.at_level(logging.ERROR, logger='runtime'):
+        try:
+            rt.start(background_model=True)
+            if stage == 'retry':
+                rt.retry_model()
+                worker = rt._model_worker
+                if worker is not None:
+                    worker.join(timeout=5)
+                    assert not worker.is_alive()
+            assert rt.model_status()['status'] == 'failed'
+            assert 'token@' not in rt.model_status()['error']
+        finally:
+            rt.close()
+    records = [r for r in caplog.records if r.name == 'runtime' and 'Model ' in r.getMessage()]
+    assert records
+    for record in records:
+        rendered = logging.Formatter('%(message)s').format(record)
+        assert 'secret' not in rendered and 'token@' not in rendered
+        assert 'user:' not in rendered and 'other:' not in rendered
+        assert 'Traceback (most recent call last)' in rendered
+        assert 'test_model_bootstrap.py' in rendered
+        assert 'ConnectionError' in rendered and 'EmbeddingError' in rendered
+        assert 'direct cause' in rendered
+        assert record.exc_info is None
