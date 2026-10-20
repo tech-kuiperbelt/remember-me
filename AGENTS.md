@@ -41,7 +41,9 @@ logs, temporary files and local model caches are contained in the selected root.
 Local providers load cached models without networking first, and download only on
 a cache miss when permitted. In HTTP mode a cache miss starts the configuration
 UI/MCP transport with forced maintenance (`required_reason=model_not_ready`),
-then prepares the model in one owned background worker. Memory access and exiting
+then prepares the model in one owned background worker. HTTP network-capable model
+preparation runs in a spawned child without business storage; after it exits, the
+parent loads the cache locally and validates. Memory access and exiting
 maintenance are blocked until loading, warmup and database validation succeed;
 success allows manual maintenance exit, never auto-exits. Config UI saves proxy
 and retries without restart, showing real dependency byte progress or an
@@ -50,7 +52,11 @@ remain available while preparing. Config writes require no maintenance, support
 all config fields and preserve JSONC comments; port/language apply after restart.
 The config page puts ordinary settings above maintenance-only operations.
 /api/config/model remains a compatibility alias. Shutdown
-cancels and joins the worker before releasing resources. stdio/CLI remain synchronous.
+cancels model preparation immediately on a restart/shutdown request. The worker
+allows one second for cooperative child cancellation, then terminate/kill with
+bounded waits and reaping, before releasing resources. A child watches its parent
+and exits if the parent dies. Parent-side local loading/warmup remains cooperative;
+stdio/CLI remain synchronous.
 HTTP/HTTPS proxies are configured solely in config;
 disabled means direct access, ignoring inherited proxy variables. Loopback Ollama
 always bypasses proxies. Config entrypoints override legacy provider/HF offline

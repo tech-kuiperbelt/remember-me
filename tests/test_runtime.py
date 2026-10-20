@@ -115,6 +115,30 @@ def test_start_close_once_and_final_sync(tmp_path, monkeypatch):
     assert load_jsonl(tmp_path / "test.jsonl")["records"][0]["id"] == memory["id"]
 
 
+@pytest.mark.parametrize("restart", [False, True])
+def test_repeated_close_preserves_model_process_stop_failure(tmp_path, restart):
+    from app.operations.model_process import ModelProcessStopError
+
+    rt = runtime(tmp_path)
+    rt.start()
+    cleanup = Mock(wraps=rt._close_business)
+    rt._close_business = cleanup
+    failure = ModelProcessStopError("Model preparation process did not exit after kill")
+    rt._model_process_error = failure
+    rt.request_shutdown(restart=restart)
+
+    # ASGI lifespan cleanup can fail first; server.main calls close again in
+    # finally. That second call must still fail, preventing exec restart.
+    for _ in range(2):
+        with pytest.raises(ModelProcessStopError) as raised:
+            rt.close()
+        assert raised.value is failure
+        assert rt.state == "closed"
+        assert rt.provider is rt.storage is rt.service is None
+        assert rt.audit is None
+    cleanup.assert_called_once()
+
+
 def test_close_waits_for_import_before_storage(tmp_path, monkeypatch):
     rt = runtime(tmp_path).start()
     entered, release, closed = threading.Event(), threading.Event(), threading.Event()

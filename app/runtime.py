@@ -19,6 +19,7 @@ from app.embedding.provider_resolution import resolve_embedding_environment
 from app.config.configuration import Configuration, activate_environment
 from app.config.settings import Settings
 from app.operations.model_preparation import ModelProgress, PreparationCancelled, download_progress
+from app.operations.model_process import ModelProcessStopError, prepare_model_in_process
 from app.embedding.provider_adapter import wrap_provider
 from app.service import MemoryService
 from app.storage import create_storage, SQLitePrimaryStorage
@@ -55,6 +56,7 @@ class Runtime:
         self._model_worker = None
         self._model_cancel = threading.Event()
         self._model_retry_requested = False
+        self._model_process_error = None
 
     def start(self, *, background_model=False):
         with self._lock:
@@ -217,6 +219,8 @@ class Runtime:
     def retry_model(self):
         from app.operations.maintenance import MaintenanceRejected
         with self._lock:
+            if self._model_process_error is not None:
+                raise self._model_process_error
             if self.state != "running" or not self.maintenance.required_reason:
                 raise MaintenanceRejected("maintenance_busy", "Model preparation is not required")
             if self._model_worker and self._model_worker.is_alive():
@@ -249,9 +253,18 @@ class Runtime:
                 provider_name = self.settings.environment.get("EMBED_PROVIDER", "ollama").replace("-", "_")
                 provider = None
                 try:
-                    with download_progress(provider_name, self.model_progress, self._model_cancel):
-                        provider = wrap_provider(
-                            self.provider_factory(environment=self.settings.environment, allow_download=True))
+                    if self.provider_factory is create_embedder:
+                        prepare_model_in_process(self.settings.environment, self.model_progress,
+                                                 self._model_cancel)
+                        if self._model_cancel.is_set():
+                            raise PreparationCancelled()
+                        self.model_progress.set("validating")
+                        provider = wrap_provider(self.provider_factory(
+                            environment=self.settings.environment, cache_only=True))
+                    else:
+                        with download_progress(provider_name, self.model_progress, self._model_cancel):
+                            provider = wrap_provider(self.provider_factory(
+                                environment=self.settings.environment, allow_download=True))
                     # Ownership transfers to ``self.provider`` here; anything not
                     # yet handed over is closed in the finally, so a cancellation
                     # raised around construction can never orphan a provider.
@@ -271,6 +284,8 @@ class Runtime:
             except PreparationCancelled:
                 self._release_model_business()
             except Exception as exc:
+                if isinstance(exc, ModelProcessStopError):
+                    self._model_process_error = exc
                 self._release_model_business()
                 error_environment = dict(self.settings.environment)
                 if "config" in locals() and config.proxy_url:
@@ -281,7 +296,8 @@ class Runtime:
                                   error={"type": type(exc).__name__, "message": message})
                 self._log_model_error("Model preparation failed", exc, error_environment)
             with self._lock:
-                if self.state == "running" and self._model_retry_requested:
+                if (self.state == "running" and self._model_retry_requested
+                        and self._model_process_error is None):
                     continue
                 # Clear ownership under the same lock used by retry_model, so a
                 # retry at thread completion cannot be lost.
@@ -512,6 +528,7 @@ class Runtime:
                 return
             self.restart_requested = restart
             self.state = "closing"
+            self._model_cancel.set()
             self.calls.stop_accepting()
             if self.shutdown_callback is not None:
                 self.shutdown_callback()
@@ -531,6 +548,8 @@ class Runtime:
         self.maintenance.wait_idle()
         with self._lock:
             if self.state == "closed":
+                if self._model_process_error is not None:
+                    raise self._model_process_error
                 return
             self.state = "closing"
             try:
@@ -544,6 +563,8 @@ class Runtime:
                     log_config.close(self._handlers)
                     self._handlers = []
                     self.state = "closed"
+        if self._model_process_error is not None:
+            raise self._model_process_error
 
 
 def create_runtime(settings, **kwargs):
