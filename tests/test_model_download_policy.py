@@ -325,7 +325,7 @@ def _incomplete_cache_env(tmp_path):
     return env
 
 
-def test_existing_cache_with_unrecognized_load_error_retries_download(monkeypatch, tmp_path):
+def test_existing_cache_with_missing_pooling_config_retries_download(monkeypatch, tmp_path):
     attempts = []
 
     class Model:
@@ -346,7 +346,7 @@ def test_existing_cache_with_unrecognized_load_error_retries_download(monkeypatc
     assert attempts == [True, False]
 
 
-def test_unrecognized_error_without_cache_does_not_download(monkeypatch, tmp_path):
+def test_pooling_error_without_cache_does_not_download(monkeypatch, tmp_path):
     attempts = []
 
     class Model:
@@ -393,7 +393,7 @@ def test_failed_local_model_is_reclaimable_before_repair(tmp_path, monkeypatch, 
         if local_only:
             allocation = Allocation()
             references.append(weakref.ref(allocation))
-            raise TypeError('Pooling missing embedding_dimension')
+            raise TypeError("Pooling.__init__() missing 1 required positional argument: 'embedding_dimension'")
         gc.collect()
         assert references[0]() is None, 'first traceback retains the failed model'
         if repair_fails:
@@ -416,10 +416,44 @@ def test_cache_retry_log_does_not_include_raw_error(tmp_path, caplog):
 
     def load(local_only):
         if local_only:
-            raise TypeError('failed through http://user:password@proxy:7890')
+            raise TypeError("Pooling.__init__() missing 1 required positional argument: 'embedding_dimension'")
         return 'loaded'
 
     with caplog.at_level('INFO'):
         assert _load_local_model(load, 'test/model', str(tmp_path), False, True) == 'loaded'
-    assert 'password' not in caplog.text
-    assert 'TypeError' in caplog.text
+    assert 'Pooling config' in caplog.text
+
+
+def test_existing_cache_stderr_eio_does_not_trigger_network_retry(tmp_path):
+    from app.embedding.embed import _load_local_model
+
+    (tmp_path / 'models--test--model').mkdir()
+    attempts = []
+
+    def load(local_only):
+        attempts.append(local_only)
+        raise OSError(5, 'Input/output error')
+
+    with pytest.raises(OSError, match='Input/output error'):
+        _load_local_model(load, 'test/model', str(tmp_path), False, True)
+    assert attempts == [True]
+
+
+def test_transformers_progress_is_disabled_only_during_model_load(monkeypatch):
+    import sys
+    from types import ModuleType
+    from app.embedding.embed import _quiet_transformers_progress
+
+    transformers = ModuleType('transformers')
+    utils = ModuleType('transformers.utils')
+    logging_module = ModuleType('transformers.utils.logging')
+    logging_module._tqdm_active = True
+    utils.logging = logging_module
+    transformers.utils = utils
+    monkeypatch.setitem(sys.modules, 'transformers', transformers)
+    monkeypatch.setitem(sys.modules, 'transformers.utils', utils)
+    monkeypatch.setitem(sys.modules, 'transformers.utils.logging', logging_module)
+
+    with _quiet_transformers_progress():
+        assert logging_module._tqdm_active is False
+    assert logging_module._tqdm_active is True

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import inspect
+from contextlib import contextmanager
 import json
 import logging
 import os
@@ -213,6 +214,44 @@ def _close_quietly(resource) -> None:
             logging.getLogger(__name__).warning("failed to close provider resource", exc_info=True)
 
 
+def _pooling_config_error(exc):
+    """Recognize the specific missing-config TypeError emitted by Pooling.load."""
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        message = str(exc)
+        if (type(exc).__name__ == "TypeError" and "Pooling.__init__()" in message
+                and "missing 1 required positional argument" in message
+                and ("embedding_dimension" in message or "word_embedding_dimension" in message)):
+            return True
+        exc = exc.__cause__ or exc.__context__
+    return False
+
+
+@contextmanager
+def _quiet_transformers_progress():
+    """Disable Transformers' weight-loading tqdm while a model is constructed.
+
+    tqdm flushes process stderr while initializing; detached server stderr can
+    raise EIO and abort an otherwise valid local model load. Hugging Face
+    download progress is handled separately by download_progress.
+    """
+    try:
+        from transformers.utils import logging as transformers_logging
+    except ImportError:
+        yield
+        return
+    if not hasattr(transformers_logging, "_tqdm_active"):
+        yield
+        return
+    previous = transformers_logging._tqdm_active
+    transformers_logging._tqdm_active = False
+    try:
+        yield
+    finally:
+        transformers_logging._tqdm_active = previous
+
+
 def _model_cache_present(model, cache_dir):
     """True when this model already has a local cache footprint.
 
@@ -261,13 +300,14 @@ def _load_local_model(load, model, cache_dir, offline, auto_download):
                     f"Cached model {model} in {cache_dir} could not be loaded: {exc}. "
                     "Retry the download or clear the cache directory."
                 ) from exc
-            if not _model_cache_present(model, cache_dir):
+            if not (_pooling_config_error(exc) and _model_cache_present(model, cache_dir)):
                 raise
-            # An existing cache failed to load in an unrecognized way (for
-            # example a missing module config). Make one bounded repair attempt.
+            # A missing Sentence Transformers Pooling config can be repaired by
+            # fetching the snapshot metadata/config once. Do not treat generic
+            # OSErrors (including stderr EIO) as evidence of a broken model cache.
             logging.getLogger(__name__).info(
-                "Model %s failed to load from an existing cache (%s); retrying with download",
-                model, type(exc).__name__)
+                "Model %s has no usable Pooling config; retrying snapshot load once",
+                model)
         if not auto_download:
             if missing:
                 raise ModelCacheMissing(
@@ -518,7 +558,8 @@ class SentenceTransformersEmbedder(_BaseEmbedder):
                 if supported("processor_kwargs"):
                     options["processor_kwargs"] = {**(options.get("processor_kwargs") or {}),
                                                    "force_download": True}
-            return SentenceTransformer(model, **options)
+            with _quiet_transformers_progress():
+                return SentenceTransformer(model, **options)
 
         self._model = _load_local_model(load, model, cache_dir, offline, auto_download)
         try:
