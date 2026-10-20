@@ -400,3 +400,64 @@ def test_migrate_model_root_equal_to_data_root_copies_data(tmp_path):
     sources = [str(copy["source"]) for copy in preview["copies"]]
     assert any(path.endswith("memories.db") for path in sources)
     assert any(path.endswith("memories.jsonl") for path in sources)
+
+
+def test_migrate_selective_copy_preserves_non_model_symlink(tmp_path):
+    from app.cli.config_migrate import migrate
+    project, source, _ = _migration_layout(tmp_path)
+    assets = source / "assets"
+    (assets / "model").mkdir(parents=True)
+    (assets / "model" / "weights.bin").write_bytes(b"w")
+    documents = tmp_path / "documents"
+    documents.mkdir()
+    (documents / "guide.txt").write_text("doc")
+    (assets / "documents").symlink_to(documents)
+    env = {MODEL_DIR_ENV: str(assets / "model")}
+    target = tmp_path / "new-data"
+
+    preview = migrate(target, source, dry_run=True, project_root=project, environment=env)
+    targets = [str(copy["target"]) for copy in preview["copies"]]
+    sources = [str(copy["source"]) for copy in preview["copies"]]
+    assert any(path.endswith("assets/documents") for path in targets)
+    assert not any("assets/model" in path for path in sources)
+
+    migrate(target, source, project_root=project, environment=env)
+    assert (target / "assets" / "documents" / "guide.txt").read_text() == "doc"
+    assert not (target / "assets" / "model").exists()
+
+
+def test_migrate_excludes_nested_alias_to_external_model_root(tmp_path):
+    from app.cli.config_migrate import migrate
+    project, source, models_ro = _migration_layout(tmp_path)
+    (models_ro / "weights.bin").write_bytes(b"w" * 1024)
+    assets = source / "assets"
+    (assets / "docs").mkdir(parents=True)
+    (assets / "docs" / "readme.txt").write_text("x")
+    (assets / "model-link").symlink_to(models_ro)
+    env = {MODEL_DIR_ENV: str(models_ro)}
+    target = tmp_path / "new-data"
+
+    preview = migrate(target, source, dry_run=True, project_root=project, environment=env)
+    sources = [str(copy["source"]) for copy in preview["copies"]]
+    targets = [str(copy["target"]) for copy in preview["copies"]]
+    assert not any(path == str(assets) for path in sources)
+    assert not any("model-link" in path for path in sources)
+    assert not any(path == str(models_ro) or path.startswith(str(models_ro) + "/")
+                   for path in sources)
+    assert any(path.endswith("assets/docs") for path in targets)
+
+    migrate(target, source, project_root=project, environment=env)
+    assert (target / "assets" / "docs" / "readme.txt").read_text() == "x"
+    assert not (target / "assets" / "model-link").exists()
+
+
+def test_migrate_reports_broken_symlink_in_selective_tree(tmp_path):
+    from app.cli.config_migrate import migrate
+    project, source, _ = _migration_layout(tmp_path)
+    assets = source / "assets"
+    (assets / "model").mkdir(parents=True)
+    (assets / "model" / "w.bin").write_bytes(b"w")
+    (assets / "broken").symlink_to(tmp_path / "missing")
+    with pytest.raises(ValueError, match="Broken symlink"):
+        migrate(tmp_path / "new-data", source, dry_run=True, project_root=project,
+                environment={MODEL_DIR_ENV: str(assets / "model")})

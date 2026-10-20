@@ -236,21 +236,69 @@ def migrate(data_dir=None, source_data_dir=None, *, model_dir=None, dry_run=Fals
         target = resolved(path)
         return target == selected_model or target.is_relative_to(selected_model)
 
-    def selective_mapping(source, destination):
-        """Map a directory's files excluding anything resolving into the model tree."""
-        source_resolved = resolved(source)
-        if not selected_model.is_relative_to(source_resolved):
-            return {destination: source}
-        result = {}
-        for root, dirs, files in os.walk(source, followlinks=False):
+    def _walk_error(exc):
+        raise ValueError(f"Cannot read data directory during migration: {exc}") from exc
+
+    def contains_model_alias(source):
+        """True if a descendant is the model tree, or any symlink needs handling.
+
+        Symlinked directories are not followed here (cycle-safe); they force the
+        selective traversal so each link can be resolved and checked individually.
+        """
+        if not source.is_dir():
+            return False
+        for root, dirs, files in os.walk(source, followlinks=False, onerror=_walk_error):
             root_path = Path(root)
-            dirs[:] = [name for name in dirs if not in_model_tree(root_path / name)]
-            for name in files:
+            for name in dirs + files:
                 child = root_path / name
+                if child.is_symlink() or in_model_tree(child):
+                    return True
+        return False
+
+    def needs_selective(path):
+        target = resolved(path)
+        return (target == selected_model or target.is_relative_to(selected_model)
+                or contains_model_alias(path))
+
+    def selective_mapping(source, destination):
+        """Map a tree while excluding the model tree and preserving other data.
+
+        Traversal and copying share one rule: every child is judged by its
+        resolved path. Non-model symlinks are dereferenced like
+        ``copytree(..., symlinks=False)``; model aliases are skipped; unreadable
+        entries and broken links are reported instead of silently omitted.
+        """
+        result = {}
+
+        def build(path, dest):
+            try:
+                children = list(path.iterdir())
+            except OSError as exc:
+                raise ValueError(f"Cannot read {path} during migration: {exc}") from exc
+            for child in children:
                 if in_model_tree(child):
                     continue
-                relative = child.relative_to(source)
-                result[rooted_path(target_root, str(Path(source.name) / relative))] = child
+                child_dest = dest / child.name
+                if child.is_symlink():
+                    if not child.exists():
+                        raise ValueError(f"Broken symlink in data directory: {child}")
+                    if child.is_dir():
+                        target = resolved(child)
+                        if needs_selective(target):
+                            build(target, child_dest)
+                        else:
+                            result[child_dest] = target
+                    else:
+                        result[child_dest] = child
+                elif child.is_dir():
+                    if needs_selective(child):
+                        build(child, child_dest)
+                    else:
+                        result[child_dest] = child
+                else:
+                    result[child_dest] = child
+
+        build(source, destination)
         return result
 
     # Exclude the model tree only when it is not the data root itself (or an
@@ -261,6 +309,8 @@ def migrate(data_dir=None, source_data_dir=None, *, model_dir=None, dry_run=Fals
         for source in source_root.iterdir():
             if source.name in ("config.jsonc", "config.json", "tmp") or source.name.endswith(".lock"):
                 continue
+            if source.is_symlink() and not source.exists():
+                raise ValueError(f"Broken symlink in data directory: {source}")
             if exclude_model_tree and source.name == "models":
                 # The legacy in-data models directory is intentionally left in place.
                 continue
@@ -270,9 +320,9 @@ def migrate(data_dir=None, source_data_dir=None, *, model_dir=None, dry_run=Fals
                     # Exclude the selected model root by resolved path, including
                     # aliases/symlinks that use another name.
                     continue
-                if selected_model.is_relative_to(resolved(source)):
-                    # The model root is nested inside this entry: copy siblings
-                    # but not the model subtree.
+                if needs_selective(source):
+                    # The model root or an alias to it is nested somewhere in this
+                    # entry: copy siblings but not the model subtree.
                     mappings.update(selective_mapping(source, destination))
                     continue
             mappings.setdefault(destination, source)
