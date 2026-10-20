@@ -89,7 +89,9 @@ url = "http://127.0.0.1:1314/mcp"
 
 优先级为 `--data-dir` > `MEMORY_DATA_DIR` > 系统默认目录。相对数据目录以仓库根目录为基准。所选目录包含 `config.jsonc`、数据库、副本、审计文件、日志、临时文件、回填产物和模型缓存。
 
-默认主库和副本分别为 `memories.db`、`memories.jsonl`。Sentence Transformers 默认缓存为 `models/sentence-transformers/`，历史 FastEmbed 缓存为 `models/fastembed/`。运行时路径覆盖项和 CLI 输出路径在数据目录内解析，越界路径（包括通过符号链接越界）会被拒绝。仓库资源、`.env`、外部只读导入源及独立 Ollama 服务的存储不受此规则约束。
+模型根默认为数据目录下的 `models/`，可用 `--model-dir PATH`（或 `MEMORY_MODEL_DIR`）指向数据目录之外，例如只读模型镜像；`--model-dir` 优先级最高，相对路径以仓库根为基准。显式模型根下，Provider 缓存与 Hugging Face hub 资源位于该根内，可写的元数据缓存（`HF_HOME`、`TORCH_HOME` 等）留在数据目录的 `cache/`。切换缓存根不改变 Provider、仓库模型 ID 或 revision，活动 Profile ID 不变；显式本地模型路径参与身份，改路径仍按原有 mismatch 规则拒绝。`bin/manage config migrate` 只复制数据目录内容，不会搬迁或改写外部模型根。只读模型根必须已包含当前模型 ID 与 revision 的完整快照；依赖它之前先验证离线加载，且可写元数据仍留在数据目录的 `cache/`。
+
+默认主库和副本分别为 `memories.db`、`memories.jsonl`。Sentence Transformers 默认缓存为 `models/sentence-transformers/`，历史 FastEmbed 缓存为 `models/fastembed/`。数据路径覆盖项和 CLI 输出路径在数据目录内解析；Provider 缓存覆盖项在所选模型根内解析（默认模式下即数据目录）；越界路径（包括通过符号链接越界）会被拒绝。仓库资源、`.env`、外部只读导入源及独立 Ollama 服务的存储不受此规则约束。
 
 ### 配置字段
 

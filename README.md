@@ -127,13 +127,15 @@ bash bin/start.sh --port 8080 --data-dir /path/to/remember-me-data
 
 `--data-dir` selects the data directory, including its `config.jsonc`, and takes precedence over `MEMORY_DATA_DIR`. Relative paths are resolved from the project root. Selecting a new directory starts with separate data; it does not move an existing database or model cache.
 
+`--model-dir` (or `MEMORY_MODEL_DIR`) selects the model root, defaulting to `<data-dir>/models`. An explicit root may live outside the data directory, for example a read-only model image. Provider caches and Hugging Face hub resources then resolve inside that root, while writable metadata caches stay under `<data-dir>/cache`. `bin/manage config migrate` copies only data-directory contents and never rewrites or moves the external model root.
+
 ### 3. First model download and proxy setup
 
 The first use may require downloading **BAAI/bge-m3** from its upstream source. The model is cached locally; after it has been downloaded, embedding inference runs on your machine without a continuously connected model service.
 
 If the download source is unreachable from your network, open the Web UI's **configuration page**, set an HTTP/HTTPS proxy for model downloads, save the settings, and choose **Retry**. A failed *background model download* does not require restarting the service just to retry after changing the proxy.
 
-**Important:** The Web UI remains available in the supported *missing model / background download failed* case. Other startup errors — such as missing Python dependencies, invalid provider settings, or failures while loading an already-cached model — may prevent the server from starting. Follow the displayed errors and Help documentation rather than expecting proxy settings to fix unrelated problems.
+**Important:** The Web UI remains available in maintenance mode for model-preparation problems: a missing model, a failed background download, and also an incomplete/corrupt cache or a load/warmup failure — these no longer stop the HTTP server. Retry re-loads the model and re-downloads an incomplete cache. Missing Python dependencies report a reinstall message; invalid provider settings and other configuration errors can still prevent the server from starting. stdio mode and model-using CLI commands fail fast instead of opening a UI.
 
 **Resource note:** Allow sufficient disk space and memory for the model and its Python dependencies. Minimum hardware requirements remain to be validated.
 

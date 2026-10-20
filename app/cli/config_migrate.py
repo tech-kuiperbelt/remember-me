@@ -10,9 +10,9 @@ import shutil
 import sqlite3
 import tempfile
 
-from app.config.configuration import (Configuration, DEFAULTS, PATH_DEFAULTS,
+from app.config.configuration import (Configuration, DEFAULTS, MODEL_DIR_ENV, PATH_DEFAULTS,
                             PROJECT_ROOT, atomic_json, atomic_config, rooted_path,
-                            default_data_dir)
+                            default_data_dir, model_dir_is_explicit, resolve_model_dir)
 from app.storage.database_lock import DatabaseWriterLock
 
 
@@ -96,8 +96,8 @@ def _recover(journal, project_root, target_root, dry_run):
             "message": "Recovery complete; rerun migration preview before continuing"}
 
 
-def migrate(data_dir=None, source_data_dir=None, *, dry_run=False, environment=None,
-            project_root=PROJECT_ROOT):
+def migrate(data_dir=None, source_data_dir=None, *, model_dir=None, dry_run=False,
+            environment=None, project_root=PROJECT_ROOT):
     env = dict(os.environ if environment is None else environment)
     project_root = Path(project_root).resolve()
     def directory(value):
@@ -106,6 +106,19 @@ def migrate(data_dir=None, source_data_dir=None, *, dry_run=False, environment=N
     default_root = directory(default_data_dir(env))
     source_root = directory(source_data_dir or env.get("MEMORY_DATA_DIR") or default_root)
     target_root = directory(data_dir or env.get("MEMORY_DATA_DIR") or default_root)
+    # An explicit model root lives outside the data migration: its path, caches
+    # and local model files are preserved rather than rewritten into the target.
+    explicit_model = model_dir_is_explicit(env, model_dir)
+    # Whether the *source* installation already ran with an explicit model root.
+    # Only then is `models/<sub>` a model-relative override rather than the old
+    # data-directory default. A CLI --model-dir alone may be a new root.
+    source_explicit_model = bool(str(env.get(MODEL_DIR_ENV) or "").strip())
+    selected_model = (resolve_model_dir(model_dir, data_dir=target_root, environment=env)
+                      if explicit_model else None)
+
+    def env_model_value(path):
+        return str(path.relative_to(project_root)) if path.is_relative_to(project_root) else str(path)
+
     journal = rooted_path(target_root, ".config-migration.json")
     if journal.exists():
         return _recover(journal, project_root, target_root, dry_run)
@@ -140,12 +153,15 @@ def migrate(data_dir=None, source_data_dir=None, *, dry_run=False, environment=N
     for key, default in PATH_DEFAULTS.items():
         if key == "MEMORY_STORAGE_PATH":
             continue
+        if explicit_model and key in ("FASTEMBED_CACHE_DIR", "SENTENCE_TRANSFORMERS_CACHE_DIR"):
+            continue
         old_default = source_root / default
         sources.append((legacy(env.get(key) or str(old_default)), key, default))
-    for key in ("FASTEMBED_MODEL", "SENTENCE_TRANSFORMERS_MODEL"):
-        value = env.get(key, "")
-        if value and (Path(value).is_absolute() or value.startswith((".", "~"))):
-            sources.append((legacy(value), key, f"models/local/{key.lower()}"))
+    if not explicit_model:
+        for key in ("FASTEMBED_MODEL", "SENTENCE_TRANSFORMERS_MODEL"):
+            value = env.get(key, "")
+            if value and (Path(value).is_absolute() or value.startswith((".", "~"))):
+                sources.append((legacy(value), key, f"models/local/{key.lower()}"))
     mappings = {}
     for source, key, default in sources:
         relative = str(source.relative_to(source_root)) if source.is_relative_to(source_root) else default
@@ -164,11 +180,101 @@ def migrate(data_dir=None, source_data_dir=None, *, dry_run=False, environment=N
                 suffix = rotated.name[len(source.name):]
                 if suffix[1:].isdigit() and source != destination:
                     mappings[Path(str(destination) + suffix)] = rotated
+    strip_keys = {"MEMORY_STORAGE_PATH_DUAL", "MEMORY_DATA_DIR", "MEMORY_CONFIG_PATH"}
+    if explicit_model:
+        # Persist the explicit model root; its contents are not copied or rewritten.
+        path_updates[MODEL_DIR_ENV] = env_model_value(selected_model)
+        strip_keys.update(("FASTEMBED_CACHE_DIR", "SENTENCE_TRANSFORMERS_CACHE_DIR"))
+
+        def model_scoped(value):
+            """Resolve an override exactly like runtime does under an explicit root."""
+            path = Path(value).expanduser()
+            return (path if path.is_absolute() else selected_model / path).resolve()
+
+        for key, sub in (("SENTENCE_TRANSFORMERS_CACHE_DIR", "sentence-transformers"),
+                         ("FASTEMBED_CACHE_DIR", "fastembed")):
+            value = env.get(key)
+            if not value:
+                continue
+            # A value emitted by default-mode startup/migration is derived from the
+            # old data-dir default; the new root's default applies instead. When the
+            # source already used an explicit root, `models/<sub>` is a genuine
+            # model-relative override and must be preserved.
+            legacy_value = Path(value).expanduser()
+            legacy_resolved = (legacy_value if legacy_value.is_absolute()
+                               else source_root / legacy_value).resolve()
+            if (not source_explicit_model
+                    and legacy_resolved == (source_root / "models" / sub).resolve()):
+                continue
+            resolved = model_scoped(value)
+            if not resolved.is_relative_to(selected_model):
+                raise ValueError(
+                    f"{key}={value} resolves outside the explicit model dir "
+                    f"{selected_model}; remove or correct it before migration")
+            path_updates[key] = resolved.relative_to(selected_model).as_posix()
+        for key in ("FASTEMBED_MODEL", "SENTENCE_TRANSFORMERS_MODEL"):
+            value = env.get(key, "")
+            if not value or not (Path(value).is_absolute() or value.startswith((".", "~"))):
+                continue
+            strip_keys.add(key)
+            resolved = model_scoped(value)
+            if not resolved.is_relative_to(selected_model):
+                raise ValueError(
+                    f"{key}={value} resolves outside the explicit model dir "
+                    f"{selected_model}; remove or correct it before migration")
+            relative = resolved.relative_to(selected_model).as_posix()
+            # Runtime treats a bare relative value as a repository id, so keep the
+            # local-path form; an absolute path is the fallback for the root itself.
+            path_updates[key] = f"./{relative}" if relative not in ("", ".") else str(resolved)
+    def resolved(path):
+        try:
+            return path.resolve()
+        except OSError:
+            return path
+
+    def in_model_tree(path):
+        target = resolved(path)
+        return target == selected_model or target.is_relative_to(selected_model)
+
+    def selective_mapping(source, destination):
+        """Map a directory's files excluding anything resolving into the model tree."""
+        source_resolved = resolved(source)
+        if not selected_model.is_relative_to(source_resolved):
+            return {destination: source}
+        result = {}
+        for root, dirs, files in os.walk(source, followlinks=False):
+            root_path = Path(root)
+            dirs[:] = [name for name in dirs if not in_model_tree(root_path / name)]
+            for name in files:
+                child = root_path / name
+                if in_model_tree(child):
+                    continue
+                relative = child.relative_to(source)
+                result[rooted_path(target_root, str(Path(source.name) / relative))] = child
+        return result
+
+    # Exclude the model tree only when it is not the data root itself (or an
+    # ancestor of it). Otherwise its files are ordinary data content.
+    model_contains_data = explicit_model and source_root.is_relative_to(selected_model)
+    exclude_model_tree = explicit_model and not model_contains_data
     if source_root.exists() and source_root != target_root:
         for source in source_root.iterdir():
             if source.name in ("config.jsonc", "config.json", "tmp") or source.name.endswith(".lock"):
                 continue
+            if exclude_model_tree and source.name == "models":
+                # The legacy in-data models directory is intentionally left in place.
+                continue
             destination = rooted_path(target_root, source.name)
+            if exclude_model_tree:
+                if in_model_tree(source):
+                    # Exclude the selected model root by resolved path, including
+                    # aliases/symlinks that use another name.
+                    continue
+                if selected_model.is_relative_to(resolved(source)):
+                    # The model root is nested inside this entry: copy siblings
+                    # but not the model subtree.
+                    mappings.update(selective_mapping(source, destination))
+                    continue
             mappings.setdefault(destination, source)
     old_logs = project_root / "logs"
     if old_logs.exists() and old_logs.resolve() != target_root / "logs" and not (
@@ -190,6 +296,7 @@ def migrate(data_dir=None, source_data_dir=None, *, dry_run=False, environment=N
                "target_data_dir": str(target_root), "copies": [
                    {"source": str(source), "target": str(target)} for target, source in mappings.items()],
                "conflicts": conflicts, "path_settings": path_updates,
+               "model_dir_preserved": str(selected_model) if explicit_model else None,
                "source_files_retained": True}
     if dry_run:
         return preview
@@ -240,7 +347,7 @@ def migrate(data_dir=None, source_data_dir=None, *, dry_run=False, environment=N
                 atomic_json(journal, state)
                 os.replace(temporary, destination)
             # Preserve all provider parameters; replace only application path settings.
-            keys = set(path_updates) | {"MEMORY_STORAGE_PATH_DUAL", "MEMORY_DATA_DIR", "MEMORY_CONFIG_PATH"}
+            keys = set(path_updates) | strip_keys
             lines = [line for line in (old_env or "").splitlines()
                      if not any(re.match(r"^\s*(?:export\s+)?" + re.escape(key) + r"=", line) for key in keys)]
             lines.extend(f"{key}={shlex.quote(value)}" for key, value in path_updates.items())

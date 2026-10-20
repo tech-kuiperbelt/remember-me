@@ -417,6 +417,8 @@ async def main(argv=None):
     parser = argparse.ArgumentParser(description="Memory MCP Server")
     parser.add_argument("--data-dir", help="Data directory; defaults to the per-user OS data directory "
                                           "and contains config.jsonc")
+    parser.add_argument("--model-dir", help="Model root directory; defaults to <data-dir>/models. "
+                                           "Relative paths resolve against the project root")
     transport = parser.add_mutually_exclusive_group()
     transport.add_argument("--stdio", action="store_true", help="Use subprocess stdin/stdout instead of HTTP")
     transport.add_argument("--port", type=int, default=None,
@@ -425,7 +427,7 @@ async def main(argv=None):
     if args.port is not None and not 0 <= args.port <= 65535:
         parser.error("--port must be between 0 and 65535")
     try:
-        settings = Settings.from_config(args.data_dir, create=True)
+        settings = Settings.from_config(args.data_dir, model_dir=args.model_dir, create=True)
     except (ValueError, OSError) as exc:
         parser.error(str(exc))
     activate_environment(settings.environment)

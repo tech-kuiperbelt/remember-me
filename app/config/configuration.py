@@ -21,6 +21,16 @@ PATH_DEFAULTS = {
     "FASTEMBED_CACHE_DIR": "models/fastembed",
     "SENTENCE_TRANSFORMERS_CACHE_DIR": "models/sentence-transformers",
 }
+# Model root selection: explicit --model-dir / MEMORY_MODEL_DIR wins, otherwise
+# `<data-dir>/models`. The internal marker records whether the active value came
+# from the user, so re-resolving an already-normalized environment stays
+# idempotent instead of treating our own derived value as an explicit override.
+MODEL_DIR_ENV = "MEMORY_MODEL_DIR"
+_MODEL_DIR_EXPLICIT_ENV = "MEMORY_MODEL_DIR_EXPLICIT"
+# Which Provider cache paths were derived from a default (rather than supplied by
+# the user). This preserves the origin across repeated normalization so a value
+# that merely equals the old default is not mistaken for a derived one.
+_DERIVED_CACHE_ENV = "MEMORY_MODEL_DERIVED_CACHES"
 
 
 def default_data_dir(environment=None, *, system=None, home=None):
@@ -60,6 +70,59 @@ def resolve_data_dir(data_dir=None, *, environment=None):
     else:
         root = default_data_dir(env)
     return root.resolve()
+
+
+def resolve_model_dir(model_dir=None, *, data_dir=None, environment=None):
+    """Resolve the effective model root with no side effects.
+
+    Priority: explicit ``model_dir`` (CLI ``--model-dir``) > ``MEMORY_MODEL_DIR``
+    > ``<data_dir>/models``. A relative path or ``~`` resolves like the data
+    directory (against PROJECT_ROOT), independent of the working directory.
+    A blank explicit CLI value is rejected; a blank environment value is unset.
+    The default root stays inside the data directory; an explicit root may live
+    outside it. Importing, help and status never create the directory.
+    """
+    env = os.environ if environment is None else environment
+    if model_dir is not None and str(model_dir).strip() == "":
+        raise ValueError("--model-dir requires a path")
+    selected = model_dir if model_dir is not None else env.get(MODEL_DIR_ENV)
+    if selected is None or str(selected).strip() == "":
+        return rooted_path(resolve_data_dir(data_dir, environment=env), "models")
+    path = Path(selected).expanduser()
+    return (path if path.is_absolute() else PROJECT_ROOT / path).resolve()
+
+
+def contained_path(root, value, *, label="path"):
+    """Resolve ``value`` (relative to ``root``) and keep it inside ``root``.
+
+    Absolute values are used as-is; relative values resolve against ``root``.
+    Existing symlink components are resolved, so a link cannot escape ``root``.
+    """
+    root = Path(root).resolve()
+    path = Path(value).expanduser()
+    resolved = (path if path.is_absolute() else root / path).resolve()
+    if not resolved.is_relative_to(root):
+        raise ValueError(f"{label} outside model dir: {value}")
+    return resolved
+
+
+def model_dir_is_explicit(environment=None, model_dir=None):
+    """True when the model root came from the user rather than our derived default.
+
+    A newly supplied ``model_dir`` always wins (and must not be blank); otherwise
+    an internal marker records the original decision so re-resolving a normalized
+    environment stays idempotent. A blank environment value is treated as unset,
+    matching :func:`resolve_model_dir`.
+    """
+    env = os.environ if environment is None else environment
+    if model_dir is not None:
+        if str(model_dir).strip() == "":
+            raise ValueError("--model-dir requires a path")
+        return True
+    marker = env.get(_MODEL_DIR_EXPLICIT_ENV)
+    if marker is not None:
+        return marker == "1"
+    return bool(str(env.get(MODEL_DIR_ENV) or "").strip())
 
 
 def atomic_text(path, text, *, exclusive=False):
@@ -215,7 +278,7 @@ class Configuration:
                    values["auto_download_model"], values["local_only"], proxy["enabled"], url,
                    debug=values["debug"])
 
-    def runtime_environment(self, environment=None):
+    def runtime_environment(self, environment=None, *, model_dir=None):
         env = dict(os.environ if environment is None else environment)
         for key in PROXY_VARIABLES:
             env.pop(key, None)
@@ -230,16 +293,40 @@ class Configuration:
         env.update(HF_HUB_OFFLINE="0", TRANSFORMERS_OFFLINE="0", HF_HUB_DISABLE_XET="1")
         env["FASTEMBED_OFFLINE"] = env["SENTENCE_TRANSFORMERS_OFFLINE"] = str(
             not self.auto_download_model).lower()
+        explicit_model = model_dir_is_explicit(env, model_dir)
+        model_root = resolve_model_dir(model_dir, data_dir=self.data_dir, environment=env)
+        env[MODEL_DIR_ENV] = str(model_root)
+        env[_MODEL_DIR_EXPLICIT_ENV] = "1" if explicit_model else "0"
         for key, default in PATH_DEFAULTS.items():
             value = env.get(key) or default
             if key == "MEMORY_STORAGE_PATH" and value == ":memory:":
                 env[key] = value
+            elif key in ("FASTEMBED_CACHE_DIR", "SENTENCE_TRANSFORMERS_CACHE_DIR"):
+                continue  # resolved against the model root below
             else:
                 env[key] = str(rooted_path(self.data_dir, value))
-                if key in ("FASTEMBED_CACHE_DIR", "SENTENCE_TRANSFORMERS_CACHE_DIR"):
-                    for entry in Path(env[key]).rglob("*"):
-                        if entry.is_symlink():
-                            rooted_path(self.data_dir, entry)
+        derived_caches = {key for key in str(env.get(_DERIVED_CACHE_ENV, "")).split(",") if key}
+        next_derived = set()
+        for key, sub in (("SENTENCE_TRANSFORMERS_CACHE_DIR", "sentence-transformers"),
+                         ("FASTEMBED_CACHE_DIR", "fastembed")):
+            value = env.get(key)
+            derived = key in derived_caches or not value
+            if explicit_model:
+                resolved = contained_path(model_root, sub if derived else value, label=key)
+                scan_root = model_root
+            else:
+                # Default mode keeps the original data-directory containment,
+                # including cache directories that are symlinks to data/cache.
+                resolved = rooted_path(
+                    self.data_dir, f"models/{sub}" if derived else value)
+                scan_root = self.data_dir
+            if derived:
+                next_derived.add(key)
+            env[key] = str(resolved)
+            for entry in resolved.rglob("*"):
+                if entry.is_symlink():
+                    contained_path(scan_root, entry, label=key)
+        env[_DERIVED_CACHE_ENV] = ",".join(sorted(next_derived))
         primary = env["MEMORY_STORAGE_PATH"]
         replica = env.get("MEMORY_REPLICA_PATH") or env.get("MEMORY_STORAGE_PATH_DUAL")
         replica = replica or ("memories.jsonl" if primary == ":memory:" else str(Path(primary).with_suffix(".jsonl")))
@@ -250,17 +337,29 @@ class Configuration:
                    MEMORY_PORT=str(self.port), MEMORY_LANGUAGE=self.language,
                    MEMORY_LOG_DIR=str(rooted_path(self.data_dir, "logs")),
                    MEMORY_TEMP_DIR=str(rooted_path(self.data_dir, "tmp")))
-        # Dependency caches and multipart spill files use these at process startup.
-        for key, default in {"HF_HOME": "models/huggingface", "XDG_CACHE_HOME": "cache",
-                             "TORCH_HOME": "models/torch", "TMPDIR": "tmp"}.items():
-            env[key] = str(rooted_path(self.data_dir, default))
+        # Dependency caches: the default keeps the historical data-dir layout; an
+        # external model root splits writable metadata (data-dir) from model
+        # resources (model root).
+        if explicit_model:
+            hub_cache = contained_path(model_root, "huggingface/hub", label="HF_HUB_CACHE")
+            home_cache = rooted_path(self.data_dir, "cache/huggingface")
+            torch_cache = rooted_path(self.data_dir, "cache/torch")
+        else:
+            hub_cache = rooted_path(self.data_dir, "models/huggingface/hub")
+            home_cache = rooted_path(self.data_dir, "models/huggingface")
+            torch_cache = rooted_path(self.data_dir, "models/torch")
         for key in ("HF_HUB_CACHE", "HUGGINGFACE_HUB_CACHE", "TRANSFORMERS_CACHE"):
-            env[key] = str(rooted_path(self.data_dir, "models/huggingface/hub"))
+            env[key] = str(hub_cache)
+        env["HF_HOME"] = str(home_cache)
+        env["XDG_CACHE_HOME"] = str(rooted_path(self.data_dir, "cache"))
+        env["TORCH_HOME"] = str(torch_cache)
+        env["TMPDIR"] = str(rooted_path(self.data_dir, "tmp"))
         for key in ("FASTEMBED_MODEL", "SENTENCE_TRANSFORMERS_MODEL"):
             value = env.get(key, "")
             # Repository IDs remain provider identifiers; explicit local models are paths.
             if value and (Path(value).is_absolute() or value.startswith((".", "~"))):
-                env[key] = str(rooted_path(self.data_dir, value))
+                env[key] = str(contained_path(model_root, value, label=key) if explicit_model
+                               else rooted_path(self.data_dir, value))
         return env
 
 

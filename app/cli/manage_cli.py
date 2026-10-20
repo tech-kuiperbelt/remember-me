@@ -13,6 +13,8 @@ from app.cli.config_migrate import migrate
 def main(argv=None):
     parser = argparse.ArgumentParser(description="remember-me offline maintenance")
     parser.add_argument("--data-dir", help="Data directory; defaults to the per-user OS data directory")
+    parser.add_argument("--model-dir", help="Model root directory; defaults to <data-dir>/models. "
+                                           "Relative paths resolve against the project root")
     parser.add_argument("command")
     parser.add_argument("arguments", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
@@ -25,7 +27,8 @@ def main(argv=None):
         migration.add_argument("--source-data-dir")
         migration.add_argument("--dry-run", action="store_true")
         options = migration.parse_args(tail[1:])
-        print(json.dumps(migrate(options.data_dir, options.source_data_dir, dry_run=options.dry_run),
+        print(json.dumps(migrate(options.data_dir, options.source_data_dir,
+                                 model_dir=args.model_dir, dry_run=options.dry_run),
                          ensure_ascii=False, indent=2))
         return 0
     if tail and tail[0] in ("--help", "-h"):
@@ -46,19 +49,24 @@ def main(argv=None):
         if module:
             return subprocess.call([sys.executable, "-m", module, *(tail[1:] if args.command == "migrate" else tail)])
     config = Configuration.load(args.data_dir, create=False)
-    env = config.runtime_environment()
+    env = config.runtime_environment(model_dir=args.model_dir)
     activate_environment(env)
     primary, replica = env["MEMORY_STORAGE_PATH"], env["MEMORY_REPLICA_PATH"]
+    model_root = Path(env["MEMORY_MODEL_DIR"])
+    shown_model = (str(model_root.relative_to(config.data_dir))
+                   if model_root.is_relative_to(config.data_dir) else str(model_root))
     if args.command == "config":
         if tail != ["status"]:
             parser.error("config requires status or migrate")
         print(json.dumps({"config": str(config.path), **config.as_dict(redact=True),
-                          "data_dir": str(config.data_dir)}, ensure_ascii=False, indent=2))
+                          "data_dir": str(config.data_dir), "model_dir": shown_model},
+                         ensure_ascii=False, indent=2))
         return 0
     if args.command == "status":
         shown_primary = primary if primary == ":memory:" else str(Path(primary).relative_to(config.data_dir))
         shown_replica = str(Path(replica).relative_to(config.data_dir))
-        print(f"data_dir: {config.data_dir}\nprimary: {shown_primary}\nreplica: {shown_replica}", flush=True)
+        print(f"data_dir: {config.data_dir}\nmodel_dir: {shown_model}\n"
+              f"primary: {shown_primary}\nreplica: {shown_replica}", flush=True)
         module, arguments = "app.cli.embedding_cli", ["status", output_path(tail[0]) if tail else primary]
     elif args.command == "embedding":
         if not tail:

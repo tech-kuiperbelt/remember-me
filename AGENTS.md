@@ -89,6 +89,7 @@ HTTP endpoints (all share the same service/runtime/provider/storage):
 |---|---|---|
 | `MEMORY_STORAGE` | `sqlite` | `sqlite` or `dual`; all other values fail startup |
 | `MEMORY_DATA_DIR` | OS per-user default | Runtime data root; `--data-dir` takes precedence |
+| `MEMORY_MODEL_DIR` | `<data-dir>/models` | Model root; `--model-dir` takes precedence. Relative values resolve against PROJECT_ROOT. An explicit root may live outside the data directory; its Provider caches/HF hub resources resolve inside it, writable metadata caches stay under `<data-dir>/cache`. |
 | `MEMORY_STORAGE_PATH` | `memories.db` | SQLite primary path relative to data root |
 | `MEMORY_REPLICA_PATH` | derived from primary | NDJSON replica path in dual mode (`.jsonl` or `.ndjson`) |
 | `MEMORY_STORAGE_PATH_DUAL` | unset | Deprecated compatibility alias for `MEMORY_REPLICA_PATH` |

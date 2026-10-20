@@ -25,9 +25,11 @@ Offline writes (stop the service first):
   migrate anchors <draft|apply>  Offline anchor backfill (draft is read-only)
   recover [SOURCE] [TARGET]      Rebuild SQLite from vector-free JSONL
 
-Defaults come from the per-user OS data directory's config.jsonc and .env. Use --data-dir PATH before
-the command. Migrating the legacy repository data/ directory requires --source-data-dir data. Use the
-underlying command's --help for all provider, profile, namespace, and batch-size options.
+Defaults come from the per-user OS data directory's config.jsonc and .env. Use --data-dir PATH (and
+optionally --model-dir PATH) before the command. Migrating the legacy repository data/ directory
+requires --source-data-dir data. --model-dir selects an external model root (default <data-dir>/models);
+its contents are never copied or rewritten by config migrate. Use the underlying command's --help for
+all provider, profile, namespace, and batch-size options.
 EOF
 }
 

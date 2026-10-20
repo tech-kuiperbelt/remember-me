@@ -44,9 +44,10 @@ class Settings:
     UI_DEBUG: bool = False
 
     @classmethod
-    def from_config(cls, data_dir=None, *, create=False, environment=None):
+    def from_config(cls, data_dir=None, *, model_dir=None, create=False, environment=None):
         config = Configuration.load(data_dir, create=create, environment=environment)
-        return replace(cls.from_env(config.runtime_environment(environment)), UI_DEBUG=config.debug)
+        env = config.runtime_environment(environment, model_dir=model_dir)
+        return replace(cls.from_env(env), UI_DEBUG=config.debug)
 
     @classmethod
     def from_env(cls, environment=None):
