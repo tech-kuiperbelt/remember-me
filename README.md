@@ -127,7 +127,7 @@ bash bin/start.sh --port 8080 --data-dir /path/to/remember-me-data
 
 `--data-dir` selects the data directory, including its `config.jsonc`, and takes precedence over `MEMORY_DATA_DIR`. Relative paths are resolved from the project root. Selecting a new directory starts with separate data; it does not move an existing database or model cache.
 
-`--model-dir` (or `MEMORY_MODEL_DIR`) selects the model root, defaulting to `<data-dir>/models`. An explicit root may live outside the data directory, for example a read-only model image. Provider caches and Hugging Face hub resources then resolve inside that root, while writable metadata caches stay under `<data-dir>/cache`. `bin/manage config migrate` copies only data-directory contents and never rewrites or moves the external model root.
+`--model-dir` (or `MEMORY_MODEL_DIR`) selects the model root, defaulting to `<data-dir>/models`. An explicit root may live outside the data directory, for example a read-only model image. Provider caches and Hugging Face hub resources then resolve inside that root, while writable metadata caches stay under `<data-dir>/cache`.
 
 ### 3. First model download and proxy setup
 

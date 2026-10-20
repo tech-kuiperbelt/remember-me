@@ -11,7 +11,7 @@ This guide covers operating an installed Remember Me service. For installation, 
 3. [Model preparation and proxy](#model-preparation-and-proxy)
 4. [Checks, backups, and standard maintenance](#checks-backups-and-standard-maintenance)
 5. [Embedding maintenance](#embedding-maintenance)
-6. [Data migration and recovery](#data-migration-and-recovery)
+6. [Data recovery](#data-recovery)
 7. [Offline metadata backfills](#offline-metadata-backfills)
 8. [Troubleshooting](#troubleshooting)
 9. [Appendix: code structure and compatible entry points](#appendix-code-structure-and-compatible-entry-points)
@@ -89,7 +89,7 @@ In **Configuration**, select **Enter Maintenance**. Ordinary maintenance pauses 
 
 Precedence is `--data-dir` > `MEMORY_DATA_DIR` > OS default. Relative data-directory paths resolve against the repository root. The selected directory contains `config.jsonc`, the database, replica, audit files, logs, temporary files, backfill outputs, and model caches.
 
-The model root defaults to `<data-dir>/models` and can be moved outside the data directory with `--model-dir PATH` (or `MEMORY_MODEL_DIR`), for example a read-only model image; `--model-dir` wins, and relative values resolve against the repository root. With an explicit root, Provider caches and Hugging Face hub resources resolve inside it, while writable metadata caches (`HF_HOME`, `TORCH_HOME`, ...) stay under `<data-dir>/cache`. Changing the cache root does not alter the Provider, repository model id or revision, so the active Profile id is unchanged; an explicit local model path is part of the identity, so changing it is still rejected by the existing mismatch check. `bin/manage config migrate` copies only data-directory contents and never moves or rewrites an external model root. A read-only model root must already hold a complete snapshot for the active model id and revision; verify offline loading before relying on it, and note that writable metadata stays under `<data-dir>/cache`.
+The model root defaults to `<data-dir>/models` and can be moved outside the data directory with `--model-dir PATH` (or `MEMORY_MODEL_DIR`), for example a read-only model image; `--model-dir` wins, and relative values resolve against the repository root. With an explicit root, Provider caches and Hugging Face hub resources resolve inside it, while writable metadata caches (`HF_HOME`, `TORCH_HOME`, ...) stay under `<data-dir>/cache`. Changing the cache root does not alter the Provider, repository model id or revision, so the active Profile id is unchanged; an explicit local model path is part of the identity, so changing it is still rejected by the existing mismatch check. A read-only model root must already hold a complete snapshot for the active model id and revision; verify offline loading before relying on it, and note that writable metadata stays under `<data-dir>/cache`.
 
 Default storage paths are `memories.db` and `memories.jsonl`. Default Sentence Transformers cache is `models/sentence-transformers/`; the historical FastEmbed cache is `models/fastembed/`. Data path overrides and CLI output paths resolve inside the data directory, while Provider cache overrides resolve inside the selected model root (the data directory in default mode); paths escaping the relevant root, including through symlinks, are rejected. Repository assets, `.env`, external read-only import sources, and an independent Ollama service's storage are outside this rule.
 
@@ -175,7 +175,7 @@ bin/manage --data-dir "$RM_DATA_DIR" embedding status
 | Status, config status, help | May run while the service is active; no model loading |
 | Model download | Writes model cache, not memory records; coordinate with any active preparation |
 | UI export, sync, import, recovery, clear, namespace migration | Enter maintenance; the UI enables actions when their prerequisites hold |
-| Offline reindex, codec conversion, activation, recovery, applied backfills, data-directory migration | Stop the service and wait for exit |
+| Offline reindex, codec conversion, activation, recovery, applied backfills | Stop the service and wait for exit |
 
 Writable offline processes acquire the primary database writer lock; they do not stop an existing service for you. Do not delete `.writer.lock` to bypass it: the file's existence does not mean a process currently holds the OS lock.
 
@@ -249,23 +249,7 @@ bin/manage --data-dir "$RM_DATA_DIR" embedding migrate-codec --dtype float32
 
 Stop the service first. This changes vector encoding, not the embedding model. To retain float32 on later startup, also set `EMBED_DTYPE=float32` in `.env`; use matching `float16` settings to switch back. Startup can re-encode existing vectors to the configured dtype, so a one-time codec command without matching startup configuration may be undone. Verify the stored codec/dtype using embedding status.
 
-## Data migration and recovery
-
-### Move the data directory
-
-Selecting `--data-dir` alone does not migrate files. Choose explicit source and destination directories:
-
-```bash
-RM_NEW_DATA_DIR="/absolute/path/to/new/remember-me-data"
-bin/manage --data-dir "$RM_NEW_DATA_DIR" config migrate --source-data-dir "$RM_DATA_DIR" --dry-run
-# Stop the service and wait for exit before the following command.
-bin/manage --data-dir "$RM_NEW_DATA_DIR" config migrate --source-data-dir "$RM_DATA_DIR"
-bash bin/start.sh --data-dir "$RM_NEW_DATA_DIR"
-```
-
-For a legacy repository `data/`, use `--source-data-dir data`. Migration copies and verifies files, retains sources, and updates configuration and `.env` paths. It refuses conflicting destinations and in-use databases. Review the preview before applying; confirm model loading and storage health in the new root before retiring old files. Preserve the original port override when needed and use the new root for subsequent maintenance.
-
-To rely on the OS default afterward, remove a stale `MEMORY_DATA_DIR` assignment from `.env` after migration; otherwise keep the custom root explicit. If a crash leaves a migration journal that blocks startup, rerun the same migration command to recover, then inspect the result before retrying. Do not manually delete the journal or shared caches to bypass recovery.
+## Data recovery
 
 ### Online JSONL recovery
 
@@ -321,7 +305,6 @@ Draft leaves the database unchanged but, without `--dry-run`, invokes the extern
 | Writer lock busy | Identify and gracefully stop the process using that primary/replica; do not delete lock files. |
 | Replica drift or failed post-recovery sync | Retain an independent backup, inspect diagnostics, then run Sync in maintenance. Check health before exiting. |
 | Corrupt recovery target cannot be identified | Supply the intended Provider/model explicitly, then rerun offline recovery from a trusted JSONL backup. |
-| Pending data migration journal | Rerun the same migration command to recover; inspect the resulting paths before starting. |
 | Data seems missing after restart | Verify `--data-dir`, `MEMORY_DATA_DIR`, `.env`, and the primary path before creating new records or attempting recovery. |
 
 ## Appendix: code structure and compatible entry points

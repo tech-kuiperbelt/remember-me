@@ -11,7 +11,7 @@
 3. [模型准备与代理](#模型准备与代理)
 4. [检查、备份与标准维护](#检查备份与标准维护)
 5. [Embedding 维护](#embedding-维护)
-6. [数据迁移与恢复](#数据迁移与恢复)
+6. [数据恢复](#数据恢复)
 7. [离线元数据回填](#离线元数据回填)
 8. [常见故障](#常见故障)
 9. [附录：代码结构与兼容入口](#附录代码结构与兼容入口)
@@ -89,7 +89,7 @@ url = "http://127.0.0.1:1314/mcp"
 
 优先级为 `--data-dir` > `MEMORY_DATA_DIR` > 系统默认目录。相对数据目录以仓库根目录为基准。所选目录包含 `config.jsonc`、数据库、副本、审计文件、日志、临时文件、回填产物和模型缓存。
 
-模型根默认为数据目录下的 `models/`，可用 `--model-dir PATH`（或 `MEMORY_MODEL_DIR`）指向数据目录之外，例如只读模型镜像；`--model-dir` 优先级最高，相对路径以仓库根为基准。显式模型根下，Provider 缓存与 Hugging Face hub 资源位于该根内，可写的元数据缓存（`HF_HOME`、`TORCH_HOME` 等）留在数据目录的 `cache/`。切换缓存根不改变 Provider、仓库模型 ID 或 revision，活动 Profile ID 不变；显式本地模型路径参与身份，改路径仍按原有 mismatch 规则拒绝。`bin/manage config migrate` 只复制数据目录内容，不会搬迁或改写外部模型根。只读模型根必须已包含当前模型 ID 与 revision 的完整快照；依赖它之前先验证离线加载，且可写元数据仍留在数据目录的 `cache/`。
+模型根默认为数据目录下的 `models/`，可用 `--model-dir PATH`（或 `MEMORY_MODEL_DIR`）指向数据目录之外，例如只读模型镜像；`--model-dir` 优先级最高，相对路径以仓库根为基准。显式模型根下，Provider 缓存与 Hugging Face hub 资源位于该根内，可写的元数据缓存（`HF_HOME`、`TORCH_HOME` 等）留在数据目录的 `cache/`。切换缓存根不改变 Provider、仓库模型 ID 或 revision，活动 Profile ID 不变；显式本地模型路径参与身份，改路径仍按原有 mismatch 规则拒绝。只读模型根必须已包含当前模型 ID 与 revision 的完整快照；依赖它之前先验证离线加载，且可写元数据仍留在数据目录的 `cache/`。
 
 默认主库和副本分别为 `memories.db`、`memories.jsonl`。Sentence Transformers 默认缓存为 `models/sentence-transformers/`，历史 FastEmbed 缓存为 `models/fastembed/`。数据路径覆盖项和 CLI 输出路径在数据目录内解析；Provider 缓存覆盖项在所选模型根内解析（默认模式下即数据目录）；越界路径（包括通过符号链接越界）会被拒绝。仓库资源、`.env`、外部只读导入源及独立 Ollama 服务的存储不受此规则约束。
 
@@ -175,7 +175,7 @@ bin/manage --data-dir "$RM_DATA_DIR" embedding status
 | status、config status、help | 服务运行时可执行，不加载模型 |
 | 模型下载 | 写入模型缓存，不修改记忆记录；避免与正在进行的准备任务冲突 |
 | UI 导出、同步、导入、恢复、清空、Namespace 迁移 | 进入维护；其他前提满足后 UI 才启用操作 |
-| 离线重建、codec 转换、激活、恢复、应用回填、数据目录迁移 | 停服并等待进程退出 |
+| 离线重建、codec 转换、激活、恢复、应用回填 | 停服并等待进程退出 |
 
 离线写入进程会获取主库 writer lock，不会替你终止已有服务。不要删除 `.writer.lock` 绕过它：锁文件存在不代表进程当前持有操作系统锁。
 
@@ -249,23 +249,7 @@ bin/manage --data-dir "$RM_DATA_DIR" embedding migrate-codec --dtype float32
 
 先关闭服务。此操作改变向量编码，不切换 Embedding 模型。要在后续启动时保留 float32，还应在 `.env` 设置 `EMBED_DTYPE=float32`；切回时使用对应的 `float16` 配置。启动会按配置重新编码不匹配的向量，所以只运行一次转换命令而不调整启动配置，转换结果可能被改回。通过 embedding status 核对实际 codec／dtype。
 
-## 数据迁移与恢复
-
-### 迁移数据目录
-
-仅选择 `--data-dir` 不会迁移文件。明确指定源目录和目标目录：
-
-```bash
-RM_NEW_DATA_DIR="/absolute/path/to/new/remember-me-data"
-bin/manage --data-dir "$RM_NEW_DATA_DIR" config migrate --source-data-dir "$RM_DATA_DIR" --dry-run
-# 关闭服务并等待进程退出，再执行下一条命令。
-bin/manage --data-dir "$RM_NEW_DATA_DIR" config migrate --source-data-dir "$RM_DATA_DIR"
-bash bin/start.sh --data-dir "$RM_NEW_DATA_DIR"
-```
-
-迁移仓库历史 `data/` 时使用 `--source-data-dir data`。迁移会复制并校验文件、保留来源，并更新配置和 `.env` 路径；拒绝冲突目标和使用中的数据库。执行前审核预览，在新目录确认模型加载和存储健康后，再处理旧文件。需要时保留原端口覆盖参数，后续维护统一使用新目录。
-
-若迁移后希望采用系统默认目录，应从 `.env` 移除过时的 `MEMORY_DATA_DIR` 赋值；自定义目录则继续显式配置。崩溃遗留的迁移日志可能阻止启动，应重新运行相同迁移命令恢复，检查结果后再决定重试。不要手动删除迁移日志或共享缓存绕过恢复。
+## 数据恢复
 
 ### 在线 JSONL 恢复
 
@@ -321,7 +305,6 @@ draft 不修改数据库，但未加 `--dry-run` 时会调用外部模型并写�
 | Writer lock 被占用 | 找到使用该主库／副本的进程并正常停止，不要删除锁文件。 |
 | 副本不一致／恢复后同步失败 | 保留独立备份，检查诊断信息，在维护状态运行 Sync；退出前确认健康状态。 |
 | 无法识别损坏的恢复目标 | 显式设置目标 Provider／模型，再从可信 JSONL 备份执行离线恢复。 |
-| 遗留数据迁移日志 | 重跑相同迁移命令进行恢复，启动前检查最终路径。 |
 | 重启后似乎丢失数据 | 创建新记忆或尝试恢复前，先核对 `--data-dir`、`MEMORY_DATA_DIR`、`.env` 和主库路径。 |
 
 ## 附录：代码结构与兼容入口

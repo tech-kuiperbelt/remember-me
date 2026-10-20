@@ -63,6 +63,7 @@ run without `--dry-run` to copy and verify legacy paths, retaining sources. For 
 new root: `bin/manage --data-dir NEW config migrate --source-data-dir OLD`. A pending
 migration journal blocks startup; rerun migration to recover before proceeding.
 See `docs/project-management/plans/43-config-and-data-root.md`.
+Internal-only scope (user decision, 2026-10-20): `bin/manage config migrate` is a retained development migration tool, not a customer-delivered or supported feature. Stop further fixes and extensions unless the user explicitly reauthorizes them; keep it out of user-facing documentation. Historical review findings include path-override changes, omitted/copied symlink trees, destination escapes, recursion cycles, and silent collisions between resolved destinations. Do not assume the retained tool is safe for arbitrary directory layouts. This restriction concerns directory migration only, not model-directory configuration, embedding reindexing, or JSONL recovery.
 
 Two transport modes:
 
