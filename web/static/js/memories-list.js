@@ -210,9 +210,12 @@ export function createMemoriesList({root, pagination, count, onOpen, onPage, onP
     if (state.status === 'model_pending') {
       const model = state.model || {}, pending = el('div', 'memory-state');
       pending.setAttribute('role', 'status');
-      const labels = {waiting: 'model.waiting', downloading: 'model.downloading', validating: 'model.validating', cancelling: 'model.cancelling', failed: 'model.failed'};
+      const labels = {waiting: 'model.waiting', downloading: 'model.downloading', validating: 'model.validating', cancelling: 'model.cancelling', failed: 'model.failed', unavailable: 'model.unavailable'};
+      const statusText = model.status === 'failed' ? 'memories.model.failed'
+        : model.status === 'unavailable' ? 'model.unavailable'
+        : 'memories.model.waiting';
       pending.append(el('p', '', t(labels[model.status] || 'memories.count.preparing')),
-        el('p', '', t(model.status === 'failed' ? 'memories.model.failed' : 'memories.model.waiting')));
+        el('p', '', t(statusText)));
       if (['downloading', 'validating', 'cancelling'].includes(model.status)) {
         const progress = el('progress'); progress.max = 100;
         progress.setAttribute('aria-label', t('ops.model.progress.aria'));

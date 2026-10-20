@@ -81,7 +81,7 @@ export function mount({openMemory = () => {}, openCreate = () => {}, openConfigu
     }
   }, {getModelPreparation: () => {
     const maintenance = getMaintenance();
-    return maintenance?.required_reason === 'model_not_ready' ? maintenance.model || {status: 'waiting'} : null;
+    return maintenance?.required_reason === 'model_not_ready' ? maintenance.model || {status: 'unavailable'} : null;
   }});
   $('memories-create').onclick = () => {
     if(getMaintenance()?.state !== 'normal')return;
