@@ -1,0 +1,108 @@
+name: docker-amd64-ci
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "cold: official build; warm/source-probe: cross-run cache checks"
+        type: choice
+        options: [cold, warm, source-probe]
+        default: cold
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  CACHE_REF: ghcr.io/tech-kuiperbelt/remember-me-buildcache:amd64
+  MODE: ${{ inputs.mode || 'cold' }}
+  IMAGE: remember-me:phase3.1-ci-${{ github.sha }}
+  VALIDATION_IMAGE: remember-me:phase3.1-validation-${{ github.sha }}
+  BUILDER: ci-${{ github.run_id }}
+
+concurrency:
+  group: docker-amd64-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Record runner and free disk
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          {
+            echo "mode=$MODE"
+            echo "run_id=$GITHUB_RUN_ID"
+            echo "run_attempt=$GITHUB_RUN_ATTEMPT"
+            echo "runner=$RUNNER_NAME"
+            echo "sha=$GITHUB_SHA"
+          } | tee artifacts/run.txt
+          df -B1 / | tee artifacts/disk-before.txt
+          df -h / | tee -a artifacts/disk-before.txt
+          docker system df | tee artifacts/docker-before.txt
+
+          # Remove preinstalled toolchains that are unrelated to this build.
+          sudo rm -rf \
+            /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost \
+            /usr/share/swift || true
+          sudo apt-get clean || true
+
+          df -B1 / | tee artifacts/disk-after-cleanup.txt
+          df -h / | tee -a artifacts/disk-after-cleanup.txt
+          docker system df | tee artifacts/docker-after-cleanup.txt
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          name: ci-${{ github.run_id }}
+          driver: docker-container
+          driver-opts: image=moby/buildkit:v0.33.1
+
+      - name: Log in to GHCR for private cache
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Static checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile .github/scripts/docker_ci.py tests/run_docker_ci_smoke.py
+          python -m pip install --quiet pytest
+          python -m pytest -q tests/test_docker_assets.py
+
+      - name: Build and verify
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          python .github/scripts/docker_ci.py
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: phase3.1-${{ inputs.mode || 'cold' }}-${{ github.run_id }}
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Clean up smoke containers
+        if: always()
+        shell: bash
+        run: |
+          docker ps -aq --filter name=rm-ci-smoke- | xargs -r docker rm -f || true
