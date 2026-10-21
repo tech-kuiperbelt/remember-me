@@ -308,9 +308,13 @@ def check_cached(log_path, results, *, expect_model_download):
     else:
         if verified:
             raise Failure(f"warm build still downloaded/verified model files: {verified}")
-        for stage in ("deps", "model-download"):
-            if stage not in stages:
-                raise Failure(f"warm build did not report {stage} as CACHED: {sorted(stages)}")
+        if "deps" not in stages:
+            raise Failure(f"warm build did not report deps as CACHED: {sorted(stages)}")
+        saw_model_download = "[model-download" in text
+        if saw_model_download and "model-download" not in stages:
+            raise Failure("warm build re-ran model-download without a cache hit")
+        if not saw_model_download:
+            results["cache"]["model_download"] = "skipped_by_cached_downstream"
 
 
 def run_smoke(image, results):
