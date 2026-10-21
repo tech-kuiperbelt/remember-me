@@ -1,0 +1,249 @@
+{
+  "phase": "3.1",
+  "mode": "warm",
+  "date": "2026-10-21T12:14:05Z",
+  "run": {
+    "id": "39597821561",
+    "attempt": "1",
+    "runner": "GitHub Actions 1000000020",
+    "sha": "b1a01bb74bf2486cab987cfae4de9dc15542f992",
+    "repository": "tech-kuiperbelt/remember-me",
+    "server_url": "https://github.com"
+  },
+  "cache": {
+    "ref": "ghcr.io/tech-kuiperbelt/remember-me-buildcache:amd64",
+    "builder": "ci-39597821561",
+    "before": {
+      "exit_code": 0,
+      "stdout": "{\n  \"mediaType\": \"application/vnd.oci.image.manifest.v1+json\",\n  \"digest\": \"sha256:2d04612394b0e64e89184ed5a8ae4b3abc0cc42b7f66031c5b8b1d7bfb353e79\",\n  \"size\": 4532\n}",
+      "stderr": ""
+    },
+    "before_raw": "{\"schemaVersion\":2,\"mediaType\":\"application/vnd.oci.image.manifest.v1+json\",\"config\":{\"mediaType\":\"application/vnd.buildkit.cacheconfig.v0\",\"digest\":\"sha256:f67950b267a3b4d173d72450d5e267625bb262172e9339018ee4dfcefea9e890\",\"size\":5113},\"layers\":[{\"mediaType\":\"application/vnd.oci.image.layer.v1.tar+gzip\",\"digest\":\"sha256:2101712fbedb860bd8e11955ade6781393834ff18cd686e604483585d37db3b0\",\"size\":2009,\"annotations\":{\"buildkit/createdat\":\"2026-10-21T12:07:45.927728616Z\",\"containerd.io/uncompressed\":\"sha256:d8363e53bd3b23da791d45a1660beb8c00579f45c830616edbe17edf414f2a43\"}},{\"mediaType\":\"application/vnd.oci.image.layer.v1.tar+gzip\",\"digest\":\"sha256:21bfca92d4e98bfd37e3fe0ca199607d37798af4ca49cf5591780ff17a3a9f95\",\"size\":2973025,\"annotations\":{\"buildkit/createdat\":\"2026-10-21T12:07:45.904335163Z\",\"containerd.io/uncompressed\":\"sha256:ea4195ed3f3b4ac025f34641b3ca7a8c5faa3cb860ea8f85b1b5792b9f7ade05\"}},{\"mediaType\":\"application/vnd.oci.image.layer.v1.tar+gzip\",\"digest\":\"sha256:3b3f2b41d8ee3b5d352bf3c66b7a05e5b923788f288c6755707dab8ce09a018b\",\"size\":300350846,\"annotations\":{\"buildkit/createdat\":\"2026-10-21T12:07:15.656270755Z\",\"containerd.io/uncompressed\":\"sha256:5b8959806ac8575afb27837e117a003bd3c2afa58c3520aadf6a5c832acc77e2\"}},{\"mediaType\":\"application/vnd.oci.image.layer.v1.tar+gzip\",\"digest\":\"sha256:50881cffc88f0821dac4f262738bc96e3ba363233a71e2bbd22f005dbf8df5a9\",\"size\":172275,\"annotations\":{\"buildkit/createdat\":\"2026-10-21T12:07:45.86728412Z\",\"containerd.io/uncompressed\":\"sha256:2b3122c27a9e0a907f4e7b00b686ca2506348767b096acdd7591fca50c653f8d\"}},{\"mediaType\":\"application/vnd.oci.image.layer.v1.tar+gzip\",\"digest\":\"sha256:6e0ba8ba048777f5354b5a7cb497ae5261116fac8246160c06fc045c8300c582\",\"size\":3342298,\"annotations\":{\"buildkit/createdat\":\"2026-10-21T12:06:35.490899114Z\",\"containerd.io/uncompressed\":\"sha256:916eda96356f5280ba200349e111e70c46d7ec98a4a3dd2c38e88f7b133c17ba\"}},{\"mediaType\":\"application/vnd.oci.image.layer.v1.tar+gzip\",\"digest\":\"sha256:7fd1ebe418b5079d4aa36f416af9b143d127bc75b0155d71cb5fd559b5e04d39\",\"size\":28249323,\"annotations\":{\"buildkit/createdat\":\"2026-10-21T12:06:35.488392051Z\",\"containerd.io/uncompressed\":\"sha256:e58989146fcec76699871403b9897b5c014af1ccd85f5a9300a215e7975525d7\"}},{\"mediaType\":\"application/vnd.oci.image.layer.v1.tar+gzip\",\"digest\":\"sha256:86a9e13e035d8e44ae37bfebc52c7fc68898fde19b4b26dd0585f2231fcfaf2c\",\"size\":15966608,\"annotations\":{\"buildkit/createdat\":\"2026-10-21T12:06:35.494786781Z\",\"containerd.io/uncompressed\":\"sha256:694fd645f7c3f2166f87f2929facc4eccb7e1cfda9bfb5d1373f77e6c9c57ea6\"}},{\"mediaType\":\"application/vnd.oci.image.layer.v1.tar+gzip\",\"digest\":\"sha256:8988badb15ce7dac8ec3966569ab9deb98ffc1fee814c9f04afbdfc74fa4cbb2\",\"size\":120,\"annotations\":{\"buildkit/createdat\":\"2026-10-21T12:07:15.836582134Z\",\"containerd.io/uncompressed\":\"sha256:1ffb96add7be0792080cbe165fbfc269fdd9646fe6127295aaf20cd2d4d3c99e\"}},{\"mediaType\":\"application/vnd.oci.image.layer.v1.tar+gzip\",\"digest\":\"sha256:93e0b8d9971279ff0aa2c359d917df5c04a4d07113d8b6ec114c6da0bc218342\",\"size\":4093,\"annotations\":{\"buildkit/createdat\":\"2026-10-21T12:07:45.91241413Z\",\"containerd.io/uncompressed\":\"sha256:839faa2d6255733632e5f090694aadf6acba91fa2223847d1e65f5bfdc5b2c39\"}},{\"mediaType\":\"application/vnd.oci.image.layer.v1.tar+gzip\",\"digest\":\"sha256:9ee4e30f4a811a30de5d800039bed0c8ef0b09e8a905c728552b1dc603a312db\",\"size\":1359856203,\"annotations\":{\"buildkit/createdat\":\"2026-10-21T12:07:45.848687955Z\",\"containerd.io/uncompressed\":\"sha256:00455623a86de948c254ca7bc4b95e326b51edaa77462e69e33e6a2d38dace64\"}},{\"mediaType\":\"application/vnd.oci.image.layer.v1.tar+gzip\",\"digest\":\"sha256:c0ddd6f8cadedfede4a9cbf2d6a4b5dc57862c4128ea31517b741b03892cf3e8\",\"size\":4121,\"annotations\":{\"buildkit/createdat\":\"2026-10-21T12:07:15.845561114Z\",\"containerd.io/uncompressed\":\"sha256:2b30fd44383ea60e84639c64fa641b636c55c274b7e8cc10356b643133040ff8\"}},{\"mediaType\":\"application/vnd.oci.image.layer.v1.tar+gzip\",\"digest\":\"sha256:f626c62d520844ccf52e1698a4b962089c978e1b84b06d1304a911d0a7014d32\",\"size\":1211,\"annotations\":{\"buildkit/createdat\":\"2026-10-21T12:06:38.31003316Z\",\"containerd.io/uncompressed\":\"sha256:3edc096f04d026d8a0ded32aece4d96ef7e5c98cd6ba226d088fe60b19e1ea72\"}},{\"mediaType\":\"application/vnd.oci.image.layer.v1.tar+gzip\",\"digest\":\"sha256:f9d2fb07d6f062d06ddc7aa58191cc5359c728f54af6cebe69a37d2c89e72a0d\",\"size\":249,\"annotations\":{\"buildkit/createdat\":\"2026-10-21T12:06:35.49792954Z\",\"containerd.io/uncompressed\":\"sha256:742affd58633b3e2b85ef86583f2775486468b1317f7214d12e193d948421098\"}}]}",
+    "before_raw_error": "",
+    "before_image": "{\n  \"architecture\": \"\",\n  \"os\": \"\",\n  \"config\": {},\n  \"rootfs\": {\n    \"type\": \"\",\n    \"diff_ids\": null\n  }\n}",
+    "before_image_error": "",
+    "config": {
+      "digest": "sha256:f67950b267a3b4d173d72450d5e267625bb262172e9339018ee4dfcefea9e890",
+      "layers": 13,
+      "records": [
+        {
+          "layers": null,
+          "inputs": 2,
+          "description": null
+        },
+        {
+          "layers": null,
+          "inputs": 0,
+          "description": null
+        },
+        {
+          "layers": [
+            {
+              "layer": 7,
+              "createdAt": "2026-10-21T12:07:15.837136931Z"
+            }
+          ],
+          "inputs": 1,
+          "description": null
+        },
+        {
+          "layers": null,
+          "inputs": 0,
+          "description": null
+        },
+        {
+          "layers": null,
+          "inputs": 1,
+          "description": null
+        },
+        {
+          "layers": [
+            {
+              "layer": 9,
+              "createdAt": "2026-10-21T12:07:45.849341399Z"
+            }
+          ],
+          "inputs": 1,
+          "description": null
+        },
+        {
+          "layers": [
+            {
+              "layer": 8,
+              "createdAt": "2026-10-21T12:07:45.912839969Z"
+            }
+          ],
+          "inputs": 2,
+          "description": null
+        },
+        {
+          "layers": null,
+          "inputs": 2,
+          "description": null
+        },
+        {
+          "layers": [
+            {
+              "layer": 0,
+              "createdAt": "2026-10-21T12:07:45.928211919Z"
+            }
+          ],
+          "inputs": 2,
+          "description": null
+        },
+        {
+          "layers": [
+            {
+              "layer": 3,
+              "createdAt": "2026-10-21T12:07:45.868025925Z"
+            }
+          ],
+          "inputs": 2,
+          "description": null
+        },
+        {
+          "layers": [
+            {
+              "layer": 2,
+              "createdAt": "2026-10-21T12:07:15.656917112Z"
+            }
+          ],
+          "inputs": 2,
+          "description": null
+        },
+        {
+          "layers": null,
+          "inputs": 0,
+          "description": null
+        },
+        {
+          "layers": null,
+          "inputs": 0,
+          "description": null
+        },
+        {
+          "layers": null,
+          "inputs": 0,
+          "description": null
+        },
+        {
+          "layers": null,
+          "inputs": 0,
+          "description": null
+        },
+        {
+          "layers": null,
+          "inputs": 0,
+          "description": null
+        },
+        {
+          "layers": null,
+          "inputs": 2,
+          "description": null
+        },
+        {
+          "layers": null,
+          "inputs": 0,
+          "description": null
+        },
+        {
+          "layers": [
+            {
+              "layer": 10,
+              "createdAt": "2026-10-21T12:07:15.84618296Z"
+            }
+          ],
+          "inputs": 2,
+          "description": null
+        },
+        {
+          "layers": [
+            {
+              "layer": 11,
+              "createdAt": "2026-10-21T12:06:38.310615492Z"
+            }
+          ],
+          "inputs": 1,
+          "description": null
+        },
+        {
+          "layers": null,
+          "inputs": 1,
+          "description": null
+        },
+        {
+          "layers": null,
+          "inputs": 0,
+          "description": null
+        },
+        {
+          "layers": null,
+          "inputs": 2,
+          "description": null
+        },
+        {
+          "layers": [
+            {
+              "layer": 1,
+              "createdAt": "2026-10-21T12:07:45.904921799Z"
+            }
+          ],
+          "inputs": 2,
+          "description": null
+        },
+        {
+          "layers": null,
+          "inputs": 0,
+          "description": null
+        },
+        {
+          "layers": null,
+          "inputs": 0,
+          "description": null
+        }
+      ]
+    },
+    "cached_stages": [
+      "deps",
+      "model-tools",
+      "runtime-base",
+      "runtime-download"
+    ],
+    "verified_files": [],
+    "verified_count": 0,
+    "model_download": "skipped_by_cached_downstream"
+  },
+  "result": "passed",
+  "disk": {
+    "before": {
+      "total_bytes": 154894188544,
+      "used_bytes": 39959105536,
+      "available_bytes": 114918305792,
+      "available_GB": 114.918,
+      "available_GiB": 107.026
+    },
+    "estimated_peak_bytes": 7817960661,
+    "required_bytes": 8990654760,
+    "estimate_GB": 7.818,
+    "required_GB": 8.991,
+    "samples": [
+      {
+        "time": 1792584845.6754956,
+        "available_bytes": 114918305792
+      }
+    ],
+    "minimum_available_bytes": 114918305792,
+    "minimum_available_GB": 114.918
+  },
+  "cache_build": {
+    "exit_code": 0,
+    "seconds": 1.916745437000003
+  },
+  "disk_after": {
+    "total_bytes": 154894188544,
+    "used_bytes": 40008024064,
+    "available_bytes": 114869387264,
+    "available_GB": 114.869,
+    "available_GiB": 106.98
+  }
+}

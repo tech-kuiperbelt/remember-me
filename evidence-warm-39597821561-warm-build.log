@@ -1,0 +1,93 @@
+#0 building with "ci-39597821561" instance using docker-container driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 4.12kB done
+#1 DONE 0.0s
+
+#2 [auth] docker/dockerfile:pull token for registry-1.docker.io
+#2 DONE 0.0s
+
+#3 resolve image config for docker-image://docker.io/docker/dockerfile:1
+#3 DONE 0.3s
+
+#4 docker-image://docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#4 resolve docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e done
+#4 sha256:9d2b4f57f9e20f33279375ce25c6ff14f30f64270ed5c7b613b2b30256754f62 14.28MB / 14.28MB 0.1s done
+#4 extracting sha256:9d2b4f57f9e20f33279375ce25c6ff14f30f64270ed5c7b613b2b30256754f62 0.1s done
+#4 DONE 0.2s
+
+#5 [auth] library/python:pull token for registry-1.docker.io
+#5 DONE 0.0s
+
+#6 [internal] load metadata for docker.io/library/python:3.12.15-slim-bookworm@sha256:2ed6491b93cd49272ee6de2b5a38440c3448360322c089fc23e370722d74179d
+#6 DONE 0.2s
+
+#7 [internal] load .dockerignore
+#7 transferring context: 772B done
+#7 DONE 0.0s
+
+#8 [internal] load build context
+#8 DONE 0.0s
+
+#9 [model-tools 1/3] FROM docker.io/library/python:3.12.15-slim-bookworm@sha256:2ed6491b93cd49272ee6de2b5a38440c3448360322c089fc23e370722d74179d
+#9 resolve docker.io/library/python:3.12.15-slim-bookworm@sha256:2ed6491b93cd49272ee6de2b5a38440c3448360322c089fc23e370722d74179d done
+#9 DONE 0.0s
+
+#10 [auth] tech-kuiperbelt/remember-me-buildcache:pull token for ghcr.io
+#10 DONE 0.0s
+
+#11 importing cache manifest from ghcr.io/tech-kuiperbelt/remember-me-buildcache:amd64
+#11 inferred cache manifest type: application/vnd.oci.image.manifest.v1+json done
+#11 DONE 0.8s
+
+#8 [internal] load build context
+#8 transferring context: 4.64MB 0.1s done
+#8 DONE 0.1s
+
+#12 [runtime-base 4/4] WORKDIR /opt/remember-me
+#12 CACHED
+
+#13 [runtime-download 4/6] COPY web/ ./web/
+#13 CACHED
+
+#14 [runtime-download 5/6] COPY LICENSE ./LICENSE
+#14 CACHED
+
+#15 [model-tools 3/3] COPY docker/licenses/ /build/licenses/
+#15 CACHED
+
+#16 [runtime-download 1/6] COPY --from=model-tools /build /build
+#16 CACHED
+
+#17 [runtime-download 2/6] RUN python /build/package_model.py --download-cache /tmp/model-download --output /opt/remember-me/models     && rm -rf /tmp/model-download /build
+#17 CACHED
+
+#18 [deps 3/5] COPY docker/pip-bootstrap.lock /build/pip-bootstrap.lock
+#18 CACHED
+
+#19 [deps 2/5] RUN python -m venv /opt/venv
+#19 CACHED
+
+#20 [runtime-base 3/4] COPY --from=deps /opt/venv /opt/venv
+#20 CACHED
+
+#21 [runtime-download 3/6] COPY app/ ./app/
+#21 CACHED
+
+#22 [deps 5/5] RUN --mount=type=cache,target=/root/.cache/pip     /opt/venv/bin/python -m pip install --require-hashes --only-binary=:all: --no-compile -r /build/pip-bootstrap.lock &&     /opt/venv/bin/python -m pip install --require-hashes --only-binary=:all: --no-compile -r /build/production.lock &&     /opt/venv/bin/python -m pip check
+#22 CACHED
+
+#23 [runtime-base 2/4] RUN groupadd --gid 10001 remember-me &&     useradd --uid 10001 --gid 10001 --home-dir /data --no-create-home remember-me &&     install -d -o 10001 -g 10001 /data
+#23 CACHED
+
+#24 [deps 4/5] COPY requirements/docker-cpu-py312-linux-amd64.lock /build/production.lock
+#24 CACHED
+
+#25 [model-tools 2/3] COPY docker/package_model.py docker/bge-m3-manifest.json /build/
+#25 CACHED
+
+#26 [runtime-download 6/6] COPY docker/entrypoint.py docker/healthcheck.py docker/init_data.py ./docker/
+#26 CACHED
+
+#27 resolving provenance for metadata file
+#27 DONE 0.0s
