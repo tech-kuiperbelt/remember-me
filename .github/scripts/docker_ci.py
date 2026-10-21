@@ -451,6 +451,7 @@ def main():
     except Exception as exc:
         results["error"] = str(exc)
         print(f"FAIL: {exc}", file=sys.stderr, flush=True)
+        print(f"::error title=Phase 3.1 {MODE} failed::{str(exc).replace(chr(10), ' ')[:1000]}", flush=True)
         raise
     finally:
         if sampler:
@@ -473,6 +474,13 @@ def main():
         )
         (ARTIFACTS / "summary.md").write_text(summary)
         print(summary, flush=True)
+        step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
+        if step_summary:
+            with open(step_summary, "a", encoding="utf-8") as stream:
+                stream.write(summary)
+                stream.write("\n```json\n")
+                stream.write(json.dumps(results, indent=2, ensure_ascii=False))
+                stream.write("\n```\n")
 
 
 if __name__ == "__main__":
