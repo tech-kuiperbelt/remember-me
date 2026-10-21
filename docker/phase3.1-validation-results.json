@@ -60,7 +60,8 @@
       "visibility": "private",
       "anonymous_probe_exit": 1,
       "authenticated_probe_exit": 0
-    }
+    },
+    "cache_export_log_status": "exported"
   },
   "warm_run": {
     "id": "39597821561",

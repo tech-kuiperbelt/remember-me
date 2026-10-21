@@ -85,13 +85,22 @@ def stream_build(argv, log_path, env=None):
 
 def parse_stage_cache(log_text):
     """Map BuildKit step ids to stage names and cached state."""
-    stages = {}
-    for line in log_text.splitlines():
-        match = re.match(r"#(\d+) \[([^\]]+)\]", line)
-        if match:
-            stages.setdefault(match.group(1), match.group(2).split()[0])
-    cached = {step for step in stages if re.search(rf"^#{step} CACHED$", log_text, re.M)}
+    stages, _, cached = parse_steps(log_text)
     return {stage for step, stage in stages.items() if step in cached}
+
+
+def parse_steps(log_text):
+    """Return step id -> (stage, command) and the set of cached step ids."""
+    stages = {}
+    commands = {}
+    for line in log_text.splitlines():
+        match = re.match(r"#(\d+) \[([^\]]+)\] ?(.*)", line)
+        if match:
+            step, stage, command = match.groups()
+            stages.setdefault(step, stage.split()[0])
+            commands.setdefault(step, command.strip())
+    cached = {step for step in stages if re.search(rf"^#{step} CACHED$", log_text, re.M)}
+    return stages, commands, cached
 
 
 def verified_files(log_text):
@@ -285,32 +294,76 @@ def cache_check_before(results):
         raise Failure(f"remote cache is not readable: {manifest}")
 
 
-def cache_check_after_cold(results):
+def cache_check_after_cold(results, log_path):
     manifest = cache_manifest()
     results["cache"]["after"] = manifest
-    results["cache"]["export_status"] = "exported" if manifest["exit_code"] == 0 else "failed"
+    text = Path(log_path).read_text()
+    marker = "exporting cache to registry"
+    segment = text.split(marker, 1)[1] if marker in text else ""
+    if not segment:
+        results["cache"]["export_log_status"] = "not_observed"
+    elif re.search(r"(?i)(error|failed)", segment):
+        results["cache"]["export_log_status"] = "failed"
+    elif "writing cache image manifest" in segment:
+        results["cache"]["export_log_status"] = "exported"
+    else:
+        results["cache"]["export_log_status"] = "incomplete"
+    results["cache"]["export_status"] = (
+        "exported"
+        if manifest["exit_code"] == 0
+        and results["cache"]["export_log_status"] == "exported"
+        else "failed"
+    )
     if manifest["exit_code"] != 0:
         raise Failure(f"cache export did not produce a readable manifest: {manifest}")
+    if results["cache"]["export_log_status"] == "failed":
+        raise Failure("cache export reported an error despite ignore-error=true")
+    if results["cache"]["export_log_status"] != "exported":
+        raise Failure(
+            "cache export completion was not observed in the build log: "
+            f"{results['cache']['export_log_status']}"
+        )
 
 
 def check_cached(log_path, results, *, expect_model_download):
     text = Path(log_path).read_text()
-    stages = parse_stage_cache(text)
+    stages, commands, cached_steps = parse_steps(text)
+    cached_stages = {stage for step, stage in stages.items() if step in cached_steps}
     verified = verified_files(text)
-    results["cache"]["cached_stages"] = sorted(stages)
+    results["cache"]["cached_stages"] = sorted(cached_stages)
+    results["cache"]["cached_steps"] = [
+        {"step": step, "stage": stages[step], "command": commands.get(step, "")}
+        for step in sorted(cached_steps, key=int)
+    ]
     results["cache"]["verified_files"] = [path for path, _ in verified]
     results["cache"]["verified_count"] = len(verified)
     if expect_model_download:
         if len(verified) != 11:
             raise Failure(f"cold build verified {len(verified)} files, expected 11")
-        if "runtime-download" in stages:
+        if "runtime-download" in cached_stages:
             raise Failure("cold build used a cached runtime-download stage")
     else:
         if verified:
             raise Failure(f"warm build still downloaded/verified model files: {verified}")
         for stage in ("deps", "runtime-download"):
-            if stage not in stages:
-                raise Failure(f"warm build did not report {stage} as CACHED: {sorted(stages)}")
+            if stage not in cached_stages:
+                raise Failure(
+                    f"warm build did not report {stage} as CACHED: {sorted(cached_stages)}")
+        saw_model_download = "[model-download" in text
+        if saw_model_download and "model-download" not in cached_stages:
+            raise Failure("warm build re-ran model-download without a cache hit")
+        if not saw_model_download:
+            results["cache"]["model_download"] = "skipped_by_cached_downstream"
+        if MODE == "source-probe":
+            app_steps = [
+                step for step, stage in stages.items()
+                if stage == "runtime-download"
+                and commands.get(step, "").startswith(("COPY app/", "COPY web/"))
+            ]
+            rebuilt = [step for step in app_steps if step not in cached_steps]
+            results["cache"]["source_probe_rebuilt_steps"] = rebuilt
+            if not rebuilt:
+                raise Failure("source probe did not rebuild an application layer")
 
 
 def run_smoke(image, results):
@@ -376,7 +429,7 @@ def run_cold(results, sampler):
     if parsed.get("profile", {}).get("profile_id") != PROFILE_ID:
         raise Failure(f"unexpected profile: {parsed.get('profile')}")
     docker("rmi", "-f", VALIDATION_IMAGE, check=False)
-    cache_check_after_cold(results)
+    cache_check_after_cold(results, ARTIFACTS / "cold-build.log")
     privacy_gate(results)
 
 

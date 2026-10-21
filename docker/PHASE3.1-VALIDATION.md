@@ -6,8 +6,9 @@ or `latest` tag was published.
 ## Environment and inputs
 
 - Repository: `tech-kuiperbelt/remember-me` (public).
-- Runner: GitHub-hosted `ubuntu-latest`, observed as 4 vCPU / 16 GB; the measured
-  disk was 154.9 GB total with 114.1 GB available before the cold build. This is
+- Runner: GitHub-hosted `ubuntu-latest` (public-repository standard 4 vCPU / 16 GB
+  per GitHub documentation); the measured disk was 154.9 GB total with 114.1 GB
+  available before the cold build. This is
   well above the 14 GB figure in the hosted-runner documentation; no larger
   runner or disk fallback was needed.
 - Build: existing `Dockerfile`, `runtime` target, official Hugging Face download,
