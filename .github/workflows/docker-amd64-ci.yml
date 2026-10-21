@@ -17,7 +17,7 @@ permissions:
 
 env:
   CACHE_REF: ghcr.io/tech-kuiperbelt/remember-me-buildcache:amd64
-  MODE: cold
+  MODE: warm
   IMAGE: remember-me:phase3.1-ci-${{ github.sha }}
   VALIDATION_IMAGE: remember-me:phase3.1-validation-${{ github.sha }}
   BUILDER: ci-${{ github.run_id }}
