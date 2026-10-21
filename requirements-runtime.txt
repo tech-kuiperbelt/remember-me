@@ -1,0 +1,13 @@
+# Shared production inputs. Linux CPU installation: bash bin/install.sh.
+mcp>=1.28.0,<2
+requests>=2.31.0
+numpy>=1.24.0
+uvicorn>=0.29.0
+python-multipart>=0.0.9
+
+# Recommended default embedding provider (Sentence Transformers + BAAI/bge-m3).
+torch>=2.6,<3
+sentence-transformers>=5.0,<6.0
+# Required when BGE-M3's SentencePiece tokenizer needs conversion.
+sentencepiece>=0.2.0
+protobuf>=3.20

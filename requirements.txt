@@ -1,17 +1,5 @@
-mcp>=1.28.0,<2
-requests>=2.31.0
-numpy>=1.24.0
-uvicorn>=0.29.0
-python-multipart>=0.0.9
-
-# Recommended default embedding provider (Sentence Transformers + BAAI/bge-m3).
-# Use bash bin/install.sh to select CPU Torch before resolving these dependencies.
-torch>=2.6,<3
-sentence-transformers>=5.0,<6.0
-# BGE-M3 ships a SentencePiece tokenizer; transformers needs these to build it
-# when the cached model has no converted tokenizer.json.
-sentencepiece>=0.2.0
-protobuf>=3.20
+# Compatible Python installation entry point, including the existing test tool.
+-r requirements-runtime.txt
 
 # Test
 pytest>=9.0.0

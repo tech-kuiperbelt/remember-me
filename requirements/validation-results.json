@@ -1,0 +1,72 @@
+{
+  "date": "2026-10-21",
+  "python": "3.12.3",
+  "platform": "Linux-7.0.0-30-generic-x86_64-with-glibc2.39",
+  "runtime_package_count": 70,
+  "key_versions": {
+    "mcp": "1.30.0",
+    "protobuf": "7.36.2",
+    "sentence-transformers": "5.7.0",
+    "sentencepiece": "0.2.2",
+    "tokenizers": "0.23.3",
+    "transformers": "5.20.2",
+    "torch": "2.14.1+cpu"
+  },
+  "lock_sha256": "041aca82c90f694da019898e31caa09a97c2312c8678bedf37f0cd86b5cb7655",
+  "wheel_archives_bytes": 306752335,
+  "runtime_record_files_bytes": 1344791529,
+  "site_packages_bytes_after_inference": 1358650473,
+  "pip_check": "passed",
+  "forbidden_packages": [],
+  "torch_cuda": null,
+  "torch_hip": null,
+  "torch_source": {
+    "archive_info": {
+      "hash": "sha256=5a6363570c753812540a05eb82380e329469cbe668643e88111414c12627711f",
+      "hashes": {
+        "sha256": "5a6363570c753812540a05eb82380e329469cbe668643e88111414c12627711f"
+      }
+    },
+    "url": "https://download-r2.pytorch.org/whl/cpu/torch-2.14.1%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl"
+  },
+  "model_validation": "offline_inference_passed",
+  "model_revision": "5617a9f61b028005a4858fdac845db406aefb181",
+  "profile": {
+    "profile_id": "ep_6134c0b15d2bb471",
+    "provider": "sentence_transformers",
+    "model": "BAAI/bge-m3",
+    "dimension": 1024,
+    "normalized": true,
+    "query_prefix": "",
+    "document_prefix": "",
+    "max_input_chars": 8000,
+    "max_input_tokens": 8192
+  },
+  "vector_dimensions": [
+    1024,
+    1024
+  ],
+  "vector_norms": [
+    1.0000000151112973,
+    1.0000000924184702
+  ],
+  "slow_tokenizer": "XLMRobertaTokenizer",
+  "lock_regeneration": "byte_identical",
+  "ordinary_python_pytest": {
+    "passed": 1110,
+    "warnings": 7
+  },
+  "locked_runtime_pytest": {
+    "passed": 1110,
+    "warnings": 6,
+    "harness": "separate venv references production site-packages and external pytest tools"
+  },
+  "limits": [
+    "No Docker image or slim OS validation",
+    "Only Python 3.12.3 installed; other patches not tested",
+    "No production database access or vector rebuild",
+    "Profile identity checked; no existing-data retrieval or old-vector comparison",
+    "Model offline network audit hook used; no OS network namespace/read-only mount validation",
+    "Official download artifacts reused from SHA256-verified cache; no fresh-download bandwidth measurement"
+  ]
+}

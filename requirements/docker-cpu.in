@@ -1,0 +1,6 @@
+# Linux AMD64 / CPython 3.12 only. Full lock baseline: glibc >=2.34.
+# Shared direct dependencies; never derive this list from a developer venv.
+-r ../requirements-runtime.txt
+# Official CPU wheel selected from https://download.pytorch.org/whl/cpu/torch/.
+# A direct URL + SHA256 prevents resolution to a CUDA PyPI wheel.
+torch @ https://download-r2.pytorch.org/whl/cpu/torch-2.14.1%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl#sha256=5a6363570c753812540a05eb82380e329469cbe668643e88111414c12627711f

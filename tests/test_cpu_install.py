@@ -15,6 +15,7 @@ def installation(tmp_path):
     root = Path(__file__).resolve().parents[1]
     shutil.copy2(root / 'bin/install.sh', tmp_path / 'bin/install.sh')
     shutil.copy2(root / 'requirements.txt', tmp_path / 'requirements.txt')
+    shutil.copy2(root / 'requirements-runtime.txt', tmp_path / 'requirements-runtime.txt')
     venv.EnvBuilder(with_pip=False).create(tmp_path / '.venv')
     python = tmp_path / '.venv/bin/python'
     site = Path(subprocess.check_output(
