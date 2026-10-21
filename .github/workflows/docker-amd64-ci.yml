@@ -1,6 +1,8 @@
 name: docker-amd64-ci
 
 on:
+  push:
+    branches: [phase3.1-ci-runs]
   workflow_dispatch:
     inputs:
       mode:
@@ -15,7 +17,7 @@ permissions:
 
 env:
   CACHE_REF: ghcr.io/tech-kuiperbelt/remember-me-buildcache:amd64
-  MODE: ${{ inputs.mode || 'cold' }}
+  MODE: cold
   IMAGE: remember-me:phase3.1-ci-${{ github.sha }}
   VALIDATION_IMAGE: remember-me:phase3.1-validation-${{ github.sha }}
   BUILDER: ci-${{ github.run_id }}
@@ -96,7 +98,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: phase3.1-${{ inputs.mode || 'cold' }}-${{ github.run_id }}
+          name: phase3.1-${{ env.MODE }}-${{ github.run_id }}
           path: artifacts/
           if-no-files-found: warn
           retention-days: 30
