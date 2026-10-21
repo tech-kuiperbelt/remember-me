@@ -74,9 +74,11 @@ FROM runtime-base AS runtime-download
 # Keep the pinned model in the final image stage. BuildKit registry cache
 # exports can drop cache records for a separate build stage consumed through
 # COPY --from, which makes subsequent CI builds re-download the 2.27 GB model.
+USER 0:0
 COPY --from=model-tools /build /build
 RUN python /build/package_model.py --download-cache /tmp/model-download --output /opt/remember-me/models \
     && rm -rf /tmp/model-download /build
+USER 10001:10001
 COPY app/ ./app/
 COPY web/ ./web/
 COPY LICENSE ./LICENSE
