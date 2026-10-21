@@ -1,0 +1,170 @@
+#0 building with "ci-39598394942" instance using docker-container driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 4.12kB done
+#1 DONE 0.0s
+
+#2 [auth] docker/dockerfile:pull token for registry-1.docker.io
+#2 DONE 0.0s
+
+#3 resolve image config for docker-image://docker.io/docker/dockerfile:1
+#3 DONE 0.7s
+
+#4 docker-image://docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#4 resolve docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e done
+#4 sha256:9d2b4f57f9e20f33279375ce25c6ff14f30f64270ed5c7b613b2b30256754f62 7.34MB / 14.28MB 0.2s
+#4 sha256:9d2b4f57f9e20f33279375ce25c6ff14f30f64270ed5c7b613b2b30256754f62 14.28MB / 14.28MB 0.2s done
+#4 extracting sha256:9d2b4f57f9e20f33279375ce25c6ff14f30f64270ed5c7b613b2b30256754f62 0.1s done
+#4 DONE 0.3s
+
+#5 [auth] library/python:pull token for registry-1.docker.io
+#5 DONE 0.0s
+
+#6 [internal] load metadata for docker.io/library/python:3.12.15-slim-bookworm@sha256:2ed6491b93cd49272ee6de2b5a38440c3448360322c089fc23e370722d74179d
+#6 DONE 0.4s
+
+#7 [internal] load .dockerignore
+#7 transferring context: 772B done
+#7 DONE 0.0s
+
+#8 importing cache manifest from ghcr.io/tech-kuiperbelt/remember-me-buildcache:amd64
+#8 ...
+
+#9 [internal] load build context
+#9 DONE 0.0s
+
+#10 [model-tools 1/3] FROM docker.io/library/python:3.12.15-slim-bookworm@sha256:2ed6491b93cd49272ee6de2b5a38440c3448360322c089fc23e370722d74179d
+#10 resolve docker.io/library/python:3.12.15-slim-bookworm@sha256:2ed6491b93cd49272ee6de2b5a38440c3448360322c089fc23e370722d74179d done
+#10 DONE 0.0s
+
+#11 [auth] tech-kuiperbelt/remember-me-buildcache:pull token for ghcr.io
+#11 DONE 0.0s
+
+#8 importing cache manifest from ghcr.io/tech-kuiperbelt/remember-me-buildcache:amd64
+#8 inferred cache manifest type: application/vnd.oci.image.manifest.v1+json done
+#8 DONE 0.9s
+
+#9 [internal] load build context
+#9 transferring context: 4.64MB 0.0s done
+#9 DONE 0.0s
+
+#12 [runtime-download 1/6] COPY --from=model-tools /build /build
+#12 CACHED
+
+#13 [runtime-base 2/4] RUN groupadd --gid 10001 remember-me &&     useradd --uid 10001 --gid 10001 --home-dir /data --no-create-home remember-me &&     install -d -o 10001 -g 10001 /data
+#13 CACHED
+
+#14 [deps 5/5] RUN --mount=type=cache,target=/root/.cache/pip     /opt/venv/bin/python -m pip install --require-hashes --only-binary=:all: --no-compile -r /build/pip-bootstrap.lock &&     /opt/venv/bin/python -m pip install --require-hashes --only-binary=:all: --no-compile -r /build/production.lock &&     /opt/venv/bin/python -m pip check
+#14 CACHED
+
+#15 [model-tools 2/3] COPY docker/package_model.py docker/bge-m3-manifest.json /build/
+#15 CACHED
+
+#16 [runtime-download 2/6] RUN python /build/package_model.py --download-cache /tmp/model-download --output /opt/remember-me/models     && rm -rf /tmp/model-download /build
+#16 CACHED
+
+#17 [deps 2/5] RUN python -m venv /opt/venv
+#17 CACHED
+
+#18 [runtime-base 3/4] COPY --from=deps /opt/venv /opt/venv
+#18 CACHED
+
+#19 [runtime-base 4/4] WORKDIR /opt/remember-me
+#19 CACHED
+
+#20 [model-tools 3/3] COPY docker/licenses/ /build/licenses/
+#20 CACHED
+
+#21 [deps 3/5] COPY docker/pip-bootstrap.lock /build/pip-bootstrap.lock
+#21 CACHED
+
+#22 [deps 4/5] COPY requirements/docker-cpu-py312-linux-amd64.lock /build/production.lock
+#22 CACHED
+
+#23 [runtime-download 3/6] COPY app/ ./app/
+#23 sha256:50881cffc88f0821dac4f262738bc96e3ba363233a71e2bbd22f005dbf8df5a9 0B / 172.28kB 0.2s
+#23 sha256:9ee4e30f4a811a30de5d800039bed0c8ef0b09e8a905c728552b1dc603a312db 0B / 1.36GB 0.2s
+#23 sha256:8988badb15ce7dac8ec3966569ab9deb98ffc1fee814c9f04afbdfc74fa4cbb2 0B / 120B 0.2s
+#23 sha256:c0ddd6f8cadedfede4a9cbf2d6a4b5dc57862c4128ea31517b741b03892cf3e8 0B / 4.12kB 0.2s
+#23 sha256:50881cffc88f0821dac4f262738bc96e3ba363233a71e2bbd22f005dbf8df5a9 172.28kB / 172.28kB 0.4s done
+#23 sha256:8988badb15ce7dac8ec3966569ab9deb98ffc1fee814c9f04afbdfc74fa4cbb2 120B / 120B 0.4s done
+#23 sha256:c0ddd6f8cadedfede4a9cbf2d6a4b5dc57862c4128ea31517b741b03892cf3e8 4.12kB / 4.12kB 0.4s done
+#23 sha256:3b3f2b41d8ee3b5d352bf3c66b7a05e5b923788f288c6755707dab8ce09a018b 0B / 300.35MB 0.2s
+#23 sha256:f626c62d520844ccf52e1698a4b962089c978e1b84b06d1304a911d0a7014d32 0B / 1.21kB 0.2s
+#23 sha256:f9d2fb07d6f062d06ddc7aa58191cc5359c728f54af6cebe69a37d2c89e72a0d 249B / 249B 0.2s done
+#23 sha256:f626c62d520844ccf52e1698a4b962089c978e1b84b06d1304a911d0a7014d32 1.21kB / 1.21kB 0.3s done
+#23 sha256:86a9e13e035d8e44ae37bfebc52c7fc68898fde19b4b26dd0585f2231fcfaf2c 0B / 15.97MB 0.2s
+#23 sha256:6e0ba8ba048777f5354b5a7cb497ae5261116fac8246160c06fc045c8300c582 0B / 3.34MB 0.2s
+#23 sha256:86a9e13e035d8e44ae37bfebc52c7fc68898fde19b4b26dd0585f2231fcfaf2c 1.05MB / 15.97MB 0.3s
+#23 sha256:6e0ba8ba048777f5354b5a7cb497ae5261116fac8246160c06fc045c8300c582 3.34MB / 3.34MB 0.3s done
+#23 sha256:3b3f2b41d8ee3b5d352bf3c66b7a05e5b923788f288c6755707dab8ce09a018b 16.78MB / 300.35MB 0.6s
+#23 sha256:86a9e13e035d8e44ae37bfebc52c7fc68898fde19b4b26dd0585f2231fcfaf2c 15.97MB / 15.97MB 0.4s done
+#23 sha256:7fd1ebe418b5079d4aa36f416af9b143d127bc75b0155d71cb5fd559b5e04d39 0B / 28.25MB 0.2s
+#23 sha256:9ee4e30f4a811a30de5d800039bed0c8ef0b09e8a905c728552b1dc603a312db 73.40MB / 1.36GB 1.4s
+#23 sha256:7fd1ebe418b5079d4aa36f416af9b143d127bc75b0155d71cb5fd559b5e04d39 28.25MB / 28.25MB 0.3s
+#23 sha256:3b3f2b41d8ee3b5d352bf3c66b7a05e5b923788f288c6755707dab8ce09a018b 41.94MB / 300.35MB 1.1s
+#23 sha256:7fd1ebe418b5079d4aa36f416af9b143d127bc75b0155d71cb5fd559b5e04d39 28.25MB / 28.25MB 0.4s done
+#23 extracting sha256:7fd1ebe418b5079d4aa36f416af9b143d127bc75b0155d71cb5fd559b5e04d39
+#23 sha256:3b3f2b41d8ee3b5d352bf3c66b7a05e5b923788f288c6755707dab8ce09a018b 57.67MB / 300.35MB 1.4s
+#23 extracting sha256:7fd1ebe418b5079d4aa36f416af9b143d127bc75b0155d71cb5fd559b5e04d39 0.5s done
+#23 sha256:3b3f2b41d8ee3b5d352bf3c66b7a05e5b923788f288c6755707dab8ce09a018b 73.40MB / 300.35MB 1.7s
+#23 extracting sha256:6e0ba8ba048777f5354b5a7cb497ae5261116fac8246160c06fc045c8300c582 0.1s done
+#23 extracting sha256:86a9e13e035d8e44ae37bfebc52c7fc68898fde19b4b26dd0585f2231fcfaf2c
+#23 sha256:9ee4e30f4a811a30de5d800039bed0c8ef0b09e8a905c728552b1dc603a312db 143.65MB / 1.36GB 2.3s
+#23 extracting sha256:86a9e13e035d8e44ae37bfebc52c7fc68898fde19b4b26dd0585f2231fcfaf2c 0.4s done
+#23 sha256:3b3f2b41d8ee3b5d352bf3c66b7a05e5b923788f288c6755707dab8ce09a018b 94.37MB / 300.35MB 2.1s
+#23 extracting sha256:f9d2fb07d6f062d06ddc7aa58191cc5359c728f54af6cebe69a37d2c89e72a0d done
+#23 extracting sha256:f626c62d520844ccf52e1698a4b962089c978e1b84b06d1304a911d0a7014d32 done
+#23 sha256:3b3f2b41d8ee3b5d352bf3c66b7a05e5b923788f288c6755707dab8ce09a018b 111.15MB / 300.35MB 2.4s
+#23 sha256:9ee4e30f4a811a30de5d800039bed0c8ef0b09e8a905c728552b1dc603a312db 220.20MB / 1.36GB 3.3s
+#23 sha256:3b3f2b41d8ee3b5d352bf3c66b7a05e5b923788f288c6755707dab8ce09a018b 136.31MB / 300.35MB 2.9s
+#23 sha256:3b3f2b41d8ee3b5d352bf3c66b7a05e5b923788f288c6755707dab8ce09a018b 158.33MB / 300.35MB 3.3s
+#23 sha256:3b3f2b41d8ee3b5d352bf3c66b7a05e5b923788f288c6755707dab8ce09a018b 176.16MB / 300.35MB 3.6s
+#23 sha256:9ee4e30f4a811a30de5d800039bed0c8ef0b09e8a905c728552b1dc603a312db 293.60MB / 1.36GB 4.4s
+#23 sha256:3b3f2b41d8ee3b5d352bf3c66b7a05e5b923788f288c6755707dab8ce09a018b 191.89MB / 300.35MB 3.9s
+#23 sha256:3b3f2b41d8ee3b5d352bf3c66b7a05e5b923788f288c6755707dab8ce09a018b 209.72MB / 300.35MB 4.2s
+#23 sha256:3b3f2b41d8ee3b5d352bf3c66b7a05e5b923788f288c6755707dab8ce09a018b 230.69MB / 300.35MB 4.7s
+#23 sha256:9ee4e30f4a811a30de5d800039bed0c8ef0b09e8a905c728552b1dc603a312db 377.49MB / 1.36GB 5.4s
+#23 sha256:3b3f2b41d8ee3b5d352bf3c66b7a05e5b923788f288c6755707dab8ce09a018b 251.66MB / 300.35MB 5.0s
+#23 sha256:3b3f2b41d8ee3b5d352bf3c66b7a05e5b923788f288c6755707dab8ce09a018b 274.73MB / 300.35MB 5.4s
+#23 sha256:3b3f2b41d8ee3b5d352bf3c66b7a05e5b923788f288c6755707dab8ce09a018b 293.60MB / 300.35MB 5.7s
+#23 sha256:9ee4e30f4a811a30de5d800039bed0c8ef0b09e8a905c728552b1dc603a312db 450.89MB / 1.36GB 6.5s
+#23 sha256:9ee4e30f4a811a30de5d800039bed0c8ef0b09e8a905c728552b1dc603a312db 526.39MB / 1.36GB 7.5s
+#23 sha256:3b3f2b41d8ee3b5d352bf3c66b7a05e5b923788f288c6755707dab8ce09a018b 300.35MB / 300.35MB 7.3s done
+#23 extracting sha256:3b3f2b41d8ee3b5d352bf3c66b7a05e5b923788f288c6755707dab8ce09a018b
+#23 sha256:9ee4e30f4a811a30de5d800039bed0c8ef0b09e8a905c728552b1dc603a312db 603.98MB / 1.36GB 8.6s
+#23 sha256:9ee4e30f4a811a30de5d800039bed0c8ef0b09e8a905c728552b1dc603a312db 679.48MB / 1.36GB 9.8s
+#23 sha256:9ee4e30f4a811a30de5d800039bed0c8ef0b09e8a905c728552b1dc603a312db 763.36MB / 1.36GB 11.0s
+#23 sha256:9ee4e30f4a811a30de5d800039bed0c8ef0b09e8a905c728552b1dc603a312db 835.72MB / 1.36GB 12.0s
+#23 sha256:9ee4e30f4a811a30de5d800039bed0c8ef0b09e8a905c728552b1dc603a312db 909.12MB / 1.36GB 13.1s
+#23 extracting sha256:3b3f2b41d8ee3b5d352bf3c66b7a05e5b923788f288c6755707dab8ce09a018b 5.6s done
+#23 extracting sha256:8988badb15ce7dac8ec3966569ab9deb98ffc1fee814c9f04afbdfc74fa4cbb2
+#23 extracting sha256:8988badb15ce7dac8ec3966569ab9deb98ffc1fee814c9f04afbdfc74fa4cbb2 0.3s done
+#23 extracting sha256:c0ddd6f8cadedfede4a9cbf2d6a4b5dc57862c4128ea31517b741b03892cf3e8 0.1s done
+#23 sha256:9ee4e30f4a811a30de5d800039bed0c8ef0b09e8a905c728552b1dc603a312db 985.66MB / 1.36GB 14.1s
+#23 sha256:9ee4e30f4a811a30de5d800039bed0c8ef0b09e8a905c728552b1dc603a312db 1.07GB / 1.36GB 15.3s
+#23 sha256:9ee4e30f4a811a30de5d800039bed0c8ef0b09e8a905c728552b1dc603a312db 1.14GB / 1.36GB 16.4s
+#23 sha256:9ee4e30f4a811a30de5d800039bed0c8ef0b09e8a905c728552b1dc603a312db 1.22GB / 1.36GB 17.4s
+#23 sha256:9ee4e30f4a811a30de5d800039bed0c8ef0b09e8a905c728552b1dc603a312db 1.30GB / 1.36GB 18.5s
+#23 sha256:9ee4e30f4a811a30de5d800039bed0c8ef0b09e8a905c728552b1dc603a312db 1.36GB / 1.36GB 23.6s
+#23 sha256:9ee4e30f4a811a30de5d800039bed0c8ef0b09e8a905c728552b1dc603a312db 1.36GB / 1.36GB 25.5s done
+#23 extracting sha256:9ee4e30f4a811a30de5d800039bed0c8ef0b09e8a905c728552b1dc603a312db
+#23 extracting sha256:9ee4e30f4a811a30de5d800039bed0c8ef0b09e8a905c728552b1dc603a312db 10.6s done
+#23 DONE 36.1s
+
+#23 [runtime-download 3/6] COPY app/ ./app/
+#23 extracting sha256:50881cffc88f0821dac4f262738bc96e3ba363233a71e2bbd22f005dbf8df5a9
+#23 extracting sha256:50881cffc88f0821dac4f262738bc96e3ba363233a71e2bbd22f005dbf8df5a9 0.7s done
+#23 DONE 36.8s
+
+#24 [runtime-download 4/6] COPY web/ ./web/
+#24 DONE 7.2s
+
+#25 [runtime-download 5/6] COPY LICENSE ./LICENSE
+#25 DONE 0.0s
+
+#26 [runtime-download 6/6] COPY docker/entrypoint.py docker/healthcheck.py docker/init_data.py ./docker/
+#26 DONE 0.0s
+
+#27 resolving provenance for metadata file
+#27 DONE 0.0s
