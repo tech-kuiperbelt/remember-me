@@ -116,6 +116,9 @@ bash bin/start.sh
 # 指定 HTTP 端口
 bash bin/start.sh --port 8080
 
+# 本次启动绑定全部接口（例如 Docker bridge 容器内；MCP Host/Origin 防护仍生效）
+bash bin/start.sh --host 0.0.0.0
+
 # 指定配置、数据库和模型缓存所在的数据目录
 bash bin/start.sh --data-dir /path/to/remember-me-data
 
@@ -124,6 +127,8 @@ bash bin/start.sh --port 8080 --data-dir /path/to/remember-me-data
 ```
 
 `--port` 仅覆盖本次启动使用的端口，不修改配置文件中的端口。使用 `--port 8080` 时，Web UI 地址为 `http://127.0.0.1:8080/admin/console`，MCP 客户端连接地址中的端口也需改为 `8080`。
+
+`--host` 仅覆盖本次启动的绑定地址，只接受 `127.0.0.1` 或 `0.0.0.0`，不会写入配置文件，也不改变由 `local_only` 决定的 MCP Host/Origin 防护。因此 Docker 容器可以监听 `0.0.0.0`，而宿主机只发布 `127.0.0.1:1314:1314`，客户端仍使用 `http://127.0.0.1:1314/...`。端口发布只限制宿主机侧暴露范围：同一 Docker 网络中的其他容器仍可直接访问容器端口。不能与 `--stdio` 同时使用。
 
 `--data-dir` 选择数据目录及其中的 `config.jsonc`，优先级高于 `MEMORY_DATA_DIR` 环境变量。相对路径以项目根目录为基准。选择新目录会使用独立的数据，不会自动搬迁已有数据库或模型缓存。
 

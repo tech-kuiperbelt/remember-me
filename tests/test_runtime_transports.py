@@ -243,3 +243,104 @@ def test_stdio_sigterm_cleans_up(process_config):
         proc.stdin.close()
         proc.stdout.close()
         proc.stderr.close()
+
+
+def _free_port():
+    with socket.socket() as sock:
+        sock.bind(('127.0.0.1', 0))
+        return sock.getsockname()[1]
+
+
+def _wait_until_ready(proc, base, log_path):
+    deadline = time.monotonic() + 15
+    with httpx.Client(timeout=2, trust_env=False) as client:
+        while True:
+            try:
+                if client.get(base + '/api/stats').status_code == 200:
+                    return
+            except httpx.TransportError:
+                pass
+            assert proc.poll() is None, log_path.read_text()
+            assert time.monotonic() < deadline, log_path.read_text()
+            time.sleep(.05)
+
+
+def test_host_override_keeps_mcp_security_and_sse_roundtrip(process_config):
+    """Binding 0.0.0.0 must not weaken Host/Origin protection or SSE."""
+    runner, env = process_config
+    port = _free_port()
+    base = f'http://127.0.0.1:{port}'
+    log_path = runner.parent / 'server-host.log'
+    with log_path.open('w+') as log:
+        proc = subprocess.Popen([sys.executable, str(runner), '--host', '0.0.0.0',
+                                 '--port', str(port)], env=env, stdout=log, stderr=log)
+        try:
+            _wait_until_ready(proc, base, log_path)
+            bad_host = {'Host': f'10.0.0.5:{port}'}
+            bad_origin = {'Origin': 'http://evil.example'}
+            portless = {'Host': 'localhost', 'Origin': 'http://localhost'}
+            with httpx.Client(timeout=5, trust_env=False) as client:
+                assert client.post(base + '/mcp', json={}, headers=bad_host).status_code == 421
+                assert client.post(base + '/mcp', json={}, headers=bad_origin).status_code == 403
+                assert client.get(base + '/sse', headers=bad_host).status_code == 421
+                assert client.get(base + '/sse', headers=bad_origin).status_code == 403
+                # Default-port style headers (no :80) remain valid loopback values.
+                assert client.post(base + '/mcp', json={},
+                                   headers={**portless,
+                                            'Accept': 'application/json'}).status_code == 400
+                assert client.post(base + '/messages/', json={},
+                                   headers=portless).status_code == 400
+                assert client.get(base + '/api/stats').status_code == 200
+
+            async def exercise():
+                factory = lambda **kw: httpx.AsyncClient(trust_env=False, **kw)
+                async with sse_client(base + '/sse', headers=portless,
+                                      httpx_client_factory=factory) as streams:
+                    await check_protocol(streams)
+                async with httpx.AsyncClient(timeout=5, trust_env=False) as client:
+                    assert (await client.post(base + '/api/maintenance/enter')).status_code == 200
+                    assert (await client.post(base + '/api/shutdown')).status_code == 200
+                await asyncio.to_thread(proc.wait, 10)
+
+            asyncio.run(exercise())
+            assert proc.returncode == 0, log_path.read_text()
+            assert 'Exception in ASGI application' not in log_path.read_text()
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(5)
+
+
+@pytest.mark.parametrize('args,message', [
+    (['--stdio', '--host', '127.0.0.1'], '--host cannot be used with --stdio'),
+    (['--host', '1.2.3.4'], "invalid choice: '1.2.3.4'"),
+])
+def test_host_argument_validation(process_config, args, message):
+    runner, env = process_config
+    result = subprocess.run([sys.executable, str(runner), *args], env=env,
+                            capture_output=True, text=True, timeout=30)
+    assert result.returncode == 2, result.stderr
+    assert message in result.stderr
+
+
+def test_host_override_survives_restart(process_config):
+    runner, env = process_config
+    port = _free_port()
+    base = f'http://127.0.0.1:{port}'
+    log_path = runner.parent / 'server-restart-host.log'
+    with log_path.open('w+') as log:
+        proc = subprocess.Popen([sys.executable, str(runner), '--host', '127.0.0.1',
+                                 '--port', str(port)], env=env, stdout=log, stderr=log)
+        try:
+            _wait_until_ready(proc, base, log_path)
+            with httpx.Client(timeout=5, trust_env=False) as client:
+                assert client.post(base + '/api/maintenance/enter').status_code == 200
+                assert client.post(base + '/api/restart').status_code == 200
+            assert proc.wait(10) == 0, log_path.read_text()
+            assert json.loads(Path(env['EXEC_PROBE']).read_text()) == [
+                sys.executable, '-m', 'app.server',
+                '--host', '127.0.0.1', '--port', str(port)]
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(5)

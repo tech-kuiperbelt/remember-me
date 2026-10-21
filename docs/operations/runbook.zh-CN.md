@@ -113,7 +113,7 @@ url = "http://127.0.0.1:1314/mcp"
 | `port` | HTTP 端口，1–65535 | 重启；显式 `--port` 仍优先 |
 | `language` | `zh-CN` 或 `en` 界面 | 刷新页面 |
 | `auto_download_model` | 自动下载缺失的模型文件 | 下次模型准备或启动；显式重试可请求下载 |
-| `local_only` | 监听 loopback 或全部网络接口 | 重启 |
+| `local_only` | 监听 loopback 或全部网络接口，并启用 MCP Host/Origin 防护 | 重启 |
 | `debug` | Debug 按钮、Audit 导航和诊断入口 | 刷新页面 |
 | `proxy` | 模型下载的 HTTP/HTTPS 代理 | 下次模型准备或重试 |
 
@@ -123,9 +123,11 @@ JSONC 支持单行／块注释和尾随逗号，UI 保存会保留注释。仅�
 
 ### 网络访问
 
-`local_only: true` 监听 `127.0.0.1`。设为 `false` 后监听 `0.0.0.0`，所有 HTTP 端点（包括管理功能）都可被网络可达的客户端访问。服务没有身份认证，仅应在具有适当访问控制的可信网络中使用。Namespace 不是权限边界。
+未传入 `--host` 时，`local_only: true` 监听 `127.0.0.1`。设为 `false` 后监听 `0.0.0.0`，所有 HTTP 端点（包括管理功能）都可被网络可达的客户端访问。服务没有身份认证，仅应在具有适当访问控制的可信网络中使用。Namespace 不是权限边界。
 
-仅本机模式下，`/mcp` 限制 Host/Origin 为 loopback：非法 Host 返回 421，非法 Origin 返回 403。通过安全检查后，非 POST 方法返回 405 和 `Allow: POST`。局域网模式关闭此 Host/Origin 保护。即使在局域网模式下，`/read-me` 的示例仍使用 loopback 地址及实际端口。
+监听地址与 MCP 安全策略相互独立。启动参数 `--host 127.0.0.1|0.0.0.0` 只覆盖本次监听的绑定地址，不会写入配置，也不会改变由 `local_only` 决定的 Host/Origin 防护。因此 Docker 容器可用 `python -m app.server --host 0.0.0.0`，而宿主机只发布 `127.0.0.1:1314:1314`。端口发布只限制宿主机侧暴露范围；同一 Docker 网络中的其他容器仍可直接访问容器端口，因此它不是身份认证边界。
+
+仅本机模式下，`/mcp`、`/sse` 与 `/messages/` 都限制 Host/Origin 为 loopback：非法 Host 返回 421，非法 Origin 返回 403。通过安全检查后，非 POST 方法返回 405 和 `Allow: POST`。局域网模式对三个路径都关闭此 Host/Origin 保护。即使在局域网模式或使用 `--host 0.0.0.0` 时，`/read-me` 的示例仍使用 loopback 地址及实际端口。
 
 ## 模型准备与代理
 

@@ -12,8 +12,10 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
 from app.runtime import Runtime
+from app.config.configuration import Configuration
 from app.config.settings import Settings
-from app.server import _read_me_base, create_http_app, resolve_bind_host
+from app.server import (_read_me_base, create_http_app, HTTP_BIND_HOSTS,
+                        resolve_bind_host, resolve_http_host)
 from tests.conftest import FakeProvider
 
 HOST = "127.0.0.1:1314"
@@ -148,6 +150,90 @@ def test_resolve_bind_host_defaults_and_lan():
     assert resolve_bind_host(SimpleNamespace(LOCAL_ONLY=False)) == "0.0.0.0"
     assert resolve_bind_host(SimpleNamespace()) == "127.0.0.1"
     assert resolve_bind_host(None) == "127.0.0.1"
+
+
+def test_resolve_http_host_override_never_touches_security_mode():
+    from types import SimpleNamespace
+    assert set(HTTP_BIND_HOSTS) == {"127.0.0.1", "0.0.0.0"}
+    assert resolve_http_host(SimpleNamespace(LOCAL_ONLY=True)) == "127.0.0.1"
+    assert resolve_http_host(SimpleNamespace(LOCAL_ONLY=False)) == "0.0.0.0"
+    # An override changes only this launch's bind address.
+    assert resolve_http_host(SimpleNamespace(LOCAL_ONLY=True), "0.0.0.0") == "0.0.0.0"
+    assert resolve_http_host(SimpleNamespace(LOCAL_ONLY=False), "127.0.0.1") == "127.0.0.1"
+    assert resolve_http_host(None, "0.0.0.0") == "0.0.0.0"
+    assert resolve_http_host(None) == "127.0.0.1"
+
+
+def test_config_and_api_have_no_host_field(tmp_path):
+    assert "host" not in Configuration.load(tmp_path).as_dict()
+    rt = _runtime(tmp_path)
+    with TestClient(create_http_app(rt, port=1314)) as client:
+        payload = client.get("/api/config").json()
+    assert "host" not in payload
+    assert payload["local_only"] is True
+
+
+def test_sse_rejects_invalid_host_and_origin(tmp_path):
+    rt = _runtime(tmp_path)
+    with TestClient(create_http_app(rt, port=1314), base_url=BASE) as client:
+        # A rejected connect must be a clean 421/403: connect_sse() would raise
+        # after sending these responses, so the endpoint pre-validates instead.
+        assert client.get("/sse", headers={"Host": "10.0.0.5:1314"}).status_code == 421
+        assert client.get("/sse", headers={"Origin": "http://evil.example"}).status_code == 403
+
+
+def test_sse_messages_post_security(tmp_path):
+    rt = _runtime(tmp_path)
+    allowed = {"Origin": "http://127.0.0.1:1314"}
+    with TestClient(create_http_app(rt, port=1314), base_url=BASE) as client:
+        assert client.post("/messages/", json={},
+                           headers={**allowed, "Host": "10.0.0.5:1314"}).status_code == 421
+        assert client.post("/messages/", json={},
+                           headers={"Origin": "http://evil.example"}).status_code == 403
+        wrong_type = client.post("/messages/", content=b"{}", headers=allowed)
+        assert wrong_type.status_code == 400
+        assert "Invalid Content-Type header" in wrong_type.text
+        # A valid Host/Origin/JSON request reaches session lookup.
+        no_session = client.post("/messages/", json={}, headers=allowed)
+        assert no_session.status_code == 400
+        assert "session_id is required" in no_session.text
+
+
+def test_portless_loopback_headers_accepted_on_default_port(tmp_path):
+    """Port 80 clients omit :80 from Host/Origin; loopback must still pass."""
+    rt = _runtime(tmp_path)
+    with TestClient(create_http_app(rt, port=80), base_url="http://localhost") as client:
+        # httpx omits the default port, so Host is "localhost". Reaching the
+        # protocol/session layer (400) proves the security pre-check passed.
+        assert client.post("/mcp", json={},
+                           headers={"Origin": "http://localhost",
+                                    "Accept": "application/json"}).status_code == 400
+        assert client.post("/messages/", json={},
+                           headers={"Origin": "http://localhost"}).status_code == 400
+        # Explicit portless 127.0.0.1 values are accepted as well.
+        assert client.post("/messages/", json={},
+                           headers={"Host": "127.0.0.1",
+                                    "Origin": "http://127.0.0.1"}).status_code == 400
+        # Non-loopback values are still rejected. A positive /sse connect needs a
+        # real socket (covered by the process test), because TestClient buffers
+        # the never-ending SSE body.
+        assert client.get("/sse", headers={"Host": "10.0.0.5"}).status_code == 421
+        assert client.get("/sse", headers={"Origin": "http://evil.example"}).status_code == 403
+
+
+def test_lan_mode_keeps_sse_unprotected(tmp_path):
+    async def exercise():
+        async with _running_app(tmp_path, local_only=False) as (rt, app):
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport,
+                                         base_url="http://10.0.0.5:1314") as client:
+                # LAN mode disables Host/Origin checks for the SSE message path
+                # too; the request then fails on the missing session id.
+                response = await client.post("/messages/", json={},
+                                             headers={"Origin": "http://evil.example"})
+                assert response.status_code == 400
+                assert "session_id is required" in response.text
+    asyncio.run(exercise())
 
 
 def test_lan_mode_disables_host_and_origin_checks(tmp_path):

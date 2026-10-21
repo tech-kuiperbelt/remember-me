@@ -113,7 +113,7 @@ Normal startup creates this configuration when absent:
 | `port` | HTTP port, 1–65535 | Restart; explicit `--port` still wins |
 | `language` | `zh-CN` or `en` UI | Refresh the page |
 | `auto_download_model` | Download missing model files automatically | Next model preparation/startup; explicit Retry can request a download |
-| `local_only` | Bind to loopback or all interfaces | Restart |
+| `local_only` | Bind to loopback or all interfaces, and enable MCP Host/Origin protection | Restart |
 | `debug` | Debug buttons, Audit navigation, diagnostic entries | Refresh the page |
 | `proxy` | Model download HTTP/HTTPS proxy | Next preparation/retry |
 
@@ -123,9 +123,11 @@ JSONC accepts line/block comments and trailing commas; UI saves preserve comment
 
 ### Network access
 
-`local_only: true` binds to `127.0.0.1`. Setting it to `false` binds to `0.0.0.0` and exposes all HTTP endpoints, including administration, to reachable network clients. The service has no authentication; use this only on a trusted network with appropriate access controls. Namespaces are not authorization boundaries.
+Without `--host`, `local_only: true` binds to `127.0.0.1`. Setting it to `false` binds to `0.0.0.0` and exposes all HTTP endpoints, including administration, to reachable network clients. The service has no authentication; use this only on a trusted network with appropriate access controls. Namespaces are not authorization boundaries.
 
-In local-only mode, `/mcp` restricts Host/Origin to loopback: invalid Host returns 421 and invalid Origin returns 403. After security checks, methods other than POST return 405 with `Allow: POST`. LAN mode disables this Host/Origin protection. `/read-me` advertises a loopback URL with the effective port even in LAN mode.
+The bind address and the MCP security policy are independent. The `--host 127.0.0.1|0.0.0.0` startup option overrides only this launch's bind address; it is not saved and never changes the Host/Origin protection derived from `local_only`. A Docker container therefore runs `python -m app.server --host 0.0.0.0` while the host publishes only `127.0.0.1:1314:1314`. The publish mapping restricts host-side exposure only; other containers on the same Docker network can still reach the container port directly, so it is not an authentication boundary.
+
+In local-only mode, `/mcp`, `/sse` and `/messages/` restrict Host/Origin to loopback: invalid Host returns 421 and invalid Origin returns 403. After security checks, methods other than POST return 405 with `Allow: POST`. LAN mode disables this Host/Origin protection for all three paths. `/read-me` advertises a loopback URL with the effective port even in LAN mode and when `--host 0.0.0.0` is used.
 
 ## Model preparation and proxy
 

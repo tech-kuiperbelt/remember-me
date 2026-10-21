@@ -16,7 +16,7 @@
 ## 0. 服务地址
 
 - 本服务地址（自引用，端口跟随服务启动参数）：`{base}`
-- 默认仅本机：监听 `127.0.0.1`（`localhost` 与之等价）。配置 `local_only: false` 后监听 `0.0.0.0` 并允许局域网访问全部 HTTP 接口；本页自引用仍显示 `127.0.0.1`，局域网客户端请把主机替换为服务所在机器的局域网地址。
+- 默认仅本机：监听 `127.0.0.1`（`localhost` 与之等价），并对 `/mcp`、`/sse`、`/messages/` 校验 loopback Host/Origin。配置 `local_only: false` 后监听 `0.0.0.0` 并允许局域网访问全部 HTTP 接口，同时关闭三者的 Host/Origin 校验；启动参数 `--host 0.0.0.0` 只改变监听地址、保留该校验（容器部署用）。本页自引用仍显示 `127.0.0.1`，局域网客户端请把主机替换为服务所在机器的局域网地址。
 - 模型缓存缺失时，配置页面 `{base}/admin/console` 仍可访问，可设置下载代理、查看进度并重试。
   此时记忆工具返回 `model_not_ready`，请先完成模型准备；模型就绪后由操作者退出维护再写入。
 
@@ -49,13 +49,13 @@ url = "{base}/mcp"
 ```
 
   只有确认支持 Streamable HTTP 的客户端（例如 Codex）才指向 `{base}/mcp`；不支持时继续用 `{base}/sse`。
-- 限制：默认仅本机 loopback 可直连（`local_only: true`，Host 白名单为 `127.0.0.1` / `localhost`）。设置 `local_only: false` 时监听 `0.0.0.0`，局域网可访问全部 HTTP 入口，且 `/mcp` 不再校验 Host/Origin；服务无鉴权，仅限可信网络。
+- 限制：默认仅本机 loopback 可直连（`local_only: true`，Host 白名单为 `127.0.0.1` / `localhost`，三路径一致：非法 Host 返回 421、不可信 Origin 返回 403）。设置 `local_only: false` 时监听 `0.0.0.0`，局域网可访问全部 HTTP 入口，且 `/mcp`、`/sse`、`/messages/` 不再校验 Host/Origin；服务无鉴权，仅限可信网络。`--host` 只覆盖本次监听的绑定地址，不改变上述校验。
 
 ### 2.2 旧版 HTTP+SSE（保留兼容）
 
 - 适用场景：现有使用 `type: remote` + `/sse` 的客户端（例如当前 opencode）。
 - 地址：`{base}/sse`（消息回传端点为 `/messages/`）。
-- 限制：被 Codex 视为 legacy 传输，新接入不推荐。
+- 限制：被 Codex 视为 legacy 传输，新接入不推荐；`/sse` 与消息回传端点 `/messages/` 和 `/mcp` 共用同一 Host/Origin 校验策略。
 
 ### 2.3 stdio（单客户端本地）
 
@@ -126,4 +126,4 @@ Namespace 用于组织记忆分组，不是访问权限隔离。保存或检索�
 - 本页只读；访问它不会修改任何客户端配置。
 - 服务关闭中本页返回 503。
 - 地址与端口以本页顶部为准，端口跟随服务启动参数。
-- 远程 / 跨容器接入默认不支持；仅在 `local_only: false` 时同一局域网可达，且无任何鉴权，需自行确保网络可信。
+- 远程 / 跨容器接入默认不支持；`--host 0.0.0.0` 可让容器监听所有接口、由宿主机把端口发布到 `127.0.0.1`（此时 Host/Origin 校验仍生效）。仅在 `local_only: false` 时同一局域网可直接访问，且无任何鉴权，需自行确保网络可信。

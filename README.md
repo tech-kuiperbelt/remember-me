@@ -116,6 +116,10 @@ You can pass startup options directly to `bin/start.sh`:
 # Use a different HTTP port
 bash bin/start.sh --port 8080
 
+# Bind all interfaces for this launch (for example inside a Docker bridge
+# container; MCP Host/Origin protection stays enabled)
+bash bin/start.sh --host 0.0.0.0
+
 # Choose where configuration, the database, and model caches are stored
 bash bin/start.sh --data-dir /path/to/remember-me-data
 
@@ -124,6 +128,8 @@ bash bin/start.sh --port 8080 --data-dir /path/to/remember-me-data
 ```
 
 `--port` overrides the saved port for this launch without changing the configuration file. With `--port 8080`, open `http://127.0.0.1:8080/admin/console` and use port `8080` in your MCP client URL as well.
+
+`--host` overrides the bind address for this launch only. It accepts `127.0.0.1` or `0.0.0.0`, is not written to the configuration file, and does not change the MCP Host/Origin protection, which remains controlled by `local_only`. A Docker container can therefore listen on `0.0.0.0` while the host publishes only `127.0.0.1:1314:1314`; clients still use `http://127.0.0.1:1314/...`. The publish mapping limits host-side exposure only: other containers on the same Docker network can still reach the container port directly. This option cannot be combined with `--stdio`.
 
 `--data-dir` selects the data directory, including its `config.jsonc`, and takes precedence over `MEMORY_DATA_DIR`. Relative paths are resolved from the project root. Selecting a new directory starts with separate data; it does not move an existing database or model cache.
 

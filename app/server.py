@@ -153,10 +153,13 @@ def create_mcp_server(service=None, *, runtime=None):
 # Streamable HTTP transport security: loopback-only Host/Origin whitelist.
 # The SDK disables DNS-rebinding protection when settings are omitted, so it is
 # passed explicitly to both the adapter pre-check and the session manager.
+# Portless values are required for HTTP default port 80: clients then send
+# "Host: localhost" and "Origin: http://localhost" without ":80".
 STREAMABLE_HTTP_SECURITY = TransportSecuritySettings(
     enable_dns_rebinding_protection=True,
-    allowed_hosts=["127.0.0.1:*", "localhost:*"],
-    allowed_origins=["http://127.0.0.1:*", "http://localhost:*"],
+    allowed_hosts=["127.0.0.1:*", "localhost:*", "127.0.0.1", "localhost"],
+    allowed_origins=["http://127.0.0.1:*", "http://localhost:*",
+                     "http://127.0.0.1", "http://localhost"],
 )
 
 # LAN mode (local_only=false) explicitly disables the SDK DNS-rebinding
@@ -169,6 +172,18 @@ LAN_HTTP_SECURITY = TransportSecuritySettings(enable_dns_rebinding_protection=Fa
 def resolve_bind_host(settings) -> str:
     """HTTP bind address for the snapshot: loopback unless local_only is off."""
     return "127.0.0.1" if getattr(settings, "LOCAL_ONLY", True) else "0.0.0.0"
+
+
+# Launch-time bind addresses accepted by --host. Binding and MCP security are
+# deliberately independent: --host never changes the Host/Origin policy, which
+# stays controlled by local_only.
+HTTP_BIND_HOSTS = ("127.0.0.1", "0.0.0.0")
+
+
+def resolve_http_host(settings, override=None) -> str:
+    """Bind address for this launch; an override never affects MCP security."""
+    return override if override is not None else resolve_bind_host(settings)
+
 
 _READ_ME_TEMPLATE_PATH = Path(__file__).with_name("read_me.md")
 
@@ -200,7 +215,9 @@ def create_http_app(runtime, *, port=None, local_only=None):
     security_settings = STREAMABLE_HTTP_SECURITY if local_only else LAN_HTTP_SECURITY
     connections = set()
     mcp = create_mcp_server(runtime=runtime)
-    sse = SseServerTransport("/messages/")
+    # Both MCP transports share one policy object: /messages/ POST validation is
+    # handled inside the SDK, and SSEEndpoint pre-validates the /sse connect.
+    sse = SseServerTransport("/messages/", security_settings=security_settings)
     security = TransportSecurityMiddleware(security_settings)
     session_manager = StreamableHTTPSessionManager(
         app=mcp.server, stateless=True, json_response=True,
@@ -221,6 +238,15 @@ def create_http_app(runtime, *, port=None, local_only=None):
     class SSEEndpoint:
         async def __call__(self, request_scope, receive, send):
             started = finished = False
+
+            # sse.connect_sse() sends its 421/403 response and then raises, so
+            # validate first: a rejected connect must not surface as a 500 or an
+            # "Exception in ASGI application" after the response has started.
+            request = Request(request_scope, receive)
+            error = await security.validate_request(request, is_post=False)
+            if error is not None:
+                await error(request_scope, receive, send)
+                return
 
             async def track_send(message):
                 nonlocal started, finished
@@ -423,9 +449,14 @@ async def main(argv=None):
     transport.add_argument("--stdio", action="store_true", help="Use subprocess stdin/stdout instead of HTTP")
     transport.add_argument("--port", type=int, default=None,
                         help="Port for HTTP mode (legacy SSE + Streamable HTTP)")
+    parser.add_argument("--host", choices=HTTP_BIND_HOSTS, default=None,
+                        help="HTTP bind address for this launch; overrides the address derived "
+                             "from configuration but never changes MCP Host/Origin protection")
     args = parser.parse_args(argv)
     if args.port is not None and not 0 <= args.port <= 65535:
         parser.error("--port must be between 0 and 65535")
+    if args.stdio and args.host is not None:
+        parser.error("--host cannot be used with --stdio")
     try:
         settings = Settings.from_config(args.data_dir, model_dir=args.model_dir, create=True)
     except (ValueError, OSError) as exc:
@@ -436,10 +467,14 @@ async def main(argv=None):
         await serve_stdio(runtime)
     else:
         port = settings.PORT if args.port is None else args.port
-        host = resolve_bind_host(settings)
+        host = resolve_http_host(settings, args.host)
         app = create_http_app(runtime, port=port, local_only=settings.LOCAL_ONLY)
         logger.info("HTTP listening on %s:%s (%s)", host, port,
                     "local-only" if settings.LOCAL_ONLY else "LAN-accessible")
+        if settings.LOCAL_ONLY and host == "0.0.0.0":
+            logger.info("MCP Host/Origin protection remains loopback-only "
+                        "(127.0.0.1/localhost) despite the 0.0.0.0 bind; "
+                        "admin UI and REST API are reachable on all interfaces")
         config = uvicorn.Config(app, host=host, port=port, log_level="info")
         class GracefulServer(uvicorn.Server):
             async def shutdown(self, sockets=None):
