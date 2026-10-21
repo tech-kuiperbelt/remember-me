@@ -284,6 +284,10 @@ def cache_check_before(results):
     raw = docker("buildx", "imagetools", "inspect", CACHE_REF, "--raw", check=False)
     results["cache"]["before_raw"] = raw.stdout[:200000]
     results["cache"]["before_raw_error"] = raw.stderr[:2000]
+    image = docker("buildx", "imagetools", "inspect", CACHE_REF,
+                   "--format", "{{json .Image}}", check=False)
+    results["cache"]["before_image"] = image.stdout[:400000]
+    results["cache"]["before_image_error"] = image.stderr[:2000]
     if manifest["exit_code"] != 0:
         raise Failure(f"remote cache is not readable: {manifest}")
 
