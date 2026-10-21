@@ -393,9 +393,7 @@ def run_cold(results, sampler):
         "-t", IMAGE,
         ".",
     ]
-    code, seconds = stream_build(
-        build_command, ARTIFACTS / "cold-build.log",
-        env={"SOURCE_DATE_EPOCH": command(["git", "log", "-1", "--pretty=%ct"]).stdout.strip()})
+    code, seconds = stream_build(build_command, ARTIFACTS / "cold-build.log")
     results["cold_build"] = {"exit_code": code, "seconds": seconds}
     if code:
         raise Failure(f"cold build failed with exit code {code}")
@@ -462,9 +460,7 @@ def run_cache_only(results):
             "--cache-from", f"type=registry,ref={CACHE_REF}",
             ".",
         ]
-        code, seconds = stream_build(
-            build_command, ARTIFACTS / f"{MODE}-build.log",
-            env={"SOURCE_DATE_EPOCH": command(["git", "log", "-1", "--pretty=%ct"]).stdout.strip()})
+        code, seconds = stream_build(build_command, ARTIFACTS / f"{MODE}-build.log")
         results["cache_build"] = {"exit_code": code, "seconds": seconds}
         if code:
             raise Failure(f"{MODE} build failed with exit code {code}")
