@@ -281,6 +281,9 @@ def privacy_gate(results):
 def cache_check_before(results):
     manifest = cache_manifest()
     results["cache"]["before"] = manifest
+    raw = docker("buildx", "imagetools", "inspect", CACHE_REF, "--raw", check=False)
+    results["cache"]["before_raw"] = raw.stdout[:200000]
+    results["cache"]["before_raw_error"] = raw.stderr[:2000]
     if manifest["exit_code"] != 0:
         raise Failure(f"remote cache is not readable: {manifest}")
 
