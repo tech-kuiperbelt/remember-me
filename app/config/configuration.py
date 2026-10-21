@@ -280,19 +280,22 @@ class Configuration:
 
     def runtime_environment(self, environment=None, *, model_dir=None):
         env = dict(os.environ if environment is None else environment)
+        docker = env.get("MEMORY_DEPLOYMENT_MODE") == "docker"
+        auto_download = self.auto_download_model and not docker
         for key in PROXY_VARIABLES:
             env.pop(key, None)
-        if self.proxy_enabled:
+        if self.proxy_enabled and not docker:
             env.update(HTTP_PROXY=self.proxy_url, HTTPS_PROXY=self.proxy_url)
         env["NO_PROXY"] = "localhost,127.0.0.1,::1"
-        env["MEMORY_AUTO_DOWNLOAD_MODEL"] = str(self.auto_download_model).lower()
-        env["MEMORY_LOCAL_ONLY"] = str(self.local_only).lower()
-        # Explicit local_files_only controls each load; stale offline globals must
-        # not prevent the subsequent permitted download. Disable the separate Xet
-        # transport so all downloads follow the configured HTTP proxy policy.
-        env.update(HF_HUB_OFFLINE="0", TRANSFORMERS_OFFLINE="0", HF_HUB_DISABLE_XET="1")
+        env["MEMORY_AUTO_DOWNLOAD_MODEL"] = str(auto_download).lower()
+        env["MEMORY_LOCAL_ONLY"] = str(self.local_only or docker).lower()
+        # Python can subsequently download when permitted. Docker also disables
+        # Hub background work (e.g. Transformers' safetensors conversion lookup),
+        # which is not fully covered by a loader's local_files_only argument.
+        offline = "1" if docker else "0"
+        env.update(HF_HUB_OFFLINE=offline, TRANSFORMERS_OFFLINE=offline, HF_HUB_DISABLE_XET="1")
         env["FASTEMBED_OFFLINE"] = env["SENTENCE_TRANSFORMERS_OFFLINE"] = str(
-            not self.auto_download_model).lower()
+            not auto_download).lower()
         explicit_model = model_dir_is_explicit(env, model_dir)
         model_root = resolve_model_dir(model_dir, data_dir=self.data_dir, environment=env)
         env[MODEL_DIR_ENV] = str(model_root)

@@ -147,6 +147,10 @@ If the download source is unreachable from your network, open the Web UI's **con
 
 The Web UI proxy settings apply to model downloads. Installing Python dependencies with pip requires its own network or proxy configuration. Automatic model downloads are controlled by `auto_download_model`; when disabled, use the configuration page to request a retry explicitly.
 
+## Docker (local AMD64 image)
+
+Phase 2.2 provides `compose.yaml` for the locally built `remember-me:phase2.2-amd64` image. Run `docker compose up -d`, then open <http://127.0.0.1:1314>. Data and configuration persist in `./data`; the model is included in the image. A public registry release is pending. See the [deployment, permissions, backup and restore guide](docs/operations/docker.md).
+
 ## Connect & Enable Agent Memory
 
 Connecting MCP gives an agent the **ability** to use memory. Giving it good memory instructions helps it decide **when and how** to do so. Both steps matter.

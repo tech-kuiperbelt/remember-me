@@ -763,5 +763,11 @@
   "common.copied": "Copied",
   "api.namespace.confirm": "Namespace \"{requested}\" does not exist.\n\nExisting namespaces: {known}\n\nCreate it and continue?",
   "api.namespace.requested": "this namespace",
-  "api.namespace.none": "(none)"
+  "api.namespace.none": "(none)",
+  "docker.model.title": "Built-in model",
+  "docker.model.desc": "The image includes the model. No download or model configuration is needed.",
+  "docker.model.retry": "Reload built-in model",
+  "docker.model.error": "The built-in model could not be loaded. Try reloading it; if this persists, recreate the container from a complete compatible image.",
+  "docker.model.pending": "Waiting for the built-in model to load.",
+  "docker.stop": "Use docker compose stop to stop the container."
 }

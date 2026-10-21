@@ -763,5 +763,11 @@
   "common.copied": "已复制",
   "api.namespace.confirm": "分组 “{requested}” 不存在。\n\n已有分组：{known}\n\n创建并继续？",
   "api.namespace.requested": "该分组",
-  "api.namespace.none": "（无）"
+  "api.namespace.none": "（无）",
+  "docker.model.title": "内置模型",
+  "docker.model.desc": "镜像已包含模型，无需下载或配置。",
+  "docker.model.retry": "重新加载内置模型",
+  "docker.model.error": "内置模型加载失败。请重试加载；如果问题持续，请使用完整的兼容镜像重建容器。",
+  "docker.model.pending": "正在等待内置模型加载。",
+  "docker.stop": "请使用 docker compose stop 停止容器。"
 }

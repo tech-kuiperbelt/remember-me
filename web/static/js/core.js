@@ -1,6 +1,8 @@
 // core.js — DOM lookup, escaping and formatting helpers. No application state.
 import { locale } from './i18n.js';
 
+export const dockerMode = document.documentElement.dataset.deploymentMode === 'docker';
+
 export function $(id) { return document.getElementById(id) }
 
 export function formatTime(isoStr) {

@@ -1,5 +1,6 @@
 // One presentation policy for the existing maintenance snapshot.
 import { t } from './i18n.js';
+import { dockerMode } from './core.js';
 
 export function deriveStatus(snapshot) {
   const s = snapshot || {}, valid = ['normal','maintenance','entering','switching'].includes(s.state);
@@ -25,7 +26,7 @@ export function statusDetail(status) {
   const s=status.snapshot, action=s.action ? t('status.detail.action', {action: s.action}) : '';
   if(status.kind==='unavailable')return t('status.detail.unavailable');
   if(status.hasError)return t('status.detail.error', {error: s.error, action});
-  if(status.modelPending)return t('status.detail.model', {reason: s.model?.error || s.model?.status || t('status.detail.model.fallback'), action});
+  if(status.modelPending)return t('status.detail.model', {reason: dockerMode ? t('docker.model.pending') : s.model?.error || s.model?.status || t('status.detail.model.fallback'), action});
   if(s.state==='entering')return t('status.detail.entering');
   if(s.state==='switching')return t('status.detail.switching');
   return (s.state==='normal' ? t('status.detail.normal') : t('status.detail.maintenance')) + action;

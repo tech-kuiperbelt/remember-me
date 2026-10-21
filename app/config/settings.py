@@ -43,6 +43,10 @@ class Settings:
     CONFIG_PATH: str | None
     UI_DEBUG: bool = False
 
+    @property
+    def DOCKER_MODE(self):
+        return self.environment.get("MEMORY_DEPLOYMENT_MODE") == "docker"
+
     @classmethod
     def from_config(cls, data_dir=None, *, model_dir=None, create=False, environment=None):
         config = Configuration.load(data_dir, create=create, environment=environment)

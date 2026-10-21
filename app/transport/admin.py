@@ -463,6 +463,9 @@ class AdminAPI:
                 locale = getattr(getattr(self.service, "settings", None), "LANGUAGE", None)
             html = html.replace('data-ui-debug="false"',
                                 'data-ui-debug="true"' if debug else 'data-ui-debug="false"', 1)
+            settings = self.runtime.settings if self.runtime is not None else getattr(self.service, "settings", None)
+            if getattr(settings, "DOCKER_MODE", False):
+                html = html.replace('data-deployment-mode="python"', 'data-deployment-mode="docker"', 1)
             return render_localized_html(html, locale)
         html = await self._run(render, control=True)
         return Response(html, media_type="text/html", headers={

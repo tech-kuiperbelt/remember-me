@@ -13,6 +13,7 @@
 !bin/verify_cpu_runtime.py
 !docker/
 !docker/entrypoint.py
+!docker/init_data.py
 !docker/healthcheck.py
 !docker/package_model.py
 !docker/bge-m3-manifest.json

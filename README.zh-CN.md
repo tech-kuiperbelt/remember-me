@@ -144,6 +144,10 @@ bash bin/start.sh --port 8080 --data-dir /path/to/remember-me-data
 
 Web UI 的代理设置用于模型下载。通过 pip 安装 Python 依赖时，需要单独配置相应的网络或代理。自动下载模型由 `auto_download_model` 控制；关闭时可在配置页显式发起重试。
 
+## Docker（本地 AMD64 镜像）
+
+Phase 2.2 提供正式 `compose.yaml`，使用本地构建的 `remember-me:phase2.2-amd64` 镜像。运行 `docker compose up -d` 后访问 <http://127.0.0.1:1314>。配置和数据保存在 `./data`，模型已内置，无需下载。公开镜像尚未发布。详见 [部署、目录权限与备份恢复说明](docs/operations/docker.md)。
+
 ## 连接并启用 Agent 记忆
 
 连接 MCP 让 Agent **具备使用记忆的能力**；合适的记忆指令则帮助它知道**何时、如何**使用记忆。两个步骤都很重要。

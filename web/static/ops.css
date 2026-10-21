@@ -26,3 +26,6 @@
 #ops-settings .ops-card{grid-template-columns:minmax(0,1fr);gap:16px}
 .ops-card-heading h3{line-height:20px}.ops-card-heading p{margin-top:4px}
 .ops-card-content h4,.ops-card summary{line-height:20px}.ops-card summary small{line-height:18px}
+
+html[data-deployment-mode="docker"] [data-python-only],
+html[data-deployment-mode="python"] [data-docker-only] { display: none !important; }

@@ -1,5 +1,5 @@
 // Configuration and maintenance orchestration. Backend admission stays authoritative.
-import { $, formatBytes } from './core.js';
+import { $, formatBytes, dockerMode } from './core.js';
 import { api } from './api.js';
 import { setMaintenance, emitMemoriesChanged, emitStatsChanged, onNamespacesChanged, getNamespaces, getNamespaceCounts } from './store.js';
 import { deriveStatus, statusText, statusDetail } from './ops-state.js';
@@ -73,7 +73,7 @@ function resetDownloadHint() {
   $('model-network-hint').hidden=true;
 }
 function renderDownloadHint(model) {
-  if(model?.status!=='downloading'||model.ready){resetDownloadHint();return;}
+  if(dockerMode||model?.status!=='downloading'||model.ready){resetDownloadHint();return;}
   const now=performance.now(), completed=model.completed||0, file=model.file||'';
   if(!downloadObservation||downloadObservation.completed!==completed||downloadObservation.file!==file)
     downloadObservation={completed,file,since:now};
@@ -83,7 +83,7 @@ function renderModelStatus(model) {
   renderDownloadHint(model);
   const labels={waiting:t('model.waiting'),downloading:t('model.downloading'),validating:t('model.validating'),ready:t('model.ready'),failed:t('model.failed'),cancelling:t('model.cancelling')};
   $('model-status').textContent=model?(labels[model.status]||model.status):t('model.unavailable');
-  $('model-progress-area').hidden=!model||!!model.ready;
+  $('model-progress-area').hidden=dockerMode||!model||!!model.ready;
   const bar=$('model-progress');
   if(model?.ready)bar.value=100;
   else if(Number.isFinite(model?.percent))bar.value=model.percent;
@@ -92,7 +92,9 @@ function renderModelStatus(model) {
   $('model-progress-detail').textContent=model?.total
     ? t('model.progress.detail',{file:model.file||t('model.progress.file'),completed:formatBytes(model.completed||0),total:formatBytes(model.total),percent})
     : t('model.progress.unknown');
-  $('model-error').textContent=(model?.error||'')+((model&&model.status==='failed')?' '+t('model.retry_hint'):'');
+  $('model-error').textContent=dockerMode
+    ? (model&&!model.ready&&['failed','waiting'].includes(model.status)?t('docker.model.error'):'')
+    : (model?.error||'')+((model&&model.status==='failed')?' '+t('model.retry_hint'):'');
 }
 function updateNamespaces() {
   namespaceCounts=getNamespaceCounts();
@@ -212,8 +214,8 @@ function retryModel(){return run('retry','model-retry-result',async()=>{await re
 
 function addressHint() {
   const c=config.config();if(!c)return;
-  const target=new URL(location.href);target.port=String(c.port);
-  $('restart-address').textContent=t('ops.restart.address',{origin:target.origin,localOnly:c.local_only?t('ops.restart.address.localOnly'):''});
+  const target=new URL(location.href);if(!dockerMode)target.port=String(c.port);
+  $('restart-address').textContent=t('ops.restart.address',{origin:target.origin,localOnly:(dockerMode||c.local_only)?t('ops.restart.address.localOnly'):''});
 }
 async function reconnect() {
   if(reconnecting||power!=='restart')return;
@@ -262,6 +264,11 @@ function cardIcons() {
 export function mount() {
   config=createConfiguration({available:()=>status.kind!=='unavailable'&&!busy&&!job&&!power,refresh:refreshMaintenance,changed:applyControls,retryModel:requestModelRetry});
   cardIcons();onNamespacesChanged(updateNamespaces);
+  if(dockerMode) {
+    $('model-preparation-card-title').textContent=t('docker.model.title');
+    $('model-preparation-card-description').textContent=t('docker.model.desc');
+    $('btn-model-retry').textContent=t('docker.model.retry');
+  }
   for(const name of ['settings','maintenance'])$('ops-tab-'+name).onclick=()=>selectTab(name);
   $('ops-tabs').onkeydown=e=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){e.preventDefault();selectTab(e.key==='Home'?'settings':e.key==='End'?'maintenance':$('ops-settings').hidden?'settings':'maintenance',true);}};
   $('config-open-maintenance').onclick=()=>selectTab('maintenance',true);

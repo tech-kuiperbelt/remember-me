@@ -31,6 +31,9 @@ ENV PATH=/opt/venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     MEMORY_DATA_DIR=/data \
+    MEMORY_DEPLOYMENT_MODE=docker \
+    HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1 \
     MEMORY_MODEL_DIR=/opt/remember-me/models \
     MEMORY_STORAGE=dual \
     EMBED_PROVIDER=sentence_transformers \
@@ -63,7 +66,7 @@ COPY --from=model-local /model/ /opt/remember-me/models/
 COPY app/ ./app/
 COPY web/ ./web/
 COPY LICENSE ./LICENSE
-COPY docker/entrypoint.py docker/healthcheck.py ./docker/
+COPY docker/entrypoint.py docker/healthcheck.py docker/init_data.py ./docker/
 
 FROM runtime-local AS validation-local
 COPY bin/verify_cpu_runtime.py ./bin/verify_cpu_runtime.py
@@ -76,7 +79,7 @@ COPY --from=model-download /model/ /opt/remember-me/models/
 COPY app/ ./app/
 COPY web/ ./web/
 COPY LICENSE ./LICENSE
-COPY docker/entrypoint.py docker/healthcheck.py ./docker/
+COPY docker/entrypoint.py docker/healthcheck.py docker/init_data.py ./docker/
 
 FROM runtime-download AS validation
 COPY bin/verify_cpu_runtime.py ./bin/verify_cpu_runtime.py

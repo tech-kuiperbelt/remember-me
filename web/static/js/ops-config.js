@@ -1,4 +1,4 @@
-import { $ } from './core.js';
+import { $, dockerMode } from './core.js';
 import { api } from './api.js';
 import { t } from './i18n.js';
 
@@ -6,6 +6,7 @@ export function createConfiguration({available, refresh, changed, retryModel}) {
   let baseline=null, saving=false, loading=null;
   const restartKeys=new Set();
   function draft() {
+    if(dockerMode)return {language:$('config-language').value,debug:$('config-debug').checked};
     const proxy={enabled:$('model-proxy-enabled').checked};
     const url=$('model-proxy-url').value.trim();
     if(proxy.enabled && url)proxy.url=url;
@@ -14,6 +15,7 @@ export function createConfiguration({available, refresh, changed, retryModel}) {
   }
   function error() {
     const d=draft();
+    if(dockerMode)return ['zh-CN','en'].includes(d.language)?'':t('ops.config.error.language');
     if(!Number.isInteger(d.port)||d.port<1||d.port>65535)return t('ops.config.error.port');
     if(!['zh-CN','en'].includes(d.language))return t('ops.config.error.language');
     if(d.proxy.enabled && !d.proxy.url && !baseline?.proxy?.url)return t('ops.config.error.proxyRequired');
@@ -28,11 +30,12 @@ export function createConfiguration({available, refresh, changed, retryModel}) {
   function dirty() {
     if(!baseline)return false;
     const d=draft();
+    if(dockerMode)return ['language','debug'].some(k=>d[k]!==baseline[k]);
     return ['port','language','local_only','debug','auto_download_model'].some(k=>d[k]!==baseline[k]) || d.proxy.enabled!==baseline.proxy.enabled || !!d.proxy.url;
   }
   function update() {
     $('model-proxy-fields').hidden=!$('model-proxy-enabled').checked;
-    $('config-local-only-warning').hidden=$('config-local-only').checked;
+    $('config-local-only-warning').hidden=dockerMode||$('config-local-only').checked;
     $('config-validation').textContent=baseline ? error() : '';
     $('btn-model-save').disabled=!baseline||saving||!available()||!dirty()||!!error();
     $('ops-config-fields').disabled=!baseline||saving;
@@ -63,14 +66,14 @@ export function createConfiguration({available, refresh, changed, retryModel}) {
   async function save() {
     if($('btn-model-save').disabled)return;
     const value=draft(), before=baseline;
-    if(before.local_only && !value.local_only && !confirm(t('ops.config.confirmLan')))return;
+    if(!dockerMode && before.local_only && !value.local_only && !confirm(t('ops.config.confirmLan')))return;
     saving=true;update();changed();
     const result=$('model-config-result');result.classList.remove('is-error');
     try {
       await refresh();
       if(!available())throw new Error(t('ops.config.unavailable'));
       const saved=await api('/config',{method:'POST',body:JSON.stringify(value)});
-      for(const k of ['port','local_only'])if(value[k]!==before[k])restartKeys.add(k);
+      if(!dockerMode)for(const k of ['port','local_only'])if(value[k]!==before[k])restartKeys.add(k);
       fill(saved);
       result.textContent=t('ops.config.saved');
       if(restartKeys.size){
@@ -78,7 +81,7 @@ export function createConfiguration({available, refresh, changed, retryModel}) {
         $('config-restart-notice').hidden=false;
       }
       const state=await refresh();
-      if(state?.required_reason==='model_not_ready') {
+      if(!dockerMode && state?.required_reason==='model_not_ready') {
         try { await retryModel();result.textContent+=' '+t('ops.config.preparingModel'); }
         catch(e){result.textContent+=' '+t('ops.config.retryFailed',{error:e.message});result.classList.add('is-error');}
       }

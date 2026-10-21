@@ -73,7 +73,7 @@ class Runtime:
                 self._resolve_provider_environment()
                 try:
                     options = {"environment": self.settings.environment}
-                    if background_model and self.provider_factory is create_embedder:
+                    if self.settings.DOCKER_MODE or (background_model and self.provider_factory is create_embedder):
                         options["cache_only"] = True
                     self.provider = wrap_provider(self.provider_factory(**options))
                 except ModelCacheMissing:
@@ -249,11 +249,14 @@ class Runtime:
                     self._resolve_provider_environment()
                     self._model_cancel.clear()
                     self._model_retry_requested = False
-                    self.model_progress.set("downloading")
+                    self.model_progress.set("validating" if self.settings.DOCKER_MODE else "downloading")
                 provider_name = self.settings.environment.get("EMBED_PROVIDER", "ollama").replace("-", "_")
                 provider = None
                 try:
-                    if self.provider_factory is create_embedder:
+                    if self.settings.DOCKER_MODE:
+                        provider = wrap_provider(self.provider_factory(
+                            environment=self.settings.environment, cache_only=True))
+                    elif self.provider_factory is create_embedder:
                         prepare_model_in_process(self.settings.environment, self.model_progress,
                                                  self._model_cancel)
                         if self._model_cancel.is_set():

@@ -7,13 +7,17 @@ import subprocess
 import time
 
 
-def run_viewport(url, profile, width, height, screenshot, verify_search_keyboard=False, verify_stats_keyboard=False, verify_retrieval_keyboard=False, verify_help_keyboard=False, capture_help_document=False, verify_theme_keyboard=False):
+def run_viewport(url, profile, width, height, screenshot, verify_search_keyboard=False, verify_stats_keyboard=False, verify_retrieval_keyboard=False, verify_help_keyboard=False, capture_help_document=False, verify_theme_keyboard=False, scenario_script=None):
     incoming, writer = os.pipe()
     reader, outgoing = os.pipe()
 
     def connect_pipe():
         os.dup2(incoming, 3)
         os.dup2(outgoing, 4)
+        # dup2(fd, fd) preserves CLOEXEC when this standalone runner's first
+        # pipe already occupies fd 3. Chrome must inherit both CDP descriptors.
+        os.set_inheritable(3, True)
+        os.set_inheritable(4, True)
 
     proc = subprocess.Popen([
         'google-chrome', '--headless', '--no-sandbox', '--disable-gpu',
@@ -53,6 +57,9 @@ def run_viewport(url, profile, width, height, screenshot, verify_search_keyboard
         session = call('Target.attachToTarget', {'targetId': target, 'flatten': True})['sessionId']
         call('Emulation.setDeviceMetricsOverride', {'width': width, 'height': height,
              'deviceScaleFactor': 1, 'mobile': False}, session)
+        if scenario_script is not None:
+            call('Page.enable', {}, session)
+            call('Page.addScriptToEvaluateOnNewDocument', {'source': scenario_script}, session)
         call('Page.navigate', {'url': url}, session)
         deadline = time.monotonic() + 40
         expression = "({text:document.getElementById('smoke-result')?.textContent || '',width:innerWidth,height:innerHeight,dpr:devicePixelRatio})"
@@ -62,7 +69,8 @@ def run_viewport(url, profile, width, height, screenshot, verify_search_keyboard
                 break
             time.sleep(.05)
         else:
-            raise TimeoutError('UI result')
+            detail = call('Runtime.evaluate', {'expression': "({url:location.href,state:document.readyState,text:document.body?.textContent.slice(-1500)})", 'returnByValue': True}, session)['result'].get('value')
+            raise TimeoutError('UI result: ' + str(detail))
         if result['width'] != width or result['height'] != height:
             raise AssertionError('Unexpected CSS viewport: ' + str(result))
         if verify_search_keyboard or verify_stats_keyboard or verify_retrieval_keyboard or verify_help_keyboard or verify_theme_keyboard:

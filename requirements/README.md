@@ -90,8 +90,9 @@ identity only and never opens a business database. It does not replace testing
 retrieval against a safe production-data copy or vector comparisons across
 environments.
 
-Actual measurements and remaining boundaries are recorded in
-[`VALIDATION.md`](VALIDATION.md).
+Actual measurements and remaining boundaries are maintained locally in
+`docs/project-management/docker/PHASE1-VALIDATION.md` (project-management
+documents are excluded from the distributed source).
 
 References: [PyTorch CPU install commands](https://pytorch.org/get-started/previous-versions/),
 [pip-tools](https://pip-tools.readthedocs.io/en/stable/),
