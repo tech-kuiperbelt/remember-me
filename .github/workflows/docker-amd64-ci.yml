@@ -12,7 +12,7 @@ on:
         default: cold
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 env:
@@ -93,6 +93,21 @@ jobs:
         run: |
           set -euo pipefail
           python .github/scripts/docker_ci.py
+
+      - name: Publish evidence branch
+        if: always()
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          cp artifacts/results.json "evidence-${MODE}.json" 2>/dev/null || true
+          cp artifacts/summary.md "evidence-${MODE}.md" 2>/dev/null || true
+          git add "evidence-${MODE}.json" "evidence-${MODE}.md" 2>/dev/null || true
+          git commit -m "Phase 3.1 evidence ${MODE} ${GITHUB_RUN_ID}" || true
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"             "HEAD:refs/heads/phase3.1-evidence-${MODE}"
 
       - name: Upload evidence
         if: always()
