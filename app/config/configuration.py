@@ -157,7 +157,7 @@ def default_document(values):
         '  "port":': '  // HTTP 端口（1–65535），修改后重启生效。\n',
         '  "language":': '  // 语言：zh-CN 或 en；目前仅保存选择。\n',
         '  "auto_download_model":': '  // 模型缓存缺失时自动下载；也可在配置页手动重试。\n',
-        '  "local_only":': '  // true=仅监听 127.0.0.1；false=监听 0.0.0.0 并对局域网开放全部 HTTP 接口（修改后重启生效）。\n',
+        '  "local_only":': '  // true=默认监听回环地址并启用 MCP Host/Origin 防护；false=默认监听所有地址并关闭该防护。--host 可单独覆盖监听地址（修改后重启生效）。\n',
         '  "debug":': '  // Admin UI Debug 模式；配置页保存后刷新页面生效。\n',
         '  "proxy":': '  // 代理关闭时直连；只支持 HTTP/HTTPS。\n',
         '    "url":': '    // 可包含端口及用户名/密码，例如 http://127.0.0.1:7890。\n',

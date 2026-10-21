@@ -93,7 +93,8 @@ def test_defaults_create_documented_jsonc_and_save_preserves_it(tmp_path):
     config = Configuration.load(tmp_path, create=True, environment={})
     original = config.path.read_text()
     assert '// HTTP 端口' in original and '// 代理关闭' in original
-    assert '// true=仅监听' in original
+    assert '// true=默认监听回环地址并启用 MCP Host/Origin 防护' in original
+    assert '--host 可单独覆盖监听地址' in original
     config.save()
     assert config.path.read_text() == original
 

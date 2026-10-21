@@ -1,0 +1,497 @@
+{
+  "date": "2026-10-21",
+  "status": "phase2.1_local_acceptance_passed_official_download_unverified",
+  "image_id": "sha256:ab2b4233317ef9033cb1b21e3ede2470dda065ae4e28246083295bcb2615336e",
+  "architecture": "amd64",
+  "os": "linux",
+  "image_bytes": 3524617310,
+  "base_manifest": "sha256:2ed6491b93cd49272ee6de2b5a38440c3448360322c089fc23e370722d74179d",
+  "installer": "pip==26.2.1",
+  "production_lock_sha256": "041aca82c90f694da019898e31caa09a97c2312c8678bedf37f0cd86b5cb7655",
+  "buildkit_version": "v0.33.1",
+  "builder": "rm-phase21",
+  "builds": {
+    "first-build": {
+      "command": [
+        "docker",
+        "buildx",
+        "build",
+        "--builder",
+        "rm-phase21",
+        "--platform",
+        "linux/amd64",
+        "--load",
+        "--progress",
+        "plain",
+        "--target",
+        "runtime-local",
+        "-t",
+        "remember-me:phase2.1-amd64",
+        "--build-context",
+        "model_snapshot=/home/yu/.remember-me/models/sentence-transformers/models--BAAI--bge-m3/snapshots/5617a9f61b028005a4858fdac845db406aefb181",
+        "/home/yu/me/remember-me"
+      ],
+      "exit_code": 1,
+      "seconds": 340.6405556201935,
+      "disk_used_before": 193270779904,
+      "disk_used_after": 195579346944
+    },
+    "first-build-proxy": {
+      "command": [
+        "docker",
+        "buildx",
+        "build",
+        "--builder",
+        "rm-phase21",
+        "--platform",
+        "linux/amd64",
+        "--load",
+        "--network",
+        "host",
+        "--allow",
+        "network.host",
+        "--build-arg",
+        "HTTP_PROXY=http://127.0.0.1:7890",
+        "--build-arg",
+        "HTTPS_PROXY=http://127.0.0.1:7890",
+        "--progress",
+        "plain",
+        "--target",
+        "runtime-local",
+        "-t",
+        "remember-me:phase2.1-amd64",
+        "--build-context",
+        "model_snapshot=/home/yu/.remember-me/models/sentence-transformers/models--BAAI--bge-m3/snapshots/5617a9f61b028005a4858fdac845db406aefb181",
+        "/home/yu/me/remember-me"
+      ],
+      "exit_code": 0,
+      "seconds": 423.0622103214264,
+      "disk_used_before": 195576119296,
+      "disk_used_after": 210903433216
+    },
+    "validation-build": {
+      "command": [
+        "docker",
+        "buildx",
+        "build",
+        "--builder",
+        "rm-phase21",
+        "--platform",
+        "linux/amd64",
+        "--load",
+        "--network",
+        "host",
+        "--allow",
+        "network.host",
+        "--build-arg",
+        "HTTP_PROXY=http://127.0.0.1:7890",
+        "--build-arg",
+        "HTTPS_PROXY=http://127.0.0.1:7890",
+        "--progress",
+        "plain",
+        "--target",
+        "validation-local",
+        "-t",
+        "remember-me:phase2.1-validation-amd64",
+        "--build-context",
+        "model_snapshot=/home/yu/.remember-me/models/sentence-transformers/models--BAAI--bge-m3/snapshots/5617a9f61b028005a4858fdac845db406aefb181",
+        "/home/yu/me/remember-me"
+      ],
+      "exit_code": 0,
+      "seconds": 9.076360702514648,
+      "disk_used_before": 210903887872,
+      "disk_used_after": 210904592384
+    },
+    "repeat-build": {
+      "command": [
+        "docker",
+        "buildx",
+        "build",
+        "--builder",
+        "rm-phase21",
+        "--platform",
+        "linux/amd64",
+        "--load",
+        "--network",
+        "host",
+        "--allow",
+        "network.host",
+        "--build-arg",
+        "HTTP_PROXY=http://127.0.0.1:7890",
+        "--build-arg",
+        "HTTPS_PROXY=http://127.0.0.1:7890",
+        "--progress",
+        "plain",
+        "--target",
+        "runtime-local",
+        "-t",
+        "remember-me:phase2.1-amd64",
+        "--build-context",
+        "model_snapshot=/home/yu/.remember-me/models/sentence-transformers/models--BAAI--bge-m3/snapshots/5617a9f61b028005a4858fdac845db406aefb181",
+        "/home/yu/me/remember-me"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 9.092788219451904,
+      "disk_used_before": 210912157696,
+      "disk_used_after": 212439318528
+    },
+    "source-change": {
+      "command": [
+        "docker",
+        "buildx",
+        "build",
+        "--builder",
+        "rm-phase21",
+        "--platform",
+        "linux/amd64",
+        "--load",
+        "--network",
+        "host",
+        "--allow",
+        "network.host",
+        "--build-arg",
+        "HTTP_PROXY=http://127.0.0.1:7890",
+        "--build-arg",
+        "HTTPS_PROXY=http://127.0.0.1:7890",
+        "--progress",
+        "plain",
+        "--target",
+        "runtime-local",
+        "-t",
+        "remember-me:phase2.1-source-change-amd64",
+        "--build-context",
+        "model_snapshot=/home/yu/.remember-me/models/sentence-transformers/models--BAAI--bge-m3/snapshots/5617a9f61b028005a4858fdac845db406aefb181",
+        "/tmp/rm-phase21-cachecontext"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "seconds": 12.504369735717773,
+      "disk_used_before": 211468398592,
+      "disk_used_after": 213231947776
+    },
+    "official-download": {
+      "command": [
+        "docker",
+        "buildx",
+        "build",
+        "--builder",
+        "rm-phase21",
+        "--platform",
+        "linux/amd64",
+        "--load",
+        "--network",
+        "host",
+        "--allow",
+        "network.host",
+        "--build-arg",
+        "HTTP_PROXY=http://127.0.0.1:7890",
+        "--build-arg",
+        "HTTPS_PROXY=http://127.0.0.1:7890",
+        "--progress",
+        "plain",
+        "--target",
+        "runtime",
+        "-t",
+        "remember-me:phase2.1-download-amd64",
+        "/home/yu/me/remember-me"
+      ],
+      "exit_code": 130,
+      "timed_out": true,
+      "seconds": 300.42049860954285,
+      "disk_used_before": 212610277376,
+      "disk_used_after": 213274034176
+    }
+  },
+  "builder_sampled_resources": {
+    "sample_count": 140,
+    "sampled_max_cpu_percent": 322.46,
+    "sampled_max_memory_bytes": 374236774,
+    "sampled_max_memory_docker_display": "356.9MiB / 60.6GiB"
+  },
+  "layers": [
+    {
+      "bytes": 1861,
+      "created_by": "COPY docker/entrypoint.py docker/healthcheck.py ./docker/ # buildkit"
+    },
+    {
+      "bytes": 11358,
+      "created_by": "COPY LICENSE ./LICENSE # buildkit"
+    },
+    {
+      "bytes": 3895663,
+      "created_by": "COPY web/ ./web/ # buildkit"
+    },
+    {
+      "bytes": 694473,
+      "created_by": "COPY app/ ./app/ # buildkit"
+    },
+    {
+      "bytes": 2293337721,
+      "created_by": "COPY /model/ /opt/remember-me/models/ # buildkit"
+    },
+    {
+      "bytes": 1095693317,
+      "created_by": "COPY /opt/venv /opt/venv # buildkit"
+    },
+    {
+      "bytes": 4383,
+      "created_by": "RUN /bin/sh -c groupadd --gid 10001 remember-me &&     useradd --uid 10001 --gid 10001 --home-dir /data --no-create-home remember-me &&     install -d"
+    },
+    {
+      "bytes": 36,
+      "created_by": "RUN /bin/sh -c set -eux;  for src in idle3 pip3 pydoc3 python3 python3-config; do   dst=\"$(echo \"$src\" | tr -d 3)\";   [ -s \"/usr/local/bin/$src\" ];   "
+    },
+    {
+      "bytes": 47580307,
+      "created_by": "RUN /bin/sh -c set -eux;   savedAptMark=\"$(apt-mark showmanual)\";  apt-get update;  apt-get install -y --no-install-recommends   dpkg-dev   g++   gcc "
+    },
+    {
+      "bytes": 8527914,
+      "created_by": "RUN /bin/sh -c set -eux;  apt-get update;  apt-get install -y --no-install-recommends   ca-certificates   netbase   tzdata  ;  rm -rf /var/lib/apt/lis"
+    },
+    {
+      "bytes": 74870277,
+      "created_by": "# debian.sh --arch 'amd64' out/ 'bookworm' '@1791158400'"
+    }
+  ],
+  "inference": {
+    "python": "3.12.15",
+    "platform": "Linux-7.0.0-30-generic-x86_64-with-glibc2.36",
+    "locked_packages": 70,
+    "torch": "2.14.1+cpu",
+    "torch_cuda": null,
+    "torch_hip": null,
+    "torch_source": {
+      "archive_info": {
+        "hash": "sha256=5a6363570c753812540a05eb82380e329469cbe668643e88111414c12627711f",
+        "hashes": {
+          "sha256": "5a6363570c753812540a05eb82380e329469cbe668643e88111414c12627711f"
+        }
+      },
+      "url": "https://download-r2.pytorch.org/whl/cpu/torch-2.14.1%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl"
+    },
+    "sentence_transformers": "5.7.0",
+    "transformers": "5.20.2",
+    "forbidden_packages": [],
+    "model_validation": "offline_inference_passed",
+    "model_revision": "5617a9f61b028005a4858fdac845db406aefb181",
+    "profile": {
+      "profile_id": "ep_6134c0b15d2bb471",
+      "provider": "sentence_transformers",
+      "model": "BAAI/bge-m3",
+      "dimension": 1024,
+      "normalized": true,
+      "query_prefix": "",
+      "document_prefix": "",
+      "max_input_chars": 8000,
+      "max_input_tokens": 8192
+    },
+    "vector_dimensions": [
+      1024,
+      1024
+    ],
+    "vector_norms": [
+      0.9999999001552775,
+      0.9999998322412921
+    ],
+    "slow_tokenizer": "XLMRobertaTokenizer",
+    "site_packages_bytes": 1095667995
+  },
+  "runtime": {
+    "pip_check": "No broken requirements found.\n",
+    "pip_version": "pip 26.2.1 from /opt/venv/lib/python3.12/site-packages/pip (python 3.12)\n",
+    "content": "{\"uid\": 10001, \"gid\": 10001, \"production_only\": true, \"license_retained\": true}\n",
+    "rm-phase21-default": {
+      "ready_seconds": 13.860047795984428,
+      "validation": {
+        "uid": 10001,
+        "gid": 10001,
+        "ready": true,
+        "model_hashes_unchanged": true,
+        "write_rejected": "[Errno 13] Permission denied: '/opt/remember-me/models/write-probe'",
+        "added": {
+          "id": "31177c6ea4195cb7",
+          "created": true
+        },
+        "search": [
+          {
+            "id": "31177c6ea4195cb7",
+            "text": "Remember Me Docker offline test. 中文离线推理验收。",
+            "metadata": {},
+            "namespace": "default",
+            "created_at": "2026-10-21T06:14:43.133007+00:00",
+            "updated_at": "2026-10-21T06:14:43.133007+00:00",
+            "summary": "Remember Me Docker offline test. 中文离线推理验收。",
+            "score": 0.791823
+          }
+        ]
+      },
+      "health": {
+        "Status": "healthy",
+        "FailingStreak": 0,
+        "Log": [
+          {
+            "Start": "2026-10-21T14:14:31.835956877+08:00",
+            "End": "2026-10-21T14:14:32.088562467+08:00",
+            "ExitCode": 1,
+            "Output": ""
+          },
+          {
+            "Start": "2026-10-21T14:14:37.088976698+08:00",
+            "End": "2026-10-21T14:14:37.315895708+08:00",
+            "ExitCode": 1,
+            "Output": ""
+          },
+          {
+            "Start": "2026-10-21T14:14:42.316934496+08:00",
+            "End": "2026-10-21T14:14:42.539381462+08:00",
+            "ExitCode": 0,
+            "Output": ""
+          }
+        ]
+      }
+    },
+    "rm-phase21-default_exit": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-21T06:14:26.762112612Z",
+      "FinishedAt": "2026-10-21T06:14:45.927637873Z",
+      "Health": {
+        "Status": "unhealthy",
+        "FailingStreak": 0,
+        "Log": [
+          {
+            "Start": "2026-10-21T14:14:31.835956877+08:00",
+            "End": "2026-10-21T14:14:32.088562467+08:00",
+            "ExitCode": 1,
+            "Output": ""
+          },
+          {
+            "Start": "2026-10-21T14:14:37.088976698+08:00",
+            "End": "2026-10-21T14:14:37.315895708+08:00",
+            "ExitCode": 1,
+            "Output": ""
+          },
+          {
+            "Start": "2026-10-21T14:14:42.316934496+08:00",
+            "End": "2026-10-21T14:14:42.539381462+08:00",
+            "ExitCode": 0,
+            "Output": ""
+          }
+        ]
+      }
+    },
+    "rm-phase21-readonly": {
+      "ready_seconds": 13.79319541802397,
+      "validation": {
+        "uid": 10001,
+        "gid": 10001,
+        "ready": true,
+        "model_hashes_unchanged": true,
+        "write_rejected": "[Errno 30] Read-only file system: '/opt/remember-me/models/write-probe'",
+        "added": {
+          "id": "47821413799311b8",
+          "created": true
+        },
+        "search": [
+          {
+            "id": "47821413799311b8",
+            "text": "Remember Me Docker offline test. 中文离线推理验收。",
+            "metadata": {},
+            "namespace": "default",
+            "created_at": "2026-10-21T06:15:02.069815+00:00",
+            "updated_at": "2026-10-21T06:15:02.069815+00:00",
+            "summary": "Remember Me Docker offline test. 中文离线推理验收。",
+            "score": 0.791823
+          }
+        ]
+      },
+      "health": {
+        "Status": "healthy",
+        "FailingStreak": 0,
+        "Log": [
+          {
+            "Start": "2026-10-21T14:14:51.139792531+08:00",
+            "End": "2026-10-21T14:14:51.360746357+08:00",
+            "ExitCode": 1,
+            "Output": ""
+          },
+          {
+            "Start": "2026-10-21T14:14:56.361422405+08:00",
+            "End": "2026-10-21T14:14:56.577052859+08:00",
+            "ExitCode": 1,
+            "Output": ""
+          },
+          {
+            "Start": "2026-10-21T14:15:01.578300025+08:00",
+            "End": "2026-10-21T14:15:01.819457602+08:00",
+            "ExitCode": 0,
+            "Output": ""
+          }
+        ]
+      }
+    },
+    "rm-phase21-readonly_exit": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-21T06:14:46.067671972Z",
+      "FinishedAt": "2026-10-21T06:15:05.302416375Z",
+      "Health": {
+        "Status": "unhealthy",
+        "FailingStreak": 0,
+        "Log": [
+          {
+            "Start": "2026-10-21T14:14:51.139792531+08:00",
+            "End": "2026-10-21T14:14:51.360746357+08:00",
+            "ExitCode": 1,
+            "Output": ""
+          },
+          {
+            "Start": "2026-10-21T14:14:56.361422405+08:00",
+            "End": "2026-10-21T14:14:56.577052859+08:00",
+            "ExitCode": 1,
+            "Output": ""
+          },
+          {
+            "Start": "2026-10-21T14:15:01.578300025+08:00",
+            "End": "2026-10-21T14:15:01.819457602+08:00",
+            "ExitCode": 0,
+            "Output": ""
+          }
+        ]
+      }
+    }
+  },
+  "tests": {
+    "host": "1115 passed, 7 warnings in 47.67s (Python 3.12.3)",
+    "image": "1115 passed, 6 warnings in 95.89s (Python 3.12.15)"
+  },
+  "official_download": {
+    "status": "unverified",
+    "reason": "Local bandwidth limit; canceled at 300-second validation deadline after five verified small files and 41943040 bytes of partial weights",
+    "required_before": "official GHCR release"
+  },
+  "acceptance": {
+    "phase": "2.1",
+    "approved_by": "user",
+    "date": "2026-10-21",
+    "status": "accepted",
+    "current_project_phase": "2.2",
+    "release_gates_retained": true
+  }
+}

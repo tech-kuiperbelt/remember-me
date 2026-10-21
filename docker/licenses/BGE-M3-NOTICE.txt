@@ -1,0 +1,24 @@
+BGE-M3 model attribution
+
+Model: BAAI/bge-m3
+Publisher: Beijing Academy of Artificial Intelligence (BAAI)
+Model source: https://huggingface.co/BAAI/bge-m3
+Pinned revision: 5617a9f61b028005a4858fdac845db406aefb181
+Model card: sentence-transformers/models--BAAI--bge-m3/snapshots/5617a9f61b028005a4858fdac845db406aefb181/README.md
+The pinned model card declares license: mit and links to FlagEmbedding.
+Full MIT permission, copyright and warranty text: BGE-M3-MIT.txt
+License source: https://github.com/FlagOpen/FlagEmbedding/blob/fd1a2bdf69488ffebe0327999d4400d8c8058a0b/LICENSE
+License SHA256: 587a673933425dbc36ec61268d3b954051b2d3ef3c9b322ede357976055ffdd5
+Copyright (c) 2022 staoxiao
+
+Model paper attribution (from the pinned model card):
+BGE M3-Embedding: Multi-Lingual, Multi-Functionality, Multi-Granularity
+Text Embeddings Through Self-Knowledge Distillation (2024).
+Jianlv Chen, Shitao Xiao, Peitian Zhang, Kun Luo, Defu Lian and Zheng Liu.
+https://arxiv.org/abs/2402.03216
+
+Redistributed files and official source digests are recorded in
+../bge-m3-manifest.json. Only dense Sentence Transformers runtime files
+are included; ONNX and sparse/ColBERT projection files are excluded.
+The Remember Me project license is separately retained at
+/opt/remember-me/LICENSE (Apache-2.0).
