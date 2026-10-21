@@ -278,6 +278,52 @@ def privacy_gate(results):
         raise Failure(f"authenticated cache manifest probe failed: {authenticated}")
 
 
+
+def remote_cache_config(raw_manifest):
+    """Fetch the BuildKit cache config blob from GHCR for diagnosis."""
+    import base64
+    import urllib.parse
+    import urllib.request
+
+    token = os.environ.get("GITHUB_TOKEN")
+    actor = os.environ.get("GITHUB_ACTOR", "")
+    if not token:
+        return {"error": "no GITHUB_TOKEN"}
+    try:
+        manifest = json.loads(raw_manifest)
+        digest = manifest["config"]["digest"]
+    except Exception as exc:
+        return {"error": f"manifest parse: {exc}"}
+    repository = "tech-kuiperbelt/remember-me-buildcache"
+    auth = base64.b64encode(f"{actor}:{token}".encode()).decode()
+    try:
+        request = urllib.request.Request(
+            "https://ghcr.io/token?"
+            + urllib.parse.urlencode({"service": "ghcr.io", "scope": f"repository:{repository}:pull"}),
+            headers={"Authorization": f"Basic {auth}"})
+        with urllib.request.urlopen(request, timeout=30) as response:
+            registry_token = json.load(response)["token"]
+        request = urllib.request.Request(
+            f"https://ghcr.io/v2/{repository}/blobs/{digest}",
+            headers={"Authorization": f"Bearer {registry_token}",
+                     "Accept": "application/vnd.buildkit.cacheconfig.v0"})
+        with urllib.request.urlopen(request, timeout=60) as response:
+            config = json.load(response)
+    except Exception as exc:
+        return {"error": f"{type(exc).__name__}: {exc}"}
+    return {
+        "digest": digest,
+        "layers": len(config.get("layers", [])),
+        "records": [
+            {
+                "layers": record.get("layers"),
+                "inputs": len(record.get("inputs", [])),
+                "description": record.get("description"),
+            }
+            for record in config.get("records", [])
+        ],
+    }
+
 def cache_check_before(results):
     manifest = cache_manifest()
     results["cache"]["before"] = manifest
@@ -288,6 +334,7 @@ def cache_check_before(results):
                    "--format", "{{json .Image}}", check=False)
     results["cache"]["before_image"] = image.stdout[:400000]
     results["cache"]["before_image_error"] = image.stderr[:2000]
+    results["cache"]["config"] = remote_cache_config(raw.stdout)
     if manifest["exit_code"] != 0:
         raise Failure(f"remote cache is not readable: {manifest}")
 
