@@ -406,6 +406,7 @@ def run_cache_only(results):
             "--output", "type=cacheonly",
             "--provenance=false", "--sbom=false",
             "--progress=plain",
+            "--debug",
             "--metadata-file", str(ARTIFACTS / f"{MODE}-metadata.json"),
             "--cache-from", f"type=registry,ref={CACHE_REF}",
             ".",
