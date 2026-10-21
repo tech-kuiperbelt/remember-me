@@ -338,7 +338,7 @@ def run_cold(results, sampler):
         "--provenance=false", "--sbom=false",
         "--progress=plain",
         "--metadata-file", str(ARTIFACTS / "cold-metadata.json"),
-        "--cache-to", f"type=registry,ref={CACHE_REF},mode=max,ignore-error=true",
+        "--cache-to", f"type=registry,ref={CACHE_REF},mode=min,ignore-error=true",
         "-t", IMAGE,
         ".",
     ]
