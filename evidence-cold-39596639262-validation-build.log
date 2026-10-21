@@ -1,0 +1,133 @@
+#0 building with "ci-39596639262" instance using docker-container driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 4.12kB done
+#1 DONE 0.0s
+
+#2 resolve image config for docker-image://docker.io/docker/dockerfile:1
+#2 DONE 0.2s
+
+#3 docker-image://docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#3 resolve docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e done
+#3 CACHED
+
+#4 [internal] load metadata for docker.io/library/python:3.12.15-slim-bookworm@sha256:2ed6491b93cd49272ee6de2b5a38440c3448360322c089fc23e370722d74179d
+#4 DONE 0.0s
+
+#5 [internal] load .dockerignore
+#5 transferring context: 772B done
+#5 DONE 0.0s
+
+#6 [model-tools 1/3] FROM docker.io/library/python:3.12.15-slim-bookworm@sha256:2ed6491b93cd49272ee6de2b5a38440c3448360322c089fc23e370722d74179d
+#6 resolve docker.io/library/python:3.12.15-slim-bookworm@sha256:2ed6491b93cd49272ee6de2b5a38440c3448360322c089fc23e370722d74179d done
+#6 DONE 0.0s
+
+#7 [internal] load build context
+#7 transferring context: 14.85kB 0.0s done
+#7 DONE 0.0s
+
+#8 [deps 2/5] RUN python -m venv /opt/venv
+#8 CACHED
+
+#9 [model-tools 3/3] COPY docker/licenses/ /build/licenses/
+#9 CACHED
+
+#10 [runtime-base 2/4] RUN groupadd --gid 10001 remember-me &&     useradd --uid 10001 --gid 10001 --home-dir /data --no-create-home remember-me &&     install -d -o 10001 -g 10001 /data
+#10 CACHED
+
+#11 [deps 3/5] COPY docker/pip-bootstrap.lock /build/pip-bootstrap.lock
+#11 CACHED
+
+#12 [runtime-download 1/6] COPY --from=model-tools /build /build
+#12 CACHED
+
+#13 [deps 5/5] RUN --mount=type=cache,target=/root/.cache/pip     /opt/venv/bin/python -m pip install --require-hashes --only-binary=:all: --no-compile -r /build/pip-bootstrap.lock &&     /opt/venv/bin/python -m pip install --require-hashes --only-binary=:all: --no-compile -r /build/production.lock &&     /opt/venv/bin/python -m pip check
+#13 CACHED
+
+#14 [runtime-download 4/6] COPY web/ ./web/
+#14 CACHED
+
+#15 [runtime-download 5/6] COPY LICENSE ./LICENSE
+#15 CACHED
+
+#16 [runtime-base 4/4] WORKDIR /opt/remember-me
+#16 CACHED
+
+#17 [model-tools 2/3] COPY docker/package_model.py docker/bge-m3-manifest.json /build/
+#17 CACHED
+
+#18 [runtime-base 3/4] COPY --from=deps /opt/venv /opt/venv
+#18 CACHED
+
+#19 [deps 4/5] COPY requirements/docker-cpu-py312-linux-amd64.lock /build/production.lock
+#19 CACHED
+
+#20 [runtime-download 3/6] COPY app/ ./app/
+#20 CACHED
+
+#21 [runtime-download 2/6] RUN python /build/package_model.py --download-cache /tmp/model-download --output /opt/remember-me/models     && rm -rf /tmp/model-download /build
+#21 CACHED
+
+#22 [runtime-download 6/6] COPY docker/entrypoint.py docker/healthcheck.py docker/init_data.py ./docker/
+#22 CACHED
+
+#23 [validation 1/2] COPY bin/verify_cpu_runtime.py ./bin/verify_cpu_runtime.py
+#23 DONE 0.0s
+
+#24 [validation 2/2] COPY requirements/docker-cpu-py312-linux-amd64.lock ./requirements/docker-cpu-py312-linux-amd64.lock
+#24 DONE 0.0s
+
+#25 exporting to docker image format
+#25 exporting layers 0.0s done
+#25 exporting manifest sha256:a92723f58f3beda82eeb09bcedd8bc4d47f504f42ac12706842643e913fe14ec done
+#25 exporting config sha256:0980de1c3c2f7c546b3c24b968baa55def40add635bb0d07087d67c7b42226a8 done
+#25 sending tarball
+#25 ...
+
+#26 importing to docker
+#26 loading layer e58989146fce 294.91kB / 28.25MB
+#26 loading layer 916eda96356f 65.54kB / 3.34MB
+#26 loading layer 694fd645f7c3 163.84kB / 15.97MB
+#26 loading layer 742affd58633 249B / 249B
+#26 loading layer 3edc096f04d0 1.21kB / 1.21kB
+#26 loading layer 5b8959806ac8 557.06kB / 300.35MB
+#26 loading layer 5b8959806ac8 80.77MB / 300.35MB 2.1s
+#26 loading layer 5b8959806ac8 123.67MB / 300.35MB 4.5s
+#26 loading layer 5b8959806ac8 244.55MB / 300.35MB 6.5s
+#26 loading layer 1ffb96add7be 120B / 120B
+#26 loading layer 2b30fd44383e 4.12kB / 4.12kB
+#26 loading layer 00455623a86d 557.06kB / 1.36GB
+#26 loading layer 00455623a86d 244.55MB / 1.36GB 2.0s
+#26 loading layer 00455623a86d 489.65MB / 1.36GB 4.1s
+#26 loading layer 00455623a86d 733.64MB / 1.36GB 6.1s
+#26 loading layer 00455623a86d 979.30MB / 1.36GB 8.2s
+#26 loading layer 00455623a86d 1.22GB / 1.36GB 10.2s
+#26 loading layer 2b3122c27a9e 32.77kB / 172.28kB
+#26 loading layer ea4195ed3f3b 32.77kB / 2.97MB
+#26 loading layer 839faa2d6255 4.09kB / 4.09kB
+#26 loading layer d8363e53bd3b 2.01kB / 2.01kB
+#26 loading layer d8363e53bd3b 2.01kB / 2.01kB 0.1s done
+#26 loading layer 0dc6b4a2a90f 3.16kB / 3.16kB
+#26 loading layer 1026761827b5 4.59kB / 4.59kB
+#26 loading layer e58989146fce 28.25MB / 28.25MB 39.9s done
+#26 loading layer 916eda96356f 3.34MB / 3.34MB 39.1s done
+#26 loading layer 694fd645f7c3 15.97MB / 15.97MB 32.7s done
+#26 loading layer 742affd58633 249B / 249B 31.9s done
+#26 loading layer 3edc096f04d0 1.21kB / 1.21kB 31.8s done
+#26 loading layer 5b8959806ac8 300.35MB / 300.35MB 31.8s done
+#26 loading layer 1ffb96add7be 120B / 120B 19.1s done
+#26 loading layer 2b30fd44383e 4.12kB / 4.12kB 19.1s done
+#26 loading layer 00455623a86d 1.36GB / 1.36GB 19.0s done
+#26 loading layer 2b3122c27a9e 172.28kB / 172.28kB 0.3s done
+#26 loading layer ea4195ed3f3b 2.97MB / 2.97MB 0.3s done
+#26 loading layer 839faa2d6255 4.09kB / 4.09kB 0.2s done
+#26 loading layer 0dc6b4a2a90f 3.16kB / 3.16kB 0.1s done
+#26 loading layer 1026761827b5 4.59kB / 4.59kB 0.1s done
+#26 DONE 39.9s
+
+#25 exporting to docker image format
+#25 sending tarball 46.4s done
+#25 DONE 46.4s
+
+#27 resolving provenance for metadata file
+#27 DONE 0.0s

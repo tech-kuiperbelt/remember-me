@@ -1,0 +1,384 @@
+#0 building with "ci-39596639262" instance using docker-container driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 4.12kB done
+#1 DONE 0.0s
+
+#2 resolve image config for docker-image://docker.io/docker/dockerfile:1
+#2 ...
+
+#3 [auth] docker/dockerfile:pull token for registry-1.docker.io
+#3 DONE 0.0s
+
+#2 resolve image config for docker-image://docker.io/docker/dockerfile:1
+#2 DONE 0.9s
+
+#4 docker-image://docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#4 resolve docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e done
+#4 sha256:9d2b4f57f9e20f33279375ce25c6ff14f30f64270ed5c7b613b2b30256754f62 14.28MB / 14.28MB 0.2s
+#4 sha256:9d2b4f57f9e20f33279375ce25c6ff14f30f64270ed5c7b613b2b30256754f62 14.28MB / 14.28MB 0.2s done
+#4 extracting sha256:9d2b4f57f9e20f33279375ce25c6ff14f30f64270ed5c7b613b2b30256754f62 0.1s done
+#4 DONE 0.3s
+
+#5 [auth] library/python:pull token for registry-1.docker.io
+#5 DONE 0.0s
+
+#6 [internal] load metadata for docker.io/library/python:3.12.15-slim-bookworm@sha256:2ed6491b93cd49272ee6de2b5a38440c3448360322c089fc23e370722d74179d
+#6 DONE 0.5s
+
+#7 [internal] load .dockerignore
+#7 transferring context: 772B done
+#7 DONE 0.0s
+
+#8 [internal] load build context
+#8 transferring context: 4.64MB 0.0s done
+#8 DONE 0.1s
+
+#9 [model-tools 1/3] FROM docker.io/library/python:3.12.15-slim-bookworm@sha256:2ed6491b93cd49272ee6de2b5a38440c3448360322c089fc23e370722d74179d
+#9 resolve docker.io/library/python:3.12.15-slim-bookworm@sha256:2ed6491b93cd49272ee6de2b5a38440c3448360322c089fc23e370722d74179d done
+#9 sha256:f9d2fb07d6f062d06ddc7aa58191cc5359c728f54af6cebe69a37d2c89e72a0d 249B / 249B 0.1s done
+#9 sha256:86a9e13e035d8e44ae37bfebc52c7fc68898fde19b4b26dd0585f2231fcfaf2c 15.97MB / 15.97MB 0.3s
+#9 sha256:7fd1ebe418b5079d4aa36f416af9b143d127bc75b0155d71cb5fd559b5e04d39 0B / 28.25MB 0.2s
+#9 sha256:6e0ba8ba048777f5354b5a7cb497ae5261116fac8246160c06fc045c8300c582 3.34MB / 3.34MB 0.2s done
+#9 sha256:86a9e13e035d8e44ae37bfebc52c7fc68898fde19b4b26dd0585f2231fcfaf2c 15.97MB / 15.97MB 0.4s done
+#9 sha256:7fd1ebe418b5079d4aa36f416af9b143d127bc75b0155d71cb5fd559b5e04d39 28.25MB / 28.25MB 0.3s
+#9 sha256:7fd1ebe418b5079d4aa36f416af9b143d127bc75b0155d71cb5fd559b5e04d39 28.25MB / 28.25MB 0.5s done
+#9 extracting sha256:7fd1ebe418b5079d4aa36f416af9b143d127bc75b0155d71cb5fd559b5e04d39
+#9 extracting sha256:7fd1ebe418b5079d4aa36f416af9b143d127bc75b0155d71cb5fd559b5e04d39 0.6s done
+#9 DONE 1.1s
+
+#9 [model-tools 1/3] FROM docker.io/library/python:3.12.15-slim-bookworm@sha256:2ed6491b93cd49272ee6de2b5a38440c3448360322c089fc23e370722d74179d
+#9 extracting sha256:6e0ba8ba048777f5354b5a7cb497ae5261116fac8246160c06fc045c8300c582
+#9 extracting sha256:6e0ba8ba048777f5354b5a7cb497ae5261116fac8246160c06fc045c8300c582 0.2s done
+#9 DONE 1.4s
+
+#9 [model-tools 1/3] FROM docker.io/library/python:3.12.15-slim-bookworm@sha256:2ed6491b93cd49272ee6de2b5a38440c3448360322c089fc23e370722d74179d
+#9 extracting sha256:86a9e13e035d8e44ae37bfebc52c7fc68898fde19b4b26dd0585f2231fcfaf2c
+#9 extracting sha256:86a9e13e035d8e44ae37bfebc52c7fc68898fde19b4b26dd0585f2231fcfaf2c 0.4s done
+#9 DONE 1.7s
+
+#9 [model-tools 1/3] FROM docker.io/library/python:3.12.15-slim-bookworm@sha256:2ed6491b93cd49272ee6de2b5a38440c3448360322c089fc23e370722d74179d
+#9 extracting sha256:f9d2fb07d6f062d06ddc7aa58191cc5359c728f54af6cebe69a37d2c89e72a0d done
+#9 DONE 1.7s
+
+#10 [runtime-base 2/4] RUN groupadd --gid 10001 remember-me &&     useradd --uid 10001 --gid 10001 --home-dir /data --no-create-home remember-me &&     install -d -o 10001 -g 10001 /data
+#10 DONE 1.1s
+
+#11 [model-tools 2/3] COPY docker/package_model.py docker/bge-m3-manifest.json /build/
+#11 DONE 1.1s
+
+#12 [model-tools 3/3] COPY docker/licenses/ /build/licenses/
+#12 DONE 0.1s
+
+#13 [deps 2/5] RUN python -m venv /opt/venv
+#13 DONE 2.8s
+
+#14 [deps 3/5] COPY docker/pip-bootstrap.lock /build/pip-bootstrap.lock
+#14 DONE 0.0s
+
+#15 [deps 4/5] COPY requirements/docker-cpu-py312-linux-amd64.lock /build/production.lock
+#15 DONE 0.0s
+
+#16 [deps 5/5] RUN --mount=type=cache,target=/root/.cache/pip     /opt/venv/bin/python -m pip install --require-hashes --only-binary=:all: --no-compile -r /build/pip-bootstrap.lock &&     /opt/venv/bin/python -m pip install --require-hashes --only-binary=:all: --no-compile -r /build/production.lock &&     /opt/venv/bin/python -m pip check
+#16 0.813 Collecting pip==26.2.1 (from -r /build/pip-bootstrap.lock (line 2))
+#16 0.871   Downloading pip-26.2.1-py3-none-any.whl (1.8 MB)
+#16 1.002      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.8/1.8 MB 15.6 MB/s eta 0:00:00
+#16 1.015 Installing collected packages: pip
+#16 1.015   Attempting uninstall: pip
+#16 1.017     Found existing installation: pip 25.0.1
+#16 1.045     Uninstalling pip-25.0.1:
+#16 1.172       Successfully uninstalled pip-25.0.1
+#16 1.288 Successfully installed pip-26.2.1
+#16 2.280 Collecting torch @ https://download-r2.pytorch.org/whl/cpu/torch-2.14.1%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl (from -r /build/production.lock (line 190))
+#16 2.370   Downloading torch-2.14.1%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl (196.3 MB)
+#16 4.078      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 196.3/196.3 MB 116.4 MB/s  0:00:01
+#16 4.469 Collecting annotated-doc==0.0.5 (from -r /build/production.lock (line 7))
+#16 4.520   Downloading annotated_doc-0.0.5-py3-none-any.whl (5.3 kB)
+#16 4.555 Collecting annotated-types==0.8.0 (from -r /build/production.lock (line 10))
+#16 4.559   Downloading annotated_types-0.8.0-py3-none-any.whl (13 kB)
+#16 4.604 Collecting anyio==4.15.1 (from -r /build/production.lock (line 13))
+#16 4.608   Downloading anyio-4.15.1-py3-none-any.whl (132 kB)
+#16 4.641 Collecting attrs==26.1.0 (from -r /build/production.lock (line 16))
+#16 4.645   Downloading attrs-26.1.0-py3-none-any.whl (67 kB)
+#16 4.665 Collecting certifi==2026.10.19 (from -r /build/production.lock (line 19))
+#16 4.669   Downloading certifi-2026.10.19-py3-none-any.whl (136 kB)
+#16 4.761 Collecting cffi==2.1.1 (from -r /build/production.lock (line 22))
+#16 4.765   Downloading cffi-2.1.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (221 kB)
+#16 4.901 Collecting charset-normalizer==3.5.2 (from -r /build/production.lock (line 25))
+#16 4.905   Downloading charset_normalizer-3.5.2-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (257 kB)
+#16 4.926 Collecting click==8.5.0 (from -r /build/production.lock (line 28))
+#16 4.930   Downloading click-8.5.0-py3-none-any.whl (125 kB)
+#16 4.948 Collecting cloudpickle==3.1.2 (from -r /build/production.lock (line 31))
+#16 4.952   Downloading cloudpickle-3.1.2-py3-none-any.whl (22 kB)
+#16 5.080 Collecting cryptography==50.0.2 (from -r /build/production.lock (line 34))
+#16 5.084   Downloading cryptography-50.0.2-cp311-abi3-manylinux_2_34_x86_64.whl (4.8 MB)
+#16 5.163      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4.8/4.8 MB 58.8 MB/s  0:00:00
+#16 5.188 Collecting filelock==4.2.4 (from -r /build/production.lock (line 37))
+#16 5.192   Downloading filelock-4.2.4-py3-none-any.whl (162 kB)
+#16 5.298 Collecting fsspec==2026.9.0 (from -r /build/production.lock (line 40))
+#16 5.302   Downloading fsspec-2026.9.0-py3-none-any.whl (221 kB)
+#16 5.330 Collecting h11==0.16.0 (from -r /build/production.lock (line 43))
+#16 5.333   Downloading h11-0.16.0-py3-none-any.whl (37 kB)
+#16 5.370 Collecting hf-xet==1.7.0 (from -r /build/production.lock (line 46))
+#16 5.373   Downloading hf_xet-1.7.0-cp38-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (4.2 MB)
+#16 5.437      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4.2/4.2 MB 64.2 MB/s  0:00:00
+#16 5.475 Collecting httpcore==1.0.9 (from -r /build/production.lock (line 49))
+#16 5.479   Downloading httpcore-1.0.9-py3-none-any.whl (78 kB)
+#16 5.497 Collecting httpcore2==2.15.1 (from -r /build/production.lock (line 52))
+#16 5.501   Downloading httpcore2-2.15.1-py3-none-any.whl (85 kB)
+#16 5.522 Collecting httpx==0.28.1 (from -r /build/production.lock (line 55))
+#16 5.526   Downloading httpx-0.28.1-py3-none-any.whl (73 kB)
+#16 5.549 Collecting httpx-sse==0.4.3 (from -r /build/production.lock (line 58))
+#16 5.553   Downloading httpx_sse-0.4.3-py3-none-any.whl (9.0 kB)
+#16 5.580 Collecting httpx2==2.15.1 (from -r /build/production.lock (line 61))
+#16 5.583   Downloading httpx2-2.15.1-py3-none-any.whl (96 kB)
+#16 5.619 Collecting huggingface-hub==2.2.0 (from -r /build/production.lock (line 64))
+#16 5.623   Downloading huggingface_hub-2.2.0-py3-none-any.whl (839 kB)
+#16 5.684      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 839.9/839.9 kB 9.7 MB/s  0:00:00
+#16 5.709 Collecting idna==3.20 (from -r /build/production.lock (line 67))
+#16 5.713   Downloading idna-3.20-py3-none-any.whl (69 kB)
+#16 5.731 Collecting jinja2==3.1.6 (from -r /build/production.lock (line 70))
+#16 5.735   Downloading jinja2-3.1.6-py3-none-any.whl (134 kB)
+#16 5.800 Collecting joblib==1.6.0 (from -r /build/production.lock (line 73))
+#16 5.804   Downloading joblib-1.6.0-py3-none-any.whl (306 kB)
+#16 5.829 Collecting jsonschema==4.26.0 (from -r /build/production.lock (line 76))
+#16 5.833   Downloading jsonschema-4.26.0-py3-none-any.whl (90 kB)
+#16 5.852 Collecting jsonschema-specifications==2025.9.1 (from -r /build/production.lock (line 79))
+#16 5.855   Downloading jsonschema_specifications-2025.9.1-py3-none-any.whl (18 kB)
+#16 5.945 Collecting markdown-it-py==4.2.0 (from -r /build/production.lock (line 82))
+#16 5.949   Downloading markdown_it_py-4.2.0-py3-none-any.whl (91 kB)
+#16 5.996 Collecting markupsafe==3.0.4 (from -r /build/production.lock (line 85))
+#16 6.001   Downloading markupsafe-3.0.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (22 kB)
+#16 6.021 Collecting mcp==1.30.0 (from -r /build/production.lock (line 88))
+#16 6.024   Downloading mcp-1.30.0-py3-none-any.whl (234 kB)
+#16 6.119 Collecting mdurl==0.1.2 (from -r /build/production.lock (line 91))
+#16 6.122   Downloading mdurl-0.1.2-py3-none-any.whl (10.0 kB)
+#16 6.213 Collecting mpmath==1.3.0 (from -r /build/production.lock (line 94))
+#16 6.216   Downloading mpmath-1.3.0-py3-none-any.whl (536 kB)
+#16 6.311      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 536.2/536.2 kB 3.0 MB/s  0:00:00
+#16 6.340 Collecting narwhals==2.27.1 (from -r /build/production.lock (line 97))
+#16 6.343   Downloading narwhals-2.27.1-py3-none-any.whl (483 kB)
+#16 6.451 Collecting networkx==3.7 (from -r /build/production.lock (line 100))
+#16 6.454   Downloading networkx-3.7-py3-none-any.whl (2.1 MB)
+#16 6.535      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.1/2.1 MB 24.0 MB/s  0:00:00
+#16 6.684 Collecting numpy==2.5.4 (from -r /build/production.lock (line 103))
+#16 6.688   Downloading numpy-2.5.4-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (16.7 MB)
+#16 6.874      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 16.7/16.7 MB 89.4 MB/s  0:00:00
+#16 6.907 Collecting packaging==26.3 (from -r /build/production.lock (line 106))
+#16 6.911   Downloading packaging-26.3-py3-none-any.whl (129 kB)
+#16 7.168 Collecting protobuf==7.36.2 (from -r /build/production.lock (line 109))
+#16 7.172   Downloading protobuf-7.36.2-cp310-abi3-manylinux2014_x86_64.whl (343 kB)
+#16 7.190 Collecting pycparser==3.11 (from -r /build/production.lock (line 112))
+#16 7.193   Downloading pycparser-3.11-py3-none-any.whl (51 kB)
+#16 7.460 Collecting pydantic==2.14.1 (from -r /build/production.lock (line 115))
+#16 7.464   Downloading pydantic-2.14.1-py3-none-any.whl (488 kB)
+#16 7.640 Collecting pydantic-settings==2.16.1 (from -r /build/production.lock (line 118))
+#16 7.644   Downloading pydantic_settings-2.16.1-py3-none-any.whl (80 kB)
+#16 8.206 Collecting pydantic-core==2.50.1 (from -r /build/production.lock (line 121))
+#16 8.210   Downloading pydantic_core-2.50.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (2.2 MB)
+#16 8.228      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.2/2.2 MB 122.2 MB/s  0:00:00
+#16 8.249 Collecting pygments==2.21.0 (from -r /build/production.lock (line 124))
+#16 8.252   Downloading pygments-2.21.0-py3-none-any.whl (1.3 MB)
+#16 8.268      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.3/1.3 MB 69.5 MB/s  0:00:00
+#16 8.288 Collecting pyjwt==2.15.1 (from -r /build/production.lock (line 127))
+#16 8.292   Downloading pyjwt-2.15.1-py3-none-any.whl (33 kB)
+#16 8.310 Collecting python-dotenv==1.2.4 (from -r /build/production.lock (line 130))
+#16 8.315   Downloading python_dotenv-1.2.4-py3-none-any.whl (23 kB)
+#16 8.333 Collecting python-multipart==0.0.32 (from -r /build/production.lock (line 133))
+#16 8.336   Downloading python_multipart-0.0.32-py3-none-any.whl (30 kB)
+#16 8.368 Collecting pyyaml==6.0.3 (from -r /build/production.lock (line 136))
+#16 8.372   Downloading pyyaml-6.0.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (807 kB)
+#16 8.408      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 807.9/807.9 kB 16.0 MB/s  0:00:00
+#16 8.428 Collecting referencing==0.37.0 (from -r /build/production.lock (line 139))
+#16 8.432   Downloading referencing-0.37.0-py3-none-any.whl (26 kB)
+#16 8.900 Collecting regex==2026.9.29 (from -r /build/production.lock (line 142))
+#16 8.903   Downloading regex-2026.9.29-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (807 kB)
+#16 8.910      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 807.8/807.8 kB 118.0 MB/s  0:00:00
+#16 8.932 Collecting requests==2.34.2 (from -r /build/production.lock (line 145))
+#16 8.936   Downloading requests-2.34.2-py3-none-any.whl (73 kB)
+#16 8.963 Collecting rich==15.0.0 (from -r /build/production.lock (line 148))
+#16 8.966   Downloading rich-15.0.0-py3-none-any.whl (310 kB)
+#16 9.191 Collecting rpds-py==2026.9.1 (from -r /build/production.lock (line 151))
+#16 9.195   Downloading rpds_py-2026.9.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (371 kB)
+#16 9.286 Collecting safetensors==0.8.0 (from -r /build/production.lock (line 154))
+#16 9.290   Downloading safetensors-0.8.0-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (516 kB)
+#16 9.409 Collecting scikit-learn==1.9.1 (from -r /build/production.lock (line 157))
+#16 9.413   Downloading scikit_learn-1.9.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (9.2 MB)
+#16 9.614      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 9.2/9.2 MB 44.8 MB/s  0:00:00
+#16 9.720 Collecting scipy==1.18.1 (from -r /build/production.lock (line 160))
+#16 9.724   Downloading scipy-1.18.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (35.3 MB)
+#16 9.953      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 35.3/35.3 MB 154.9 MB/s  0:00:00
+#16 10.01 Collecting sentence-transformers==5.7.0 (from -r /build/production.lock (line 163))
+#16 10.02   Downloading sentence_transformers-5.7.0-py3-none-any.whl (611 kB)
+#16 10.02      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 611.3/611.3 kB 121.3 MB/s  0:00:00
+#16 10.07 Collecting sentencepiece==0.2.2 (from -r /build/production.lock (line 166))
+#16 10.07   Downloading sentencepiece-0.2.2-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (1.4 MB)
+#16 10.15      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.4/1.4 MB 14.4 MB/s  0:00:00
+#16 10.21 Collecting setuptools==84.2.1 (from -r /build/production.lock (line 169))
+#16 10.22   Downloading setuptools-84.2.1-py3-none-any.whl (876 kB)
+#16 10.23      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 876.3/876.3 kB 100.2 MB/s  0:00:00
+#16 10.25 Collecting shellingham==1.5.4 (from -r /build/production.lock (line 172))
+#16 10.25   Downloading shellingham-1.5.4-py2.py3-none-any.whl (9.8 kB)
+#16 10.27 Collecting sse-starlette==3.5.0 (from -r /build/production.lock (line 175))
+#16 10.27   Downloading sse_starlette-3.5.0-py3-none-any.whl (17 kB)
+#16 10.41 Collecting starlette==1.9.0 (from -r /build/production.lock (line 178))
+#16 10.41   Downloading starlette-1.9.0-py3-none-any.whl (80 kB)
+#16 10.43 Collecting sympy==1.14.0 (from -r /build/production.lock (line 181))
+#16 10.44   Downloading sympy-1.14.0-py3-none-any.whl (6.3 MB)
+#16 10.48      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 6.3/6.3 MB 138.9 MB/s  0:00:00
+#16 10.51 Collecting threadpoolctl==3.7.0 (from -r /build/production.lock (line 184))
+#16 10.51   Downloading threadpoolctl-3.7.0-py3-none-any.whl (26 kB)
+#16 10.73 Collecting tokenizers==0.23.3 (from -r /build/production.lock (line 187))
+#16 10.73   Downloading tokenizers-0.23.3-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (3.4 MB)
+#16 10.86      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.4/3.4 MB 25.3 MB/s  0:00:00
+#16 10.89 Collecting tqdm==4.70.1 (from -r /build/production.lock (line 193))
+#16 10.89   Downloading tqdm-4.70.1-py3-none-any.whl (80 kB)
+#16 10.92 Collecting transformers==5.20.2 (from -r /build/production.lock (line 196))
+#16 10.93   Downloading transformers-5.20.2-py3-none-any.whl (12.8 MB)
+#16 11.15      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 12.8/12.8 MB 56.8 MB/s  0:00:00
+#16 11.21 Collecting truststore==0.10.5 (from -r /build/production.lock (line 199))
+#16 11.22   Downloading truststore-0.10.5-py3-none-any.whl (19 kB)
+#16 11.24 Collecting typer==0.27.3 (from -r /build/production.lock (line 202))
+#16 11.24   Downloading typer-0.27.3-py3-none-any.whl (123 kB)
+#16 11.26 Collecting typing-inspection==0.4.4 (from -r /build/production.lock (line 205))
+#16 11.26   Downloading typing_inspection-0.4.4-py3-none-any.whl (14 kB)
+#16 11.28 Collecting typing-extensions==4.16.0 (from -r /build/production.lock (line 208))
+#16 11.28   Downloading typing_extensions-4.16.0-py3-none-any.whl (45 kB)
+#16 11.30 Collecting urllib3==2.8.0 (from -r /build/production.lock (line 211))
+#16 11.31   Downloading urllib3-2.8.0-py3-none-any.whl (135 kB)
+#16 11.33 Collecting uvicorn==0.54.0 (from -r /build/production.lock (line 214))
+#16 11.33   Downloading uvicorn-0.54.0-py3-none-any.whl (87 kB)
+#16 11.72 Installing collected packages: mpmath, urllib3, typing-extensions, truststore, tqdm, threadpoolctl, sympy, shellingham, setuptools, sentencepiece, safetensors, rpds-py, regex, pyyaml, python-multipart, python-dotenv, pyjwt, pygments, pycparser, protobuf, packaging, numpy, networkx, narwhals, mdurl, markupsafe, idna, httpx-sse, hf-xet, h11, fsspec, filelock, cloudpickle, click, charset-normalizer, certifi, attrs, annotated-types, annotated-doc, uvicorn, typing-inspection, scipy, requests, referencing, pydantic-core, markdown-it-py, joblib, jinja2, httpcore2, httpcore, cffi, anyio, torch, starlette, scikit-learn, rich, pydantic, jsonschema-specifications, httpx2, httpx, cryptography, typer, sse-starlette, pydantic-settings, jsonschema, huggingface-hub, tokenizers, mcp, transformers, sentence-transformers
+#16 17.83 
+#16 17.84 Successfully installed annotated-doc-0.0.5 annotated-types-0.8.0 anyio-4.15.1 attrs-26.1.0 certifi-2026.10.19 cffi-2.1.1 charset-normalizer-3.5.2 click-8.5.0 cloudpickle-3.1.2 cryptography-50.0.2 filelock-4.2.4 fsspec-2026.9.0 h11-0.16.0 hf-xet-1.7.0 httpcore-1.0.9 httpcore2-2.15.1 httpx-0.28.1 httpx-sse-0.4.3 httpx2-2.15.1 huggingface-hub-2.2.0 idna-3.20 jinja2-3.1.6 joblib-1.6.0 jsonschema-4.26.0 jsonschema-specifications-2025.9.1 markdown-it-py-4.2.0 markupsafe-3.0.4 mcp-1.30.0 mdurl-0.1.2 mpmath-1.3.0 narwhals-2.27.1 networkx-3.7 numpy-2.5.4 packaging-26.3 protobuf-7.36.2 pycparser-3.11 pydantic-2.14.1 pydantic-core-2.50.1 pydantic-settings-2.16.1 pygments-2.21.0 pyjwt-2.15.1 python-dotenv-1.2.4 python-multipart-0.0.32 pyyaml-6.0.3 referencing-0.37.0 regex-2026.9.29 requests-2.34.2 rich-15.0.0 rpds-py-2026.9.1 safetensors-0.8.0 scikit-learn-1.9.1 scipy-1.18.1 sentence-transformers-5.7.0 sentencepiece-0.2.2 setuptools-84.2.1 shellingham-1.5.4 sse-starlette-3.5.0 starlette-1.9.0 sympy-1.14.0 threadpoolctl-3.7.0 tokenizers-0.23.3 torch-2.14.1+cpu tqdm-4.70.1 transformers-5.20.2 truststore-0.10.5 typer-0.27.3 typing-extensions-4.16.0 typing-inspection-0.4.4 urllib3-2.8.0 uvicorn-0.54.0
+#16 18.95 No broken requirements found.
+#16 DONE 25.1s
+
+#17 [runtime-base 3/4] COPY --from=deps /opt/venv /opt/venv
+#17 DONE 8.6s
+
+#18 [runtime-base 4/4] WORKDIR /opt/remember-me
+#18 DONE 0.2s
+
+#19 [runtime-download 1/6] COPY --from=model-tools /build /build
+#19 DONE 0.0s
+
+#20 [runtime-download 2/6] RUN python /build/package_model.py --download-cache /tmp/model-download --output /opt/remember-me/models     && rm -rf /tmp/model-download /build
+#20 0.413 Verified 1_Pooling/config.json: e54c164a07274f2eb45bb724f54a79d1efcc90c41573887cd9a29aeee0597352
+#20 0.522 Verified README.md: 0b81ccf9134e5874d620a86e6905062ea999e779c34eb1a7e65eaeb7fe00e450
+#20 0.634 Verified config.json: 26159e7ad065073448460117eb24b7a4572f6f4e78eadff65dc0a11c052449fa
+#20 0.747 Verified config_sentence_transformers.json: 1eef72430e7194a1e59680e635aed81ffa083f05668dbc5bb1c56c04c0999c38
+#20 0.882 Verified modules.json: 84e40c8e006c9b1d6c122e02cba9b02458120b5fb0c87b746c41e0207cf642cf
+#20 20.63 Verified pytorch_model.bin: b5e0ce3470abf5ef3831aa1bd5553b486803e83251590ab7ff35a117cf6aad38
+#20 20.78 Verified sentence_bert_config.json: eb9b44b13c0f52a3b3685c3b1cbdea1ba8b04bea123b98f61610048940776eb1
+#20 21.59 Verified sentencepiece.bpe.model: cfc8146abe2a0488e9e2a0c56de7952f7c11ab059eca145a0a727afce0db2865
+#20 21.71 Verified special_tokens_map.json: 8c785abebea9ae3257b61681b4e6fd8365ceafde980c21970d001e834cf10835
+#20 22.52 Verified tokenizer.json: 21106b6d7dab2952c1d496fb21d5dc9db75c28ed361a05f5020bbba27810dd08
+#20 22.66 Verified tokenizer_config.json: a62b2b6784f990259fddef5f16388693a8043be4f69179e6a5257eeb3f9abac4
+#20 DONE 30.0s
+
+#21 [runtime-download 3/6] COPY app/ ./app/
+#21 DONE 0.0s
+
+#22 [runtime-download 4/6] COPY web/ ./web/
+#22 DONE 0.0s
+
+#23 [runtime-download 5/6] COPY LICENSE ./LICENSE
+#23 DONE 0.0s
+
+#24 [runtime-download 6/6] COPY docker/entrypoint.py docker/healthcheck.py docker/init_data.py ./docker/
+#24 DONE 0.0s
+
+#25 exporting to docker image format
+#25 exporting layers
+#25 exporting layers 67.8s done
+#25 exporting manifest sha256:b063716c58a6df287b8e2ffa672de8fd029d3772238800e3742cfe76beb2a518 done
+#25 exporting config sha256:fa15dcedacd9aaafad7860f39a771603fe1f2281ec1e3056234965e14d92df0a done
+#25 sending tarball
+#25 ...
+
+#26 importing to docker
+#26 loading layer e58989146fce 294.91kB / 28.25MB
+#26 loading layer 916eda96356f 65.54kB / 3.34MB
+#26 loading layer 694fd645f7c3 163.84kB / 15.97MB
+#26 loading layer 742affd58633 249B / 249B
+#26 loading layer 3edc096f04d0 1.21kB / 1.21kB
+#26 loading layer 5b8959806ac8 557.06kB / 300.35MB
+#26 loading layer 5b8959806ac8 80.77MB / 300.35MB 2.1s
+#26 loading layer 5b8959806ac8 123.67MB / 300.35MB 4.4s
+#26 loading layer 5b8959806ac8 244.55MB / 300.35MB 6.4s
+#26 loading layer 1ffb96add7be 120B / 120B
+#26 loading layer 2b30fd44383e 4.12kB / 4.12kB
+#26 loading layer 00455623a86d 557.06kB / 1.36GB
+#26 loading layer 00455623a86d 244.55MB / 1.36GB 2.0s
+#26 loading layer 00455623a86d 489.65MB / 1.36GB 4.1s
+#26 loading layer 00455623a86d 734.20MB / 1.36GB 6.1s
+#26 loading layer 00455623a86d 979.30MB / 1.36GB 8.2s
+#26 loading layer 00455623a86d 1.22GB / 1.36GB 10.2s
+#26 loading layer 2b3122c27a9e 32.77kB / 172.28kB
+#26 loading layer ea4195ed3f3b 32.77kB / 2.97MB
+#26 loading layer 839faa2d6255 4.09kB / 4.09kB
+#26 loading layer d8363e53bd3b 2.01kB / 2.01kB
+#26 loading layer e58989146fce 28.25MB / 28.25MB 42.2s done
+#26 loading layer 916eda96356f 3.34MB / 3.34MB 41.3s done
+#26 loading layer 694fd645f7c3 15.97MB / 15.97MB 34.3s done
+#26 loading layer 742affd58633 249B / 249B 33.4s done
+#26 loading layer 3edc096f04d0 1.21kB / 1.21kB 33.4s done
+#26 loading layer 5b8959806ac8 300.35MB / 300.35MB 33.4s done
+#26 loading layer 1ffb96add7be 120B / 120B 19.1s done
+#26 loading layer 2b30fd44383e 4.12kB / 4.12kB 19.1s done
+#26 loading layer 00455623a86d 1.36GB / 1.36GB 19.1s done
+#26 loading layer 2b3122c27a9e 172.28kB / 172.28kB 0.2s done
+#26 loading layer ea4195ed3f3b 2.97MB / 2.97MB 0.2s done
+#26 loading layer 839faa2d6255 4.09kB / 4.09kB 0.1s done
+#26 loading layer d8363e53bd3b 2.01kB / 2.01kB 0.1s done
+#26 DONE 42.2s
+
+#25 exporting to docker image format
+#25 sending tarball 48.3s done
+#25 DONE 116.1s
+
+#27 exporting cache to registry
+#27 preparing build cache for export done
+#27 sending cache export
+#27 writing layer sha256:50881cffc88f0821dac4f262738bc96e3ba363233a71e2bbd22f005dbf8df5a9
+#27 writing layer sha256:21bfca92d4e98bfd37e3fe0ca199607d37798af4ca49cf5591780ff17a3a9f95
+#27 writing layer sha256:3b3f2b41d8ee3b5d352bf3c66b7a05e5b923788f288c6755707dab8ce09a018b
+#27 writing layer sha256:2101712fbedb860bd8e11955ade6781393834ff18cd686e604483585d37db3b0
+#27 ...
+
+#28 [auth] tech-kuiperbelt/remember-me-buildcache:pull,push token for ghcr.io
+#28 DONE 0.0s
+
+#27 exporting cache to registry
+#27 writing layer sha256:50881cffc88f0821dac4f262738bc96e3ba363233a71e2bbd22f005dbf8df5a9 1.8s done
+#27 writing layer sha256:6e0ba8ba048777f5354b5a7cb497ae5261116fac8246160c06fc045c8300c582
+#27 writing layer sha256:6e0ba8ba048777f5354b5a7cb497ae5261116fac8246160c06fc045c8300c582 0.2s done
+#27 writing layer sha256:7fd1ebe418b5079d4aa36f416af9b143d127bc75b0155d71cb5fd559b5e04d39
+#27 writing layer sha256:21bfca92d4e98bfd37e3fe0ca199607d37798af4ca49cf5591780ff17a3a9f95 2.1s done
+#27 writing layer sha256:2101712fbedb860bd8e11955ade6781393834ff18cd686e604483585d37db3b0 2.0s done
+#27 writing layer sha256:7fd1ebe418b5079d4aa36f416af9b143d127bc75b0155d71cb5fd559b5e04d39 0.2s done
+#27 writing layer sha256:86a9e13e035d8e44ae37bfebc52c7fc68898fde19b4b26dd0585f2231fcfaf2c
+#27 writing layer sha256:8988badb15ce7dac8ec3966569ab9deb98ffc1fee814c9f04afbdfc74fa4cbb2
+#27 writing layer sha256:93e0b8d9971279ff0aa2c359d917df5c04a4d07113d8b6ec114c6da0bc218342
+#27 writing layer sha256:86a9e13e035d8e44ae37bfebc52c7fc68898fde19b4b26dd0585f2231fcfaf2c 0.2s done
+#27 writing layer sha256:9ee4e30f4a811a30de5d800039bed0c8ef0b09e8a905c728552b1dc603a312db
+#27 writing layer sha256:8988badb15ce7dac8ec3966569ab9deb98ffc1fee814c9f04afbdfc74fa4cbb2 1.3s done
+#27 writing layer sha256:c0ddd6f8cadedfede4a9cbf2d6a4b5dc57862c4128ea31517b741b03892cf3e8
+#27 writing layer sha256:93e0b8d9971279ff0aa2c359d917df5c04a4d07113d8b6ec114c6da0bc218342 1.3s done
+#27 writing layer sha256:f626c62d520844ccf52e1698a4b962089c978e1b84b06d1304a911d0a7014d32
+#27 writing layer sha256:c0ddd6f8cadedfede4a9cbf2d6a4b5dc57862c4128ea31517b741b03892cf3e8 1.3s done
+#27 writing layer sha256:f9d2fb07d6f062d06ddc7aa58191cc5359c728f54af6cebe69a37d2c89e72a0d
+#27 writing layer sha256:f9d2fb07d6f062d06ddc7aa58191cc5359c728f54af6cebe69a37d2c89e72a0d 0.2s done
+#27 writing layer sha256:f626c62d520844ccf52e1698a4b962089c978e1b84b06d1304a911d0a7014d32 1.3s done
+#27 writing layer sha256:3b3f2b41d8ee3b5d352bf3c66b7a05e5b923788f288c6755707dab8ce09a018b 7.0s done
+#27 writing layer sha256:9ee4e30f4a811a30de5d800039bed0c8ef0b09e8a905c728552b1dc603a312db 22.4s done
+#27 writing config sha256:f67950b267a3b4d173d72450d5e267625bb262172e9339018ee4dfcefea9e890
+#27 writing config sha256:f67950b267a3b4d173d72450d5e267625bb262172e9339018ee4dfcefea9e890 1.3s done
+#27 writing cache image manifest sha256:2d04612394b0e64e89184ed5a8ae4b3abc0cc42b7f66031c5b8b1d7bfb353e79
+#27 sending cache export 26.8s done
+#27 writing cache image manifest sha256:2d04612394b0e64e89184ed5a8ae4b3abc0cc42b7f66031c5b8b1d7bfb353e79 0.8s done
+#27 DONE 26.8s
+
+#29 resolving provenance for metadata file
+#29 DONE 0.0s
