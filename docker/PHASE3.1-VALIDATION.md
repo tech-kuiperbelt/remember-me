@@ -1,6 +1,6 @@
 # Phase 3.1 — GitHub Actions AMD64 official-download validation
 
-Date: 2026-10-21. Status: **passed**. No public GHCR image, Release, stable tag
+Date: 2026-10-21. Status: **passed**. Final validated code is on `master` at `3a258e3` (the validation runs themselves were executed from a temporary push-triggered branch). No public GHCR image, Release, stable tag
 or `latest` tag was published.
 
 ## Environment and inputs

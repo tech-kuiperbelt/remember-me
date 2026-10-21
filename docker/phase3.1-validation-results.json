@@ -110,5 +110,6 @@
     "Docker Desktop/rootless/special filesystems",
     "public GHCR pull",
     "bit-for-bit image digest reproducibility"
-  ]
+  ],
+  "commit": "3a258e3"
 }
