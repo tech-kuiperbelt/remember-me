@@ -16,8 +16,11 @@ COPY docker/package_model.py docker/bge-m3-manifest.json /build/
 COPY docker/licenses/ /build/licenses/
 
 FROM model-tools AS model-download
-RUN --mount=type=cache,target=/model-download \
-    python /build/package_model.py --download-cache /model-download --output /model
+# Download into a temporary directory and remove it in the same layer so the
+# verified model output is cacheable by registry cache backends. Cache mounts
+# are intentionally not used here: BuildKit does not export their contents.
+RUN python /build/package_model.py --download-cache /tmp/model-download --output /model \
+    && rm -rf /tmp/model-download
 
 # Supply only the pinned snapshot directory through --build-context model_snapshot=PATH.
 # This target never downloads and never includes the host model in the main context.
