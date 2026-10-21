@@ -303,12 +303,12 @@ def check_cached(log_path, results, *, expect_model_download):
     if expect_model_download:
         if len(verified) != 11:
             raise Failure(f"cold build verified {len(verified)} files, expected 11")
-        if "model-download" in stages:
-            raise Failure("cold build used a cached model-download stage")
+        if "runtime-download" in stages:
+            raise Failure("cold build used a cached runtime-download stage")
     else:
         if verified:
             raise Failure(f"warm build still downloaded/verified model files: {verified}")
-        for stage in ("deps", "model-download"):
+        for stage in ("deps", "runtime-download"):
             if stage not in stages:
                 raise Failure(f"warm build did not report {stage} as CACHED: {sorted(stages)}")
 
@@ -331,13 +331,11 @@ def run_cold(results, sampler):
         "--provenance=false", "--sbom=false",
         "--progress=plain",
         "--metadata-file", str(ARTIFACTS / "cold-metadata.json"),
-        "--cache-to", f"type=registry,ref={CACHE_REF},mode=max,ignore-error=true",
+        "--cache-to", f"type=registry,ref={CACHE_REF},mode=min,ignore-error=true",
         "-t", IMAGE,
         ".",
     ]
-    code, seconds = stream_build(
-        build_command, ARTIFACTS / "cold-build.log",
-        env={"SOURCE_DATE_EPOCH": command(["git", "log", "-1", "--pretty=%ct"]).stdout.strip()})
+    code, seconds = stream_build(build_command, ARTIFACTS / "cold-build.log")
     results["cold_build"] = {"exit_code": code, "seconds": seconds}
     if code:
         raise Failure(f"cold build failed with exit code {code}")
@@ -402,9 +400,7 @@ def run_cache_only(results):
             "--cache-from", f"type=registry,ref={CACHE_REF}",
             ".",
         ]
-        code, seconds = stream_build(
-            build_command, ARTIFACTS / f"{MODE}-build.log",
-            env={"SOURCE_DATE_EPOCH": command(["git", "log", "-1", "--pretty=%ct"]).stdout.strip()})
+        code, seconds = stream_build(build_command, ARTIFACTS / f"{MODE}-build.log")
         results["cache_build"] = {"exit_code": code, "seconds": seconds}
         if code:
             raise Failure(f"{MODE} build failed with exit code {code}")

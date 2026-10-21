@@ -1,0 +1,114 @@
+{
+  "phase": "3.1",
+  "date": "2026-10-21",
+  "status": "passed",
+  "public_release": false,
+  "runner": {
+    "label": "ubuntu-latest",
+    "observed_disk_total_bytes": 154894188544,
+    "observed_available_before_bytes": 114133061632,
+    "observed_available_minimum_bytes": 101936095232,
+    "fallback_used": false
+  },
+  "image": {
+    "id": "sha256:fa15dcedacd9aaafad7860f39a771603fe1f2281ec1e3056234965e14d92df0a",
+    "size_bytes": 3524610215,
+    "platform": "linux/amd64",
+    "profile_id": "ep_6134c0b15d2bb471",
+    "model_revision": "5617a9f61b028005a4858fdac845db406aefb181"
+  },
+  "cold_run": {
+    "id": "39596639262",
+    "url": "https://github.com/tech-kuiperbelt/remember-me/actions/runs/39596639262",
+    "build_seconds": 215.45053553099999,
+    "validation_build_seconds": 46.94432945400001,
+    "verified_model_files": 11,
+    "cache_export_status": "exported",
+    "cache_manifest": {
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "digest": "sha256:2d04612394b0e64e89184ed5a8ae4b3abc0cc42b7f66031c5b8b1d7bfb353e79",
+      "size": 4532
+    },
+    "disk_minimum_available_bytes": 101936095232,
+    "smoke_passed": true,
+    "verifier": {
+      "model_validation": "offline_inference_passed",
+      "profile": {
+        "profile_id": "ep_6134c0b15d2bb471",
+        "provider": "sentence_transformers",
+        "model": "BAAI/bge-m3",
+        "dimension": 1024,
+        "normalized": true,
+        "query_prefix": "",
+        "document_prefix": "",
+        "max_input_chars": 8000,
+        "max_input_tokens": 8192
+      },
+      "vector_dimensions": [
+        1024,
+        1024
+      ],
+      "vector_norms": [
+        0.9999999001552775,
+        0.9999998322412921
+      ],
+      "torch": "2.14.1+cpu",
+      "python": "3.12.15",
+      "locked_packages": 70
+    },
+    "cache_privacy": {
+      "visibility": "private",
+      "anonymous_probe_exit": 1,
+      "authenticated_probe_exit": 0
+    }
+  },
+  "warm_run": {
+    "id": "39597821561",
+    "url": "https://github.com/tech-kuiperbelt/remember-me/actions/runs/39597821561",
+    "build_seconds": 1.916745437000003,
+    "cached_stages": [
+      "deps",
+      "model-tools",
+      "runtime-base",
+      "runtime-download"
+    ],
+    "verified_model_files": 0,
+    "model_download": "skipped_by_cached_downstream",
+    "cache_manifest": {
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "digest": "sha256:2d04612394b0e64e89184ed5a8ae4b3abc0cc42b7f66031c5b8b1d7bfb353e79",
+      "size": 4532
+    }
+  },
+  "source_probe_run": {
+    "id": "39598394942",
+    "url": "https://github.com/tech-kuiperbelt/remember-me/actions/runs/39598394942",
+    "build_seconds": 46.928642053999994,
+    "cached_stages": [
+      "deps",
+      "model-tools",
+      "runtime-base",
+      "runtime-download"
+    ],
+    "verified_model_files": 0,
+    "model_download": "skipped_by_cached_downstream",
+    "source_changed": true,
+    "cache_manifest": {
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "digest": "sha256:2d04612394b0e64e89184ed5a8ae4b3abc0cc42b7f66031c5b8b1d7bfb353e79",
+      "size": 4532
+    }
+  },
+  "build_fixes": [
+    "model download no longer uses a cache mount",
+    "pinned model layer is produced in the final runtime stage",
+    "SOURCE_DATE_EPOCH removed from the cache-keyed build path",
+    "registry cache uses mode=min"
+  ],
+  "not_verified": [
+    "ARM64",
+    "Docker Desktop/rootless/special filesystems",
+    "public GHCR pull",
+    "bit-for-bit image digest reproducibility"
+  ]
+}

@@ -15,10 +15,6 @@ FROM ${PYTHON_BASE} AS model-tools
 COPY docker/package_model.py docker/bge-m3-manifest.json /build/
 COPY docker/licenses/ /build/licenses/
 
-FROM model-tools AS model-download
-RUN --mount=type=cache,target=/model-download \
-    python /build/package_model.py --download-cache /model-download --output /model
-
 # Supply only the pinned snapshot directory through --build-context model_snapshot=PATH.
 # This target never downloads and never includes the host model in the main context.
 FROM model-tools AS model-local
@@ -75,7 +71,14 @@ COPY requirements/docker-cpu-py312-linux-amd64.lock ./requirements/docker-cpu-py
 # The default target uses the official download path. Validation targets only
 # add files to the runtime; no runtime stage inherits validation tools.
 FROM runtime-base AS runtime-download
-COPY --from=model-download /model/ /opt/remember-me/models/
+# Keep the pinned model in the final image stage. BuildKit registry cache
+# exports can drop cache records for a separate build stage consumed through
+# COPY --from, which makes subsequent CI builds re-download the 2.27 GB model.
+USER 0:0
+COPY --from=model-tools /build /build
+RUN python /build/package_model.py --download-cache /tmp/model-download --output /opt/remember-me/models \
+    && rm -rf /tmp/model-download /build
+USER 10001:10001
 COPY app/ ./app/
 COPY web/ ./web/
 COPY LICENSE ./LICENSE
