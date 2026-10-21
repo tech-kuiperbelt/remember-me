@@ -366,10 +366,11 @@ def run_cold(results, sampler):
     verify = docker(
         "run", "--rm", "--network", "none", "--read-only",
         "--tmpfs", "/data:uid=10001,gid=10001,mode=700",
-        "--entrypoint", "/opt/venv/bin/python", VALIDATION_IMAGE,
-        "/opt/remember-me/bin/verify_cpu_runtime.py",
-        "--model-cache", "/opt/remember-me/models/sentence-transformers",
-        "--expected-profile-id", PROFILE_ID,
+        "--entrypoint", "sh", VALIDATION_IMAGE, "-c",
+        "mkdir -p /data/tmp && exec /opt/venv/bin/python "
+        "/opt/remember-me/bin/verify_cpu_runtime.py "
+        "--model-cache /opt/remember-me/models/sentence-transformers "
+        f"--expected-profile-id {PROFILE_ID}",
     )
     results["verifier"] = verify.stdout
     parsed = json.loads(verify.stdout)
