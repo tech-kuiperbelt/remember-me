@@ -1,13 +1,13 @@
 # Phase 3.2 — Manual GHCR release controls and readiness
 
-Date: 2026-10-22. Status: **local acceptance passed; awaiting hosted acceptance**.
-**Release Ready is not yet declared. Released: no.**
+Date: 2026-10-22. Status: **Release Ready — passed**. **Released: no.**
 
 The implementation baseline was master `938dd22`. Both the release workflow and
 the existing Docker CI now explicitly use `ubuntu-24.04`. The final master Cold
-run is a required Ready gate; independent Warm/Source-probe regression follows.
-The final implementation SHA and hosted Run IDs will be recorded after those
-runs. No formal version image, `latest`, Public setting or GitHub Release has
+acceptance and independent Warm/Source-probe regression all passed on implementation
+commit `d5b7df1717b8d1230e22f5c7604083b3c846dfc2` (initial implementation `3b9f8c1`).
+Subsequent evidence-only documentation commits do not change tested build inputs
+or executable controls. No formal version image, `latest`, Public setting or GitHub Release has
 been created or modified by this work.
 
 ## Implemented controls
@@ -100,17 +100,31 @@ published from them.
 
 ## Hosted and public delivery boundaries
 
-Pending: final-code `ubuntu-24.04` Cold and independent Warm/Source-probe Runs.
-Until the actual Cold evidence is present the state remains awaiting acceptance,
-not Release Ready.
+All three final runs used commit `d5b7df1` and independent `ubuntu-24.04` runners:
+
+| Mode | Run | Result | Runtime/cache build |
+|---|---|---|---|
+| Cold | [39725036144](https://github.com/tech-kuiperbelt/remember-me/actions/runs/39725036144) | passed | 191.53 s |
+| Warm | [39725104465](https://github.com/tech-kuiperbelt/remember-me/actions/runs/39725104465) | passed | 3.59 s |
+| Source-probe | [39728739306](https://github.com/tech-kuiperbelt/remember-me/actions/runs/39728739306) | passed | 58.33 s |
+
+Cold verified all 11 official model files and the actual CLS + Normalize pipeline,
+completed offline CRUD/health/graceful-stop acceptance, and exported Private cache
+`sha256:c7f1b8143223852b77b8bcc6a75eb697332ab8434f67cdae6847a07e99798421`.
+API visibility was Private, anonymous cache access was denied, authenticated access
+succeeded. Warm and Source-probe imported this exact cache manifest; both cached
+`deps`, `model-tools`, `runtime-base`, `runtime-download`, with zero model download/
+verification events. Source-probe rebuilt an application COPY step (24) and restored
+its temporary source edit. Static checks passed 70 tests on each final runner;
+the local 74-test run additionally includes Docker runtime-policy regression.
 
 Initial hosted attempts on `3b9f8c1`: Cold `39722234643` passed (205.63 s
 runtime build, correct CLS pipeline, 11 model files); Warm `39722963396` passed
 (2.05 s, no model download). Source-probe `39723098288` stopped in static tests:
 the Warm unit fixture inherited `MODE=source-probe`. The fixture now explicitly
 sets its own Warm mode; production cache assertions are unchanged. The local
-74-test suite also passes with inherited `MODE=source-probe`. Final-commit hosted
-runs will replace the pending status, while retaining these attempts in JSON.
+74-test suite also passes with inherited `MODE=source-probe`. The successful final-commit hosted
+runs above supersede that failure; the initial attempts remain in JSON.
 
 Real formal GHCR version push, package Public/anonymous pull and `latest`
 promotion are intentionally not executed in this Ready task. They require the

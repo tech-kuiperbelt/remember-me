@@ -1,8 +1,8 @@
 {
   "phase": "3.2",
   "date": "2026-10-22",
-  "status": "awaiting_final_commit_hosted_acceptance",
-  "release_ready": false,
+  "status": "release_ready",
+  "release_ready": true,
   "released": false,
   "baseline_commit": "938dd222b0e202f3d0900f8f07bb82e4a5c29a0c",
   "formal_version_pushed": false,
@@ -10,7 +10,74 @@
   "package_visibility_changed": false,
   "github_release_created": false,
   "runner": "ubuntu-24.04",
-  "hosted_runs": {},
+  "hosted_runs": {
+    "cold": {
+      "id": 39725036144,
+      "url": "https://github.com/tech-kuiperbelt/remember-me/actions/runs/39725036144",
+      "commit": "d5b7df1717b8d1230e22f5c7604083b3c846dfc2",
+      "runner_label": "ubuntu-24.04",
+      "result": "passed",
+      "build_seconds": 191.528647735,
+      "validation_build_seconds": 45.01303204499999,
+      "verified_model_files": 11,
+      "cache_export_status": "exported",
+      "cache_manifest_digest": "sha256:c7f1b8143223852b77b8bcc6a75eb697332ab8434f67cdae6847a07e99798421",
+      "cache_visibility": "private",
+      "cache_anonymous_exit": 1,
+      "cache_authenticated_exit": 0,
+      "model_modules": [
+        "Transformer",
+        "Pooling",
+        "Normalize"
+      ],
+      "pooling": {
+        "embedding_dimension": 1024,
+        "pooling_mode": "cls",
+        "include_prompt": true
+      },
+      "profile": "ep_6134c0b15d2bb471",
+      "image_id": "sha256:b25c8bdab81c2ceb50488b469ac15ef6f87b9d7bfb7ccb4525474e53a81bb467",
+      "image_size_bytes": 3524610440,
+      "minimum_available_disk_bytes": 102731870208,
+      "static_tests_passed": 70
+    },
+    "warm": {
+      "id": 39725104465,
+      "url": "https://github.com/tech-kuiperbelt/remember-me/actions/runs/39725104465",
+      "commit": "d5b7df1717b8d1230e22f5c7604083b3c846dfc2",
+      "runner_label": "ubuntu-24.04",
+      "result": "passed",
+      "build_seconds": 3.592310205999979,
+      "verified_model_files": 0,
+      "cached_stages": [
+        "deps",
+        "model-tools",
+        "runtime-base",
+        "runtime-download"
+      ],
+      "cache_manifest_digest": "sha256:c7f1b8143223852b77b8bcc6a75eb697332ab8434f67cdae6847a07e99798421"
+    },
+    "source_probe": {
+      "id": 39728739306,
+      "url": "https://github.com/tech-kuiperbelt/remember-me/actions/runs/39728739306",
+      "commit": "d5b7df1717b8d1230e22f5c7604083b3c846dfc2",
+      "runner_label": "ubuntu-24.04",
+      "result": "passed",
+      "build_seconds": 58.32711942899999,
+      "verified_model_files": 0,
+      "cached_stages": [
+        "deps",
+        "model-tools",
+        "runtime-base",
+        "runtime-download"
+      ],
+      "rebuilt_application_steps": [
+        "24"
+      ],
+      "source_changed": true,
+      "cache_manifest_digest": "sha256:c7f1b8143223852b77b8bcc6a75eb697332ab8434f67cdae6847a07e99798421"
+    }
+  },
   "local": {
     "image": "remember-me:phase3.2-ready-fixed",
     "image_id": "sha256:72110e672f1e94fb8879a9d21eac02548931c4e2c4e49c1517b79c6d252f8c82",
@@ -269,9 +336,10 @@
   "automated_tests": {
     "passed": 74,
     "existing_deprecation_warnings": 1,
-    "command": ".venv/bin/python -m pytest -q tests/test_docker_release.py tests/test_docker_ci_script.py tests/test_docker_assets.py tests/test_docker_policy.py"
+    "command": ".venv/bin/python -m pytest -q tests/test_docker_release.py tests/test_docker_ci_script.py tests/test_docker_assets.py tests/test_docker_policy.py",
+    "inherited_mode_regression": "74 passed with MODE=source-probe"
   },
-  "implementation_commit": "3b9f8c172616dbd785b645e9a4e7fd277b4405e2",
+  "implementation_commit": "d5b7df1717b8d1230e22f5c7604083b3c846dfc2",
   "prior_hosted_attempts": [
     {
       "id": 39722234643,
