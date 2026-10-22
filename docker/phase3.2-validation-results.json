@@ -1,7 +1,7 @@
 {
   "phase": "3.2",
   "date": "2026-10-22",
-  "status": "awaiting_hosted_acceptance",
+  "status": "awaiting_final_commit_hosted_acceptance",
   "release_ready": false,
   "released": false,
   "baseline_commit": "938dd222b0e202f3d0900f8f07bb82e4a5c29a0c",
@@ -270,5 +270,59 @@
     "passed": 74,
     "existing_deprecation_warnings": 1,
     "command": ".venv/bin/python -m pytest -q tests/test_docker_release.py tests/test_docker_ci_script.py tests/test_docker_assets.py tests/test_docker_policy.py"
-  }
+  },
+  "implementation_commit": "3b9f8c172616dbd785b645e9a4e7fd277b4405e2",
+  "prior_hosted_attempts": [
+    {
+      "id": 39722234643,
+      "url": "https://github.com/tech-kuiperbelt/remember-me/actions/runs/39722234643",
+      "commit": "3b9f8c172616dbd785b645e9a4e7fd277b4405e2",
+      "runner_label": "ubuntu-24.04",
+      "result": "passed",
+      "build_seconds": 205.627156297,
+      "validation_build_seconds": 44.36412541599998,
+      "verified_model_files": 11,
+      "cache_export_status": "exported",
+      "cache_manifest_digest": "sha256:5785d2b7c01890578bc9f55a0c63f077dce29333c091d90eaec5a7ac1efc9512",
+      "cache_visibility": "private",
+      "cache_anonymous_exit": 1,
+      "cache_authenticated_exit": 0,
+      "model_modules": [
+        "Transformer",
+        "Pooling",
+        "Normalize"
+      ],
+      "pooling": {
+        "embedding_dimension": 1024,
+        "pooling_mode": "cls",
+        "include_prompt": true
+      },
+      "profile": "ep_6134c0b15d2bb471",
+      "image_id": "sha256:d66416ec7b57c7851f37f34b63dd2d4670b3449c64dfed1ba10165c5bb4088d5",
+      "image_size_bytes": 3524610440,
+      "minimum_available_disk_bytes": 102714150912,
+      "static_tests_passed": 70
+    },
+    {
+      "id": 39722963396,
+      "commit": "3b9f8c172616dbd785b645e9a4e7fd277b4405e2",
+      "mode": "warm",
+      "result": "passed",
+      "seconds": 2.0453200549999906,
+      "verified_model_files": 0,
+      "cached_stages": [
+        "deps",
+        "model-tools",
+        "runtime-base",
+        "runtime-download"
+      ]
+    },
+    {
+      "id": 39723098288,
+      "commit": "3b9f8c172616dbd785b645e9a4e7fd277b4405e2",
+      "mode": "source-probe",
+      "result": "failed_static_checks",
+      "reason": "Warm unit test inherited workflow MODE=source-probe; fixed explicit unit-test MODE, cache assertions unchanged"
+    }
+  ]
 }

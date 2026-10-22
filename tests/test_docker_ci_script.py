@@ -36,7 +36,9 @@ def test_cold_log_rejects_cached_runtime_download(tmp_path):
         CI.check_cached(log, results, expect_model_download=True)
 
 
-def test_warm_log_accepts_cached_dependencies_without_model_download(tmp_path):
+def test_warm_log_accepts_cached_dependencies_without_model_download(tmp_path, monkeypatch):
+    # Workflow MODE must not change the scenario this unit test exercises.
+    monkeypatch.setattr(CI, "MODE", "warm")
     results = {"cache": {}}
     log = write(tmp_path, "warm.log", """
 #20 [deps 5/5] RUN pip install

@@ -104,6 +104,14 @@ Pending: final-code `ubuntu-24.04` Cold and independent Warm/Source-probe Runs.
 Until the actual Cold evidence is present the state remains awaiting acceptance,
 not Release Ready.
 
+Initial hosted attempts on `3b9f8c1`: Cold `39722234643` passed (205.63 s
+runtime build, correct CLS pipeline, 11 model files); Warm `39722963396` passed
+(2.05 s, no model download). Source-probe `39723098288` stopped in static tests:
+the Warm unit fixture inherited `MODE=source-probe`. The fixture now explicitly
+sets its own Warm mode; production cache assertions are unchanged. The local
+74-test suite also passes with inherited `MODE=source-probe`. Final-commit hosted
+runs will replace the pending status, while retaining these attempts in JSON.
+
 Real formal GHCR version push, package Public/anonymous pull and `latest`
 promotion are intentionally not executed in this Ready task. They require the
 user's separate authorization. GitHub Release is always manual; Phase 3.3 README
