@@ -1,4 +1,5 @@
 """Opt-in ownership acceptance for the actual image initializer, rootful Linux."""
+import argparse
 import json
 from pathlib import Path
 import subprocess
@@ -13,6 +14,10 @@ def run(*args):
 
 
 def main():
+    global IMAGE
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--image', default=IMAGE)
+    IMAGE = parser.parse_args().image
     work = Path(tempfile.mkdtemp(prefix='rm-permissions-'))
     setup = r"""
 import os

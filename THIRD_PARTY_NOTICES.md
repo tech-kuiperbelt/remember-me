@@ -35,22 +35,24 @@ artifact: license texts, NOTICE files, native libraries and applicable
 source-provision obligations. This source-only index is not clearance for
 distributing Python wheels, OS packages or containers.
 
-## Independently downloaded models
+## Models in Python installations and Docker images
 
 Model weights, tokenizer files and model caches are not distributed in this
-repository. Remember Me's license does not relicense these materials.
+source repository. The Docker image includes the pinned BGE-M3 dense runtime
+files described below. Remember Me's license does not relicense these materials.
 
 | Provider | Default model / source | Evidence and limits |
 |---|---|---|
-| Ollama | [bge-m3](https://ollama.com/library/bge-m3); setup is described in the [quick start](README.md#快速开始) | Check the selected artifact's license; no specific digest is cleared for redistribution here |
-| Sentence Transformers | [BAAI/bge-m3](https://huggingface.co/BAAI/bge-m3) | Official model card declares MIT; exact revisions and tokenizer/file provenance require review before bundling |
+| Ollama | [bge-m3](https://ollama.com/library/bge-m3); an optional external service, not included in the Docker image | Check the selected artifact's license; no specific digest is cleared for redistribution here |
+| Sentence Transformers | [BAAI/bge-m3](https://huggingface.co/BAAI/bge-m3) | Docker bundles dense runtime files at revision `5617a9f61b028005a4858fdac845db406aefb181`; the [pinned model card](https://huggingface.co/BAAI/bge-m3/blob/5617a9f61b028005a4858fdac845db406aefb181/README.md) declares MIT. See the [11-file source/digest manifest](docker/bge-m3-manifest.json), [attribution](docker/licenses/BGE-M3-NOTICE.txt) and [full MIT text](docker/licenses/BGE-M3-MIT.txt) retained under `/opt/remember-me/models/` in the image |
 | FastEmbed | intfloat/multilingual-e5-large; FastEmbed 0.8.0 maps to [qdrant/multilingual-e5-large-onnx](https://huggingface.co/qdrant/multilingual-e5-large-onnx), model.onnx and model.onnx_data, with a Qdrant-hosted archive alternative | Installed registry declares MIT; exact converted artifacts/revisions have not been independently cleared. The original model license alone does not establish every conversion's terms |
 
-Local providers try the cache first, downloading on a cache miss only when
-configuration permits. For local providers, explicit bin/manage embedding download-model permits
+In Python installations, local providers try the cache first, downloading on a
+cache miss only when configuration permits. The official Docker image uses its
+bundled BGE-M3 without runtime downloads. For local providers, explicit bin/manage embedding download-model permits
 missing-model downloads. Other selected
 models and provider versions may use different sources and licenses. Bundling
-models in a release or image requires a separate review.
+additional models or artifacts in a release or image requires a separate review.
 
 ## Design assets and quotations
 

@@ -25,8 +25,9 @@ been created or modified by this work.
   without rebuilding or overwriting its version. First Package Public remains
   manual and irreversible; the private cache is never made public.
 - A local `check` command exercises actual image acceptance without contacting
-  or writing a Registry. [Maintainer operations](../docs/operations/docker-release.md)
-  describe authorization, release, Public setup, resume and manual Release notes.
+  or writing a Registry. Maintainer procedures for authorization, release, Public
+  setup, resume and manual Release notes are kept in local, Git-ignored project
+  management documents.
 
 ## Automated tests
 

@@ -1,5 +1,5 @@
 x-runtime: &runtime
-  image: "${REMEMBER_ME_IMAGE:-remember-me:phase2.2-amd64}"
+  image: "${REMEMBER_ME_IMAGE:-ghcr.io/tech-kuiperbelt/remember-me:1.0.0}"
   platform: linux/amd64
   pull_policy: missing
   read_only: true

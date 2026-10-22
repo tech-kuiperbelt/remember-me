@@ -90,7 +90,7 @@ jobs:
         working-directory: control
         run: |
           python -m pip install --quiet pytest PyYAML
-          python -m pytest -q tests/test_docker_release.py tests/test_docker_ci_script.py tests/test_docker_assets.py
+          python -m pytest -q tests/test_docker_release.py tests/test_docker_ci_script.py tests/test_docker_assets.py tests/test_docker_install_docs.py
 
       - name: Build and verify, then publish version (or resume)
         id: prepare
