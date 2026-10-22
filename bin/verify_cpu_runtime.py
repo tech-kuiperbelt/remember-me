@@ -103,7 +103,8 @@ def main():
     if args.model_cache:
         cache = args.model_cache.resolve()
         hub = cache / "models--BAAI--bge-m3"
-        require((hub / "refs/main").read_text().strip() == REVISION, "Unexpected cached BGE-M3 revision")
+        require((hub / "refs/main").read_text() == REVISION,
+                "Unexpected cached BGE-M3 revision/ref bytes (no trailing newline allowed)")
         snapshot = hub / "snapshots" / REVISION
         for filename in ("pytorch_model.bin", "modules.json", "config.json", "sentencepiece.bpe.model",
                          "tokenizer_config.json", "1_Pooling/config.json"):
@@ -122,6 +123,14 @@ def main():
         provider = SentenceTransformersEmbedder(MODEL, cache_dir=str(cache), device="cpu",
                                                offline=True, auto_download=False)
         try:
+            modules = [type(module).__name__ for module in provider._model]
+            require(modules == ["Transformer", "Pooling", "Normalize"],
+                    f"Unexpected model modules (possible silent fallback): {modules}")
+            pooling = provider._model[1].get_config_dict()
+            require(pooling.get("pooling_mode") == "cls" or pooling.get("pooling_mode_cls_token") is True,
+                    f"Expected BGE-M3 CLS pooling, got {pooling}")
+            result["model_modules"] = modules
+            result["pooling"] = pooling
             provider.warmup()
             vectors = provider.embed_documents(["Remember Me CPU dependency verification.", "中文语义检索验证。"])
             require(len(vectors) == 2 and all(len(v) == 1024 for v in vectors), "Expected 1024 dimensions")

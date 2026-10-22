@@ -41,6 +41,28 @@ def test_model_verification_checks_official_git_identity(tmp_path):
         script.verify(path, record)
 
 
+def test_packaged_ref_is_exact_sha_without_a_line_ending(tmp_path, monkeypatch):
+    script = load_script("package_model")
+    source = tmp_path / "source"
+    source.mkdir()
+    content = b'{"module":"fixture"}'
+    (source / "modules.json").write_bytes(content)
+    sha = hashlib.sha256(content).hexdigest()
+    manifest = {"revision": "a" * 40, "files": [{"path": "modules.json", "size": len(content),
+                "sha256": sha, "source_kind": "lfs_sha256", "source_oid": sha}]}
+    monkeypatch.setattr(script, "MANIFEST", manifest)
+    monkeypatch.setattr(script, "HERE", tmp_path)
+    (tmp_path / "licenses").mkdir()
+    (tmp_path / "bge-m3-manifest.json").write_text("{}")
+    output = tmp_path / "model"
+    monkeypatch.setattr("sys.argv", ["package_model.py", "--source", str(source), "--output", str(output)])
+    script.main()
+    hub = output / "sentence-transformers/models--BAAI--bge-m3"
+    assert (hub / "refs/main").read_bytes() == b"a" * 40
+    # Mirror the offline Hub's verbatim ref lookup; stripping would hide the bug.
+    assert (hub / "snapshots" / (hub / "refs/main").read_text() / "modules.json").is_file()
+
+
 @pytest.mark.parametrize("filename,body", [("config.jsonc", "invalid existing jsonc"),
                                           ("config.json", '{"auto_download_model":true}')])
 def test_entrypoint_preserves_existing_configuration(tmp_path, monkeypatch, filename, body):

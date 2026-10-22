@@ -1,0 +1,274 @@
+{
+  "phase": "3.2",
+  "date": "2026-10-22",
+  "status": "awaiting_hosted_acceptance",
+  "release_ready": false,
+  "released": false,
+  "baseline_commit": "938dd222b0e202f3d0900f8f07bb82e4a5c29a0c",
+  "formal_version_pushed": false,
+  "latest_updated": false,
+  "package_visibility_changed": false,
+  "github_release_created": false,
+  "runner": "ubuntu-24.04",
+  "hosted_runs": {},
+  "local": {
+    "image": "remember-me:phase3.2-ready-fixed",
+    "image_id": "sha256:72110e672f1e94fb8879a9d21eac02548931c4e2c4e49c1517b79c6d252f8c82",
+    "size_bytes": 3524622939,
+    "target": "runtime-local",
+    "candidate_result": "passed",
+    "verifier": {
+      "python": "3.12.15",
+      "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.36",
+      "locked_packages": 70,
+      "torch": "2.14.1+cpu",
+      "torch_cuda": null,
+      "torch_hip": null,
+      "torch_source": {
+        "archive_info": {
+          "hash": "sha256=5a6363570c753812540a05eb82380e329469cbe668643e88111414c12627711f",
+          "hashes": {
+            "sha256": "5a6363570c753812540a05eb82380e329469cbe668643e88111414c12627711f"
+          }
+        },
+        "url": "https://download-r2.pytorch.org/whl/cpu/torch-2.14.1%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl"
+      },
+      "sentence_transformers": "5.7.0",
+      "transformers": "5.20.2",
+      "forbidden_packages": [],
+      "model_validation": "offline_inference_passed",
+      "model_modules": [
+        "Transformer",
+        "Pooling",
+        "Normalize"
+      ],
+      "pooling": {
+        "embedding_dimension": 1024,
+        "pooling_mode": "cls",
+        "include_prompt": true
+      },
+      "model_revision": "5617a9f61b028005a4858fdac845db406aefb181",
+      "profile": {
+        "profile_id": "ep_6134c0b15d2bb471",
+        "provider": "sentence_transformers",
+        "model": "BAAI/bge-m3",
+        "dimension": 1024,
+        "normalized": true,
+        "query_prefix": "",
+        "document_prefix": "",
+        "max_input_chars": 8000,
+        "max_input_tokens": 8192
+      },
+      "vector_dimensions": [
+        1024,
+        1024
+      ],
+      "vector_norms": [
+        1.0000000151112973,
+        1.0000000924184702
+      ],
+      "slow_tokenizer": "XLMRobertaTokenizer",
+      "site_packages_bytes": 1095667995
+    },
+    "smoke_checks": [
+      "model ready without network",
+      "container health is healthy",
+      "Docker configuration disables model download and keeps local_only",
+      "memory write in read-only root",
+      "semantic search reaches the new memory",
+      "memory read and update",
+      "Dual JSONL contains the updated memory",
+      "SQLite integrity and embedding profile",
+      "configuration, Dual JSONL and runtime files stay in /data",
+      "memory delete removes detail and semantic result",
+      "graceful stop exit 0"
+    ],
+    "stop_seconds": 1.2558897460003209,
+    "compatibility": {
+      "result": "passed",
+      "production_open_mode": "read-only SQLite Backup API",
+      "production_mounted": false,
+      "reindex": false,
+      "vectors": {
+        "pairs": 16,
+        "dimension": 1024,
+        "comparisons": [
+          {
+            "maximum_component_error": 0.0,
+            "cosine": 1.0,
+            "norms": [
+              1.0000000547574557,
+              1.0000000547574557
+            ]
+          },
+          {
+            "maximum_component_error": 0.0,
+            "cosine": 1.0000000000000002,
+            "norms": [
+              0.9999999695392613,
+              0.9999999695392613
+            ]
+          },
+          {
+            "maximum_component_error": 0.0,
+            "cosine": 1.0,
+            "norms": [
+              1.0000000262521564,
+              1.0000000262521564
+            ]
+          },
+          {
+            "maximum_component_error": 0.0,
+            "cosine": 0.9999999999999998,
+            "norms": [
+              1.000000078674102,
+              1.000000078674102
+            ]
+          },
+          {
+            "maximum_component_error": 0.0,
+            "cosine": 0.9999999999999998,
+            "norms": [
+              1.000000076923194,
+              1.000000076923194
+            ]
+          },
+          {
+            "maximum_component_error": 0.0,
+            "cosine": 1.0,
+            "norms": [
+              1.000000065014921,
+              1.000000065014921
+            ]
+          },
+          {
+            "maximum_component_error": 0.0,
+            "cosine": 1.0,
+            "norms": [
+              1.000000074281201,
+              1.000000074281201
+            ]
+          },
+          {
+            "maximum_component_error": 0.0,
+            "cosine": 1.0000000000000002,
+            "norms": [
+              0.9999999955970104,
+              0.9999999955970104
+            ]
+          },
+          {
+            "maximum_component_error": 0.0,
+            "cosine": 1.0,
+            "norms": [
+              1.0000000547574557,
+              1.0000000547574557
+            ]
+          },
+          {
+            "maximum_component_error": 0.0,
+            "cosine": 1.0000000000000002,
+            "norms": [
+              0.9999999695392613,
+              0.9999999695392613
+            ]
+          },
+          {
+            "maximum_component_error": 0.0,
+            "cosine": 1.0,
+            "norms": [
+              1.0000000262521564,
+              1.0000000262521564
+            ]
+          },
+          {
+            "maximum_component_error": 0.0,
+            "cosine": 0.9999999999999998,
+            "norms": [
+              1.000000078674102,
+              1.000000078674102
+            ]
+          },
+          {
+            "maximum_component_error": 0.0,
+            "cosine": 0.9999999999999998,
+            "norms": [
+              1.000000076923194,
+              1.000000076923194
+            ]
+          },
+          {
+            "maximum_component_error": 0.0,
+            "cosine": 1.0,
+            "norms": [
+              1.000000065014921,
+              1.000000065014921
+            ]
+          },
+          {
+            "maximum_component_error": 0.0,
+            "cosine": 1.0,
+            "norms": [
+              1.000000074281201,
+              1.000000074281201
+            ]
+          },
+          {
+            "maximum_component_error": 0.0,
+            "cosine": 1.0000000000000002,
+            "norms": [
+              0.9999999955970104,
+              0.9999999955970104
+            ]
+          }
+        ],
+        "maximum_component_error": 0.0,
+        "minimum_cosine": 0.9999999999999998,
+        "host_versions": {
+          "torch": "2.14.0+cpu",
+          "sentence-transformers": "5.7.0",
+          "transformers": "5.17.0",
+          "numpy": "2.5.0"
+        },
+        "image_versions": {
+          "torch": "2.14.1+cpu",
+          "sentence-transformers": "5.7.0",
+          "transformers": "5.20.2",
+          "numpy": "2.5.4"
+        }
+      },
+      "database": {
+        "queries_passed": 3,
+        "unchanged": true,
+        "active_profile": "ep_6134c0b15d2bb471",
+        "live_memories": 1394,
+        "memory_embeddings": {
+          "count": 3213,
+          "sha256": "71ea4165d127397ec46d02813fb3cabad5067391c32866353a48913edb76cd0a"
+        },
+        "index_value_embeddings": {
+          "count": 2165,
+          "sha256": "aabfcc4f6459b7ad1589804e72a9fbab65bbee6d20025de604584cd0b89b5dc4"
+        },
+        "profiles_sha256": "c9ba183b059341c66ad883e3a5bf29c005f2287a2b71a45d043b7a157b287dac",
+        "operational_updated_at_changed": true
+      }
+    }
+  },
+  "known_defects_fixed": [
+    "HF refs/main trailing newline made modules.json invisible and caused silent mean pooling; exact ref bytes and CLS pipeline now verified",
+    "standalone read-only verifier must use writable TMPDIR=/data before importing PyTorch"
+  ],
+  "not_verified": [
+    "real formal GHCR version push",
+    "formal package Public/anonymous download",
+    "real latest promotion",
+    "GitHub Release",
+    "Phase 3.3 installation acceptance"
+  ],
+  "automated_tests": {
+    "passed": 74,
+    "existing_deprecation_warnings": 1,
+    "command": ".venv/bin/python -m pytest -q tests/test_docker_release.py tests/test_docker_ci_script.py tests/test_docker_assets.py tests/test_docker_policy.py"
+  }
+}

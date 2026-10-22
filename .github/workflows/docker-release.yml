@@ -1,0 +1,185 @@
+name: docker-release
+run-name: Docker ${{ inputs.operation }} ${{ inputs.tag }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing Git tag, e.g. v1.0.0 or v1.1.0-rc.1"
+        type: string
+        required: true
+      expected_commit:
+        description: "Reviewed full 40-character commit SHA of the tag"
+        type: string
+        required: true
+      operation:
+        description: "publish refuses existing versions; resume verifies an existing digest"
+        type: choice
+        options: [publish, resume]
+        default: publish
+      existing_digest:
+        description: "resume only: sha256 digest recorded by the original run"
+        type: string
+        default: ""
+      confirm_publish:
+        description: "I authorize this release operation and checked all Go/No-Go evidence"
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: remember-me-ghcr-release
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ inputs.tag }}
+  EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+  RELEASE_OPERATION: ${{ inputs.operation }}
+  CONFIRM_PUBLISH: ${{ inputs.confirm_publish }}
+
+jobs:
+  prepare-publish:
+    if: github.repository == 'tech-kuiperbelt/remember-me' && github.ref == 'refs/heads/master' && inputs.confirm_publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ steps.prepare.outputs.tag }}
+      commit: ${{ steps.prepare.outputs.commit }}
+      version: ${{ steps.prepare.outputs.version }}
+      digest: ${{ steps.prepare.outputs.digest }}
+      image_id: ${{ steps.prepare.outputs.image_id }}
+    steps:
+      - name: Checkout release controls
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          path: control
+
+      - name: Record runner and free disk
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/prepare
+          df -B1 / > artifacts/prepare/disk-before.txt
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift
+          sudo apt-get clean
+          df -B1 / > artifacts/prepare/disk-after-cleanup.txt
+          printf 'runner=%s\nworkflow_sha=%s\nrun=%s\nattempt=%s\n' "$RUNNER_NAME" "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > artifacts/prepare/runner.txt
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          name: release-${{ github.run_id }}-${{ github.run_attempt }}
+          driver: docker-container
+          driver-opts: image=moby/buildkit:v0.33.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate controls
+        working-directory: control
+        run: |
+          python -m pip install --quiet pytest PyYAML
+          python -m pytest -q tests/test_docker_release.py tests/test_docker_ci_script.py tests/test_docker_assets.py
+
+      - name: Build and verify, then publish version (or resume)
+        id: prepare
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EXISTING_DIGEST: ${{ inputs.existing_digest }}
+          BUILDER: release-${{ github.run_id }}-${{ github.run_attempt }}
+        run: python control/.github/scripts/docker_release.py prepare --work "$RUNNER_TEMP/release" --artifacts "$GITHUB_WORKSPACE/artifacts/prepare"
+
+      - name: Upload prepare evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-prepare-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/prepare/
+          retention-days: 30
+
+  verify-public:
+    needs: prepare-publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions: {}
+    outputs:
+      verified_digest: ${{ steps.verify.outputs.verified_digest }}
+    steps:
+      # Fetch only the public control sources at the dispatch SHA. No checkout
+      # action/token or Docker login is needed on this fresh anonymous runner.
+      - name: Get public verification controls
+        run: |
+          git init control
+          git -C control remote add origin https://github.com/tech-kuiperbelt/remember-me.git
+          git -C control fetch --depth=1 origin "$GITHUB_SHA"
+          git -C control checkout --detach FETCH_HEAD
+
+      - name: Pull version anonymously and verify identity
+        id: verify
+        env:
+          EXISTING_DIGEST: ${{ needs.prepare-publish.outputs.digest }}
+          IMAGE_ID: ${{ needs.prepare-publish.outputs.image_id }}
+        run: python control/.github/scripts/docker_release.py verify-public --artifacts "$GITHUB_WORKSPACE/artifacts/public"
+
+      - name: Upload anonymous evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-public-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/public/
+          retention-days: 30
+
+  promote-latest:
+    needs: [prepare-publish, verify-public]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout release controls
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          path: control
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: image=moby/buildkit:v0.33.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Promote only the anonymously verified stable digest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EXISTING_DIGEST: ${{ needs.prepare-publish.outputs.digest }}
+          VERIFIED_DIGEST: ${{ needs.verify-public.outputs.verified_digest }}
+          IMAGE_ID: ${{ needs.prepare-publish.outputs.image_id }}
+        run: python control/.github/scripts/docker_release.py promote --artifacts "$GITHUB_WORKSPACE/artifacts/latest"
+
+      - name: Upload promotion evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-latest-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/latest/
+          retention-days: 30

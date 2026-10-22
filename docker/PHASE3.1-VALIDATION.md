@@ -3,6 +3,14 @@
 Date: 2026-10-21. Status: **passed**. Final validated code is on `master` at `3a258e3` (the validation runs themselves were executed from a temporary push-triggered branch). No public GHCR image, Release, stable tag
 or `latest` tag was published.
 
+Follow-up (2026-10-22): Phase 3.2 compatibility acceptance found that the packaged
+`refs/main` trailing newline caused offline module discovery to fall back to
+Mean Pooling. These historical checks proved their listed build/cache/health
+conditions, but not host/image vector-space equivalence. The packager and the
+actual CLS-module verification were corrected in Phase 3.2; see
+[Phase 3.2 evidence](PHASE3.2-VALIDATION.md). Do not use a historical local image
+as the corrected release candidate.
+
 ## Environment and inputs
 
 - Repository: `tech-kuiperbelt/remember-me` (public).

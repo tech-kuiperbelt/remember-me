@@ -25,15 +25,20 @@ def exec_python(name, code):
     return docker("exec", name, "python", "-c", code).stdout.strip()
 
 
-def api(name, path, payload=None, method=None):
+def api(name, path, payload=None, method=None, expected=200):
     body = "None" if payload is None else repr(payload)
     code = (
-        "import json, urllib.request\n"
+        "import json, urllib.request, urllib.error\n"
         f"payload={body}\n"
         f"request=urllib.request.Request('http://127.0.0.1:1314{path}',"
         f"data=None if payload is None else json.dumps(payload).encode(),"
         f"headers={{'Content-Type':'application/json'}},method={method!r})\n"
-        "print(urllib.request.urlopen(request, timeout=60).read().decode())\n"
+        "try:\n"
+        " response=urllib.request.urlopen(request, timeout=60)\n"
+        "except urllib.error.HTTPError as exc:\n"
+        " response=exc\n"
+        f"assert response.status == {expected}, (response.status, response.read())\n"
+        "print(response.read().decode())\n"
     )
     return json.loads(exec_python(name, code))
 
@@ -89,7 +94,7 @@ def main():
                 "categories": ["verification"],
                 "anchors": ["Phase3.1Offline"],
             },
-        })
+        }, expected=201)
         assert created.get("created") is True, created
         memory_id = created["id"]
         passed("memory write in read-only root", {"id": memory_id})
@@ -99,6 +104,26 @@ def main():
         })
         assert memory_id in json.dumps(search, ensure_ascii=False), search
         passed("semantic search reaches the new memory", {"id": memory_id})
+
+        detail = api(name, "/api/memories/" + memory_id)
+        assert detail["text"].startswith("Phase 3.1 offline"), detail
+        updated_text = "Docker release CRUD updated 中文离线记录."
+        assert api(name, "/api/memories/" + memory_id,
+                   {"text": updated_text}, method="PUT")["success"]
+        assert api(name, "/api/memories/" + memory_id)["text"] == updated_text
+        passed("memory read and update")
+
+        # An explicit sync avoids a race with the periodic outbox worker.
+        api(name, "/api/maintenance/enter", {}, method="POST")
+        api(name, "/api/sync", {}, method="POST")
+        replica = json.loads(exec_python(name, (
+            "import json\n"
+            "from pathlib import Path\n"
+            "print(json.dumps(Path('/data/memories.jsonl').read_text()))\n"
+        )))
+        assert memory_id in replica and updated_text in replica, replica
+        api(name, "/api/maintenance/exit", {}, method="POST")
+        passed("Dual JSONL contains the updated memory")
 
         vectors = json.loads(exec_python(name, (
             "import json, sqlite3\n"
@@ -121,6 +146,12 @@ def main():
         ))
         assert execute == "ok", execute
         passed("configuration, Dual JSONL and runtime files stay in /data")
+
+        assert api(name, "/api/memories/" + memory_id, method="DELETE")["success"]
+        api(name, "/api/memories/" + memory_id, expected=404)
+        remaining = api(name, "/api/memories/search", {"query": updated_text})
+        assert memory_id not in json.dumps(remaining), remaining
+        passed("memory delete removes detail and semantic result")
 
         started = time.monotonic()
         docker("stop", "--time", "30", name)

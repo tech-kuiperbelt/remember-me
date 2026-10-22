@@ -17,6 +17,9 @@ import threading
 import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import docker_checks
+
 ROOT = Path(__file__).resolve().parents[2]
 ARTIFACTS = ROOT / "artifacts"
 CACHE_REF = os.environ.get(
@@ -169,57 +172,11 @@ def builder_cache_state():
 
 
 def image_metadata(image):
-    inspect = command(["docker", "image", "inspect", image])
-    history = command(["docker", "history", "--no-trunc", image])
-    item = json.loads(inspect.stdout)[0]
-    return {
-        "id": item.get("Id"),
-        "repo_digests": item.get("RepoDigests"),
-        "size_bytes": item.get("Size"),
-        "config": {
-            "User": item.get("Config", {}).get("User"),
-            "Entrypoint": item.get("Config", {}).get("Entrypoint"),
-            "Env": item.get("Config", {}).get("Env"),
-            "Labels": item.get("Config", {}).get("Labels"),
-            "Healthcheck": item.get("Config", {}).get("Healthcheck"),
-        },
-        "history": history.stdout,
-    }
+    return docker_checks.image_metadata(image, run=command)
 
 
 def image_content_checks(image, results):
-    checks = []
-    shell = (
-        "set -eu; "
-        f"test \"$(cat /opt/remember-me/models/sentence-transformers/"
-        f"models--BAAI--bge-m3/refs/main)\" = {REVISION}; "
-        f"test \"$(stat -Lc %s /opt/remember-me/models/sentence-transformers/"
-        f"models--BAAI--bge-m3/snapshots/{REVISION}/pytorch_model.bin)\" = {WEIGHT_BYTES}; "
-        f"test \"$(sha256sum /opt/remember-me/models/sentence-transformers/"
-        f"models--BAAI--bge-m3/snapshots/{REVISION}/pytorch_model.bin | cut -d' ' -f1)\" = {WEIGHT_SHA256}; "
-        "test ! -e /opt/remember-me/.env; "
-        "test ! -e /opt/remember-me/tests; "
-        "test ! -e /opt/remember-me/bin/verify_cpu_runtime.py; "
-        "test ! -e /opt/remember-me/requirements/docker-cpu-py312-linux-amd64.lock; "
-        "test \"$(id -u):$(id -g)\" = 10001:10001; "
-        "/opt/venv/bin/python -m pip check"
-    )
-    result = docker("run", "--rm", "--entrypoint", "sh", image, "-c", shell, check=False)
-    checks.append({"check": "model/refs/labels/user/content", "exit_code": result.returncode,
-                   "output": result.stdout + result.stderr})
-    if result.returncode:
-        raise Failure(f"image content checks failed:\n{result.stdout}{result.stderr}")
-    labels = json.loads(command(["docker", "image", "inspect", image]).stdout)[0]["Config"]["Labels"]
-    expected = {
-        "org.opencontainers.image.source": "https://github.com/tech-kuiperbelt/remember-me",
-        "org.opencontainers.image.licenses": "Apache-2.0",
-        "io.remember-me.model.revision": REVISION,
-        "io.remember-me.model.license": "MIT",
-    }
-    for key, value in expected.items():
-        if labels.get(key) != value:
-            raise Failure(f"label {key} is {labels.get(key)!r}, expected {value!r}")
-    results["content_checks"] = checks
+    return docker_checks.image_content_checks(image, results, run=command)
 
 
 def cache_manifest():
@@ -417,6 +374,7 @@ def run_cold(results, sampler):
     verify = docker(
         "run", "--rm", "--network", "none", "--read-only",
         "--tmpfs", "/data:uid=10001,gid=10001,mode=700",
+        "-e", "TMPDIR=/data",
         "--entrypoint", "/opt/venv/bin/python", VALIDATION_IMAGE,
         "/opt/remember-me/bin/verify_cpu_runtime.py",
         "--model-cache", "/opt/remember-me/models/sentence-transformers",

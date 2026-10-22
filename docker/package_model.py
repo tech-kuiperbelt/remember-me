@@ -80,7 +80,10 @@ def main():
         destination.symlink_to(os.path.relpath(blob, destination.parent))
         print(f"Verified {record['path']}: {record['sha256']}", flush=True)
     (hub / "refs").mkdir()
-    (hub / "refs/main").write_text(MANIFEST["revision"] + "\n")
+    # Hugging Face reads the ref verbatim as a snapshot directory name. A line
+    # ending makes modules.json invisible and ST silently falls back to mean
+    # pooling even though the underlying Transformer weights can still load.
+    (hub / "refs/main").write_text(MANIFEST["revision"])
     shutil.copytree(HERE / "licenses", args.output / "licenses")
     shutil.copyfile(HERE / "bge-m3-manifest.json", args.output / "bge-m3-manifest.json")
     for path in args.output.rglob("*"):
