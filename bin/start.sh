@@ -12,6 +12,7 @@ if [ -f .env ]; then
     set +a
 fi
 
+export REMEMBER_ME_INSTALL_METHOD="${REMEMBER_ME_INSTALL_METHOD:-SOURCE}"
 source .venv/bin/activate
 export MEMORY_STORAGE="${MEMORY_STORAGE:-dual}"
 exec python -m app.server "$@"

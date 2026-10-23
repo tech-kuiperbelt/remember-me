@@ -1,0 +1,12 @@
+{
+  // Development placeholder: the first formal release version is not approved yet.
+  // null intentionally fails the formal X.Y.Z validator and reports Unknown.
+  // Before release, replace it with the approved version (without a v prefix)
+  // and maintain the five content arrays. This is not a published release.
+  "version": null,
+  "new": [],
+  "improvements": [],
+  "fixes": [],
+  "upgrade": [],
+  "breaking": []
+}

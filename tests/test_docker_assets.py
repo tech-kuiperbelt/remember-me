@@ -77,3 +77,14 @@ def test_entrypoint_preserves_existing_configuration(tmp_path, monkeypatch, file
     if filename == "config.json":
         assert not (tmp_path / "config.jsonc").exists()
     assert calls[0][1][1:3] == ["-m", "app.server"]
+
+
+@pytest.mark.parametrize("target", ["runtime-local", "runtime-download"])
+def test_runtime_includes_same_release_file_and_install_declaration(target):
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    stage = dockerfile.split(f" AS {target}\n", 1)[1].split("\nFROM ", 1)[0]
+    assert "ENV REMEMBER_ME_INSTALL_METHOD=DOCKER" in stage
+    assert "COPY release.jsonc ./release.jsonc" in stage
+    assert stage.index("COPY release.jsonc") > stage.index("COPY app/")
+    assert "!release.jsonc" in (ROOT / ".dockerignore").read_text().splitlines()
+    assert (ROOT / "release.jsonc").is_file()

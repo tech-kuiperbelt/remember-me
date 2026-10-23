@@ -18,6 +18,7 @@ from app.embedding.embed import (
 from app.embedding.provider_resolution import resolve_embedding_environment
 from app.config.configuration import Configuration, activate_environment
 from app.config.settings import Settings
+from app.release_info import read_local_release
 from app.operations.model_preparation import ModelProgress, PreparationCancelled, download_progress
 from app.operations.model_process import ModelProcessStopError, prepare_model_in_process
 from app.embedding.provider_adapter import wrap_provider
@@ -57,6 +58,7 @@ class Runtime:
         self._model_cancel = threading.Event()
         self._model_retry_requested = False
         self._model_process_error = None
+        self.release_info = None
 
     def start(self, *, background_model=False):
         with self._lock:
@@ -67,6 +69,9 @@ class Runtime:
             self.state = "starting"
             self.calls.enable()
             try:
+                # Shipped metadata is independent of provider/storage/config and
+                # remains fixed even if the source file changes while running.
+                self.release_info = read_local_release(environment=self.settings.environment)
                 if self.configure_logging:
                     self._handlers = log_config.configure(self.log_dir or self.settings.LOG_DIR)
                 self.audit = audit.AuditJournal(self.settings.environment)

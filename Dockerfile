@@ -59,9 +59,11 @@ LABEL org.opencontainers.image.source="https://github.com/tech-kuiperbelt/rememb
 
 FROM runtime-base AS runtime-local
 COPY --from=model-local /model/ /opt/remember-me/models/
+ENV REMEMBER_ME_INSTALL_METHOD=DOCKER
 COPY app/ ./app/
 COPY web/ ./web/
 COPY LICENSE ./LICENSE
+COPY release.jsonc ./release.jsonc
 COPY docker/entrypoint.py docker/healthcheck.py docker/init_data.py ./docker/
 
 FROM runtime-local AS validation-local
@@ -79,9 +81,11 @@ COPY --from=model-tools /build /build
 RUN python /build/package_model.py --download-cache /tmp/model-download --output /opt/remember-me/models \
     && rm -rf /tmp/model-download /build
 USER 10001:10001
+ENV REMEMBER_ME_INSTALL_METHOD=DOCKER
 COPY app/ ./app/
 COPY web/ ./web/
 COPY LICENSE ./LICENSE
+COPY release.jsonc ./release.jsonc
 COPY docker/entrypoint.py docker/healthcheck.py docker/init_data.py ./docker/
 
 FROM runtime-download AS validation

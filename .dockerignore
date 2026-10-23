@@ -3,6 +3,7 @@
 !Dockerfile
 !.dockerignore
 !LICENSE
+!release.jsonc
 !app/
 !app/**
 !web/
