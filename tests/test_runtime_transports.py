@@ -25,7 +25,9 @@ def process_config(tmp_path):
 from pathlib import Path
 from app.runtime import Runtime
 import app.runtime as runtime_module
-from tests.conftest import FakeProvider
+from tests.conftest import FakeProvider, mock_version_client
+import app.operations.version_update as version_update
+version_update.create_http_client = mock_version_client
 from app.server import main
 runtime_module.create_runtime = lambda settings: Runtime(settings,
     provider_factory=lambda **kwargs: FakeProvider(), configure_logging=False)

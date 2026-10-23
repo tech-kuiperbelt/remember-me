@@ -43,6 +43,8 @@ EXPECTED_ORDER = [
     ("/api/audit", ("GET",)),
     ("/api/maintenance", ("GET",)),
     ("/api/model", ("GET",)),
+    ("/api/version-update", ("GET",)),
+    ("/api/version-update/check", ("POST",)),
     ("/api/model/retry", ("POST",)),
     ("/api/config/model", ("GET", "POST")),
     ("/api/config", ("GET", "POST")),

@@ -60,6 +60,7 @@ AUDIT_EVENTS = frozenset({
     "model_config", "model_prepare", "model_retry", "online_recover",
     "online_recover_start", "ndjson_health_check", "ndjson_compact",
     "embedding_reindex", "index_value_reindex",
+    "version_check",
 })
 
 _default_lock = threading.RLock()
@@ -136,6 +137,11 @@ def _params_transfer(args, result):
     return args
 
 
+def _params_version_check(args, result):
+    return {"trigger": args.get("trigger") if args.get("trigger") in
+            ("startup", "automatic", "manual") else "unknown"}
+
+
 def _params_search_filters(args, result):
     for dimension in ("keywords", "categories"):
         values = args.get(dimension)
@@ -181,6 +187,7 @@ PARAM_POLICIES: dict[str, object] = {
     "search_lexical": _params_search_filters,
     "search_anchor": _params_search_filters,
     "report": _params_report,
+    "version_check": _params_version_check,
 }
 
 
@@ -293,6 +300,10 @@ def _result_transfer(tool, result):
             if key not in ("path", "source_path", "imported_ids")}
 
 
+def _result_version_check(tool, result):
+    return {key: result.get(key) for key in ("status", "error_code", "notes_complete")}
+
+
 # Every AUDIT_EVENTS name is bound to a policy here (default unless overridden),
 # so adding a tool forces an explicit trimming decision.
 RESULT_POLICIES: dict[str, object] = {
@@ -307,6 +318,7 @@ RESULT_POLICIES: dict[str, object] = {
     "stats": _result_stats,
     "memory_import": _result_transfer,
     "memory_export": _result_transfer,
+    "version_check": _result_version_check,
 }
 
 

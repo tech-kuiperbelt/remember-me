@@ -56,6 +56,21 @@ def pytest_unconfigure(config):
 FAKE_EMB = [0.1, 0.2, 0.3, 0.4]
 
 
+def mock_version_client(proxy):
+    """A no-network default for HTTP regressions, also usable by child runners."""
+    import httpx
+    def respond(request):
+        if request.url.path.endswith('/latest'):
+            return httpx.Response(404, json={"message": "Not Found"})
+        return httpx.Response(200, json=[])
+    return httpx.AsyncClient(transport=httpx.MockTransport(respond), trust_env=False)
+
+
+@pytest.fixture(autouse=True)
+def no_live_version_requests(monkeypatch):
+    monkeypatch.setattr('app.operations.version_update.create_http_client', mock_version_client)
+
+
 def frontend_source():
     """Concatenated frontend sources (HTML + CSS + ES modules).
 

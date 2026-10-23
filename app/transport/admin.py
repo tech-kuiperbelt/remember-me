@@ -30,6 +30,7 @@ from app.operations.retrieval_stats import (SUPPORTED_DAYS, RetrievalStatsReadEr
                                             resolve_timezone)
 from app.config.configuration import PROJECT_ROOT
 from app.transport.ui_i18n import render_localized_html
+from app.operations.version_update import CheckRejected
 
 logger = logging.getLogger("admin")
 
@@ -291,6 +292,46 @@ class AdminAPI:
         if self.runtime is None:
             return Response(json.dumps({"ready": True, "status": "ready"}), media_type="application/json")
         return Response(json.dumps(self.runtime.model_status()), media_type="application/json")
+
+    async def handle_version_update(self, request):
+        manager = getattr(self.runtime, "version_updates", None)
+        status = 200
+        retry_after = None
+        if manager is None or self.runtime.state != "running":
+            response = error_response(503, "Version check requires a running HTTP runtime", code="service_closing")
+        else:
+            try:
+                if request.method == "POST":
+                    if request.query_params:
+                        raise InvalidRequest("version check takes no parameters")
+                    size = 0
+                    chunks = []
+                    async for chunk in request.stream():
+                        size += len(chunk)
+                        if size > 1024:
+                            raise InvalidRequest("version check takes no parameters")
+                        chunks.append(chunk)
+                    body = b"".join(chunks)
+                    if body:
+                        try:
+                            value = json.loads(body)
+                        except (ValueError, RecursionError):
+                            raise InvalidRequest("request body must be valid JSON") from None
+                        if not isinstance(value, dict) or value:
+                            raise InvalidRequest("version check takes no parameters")
+                    manager.request_check()
+                    status = 202
+                response = json_response(manager.snapshot(), status)
+            except CheckRejected as exc:
+                response = json_response(manager.snapshot(), exc.status)
+                if exc.status == 429:
+                    retry_after = manager.retry_after()
+            except InvalidRequest as exc:
+                response = error_response(400, str(exc), code="invalid_request")
+        response.headers["Cache-Control"] = "no-store"
+        if retry_after is not None:
+            response.headers["Retry-After"] = str(retry_after)
+        return response
 
     async def handle_model_config(self, request):
         if self.runtime is None:
@@ -1028,6 +1069,8 @@ class AdminAPI:
         _Route("/api/audit", ("GET",), "handle_audit", "exempt"),
         _Route("/api/maintenance", ("GET",), "handle_maintenance_status", "exempt", errors="none"),
         _Route("/api/model", ("GET",), "handle_model_status", "control", errors="none"),
+        _Route("/api/version-update", ("GET",), "handle_version_update", "exempt", errors="none"),
+        _Route("/api/version-update/check", ("POST",), "handle_version_update", "exempt", errors="none"),
         _Route("/api/model/retry", ("POST",), "handle_model_retry", "control", errors="none"),
         _Route("/api/config/model", ("GET", "POST"), "handle_model_config", "control", errors="none"),
         _Route("/api/config", ("GET", "POST"), "handle_model_config", "control", errors="none"),

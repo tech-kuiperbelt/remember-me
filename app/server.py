@@ -205,7 +205,7 @@ def _read_me_base(port, scope):
     return f"http://127.0.0.1:{resolved}"
 
 
-def create_http_app(runtime, *, port=None, local_only=None):
+def create_http_app(runtime, *, port=None, local_only=None, version_update_factory=None):
     """Own runtime lifespan; all transports bind the same explicit service."""
     from contextlib import asynccontextmanager
     from app.transport.admin import create_admin_routes
@@ -226,14 +226,25 @@ def create_http_app(runtime, *, port=None, local_only=None):
 
     @asynccontextmanager
     async def lifespan(app):
+        updates = None
         try:
             runtime.start(background_model=True)
+            from app.operations.version_update import VersionUpdateManager
+            factory = version_update_factory or VersionUpdateManager
+            updates = factory(runtime.release_info, lambda: runtime.settings,
+                              audit=runtime.audit, running=lambda: runtime.state == "running")
+            runtime.version_updates = updates
+            updates.start()
             # Entered after start() and exited before close() so in-flight work
             # drains before storage/provider are released.
             async with session_manager.run():
                 yield
         finally:
-            await asyncio.to_thread(runtime.close)
+            try:
+                if updates is not None:
+                    await updates.aclose()
+            finally:
+                await asyncio.to_thread(runtime.close)
 
     class SSEEndpoint:
         async def __call__(self, request_scope, receive, send):

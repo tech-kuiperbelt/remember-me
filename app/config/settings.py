@@ -1,7 +1,7 @@
 """Explicit, immutable configuration snapshot shared by one service runtime."""
 import os
 from pathlib import Path
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Mapping
 
@@ -42,6 +42,9 @@ class Settings:
     LOCAL_ONLY: bool
     CONFIG_PATH: str | None
     UI_DEBUG: bool = False
+    # Projection of the existing config.jsonc proxy, not an environment source.
+    PROXY_ENABLED: bool = False
+    PROXY_URL: str = field(default="", repr=False)
 
     @property
     def DOCKER_MODE(self):
@@ -50,8 +53,13 @@ class Settings:
     @classmethod
     def from_config(cls, data_dir=None, *, model_dir=None, create=False, environment=None):
         config = Configuration.load(data_dir, create=create, environment=environment)
+        return cls.from_configuration(config, environment=environment, model_dir=model_dir)
+
+    @classmethod
+    def from_configuration(cls, config, *, environment=None, model_dir=None):
         env = config.runtime_environment(environment, model_dir=model_dir)
-        return replace(cls.from_env(env), UI_DEBUG=config.debug)
+        return replace(cls.from_env(env), UI_DEBUG=config.debug,
+                       PROXY_ENABLED=config.proxy_enabled, PROXY_URL=config.proxy_url)
 
     @classmethod
     def from_env(cls, environment=None):

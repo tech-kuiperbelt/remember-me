@@ -129,6 +129,9 @@ from app.config.settings import Settings
 from app.runtime import Runtime
 from app.server import create_http_app
 from tests.conftest import FakeProvider
+from tests.conftest import mock_version_client
+import app.operations.version_update as version_update
+version_update.create_http_client = mock_version_client
 settings = Settings.from_config()
 assert Path(settings.DATA_DIR) == Path.cwd() / 'data'
 runtime = Runtime(settings, provider_factory=lambda **kw: FakeProvider(), configure_logging=False)

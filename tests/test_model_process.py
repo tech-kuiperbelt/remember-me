@@ -284,6 +284,9 @@ def _server_main():
     from functools import partial
     import app.runtime as runtime_module
     import app.server as server_module
+    import app.operations.version_update as version_update
+    from tests.conftest import mock_version_client
+    version_update.create_http_client = mock_version_client
     from app.embedding.embed import ModelCacheMissing
 
     def missing(**kwargs):

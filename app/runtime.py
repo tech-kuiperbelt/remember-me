@@ -59,6 +59,7 @@ class Runtime:
         self._model_retry_requested = False
         self._model_process_error = None
         self.release_info = None
+        self.version_updates = None  # Owned only by the HTTP lifespan.
 
     def start(self, *, background_model=False):
         with self._lock:
@@ -214,6 +215,10 @@ class Runtime:
                 raise ValueError("Enter the actual proxy URL; leave URL unchanged to preserve credentials")
             from dataclasses import replace
             replace(validated, source_text=config.source_text).save()
+            # Publish only after persistence succeeds. Model environment policy
+            # is unchanged; the next version check reads this logical projection.
+            self.settings = replace(self.settings, PROXY_ENABLED=validated.proxy_enabled,
+                                    PROXY_URL=validated.proxy_url)
             if "debug" in changes:
                 self.debug_effective = validated.debug
             if "language" in changes:
@@ -248,7 +253,7 @@ class Runtime:
                     if self.state != "running":
                         return
                     config = Configuration.load(self.settings.DATA_DIR)
-                    self.settings = Settings.from_env(config.runtime_environment(self.settings.environment))
+                    self.settings = Settings.from_configuration(config, environment=self.settings.environment)
                     self.language_effective = self.settings.LANGUAGE
                     activate_environment(self.settings.environment)
                     self._resolve_provider_environment()
