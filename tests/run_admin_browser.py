@@ -101,6 +101,7 @@ checks += '\n' + (ROOT / 'tests/browser/audit_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/config_debug_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/ops_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/help_regression.js').read_text()
+checks += '\n' + (ROOT / 'tests/browser/version_update_regression.js').read_text()
 # t() resolves catalog keys so one regression script asserts in either language.
 checks = 'const t = window.__smoke.t;\n' + checks
 HEAD_SCRIPT = '<script>' + harness + '</script>'
@@ -217,10 +218,12 @@ def run_case(profile, label, window_size, scale, shot_dir, query, theme=None, zo
         url += '&theme=' + theme
     # Real frame timing is required to measure theme transitions; virtual-time
     # dump-dom can advance timers while leaving control colors at the old theme.
-    if query.startswith(('search-layout-', 'search-wrap-', 'cards-', 'stats-layout-', 'retrieval-layout-', 'audit-layout-', 'ops-', 'help-')) or (query.startswith('theme-') and zoom == 1):
+    if query.startswith(('version-', 'search-layout-', 'search-wrap-', 'cards-', 'stats-layout-', 'retrieval-layout-', 'audit-layout-', 'ops-', 'help-')) or (query.startswith('theme-') and zoom == 1):
         from tests.chrome_viewport import run_viewport
         width, height = map(int, window_size.split(','))
         result = run_viewport(url, profile, width, height, shot,
+                              browser_zoom=zoom, reduced_motion=query == 'version-motion',
+                              verify_version_keyboard=query.startswith('version-keyboard'),
                               verify_search_keyboard=query == "search-layout-1920-light",
                               verify_stats_keyboard=query == "stats-layout-1460-all-light",
                               verify_retrieval_keyboard=query == "retrieval-layout-1460-7-light",
@@ -292,11 +295,26 @@ try:
     import contextlib
     keep_dir = os.environ.get("UI_SHOT_DIR")
     if keep_dir:
+        keep_dir = str(Path(keep_dir) / LANG)
         os.makedirs(keep_dir, exist_ok=True)
     _shots_ctx = contextlib.nullcontext(keep_dir) if keep_dir \
         else tempfile.TemporaryDirectory(prefix='remember-ui-shots-')
     with tempfile.TemporaryDirectory(prefix='keyword-chrome-') as profile, _shots_ctx as shots:
         failures = []
+        version_cases = [(f'version-{case}', '1440,900', 'light', 1)
+                         for case in ('functional', 'refresh', 'errors', 'ordering', 'polling', 'keyboard', 'motion')]
+        version_cases += [(f'version-layout-{width}-{scheme}', f'{width},844', scheme, 1)
+                          for width in (360, 390, 1024, 1920) for scheme in ('light', 'dark', 'neutral')]
+        version_cases += [('version-short', '1024,300', 'light', 1),
+                          ('version-zoom', '1024,768', 'neutral', 2),
+                          ('version-keyboard-mobile', '390,844', 'dark', 1),
+                          ('version-collapsed', '1024,768', 'light', 1)]
+        for label, size, scheme, zoom in version_cases:
+            if not selected(label): continue
+            proc, shot = run_case(profile, label, size, '1', shots, label, theme=scheme, zoom=zoom)
+            ok, output = check(proc)
+            print(('PASS ' if ok else 'FAIL ') + label + ' -> ' + str(shot) + ('' if ok else ' :: ' + output), flush=True)
+            if not ok: failures.append(label)
         neutral_cases = [
             ('settings', 'theme-1440x900-neutral', '1440,900', 1),
             ('settings-ready', 'ops-layout-1440-settings-neutral', '1440,1000', 1),

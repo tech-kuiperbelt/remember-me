@@ -13,6 +13,7 @@ export async function api(path, opts = {}) {
     const err = new Error(payload.detail || r.statusText);
     err.status = r.status;
     err.payload = payload;
+    err.retryAfter = r.headers.get('Retry-After');
     throw err;
   }
   return r.json();

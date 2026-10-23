@@ -56,6 +56,16 @@
       const handled = override(url, init, realFetch);
       if (handled !== undefined) return handled;
     }
+    // The browser fixture has a bare service, not an HTTP Runtime. Model the
+    // version API locally in every scenario; tests must never contact GitHub.
+    if (url === '/api/version-update' || url === '/api/version-update/check') {
+      return Promise.resolve(new Response(JSON.stringify({
+        current: {version:null, install_method:'UNKNOWN', release:null, error_code:'local_release_invalid'},
+        check: {status:'NO_RELEASE', checking:false, revision:0, last_attempt_at:null,
+          last_success_at:null, error_code:null, next_allowed_at:null},
+        latest:null, notes_scope:'none', notes_complete:null, releases:[], release_errors:[], notes_error_code:null,
+      }), {headers:{'content-type':'application/json'}}));
+    }
     return realFetch(input, init);
   };
 })();

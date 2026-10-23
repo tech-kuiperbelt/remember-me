@@ -7,7 +7,7 @@ import subprocess
 import time
 
 
-def run_viewport(url, profile, width, height, screenshot, verify_search_keyboard=False, verify_stats_keyboard=False, verify_retrieval_keyboard=False, verify_help_keyboard=False, capture_help_document=False, verify_theme_keyboard=False, scenario_script=None):
+def run_viewport(url, profile, width, height, screenshot, verify_search_keyboard=False, verify_stats_keyboard=False, verify_retrieval_keyboard=False, verify_help_keyboard=False, capture_help_document=False, verify_theme_keyboard=False, scenario_script=None, verify_version_keyboard=False, browser_zoom=1, reduced_motion=False):
     incoming, writer = os.pipe()
     reader, outgoing = os.pipe()
 
@@ -57,6 +57,8 @@ def run_viewport(url, profile, width, height, screenshot, verify_search_keyboard
         session = call('Target.attachToTarget', {'targetId': target, 'flatten': True})['sessionId']
         call('Emulation.setDeviceMetricsOverride', {'width': width, 'height': height,
              'deviceScaleFactor': 1, 'mobile': False}, session)
+        if reduced_motion:
+            call('Emulation.setEmulatedMedia', {'features': [{'name': 'prefers-reduced-motion', 'value': 'reduce'}]}, session)
         if scenario_script is not None:
             call('Page.enable', {}, session)
             call('Page.addScriptToEvaluateOnNewDocument', {'source': scenario_script}, session)
@@ -71,9 +73,9 @@ def run_viewport(url, profile, width, height, screenshot, verify_search_keyboard
         else:
             detail = call('Runtime.evaluate', {'expression': "({url:location.href,state:document.readyState,text:document.body?.textContent.slice(-1500)})", 'returnByValue': True}, session)['result'].get('value')
             raise TimeoutError('UI result: ' + str(detail))
-        if result['width'] != width or result['height'] != height:
+        if abs(result['width'] - width / browser_zoom) > 1 or abs(result['height'] - height / browser_zoom) > 1 or abs(result['dpr'] - browser_zoom) > .02:
             raise AssertionError('Unexpected CSS viewport: ' + str(result))
-        if verify_search_keyboard or verify_stats_keyboard or verify_retrieval_keyboard or verify_help_keyboard or verify_theme_keyboard:
+        if verify_search_keyboard or verify_stats_keyboard or verify_retrieval_keyboard or verify_help_keyboard or verify_theme_keyboard or verify_version_keyboard:
             def evaluate(expression):
                 return call('Runtime.evaluate', {'expression': expression, 'returnByValue': True}, session)['result'].get('value')
 
@@ -85,6 +87,27 @@ def run_viewport(url, profile, width, height, screenshot, verify_search_keyboard
                 call('Input.dispatchKeyEvent', {'type': 'keyUp', 'key': name,
                      'code': code, 'windowsVirtualKeyCode': virtual}, session)
 
+        if verify_version_keyboard and result['text'].startswith('PASS:'):
+            evaluate("document.getElementById('version-close').click();document.getElementById('version-entry').focus()")
+            key('Enter', 'Enter', 13)
+            if not evaluate("!document.getElementById('version-popover').hidden && document.activeElement.id==='version-refresh'"):
+                raise AssertionError('Native Enter must open version popover and focus refresh')
+            key('Tab', 'Tab', 9)
+            if evaluate('document.activeElement.id') != 'version-close':
+                raise AssertionError('Native Tab must reach version close')
+            if width <= 640:
+                evaluate("[...document.querySelectorAll('#version-popover a')].at(-1).focus()")
+                key('Tab', 'Tab', 9)
+                if evaluate('document.activeElement.id') != 'version-refresh':
+                    raise AssertionError('Mobile dialog must wrap native Tab')
+                if not evaluate("document.getElementById('app-shell').inert"):
+                    raise AssertionError('Mobile dialog must lock the background')
+            key('Escape', 'Escape', 27)
+            if not evaluate("document.getElementById('version-popover').hidden && document.activeElement.id==='version-entry' && !document.getElementById('app-shell').inert"):
+                raise AssertionError('Escape must close and restore focus/background')
+            key(' ', 'Space', 32)
+            if not evaluate("!document.getElementById('version-popover').hidden"):
+                raise AssertionError('Native Space must open version popover')
         if verify_theme_keyboard and result['text'].startswith('PASS:'):
             evaluate("document.querySelector('#theme-select input[value=light]').focus()")
             key('ArrowRight', 'ArrowRight', 39)

@@ -13,6 +13,7 @@ import * as audit from './audit.js';
 import * as layout from './layout.js';
 import * as theme from './theme.js';
 import * as help from './help.js';
+import * as versionUpdate from './version-update.js';
 
 function refreshStats() {
   stats.loadStats();
@@ -23,6 +24,7 @@ function mountAll() {
   bindNav();
   layout.mount();
   theme.mount();
+  versionUpdate.mount();
   help.mount({ onNavigate: (topic, options) => switchPage('help', () => {}, { ...options, topic }) });
   detail.mount({retryCategories: stats.loadStats});
   setLeaveGuard(detail.requestLeave);
