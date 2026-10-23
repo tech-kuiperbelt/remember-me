@@ -51,6 +51,14 @@
 .version-notes li+li{margin-top:5px}
 .version-notes li{white-space:pre-wrap}
 .version-empty{margin-top:8px;color:var(--text-muted)}
+.version-backup-note{margin:10px 0;color:var(--warning);font-size:12px}
+.version-guide{margin-top:16px;padding-top:12px;border-top:1px solid var(--border-subtle);color:var(--text-secondary)}
+.version-guide h4{font-size:12px;font-weight:600;margin:8px 0}
+.version-guide p{margin:8px 0}
+.version-action{font-size:12px;margin:4px 6px 4px 0}
+.version-command pre{background:var(--bg-code);border:1px solid var(--border-subtle);border-radius:6px;padding:10px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px}
+.version-command code{font:inherit}
+.version-copy-feedback{font-size:11px;color:var(--text-muted)}
 .version-popover-footer{padding:10px 16px;border-top:1px solid var(--border-subtle);color:var(--text-muted);font-size:11px;flex:none}
 .version-spinning svg{animation:version-spin 1s linear infinite}
 .version-backdrop{position:fixed;inset:0;z-index:149;background:var(--overlay)}

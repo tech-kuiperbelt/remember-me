@@ -228,7 +228,10 @@ async function runThemeScenario(scenario) {
 
 try {
   const scenario = new URLSearchParams(location.search).get('smoke') || '';
-  if (scenario.startsWith('version-')) {
+  if (scenario.startsWith('version-guide-') || scenario.startsWith('version-proxy-')) {
+    await runVersionGuidanceRegression(scenario);
+  }
+  else if (scenario.startsWith('version-')) {
     await runVersionUpdateRegression(scenario);
   }
   else if (scenario === 'config-debug') {

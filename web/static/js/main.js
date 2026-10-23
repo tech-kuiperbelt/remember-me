@@ -24,7 +24,10 @@ function mountAll() {
   bindNav();
   layout.mount();
   theme.mount();
-  versionUpdate.mount();
+  versionUpdate.mount({
+    onConfigureProxy: () => switchPage('ops', () => {}, {focusProxy:true}),
+    onHelp: () => switchPage('help', () => {}, {topic:'configuration',anchor:'help-updates'}),
+  });
   help.mount({ onNavigate: (topic, options) => switchPage('help', () => {}, { ...options, topic }) });
   detail.mount({retryCategories: stats.loadStats});
   setLeaveGuard(detail.requestLeave);

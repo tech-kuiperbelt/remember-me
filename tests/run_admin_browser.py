@@ -102,6 +102,7 @@ checks += '\n' + (ROOT / 'tests/browser/config_debug_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/ops_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/help_regression.js').read_text()
 checks += '\n' + (ROOT / 'tests/browser/version_update_regression.js').read_text()
+checks += '\n' + (ROOT / 'tests/browser/version_update_guidance_regression.js').read_text()
 # t() resolves catalog keys so one regression script asserts in either language.
 checks = 'const t = window.__smoke.t;\n' + checks
 HEAD_SCRIPT = '<script>' + harness + '</script>'
@@ -173,6 +174,8 @@ class InjectHarness:
             text = text[:idx] + seed + text[idx:]
         extra = ""
         scenario = (parse_qs(scope.get("query_string", b"").decode()).get("smoke") or [""])[0]
+        if scenario in ('version-guide-docker', 'version-proxy-docker') or scenario.startswith(('version-guide-layout-', 'version-guide-short', 'version-guide-zoom')):
+            text = text.replace('data-deployment-mode="python"', 'data-deployment-mode="docker"')
         if 'filters-error' in scenario:
             extra = """<script>window.__smoke.setOverride(url => url === '/api/stats'
               ? new Response(JSON.stringify({detail:'Initial Stats failure'}),
@@ -309,6 +312,13 @@ try:
                           ('version-zoom', '1024,768', 'neutral', 2),
                           ('version-keyboard-mobile', '390,844', 'dark', 1),
                           ('version-collapsed', '1024,768', 'light', 1)]
+        version_cases += [(f'version-{case}', '1440,900', 'light', 1) for case in
+                          ('guide-source','guide-docker','guide-unknown','guide-safety','guide-copy',
+                           'proxy-source','proxy-docker','proxy-navigation')]
+        version_cases += [(f'version-guide-layout-{width}-{scheme}', f'{width},844', scheme, 1)
+                          for width in (360,390,1024,1920) for scheme in ('light','dark','neutral')]
+        version_cases += [('version-guide-short', '1024,300', 'light', 1),
+                          ('version-guide-zoom', '1024,768', 'neutral', 2)]
         for label, size, scheme, zoom in version_cases:
             if not selected(label): continue
             proc, shot = run_case(profile, label, size, '1', shots, label, theme=scheme, zoom=zoom)

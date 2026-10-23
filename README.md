@@ -145,7 +145,48 @@ If the download source is unreachable from your network, open the Web UI's **con
 
 **Resource note:** Allow sufficient disk space and memory for the model and its Python dependencies. Minimum hardware requirements remain to be validated.
 
-The Web UI proxy settings apply to model downloads. Installing Python dependencies with pip requires its own network or proxy configuration. Automatic model downloads are controlled by `auto_download_model`; when disabled, use the configuration page to request a retry explicitly.
+The Web UI proxy settings are shared by version checks and SOURCE model downloads. Installing Python dependencies with pip requires its own network or proxy configuration. Automatic model downloads are controlled by `auto_download_model`; when disabled, use the configuration page to request a retry explicitly.
+
+<a id="source-updates"></a>
+## SOURCE updates
+
+Stop the service and confirm it has exited. Back up the **entire data directory**,
+including configuration, database and journals. Keep the old version and matching
+backup, and read all relevant Upgrade Notes / Breaking Changes. In the original
+checkout, resolve local changes and confirm the current branch has an upstream
+and can fast-forward before manually running:
+
+```bash
+git pull --ff-only
+bash bin/install.sh
+bash bin/start.sh
+```
+
+`git pull --ff-only` follows the current branch and may include unreleased code.
+The displayed version comes only from the local `release.jsonc`. If the checkout
+is dirty, detached, diverged or has no upstream, stop and resolve it manually;
+do not force an overwrite. The application neither inspects Git nor runs these
+commands. Preserve the original data path, configuration, environment and startup
+arguments when restarting. Verify health and retrieve an existing memory.
+
+## Version checks and networking
+
+HTTP/Web checks asynchronously after startup and every 24 hours by default.
+Refresh manually in the sidebar's version dialog. stdio and offline CLI do not
+check. `Unknown` means the local version is unknown and does not prevent checks;
+`No Release` means no official release exists, rather than a network failure.
+The application only offers guidance and copying; it does not upgrade or back up.
+
+For `Unavailable`, choose **Configure proxy** in the version dialog to reach the
+existing Settings. Save, return and refresh; the next check uses the new settings
+without restarting. The backend contacts `api.github.com` and
+`raw.githubusercontent.com`; disabling the proxy connects directly. Check DNS,
+connectivity, certificates and proxy reachability from the service host/container,
+and wait out rate-limit cooldowns. Keep TLS verification enabled. In a container,
+`localhost` refers to that container; this proxy does not enable networking for
+Docker's built-in model. Docker Engine / Docker Desktop needs its own proxy for
+GHCR pulls; Git and pip also have separate networking. Application Settings do
+not configure them. See **Help → Configuration → Updates and networking**.
 
 ## Docker (Linux AMD64)
 
@@ -247,7 +288,7 @@ URLs. Use `/mcp` for Streamable HTTP or `/sse` for legacy SSE; see
 | Remove stopped container | `docker rm remember-me` | `docker compose -f compose.yaml down` |
 
 Health observes model readiness and does not initiate a download. If startup
-fails, check the logs, disk space and data permissions. Language/Debug remain
+fails, check the logs, disk space and data permissions. Language/Debug and the version-check proxy remain
 editable in the configuration page; Docker manages model settings. Retry reloads
 the included model locally. The root filesystem and model stay read-only; the
 single `/data` bind mount retains configuration, SQLite and its sidecars, Dual
@@ -297,6 +338,7 @@ stopped container, rerun the initializer and start commands; for Compose, run
 configuration, memory details and semantic search before retiring the original
 copy. Never run both copies as writers to the same directory.
 
+<a id="docker-updates"></a>
 ### Manual upgrades and rollback
 
 Read the target release's compatibility notes and take a stopped full backup.
@@ -307,11 +349,24 @@ published full version or digest (also update `.env` if used), then pull it:
 docker pull --platform linux/amd64 "$REMEMBER_ME_IMAGE"
 ```
 
-For `docker run`, stop and remove the container, then rerun initialization and
-the start command with the **same data path and port**. For Compose, stop and run
-`docker compose -f compose.yaml up -d --wait --wait-timeout 300`; the changed image
-setting recreates the service. Check health and retrieve an existing memory.
-There is no automatic update, version notification or new migration mechanism.
+For `docker run`, pulling alone does not upgrade a running container. After
+stopping and backing up, remove the old container, then repeat the initialization
+and start steps above from your deployment records, changing only the image
+reference. Preserve the actual mounts, ports, environment, UID/GID, read-only
+filesystem and security options; do not replace custom settings with examples.
+
+For Compose, keep the existing `compose.yaml`, data path, ports and settings in
+the original instance directory. Set and export `REMEMBER_ME_IMAGE` to the verified
+target full version and **update its saved value in `.env` too**. Exported shell
+values override `.env`. After stopping and backing up, run:
+
+```bash
+docker compose -f compose.yaml up -d --pull always --wait --wait-timeout 300
+```
+
+The changed image setting recreates the service. Check health and retrieve an
+existing memory. Read all relevant Upgrade Notes / Breaking Changes first;
+version notifications do not prove data compatibility or perform updates or migrations.
 
 Rollback follows the same steps with the previous version/digest. Reuse current
 data only when that release's database schema and Embedding Profile are compatible.

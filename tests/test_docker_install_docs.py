@@ -94,3 +94,36 @@ def test_backup_restore_and_update_commands_are_present(filename):
     assert 'docker stop --time 120 remember-me' in text
     assert "{{.State.ExitCode}}" in text
     assert '/mcp' in text and '/sse' in text
+
+
+@pytest.mark.parametrize('filename', READMES)
+def test_source_update_uses_safe_current_branch_commands(filename):
+    text = (ROOT / filename).read_text().split('<a id="source-updates"></a>')[1].split('<a id="docker-updates"></a>')[0]
+    command = re.findall(r'```bash\n(.*?)\n```', text, flags=re.S)[0]
+    assert command.splitlines() == ['git pull --ff-only', 'bash bin/install.sh', 'bash bin/start.sh']
+    assert 'release.jsonc' in text and ('detached' in text.lower() or 'Detached HEAD' in text)
+    for line in command.splitlines():
+        tokens = shlex.split(line)
+        assert not set(tokens) & {'reset', 'clean', 'stash', '--force', '--hard', 'checkout'}
+
+
+@pytest.mark.parametrize('filename', READMES)
+def test_compose_upgrade_preserves_instance_file_and_forces_target_pull(filename):
+    text = (ROOT / filename).read_text().split('<a id="docker-updates"></a>')[1]
+    commands = re.findall(r'```bash\n(.*?)\n```', text, flags=re.S)
+    compose = next(shlex.split(block) for block in commands if 'docker compose' in block)
+    assert compose[:6] == ['docker', 'compose', '-f', 'compose.yaml', 'up', '-d']
+    assert compose[compose.index('--pull') + 1] == 'always'
+    assert '--wait' in compose and compose[compose.index('--wait-timeout') + 1] == '300'
+    assert '.env' in text and 'REMEMBER_ME_IMAGE' in text
+    assert 'Upgrade Notes / Breaking Changes' in text
+    assert not any(option in compose for option in ('--volumes', '-v', '--renew-anon-volumes'))
+
+
+def test_help_uses_canonical_bilingual_readme_sections():
+    html = (ROOT / 'web/index.html').read_text()
+    assert 'id="help-updates"' in html
+    for anchor in ('source-updates', 'docker-updates'):
+        assert f'data-update-readme="{anchor}"' in html
+        for filename in READMES:
+            assert f'<a id="{anchor}"></a>' in (ROOT / filename).read_text()

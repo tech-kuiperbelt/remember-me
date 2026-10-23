@@ -1,6 +1,7 @@
 // Version presentation owns only local REST polling; GitHub access belongs to Runtime.
 import { api } from './api.js';
 import { t, locale } from './i18n.js';
+import { copyText } from './markdown.js';
 
 const STATUSES = new Set(['CHECKING', 'UP_TO_DATE', 'UPDATE_AVAILABLE', 'UPDATE_RECOMMENDED', 'UNAVAILABLE', 'NO_RELEASE']);
 const RELEASES_URL = 'https://github.com/tech-kuiperbelt/remember-me/releases';
@@ -10,6 +11,7 @@ let snapshot = null, localError = false, posting = false, stopped = false;
 let entry, panel, backdrop, tooltip, refreshButton, statusNode, body, stamp, cooldownNode;
 let pollTimer, cooldownTimer, activeSince = 0, retryUntil = 0, readPending;
 let sequence = 0, settledSequence = 0, postBarrier = 0;
+let configureProxy = () => {}, openHelp = () => {};
 const controllers = new Set();
 
 function element(tag, className, text) {
@@ -176,6 +178,51 @@ function renderNotes() {
     body.append(section);
   }
 }
+function textButton(key, action, onClick) {
+  const node = element('button', 'btn btn-outline version-action', t(key));
+  node.type = 'button'; node.dataset.versionAction = action;
+  node.addEventListener('click', onClick);
+  return node;
+}
+function commandBlock(kind, command) {
+  const block = element('div', 'version-command'); block.dataset.command = kind;
+  const pre = element('pre'); pre.append(element('code', '', command));
+  const feedback = element('span', 'version-copy-feedback'); feedback.setAttribute('role', 'status');
+  const copy = textButton('version.guide.copy', 'copy-' + kind, async () => {
+    try { await copyText(command); feedback.textContent = t('version.guide.copied'); }
+    catch { feedback.textContent = t('version.guide.copyFailed'); }
+  });
+  copy.setAttribute('aria-label', t('version.guide.copyLabel', {kind:t('version.guide.' + kind)}));
+  block.append(pre, copy, feedback);
+  return block;
+}
+function verifiedTarget() {
+  const latest = snapshot?.latest, version = latest?.version;
+  return typeof version === 'string' && /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(version)
+    && latest.tag === `v${version}` && latest.release?.version === version ? version : null;
+}
+function renderGuide() {
+  const method = ['SOURCE','DOCKER'].includes(snapshot?.current.install_method) ? snapshot.current.install_method : 'UNKNOWN';
+  const guide = element('section', 'version-guide');
+  guide.append(element('h4', '', t('version.guide.title')), element('p', '', t('version.guide.method', {method})));
+  const target = !localError && status().startsWith('UPDATE_') ? verifiedTarget() : null;
+  if (target && method === 'SOURCE') {
+    guide.append(element('p', '', t('version.guide.sourceContext')), element('p', '', t('version.guide.sourceSafety')),
+      commandBlock('source', 'git pull --ff-only\nbash bin/install.sh\nbash bin/start.sh'));
+  } else if (target && method === 'DOCKER') {
+    const image = `ghcr.io/tech-kuiperbelt/remember-me:${target}`;
+    guide.append(element('h4', '', 'Docker Compose'), element('p', '', t('version.guide.composeContext')),
+      commandBlock('compose', `export REMEMBER_ME_IMAGE=${image}\ndocker compose -f compose.yaml up -d --pull always --wait --wait-timeout 300`),
+      element('h4', '', 'Docker Run'), element('p', '', t('version.guide.runContext')),
+      commandBlock('run', `export REMEMBER_ME_IMAGE=${image}\ndocker pull --platform linux/amd64 "$REMEMBER_ME_IMAGE"`), element('p', '', t('version.guide.runRecreate')));
+  } else if (method === 'UNKNOWN') guide.append(element('p', '', t('version.guide.unknown')));
+  if (status() === 'UNAVAILABLE') {
+    guide.append(element('p', '', t('version.proxy.help')),
+      textButton('version.proxy.configure', 'proxy', () => { close(); configureProxy(); }));
+  }
+  guide.append(textButton('version.guide.help', 'help', () => { close(); openHelp(); }));
+  body.append(guide);
+}
 function updateRefresh() {
   clearTimeout(cooldownTimer);
   const remaining = Math.max(0, Math.ceil((deadline() - Date.now()) / 1000));
@@ -200,15 +247,20 @@ function render() {
   const scrollTop = body.scrollTop;
   const focused = body.contains(document.activeElement) ? document.activeElement : null;
   const focusedURL = focused?.closest('a')?.getAttribute('href');
+  const focusedAction = focused?.dataset.versionAction;
   body.replaceChildren();
   const versions = element('dl', 'version-comparison');
   for (const [key, value] of [['current', currentVersion()], ['latest', !localError && snapshot?.latest ? `v${snapshot.latest.version}` : t('version.notKnown')]]) {
     const column = element('div'); column.append(element('dt', '', t('version.' + key)), element('dd', '', value)); versions.append(column);
   }
   body.append(versions, element('p', 'version-explanation', explanation()));
+  if (!localError && status().startsWith('UPDATE_') && verifiedTarget()) body.append(element('p', 'version-backup-note', t('version.guide.backup')));
   renderNotes();
+  renderGuide();
   if (focused && focused !== body) {
-    const replacement = [...body.querySelectorAll('a')].find(link => link.getAttribute('href') === focusedURL);
+    const replacement = focusedAction
+      ? [...body.querySelectorAll('[data-version-action]')].find(node => node.dataset.versionAction === focusedAction)
+      : [...body.querySelectorAll('a')].find(link => link.getAttribute('href') === focusedURL);
     (replacement || body).focus({preventScroll: true});
   }
   body.scrollTop = scrollTop;
@@ -253,7 +305,8 @@ function showTooltip() {
   tooltip.style.left = `${rect.right + 8}px`;
   tooltip.style.top = `${Math.max(8, rect.top - tooltip.offsetHeight)}px`;
 }
-export function mount() {
+export function mount({onConfigureProxy, onHelp} = {}) {
+  configureProxy = onConfigureProxy || configureProxy; openHelp = onHelp || openHelp;
   entry = document.getElementById('version-entry');
   panel = element('section', 'version-popover'); panel.id = 'version-popover'; panel.hidden = true;
   panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-labelledby', 'version-title');

@@ -6,17 +6,16 @@ export function createConfiguration({available, refresh, changed, retryModel}) {
   let baseline=null, saving=false, loading=null;
   const restartKeys=new Set();
   function draft() {
-    if(dockerMode)return {language:$('config-language').value,debug:$('config-debug').checked};
     const proxy={enabled:$('model-proxy-enabled').checked};
     const url=$('model-proxy-url').value.trim();
     if(proxy.enabled && url)proxy.url=url;
+    if(dockerMode)return {language:$('config-language').value,debug:$('config-debug').checked,proxy};
     return {port:Number($('config-port').value),language:$('config-language').value,local_only:$('config-local-only').checked,
       debug:$('config-debug').checked,auto_download_model:$('model-auto-download').checked,proxy};
   }
   function error() {
     const d=draft();
-    if(dockerMode)return ['zh-CN','en'].includes(d.language)?'':t('ops.config.error.language');
-    if(!Number.isInteger(d.port)||d.port<1||d.port>65535)return t('ops.config.error.port');
+    if(!dockerMode&&(!Number.isInteger(d.port)||d.port<1||d.port>65535))return t('ops.config.error.port');
     if(!['zh-CN','en'].includes(d.language))return t('ops.config.error.language');
     if(d.proxy.enabled && !d.proxy.url && !baseline?.proxy?.url)return t('ops.config.error.proxyRequired');
     if(d.proxy.url) {
@@ -30,8 +29,8 @@ export function createConfiguration({available, refresh, changed, retryModel}) {
   function dirty() {
     if(!baseline)return false;
     const d=draft();
-    if(dockerMode)return ['language','debug'].some(k=>d[k]!==baseline[k]);
-    return ['port','language','local_only','debug','auto_download_model'].some(k=>d[k]!==baseline[k]) || d.proxy.enabled!==baseline.proxy.enabled || !!d.proxy.url;
+    const fields=dockerMode?['language','debug']:['port','language','local_only','debug','auto_download_model'];
+    return fields.some(k=>d[k]!==baseline[k]) || d.proxy.enabled!==baseline.proxy.enabled || !!d.proxy.url;
   }
   function update() {
     $('model-proxy-fields').hidden=!$('model-proxy-enabled').checked;

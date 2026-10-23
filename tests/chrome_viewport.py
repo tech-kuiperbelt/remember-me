@@ -96,7 +96,7 @@ def run_viewport(url, profile, width, height, screenshot, verify_search_keyboard
             if evaluate('document.activeElement.id') != 'version-close':
                 raise AssertionError('Native Tab must reach version close')
             if width <= 640:
-                evaluate("[...document.querySelectorAll('#version-popover a')].at(-1).focus()")
+                evaluate("[...document.querySelectorAll('#version-popover button:not(:disabled), #version-popover a, #version-popover [tabindex=\"0\"]')].at(-1).focus()")
                 key('Tab', 'Tab', 9)
                 if evaluate('document.activeElement.id') != 'version-refresh':
                     raise AssertionError('Mobile dialog must wrap native Tab')

@@ -10,6 +10,7 @@ import { t } from './i18n.js';
 let status=deriveStatus(null), config, busy=null, job=null, power=null, pollVersion=0, reconnecting=false;
 let namespaceCounts={}, maintenanceRequest=null, needsRegistry=false;
 let downloadObservation=null;
+let pageRequest=0;
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const gates={enter:'enter',exit:'exit',retry:'retryModel',sync:'sync',restart:'restartShutdown',shutdown:'restartShutdown'};
 const controls={enter:'btn-maintenance-enter',exit:'btn-maintenance-exit',retry:'btn-model-retry',sync:'btn-sync',restart:'btn-restart',shutdown:'btn-shutdown',import:'btn-import',recover:'btn-recover',clear:'btn-clear',migrate:'btn-migrate',exportFull:'btn-export-full',exportNamespace:'btn-export-ns'};
@@ -107,12 +108,16 @@ function updateNamespaces() {
   }
   $('migrate-target-suggestions').replaceChildren(...names.map(name=>new Option(name,name)));applyControls();
 }
-export async function loadOpsPage() {
+export async function loadOpsPage(_topic, {focusProxy=false}={}) {
+  const request=++pageRequest;
+  if(focusProxy)selectTab('settings');
   await refreshMaintenance();await config.load();updateNamespaces();
+  if(focusProxy && request===pageRequest && $('page-ops').classList.contains('active') && !$('ops-settings').hidden)focusProxyControl();
   if(!status.modelPending&&!status.hasError&&status.kind!=='unavailable'&&!power)emitStatsChanged();
   await fetchStoragePaths();
 }
 export function hide() {
+  pageRequest++;
   if(busy||job||power)return;
   for(const id of ['import-result','export-result','migrate-result','recover-result','clear-result','sync-result','maintenance-result','model-retry-result'])message(id,'');
 }
@@ -122,6 +127,11 @@ function selectTab(name,focus=false) {
     $('ops-tab-'+tab).setAttribute('aria-selected',String(tab===name));$('ops-tab-'+tab).tabIndex=tab===name?0:-1;
   }
   if(focus)$('ops-tab-'+name).focus();
+}
+function focusProxyControl() {
+  selectTab('settings');
+  $('model-proxy-enabled').scrollIntoView({block:'center'});
+  $('model-proxy-enabled').focus({preventScroll:true});
 }
 async function run(kind,result,operation,confirmation) {
   if(locked()||!allowed(kind)||formError(kind))return;
@@ -272,11 +282,7 @@ export function mount() {
   for(const name of ['settings','maintenance'])$('ops-tab-'+name).onclick=()=>selectTab(name);
   $('ops-tabs').onkeydown=e=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){e.preventDefault();selectTab(e.key==='Home'?'settings':e.key==='End'?'maintenance':$('ops-settings').hidden?'settings':'maintenance',true);}};
   $('config-open-maintenance').onclick=()=>selectTab('maintenance',true);
-  $('model-configure-proxy').onclick=()=>{
-    selectTab('settings');
-    $('model-proxy-enabled').scrollIntoView({block:'center'});
-    $('model-proxy-enabled').focus({preventScroll:true});
-  };
+  $('model-configure-proxy').onclick=focusProxyControl;
   const actions={enter:()=>maintenance(true),exit:()=>maintenance(false),retry:retryModel,sync,restart:()=>controlServer(true),shutdown:()=>controlServer(false),import:importMemories,recover,clear:clearMemories,migrate,exportFull:()=>exportMemories(true),exportNamespace:()=>exportMemories(false)};
   for(const [kind,id] of Object.entries(controls))$(id).onclick=actions[kind];
   $('ops-maintenance').addEventListener('input',applyControls);$('ops-maintenance').addEventListener('change',applyControls);

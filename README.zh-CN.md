@@ -142,7 +142,38 @@ bash bin/start.sh --port 8080 --data-dir /path/to/remember-me-data
 
 **资源提示：** 请为模型和 Python 依赖预留足够的磁盘空间与内存；最低硬件要求仍待验证。
 
-Web UI 的代理设置用于模型下载。通过 pip 安装 Python 依赖时，需要单独配置相应的网络或代理。自动下载模型由 `auto_download_model` 控制；关闭时可在配置页显式发起重试。
+Web UI 的代理设置供版本检查和 SOURCE 模型下载共用。通过 pip 安装 Python 依赖时，需要单独配置相应的网络或代理。自动下载模型由 `auto_download_model` 控制；关闭时可在配置页显式发起重试。
+
+<a id="source-updates"></a>
+## SOURCE 手动更新
+
+先停止服务并确认进程退出，备份**完整数据目录**（包含配置、数据库及日志等），
+保留旧版本和匹配备份；阅读所有相关版本的 Upgrade Notes / Breaking Changes。
+在原源码目录中确认工作区修改已妥善处理、当前分支有上游且可快进后，由你手动执行：
+
+```bash
+git pull --ff-only
+bash bin/install.sh
+bash bin/start.sh
+```
+
+`git pull --ff-only` 跟随当前分支，可能取得尚未正式发布的代码；显示版本只来自
+本地 `release.jsonc`。遇到 Dirty、Detached HEAD、分支分歧或无上游时，停止并人工处理，
+不要强制覆盖本地修改。应用不探测 Git 状态，不执行这些命令。
+重新启动时保留原数据目录、配置、环境与启动参数；验证健康和旧记忆检索。
+
+## 版本检查与网络
+
+HTTP/Web 启动后异步检查一次，之后默认每 24 小时检查；Sidebar 底部版本窗口可
+手动刷新。stdio 和离线 CLI 不执行检查。`Unknown` 表示本地版本未知，不妨碍远程检查；
+`No Release` 表示尚无正式发行，并非网络故障。应用只提示与复制，不会自动升级或备份。
+
+`Unavailable` 时点击版本窗口的“配置代理”，进入现有 Settings；保存后返回窗口刷新，
+下次检查即使用新配置，无需重启。后端访问 `api.github.com` 和 `raw.githubusercontent.com`，
+关闭代理时直连；检查服务主机/容器的 DNS、连接、证书与代理可达性，限流时等待冷却，
+不要关闭 TLS 校验。容器中的 `localhost` 指向容器自身；此代理不使 Docker 内置模型联网。
+Docker Engine / Docker Desktop 拉取 GHCR 镜像的代理、Git 和 pip 的网络需分别配置，
+应用 Settings 不会配置它们。完整操作见 Web UI 的 Help → 配置 → 更新与网络。
 
 ## Docker（Linux AMD64）
 
@@ -231,7 +262,7 @@ docker compose -f compose.yaml up -d --wait --wait-timeout 300
 | 移除已停止容器 | `docker rm remember-me` | `docker compose -f compose.yaml down` |
 
 健康检查只观察模型就绪，不触发下载。启动失败请检查日志、空间和目录权限。
-语言与 Debug 仍可在配置页修改；Docker 管理模型设置，Retry 只在本地重载内置模型。
+语言、Debug 与版本检查代理仍可在配置页修改；Docker 管理模型设置，Retry 只在本地重载内置模型。
 根文件系统和模型只读；单个 `/data` Bind Mount 保留配置、SQLite 及其 sidecar、Dual JSONL、
 日志和缓存。删除或重建容器不会删除宿主机目录；不要删除该目录或覆盖镜像模型路径。
 
@@ -269,6 +300,7 @@ export REMEMBER_ME_DATA_DIR="$PWD/restored-data"
 Compose 方式运行 `docker compose -f compose.yaml up -d --wait --wait-timeout 300`。
 检查健康、配置、记忆明细和语义检索，再决定是否停用原副本。不要同时运行两个实例写入同一目录。
 
+<a id="docker-updates"></a>
 ### 手动升级和回滚
 
 阅读目标版本兼容性说明，停机做完整备份，保留旧镜像/版本和备份。
@@ -278,9 +310,20 @@ Compose 方式运行 `docker compose -f compose.yaml up -d --wait --wait-timeout
 docker pull --platform linux/amd64 "$REMEMBER_ME_IMAGE"
 ```
 
-`docker run`：停止并移除容器，使用**相同数据目录和端口**重新执行初始化与启动命令。
-Compose：停止后执行 `docker compose -f compose.yaml up -d --wait --wait-timeout 300`，
-镜像设置变化会重建服务。检查健康并检索一条旧记忆。本阶段没有自动更新、版本通知或新迁移机制。
+`docker run`：拉取镜像本身不会升级运行中的容器。完成停服备份后移除旧容器，
+按原部署记录重新执行上文初始化与启动步骤，仅更换目标镜像引用；保留实际使用的数据挂载、
+端口、环境变量、UID/GID、只读文件系统和安全选项，不要照搬与现有实例不同的参数。
+
+Compose：在原实例目录保留现有 `compose.yaml`、数据目录、端口与配置。将
+`REMEMBER_ME_IMAGE` 设置并导出为已确认的目标完整版本，**同步 `.env` 中保存的值**；
+当前 shell 导出值优先于 `.env`。停服备份后执行：
+
+```bash
+docker compose -f compose.yaml up -d --pull always --wait --wait-timeout 300
+```
+
+镜像设置变化会重建服务。检查健康并检索一条旧记忆。先阅读所有相关版本的
+Upgrade Notes / Breaking Changes；版本提示不证明数据兼容，也不会自动更新或迁移。
 
 回滚时按相同步骤选择旧版本/digest。只有数据库 Schema 和 Embedding Profile 兼容时
 才可直接复用当前数据；否则把对应完整备份恢复到新目录，并使用与备份匹配的镜像，备份后的
