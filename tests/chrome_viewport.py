@@ -7,7 +7,7 @@ import subprocess
 import time
 
 
-def run_viewport(url, profile, width, height, screenshot, verify_search_keyboard=False, verify_stats_keyboard=False, verify_retrieval_keyboard=False, verify_help_keyboard=False, capture_help_document=False, verify_theme_keyboard=False, scenario_script=None, verify_version_keyboard=False, browser_zoom=1, reduced_motion=False):
+def run_viewport(url, profile, width, height, screenshot, verify_search_keyboard=False, verify_stats_keyboard=False, verify_retrieval_keyboard=False, verify_help_keyboard=False, capture_help_document=False, verify_theme_keyboard=False, scenario_script=None, verify_version_keyboard=False, browser_zoom=1, reduced_motion=False, result_timeout=40):
     incoming, writer = os.pipe()
     reader, outgoing = os.pipe()
 
@@ -63,7 +63,7 @@ def run_viewport(url, profile, width, height, screenshot, verify_search_keyboard
             call('Page.enable', {}, session)
             call('Page.addScriptToEvaluateOnNewDocument', {'source': scenario_script}, session)
         call('Page.navigate', {'url': url}, session)
-        deadline = time.monotonic() + 40
+        deadline = time.monotonic() + result_timeout
         expression = "({text:document.getElementById('smoke-result')?.textContent || '',width:innerWidth,height:innerHeight,dpr:devicePixelRatio})"
         while time.monotonic() < deadline:
             result = call('Runtime.evaluate', {'expression': expression, 'returnByValue': True}, session)['result'].get('value', {})

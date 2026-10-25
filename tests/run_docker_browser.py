@@ -18,9 +18,11 @@ addEventListener('DOMContentLoaded', async () => {
   try {
     assert(document.documentElement.dataset.deploymentMode==='docker','Docker marker');
     await wait(()=>$('btn-model-save')?.onclick,'application mounted');
+    await wait(()=>$('memories-list').getAttribute('aria-busy')==='false'&&document.querySelector('.nav [aria-current=page]'),'navigation bootstrap');
     $('nav-ops').click();await wait(()=>!$('ops-config-fields').disabled,'config loaded');
-    for(const id of ['config-port','config-local-only','model-auto-download','model-proxy-enabled'])
+    for(const id of ['config-port','config-local-only','model-auto-download'])
       assert($(id).getClientRects().length===0,'internal config visible: '+id);
+    assert($('model-proxy-enabled').getClientRects().length>0,'shared proxy control is visible');
     const before=await (await fetch('/api/config')).json();
     const language=before.language==='en'?'zh-CN':'en',debug=!before.debug;
     $('config-language').value=language;$('config-debug').checked=debug;

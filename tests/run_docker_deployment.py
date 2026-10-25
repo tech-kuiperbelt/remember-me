@@ -154,7 +154,7 @@ print(json.dumps({'vectors':[(m,p,hashlib.sha256(b).hexdigest()) for m,p,b in ro
         compose('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '240')
         ready()
         assert snapshot() == original
-        passed('compatible phase2.2 → phase2.1 → phase2.2 reuse, vector bytes unchanged')
+        passed(f'compatible {args.image} → {args.old_image} → {args.image} reuse, vector bytes unchanged')
 
         compose('stop')
         command(['docker', 'run', '--rm', '--network', 'none', '--user', '0:0', '--entrypoint', 'tar',
@@ -175,6 +175,7 @@ print(json.dumps({'vectors':[(m,p,hashlib.sha256(b).hexdigest()) for m,p,b in ro
         assert request('/api/config') == persisted
         passed('stopped full-directory backup and restore into a new directory')
         evidence['image'] = json.loads(command(['docker', 'image', 'inspect', args.image]).stdout)[0]['Id']
+        evidence['old_image'] = json.loads(command(['docker', 'image', 'inspect', args.old_image]).stdout)[0]['Id']
         evidence['backup_sha256'] = hashlib.sha256((work / 'instance.tar').read_bytes()).hexdigest()
         evidence['status'] = 'passed'
         (work / 'results.json').write_text(json.dumps(evidence, indent=2))
