@@ -1,12 +1,20 @@
 {
-  // Development placeholder: the first formal release version is not approved yet.
-  // null intentionally fails the formal X.Y.Z validator and reports Unknown.
-  // Before release, replace it with the approved version (without a v prefix)
-  // and maintain the five content arrays. This is not a published release.
-  "version": null,
-  "new": [],
+  // First public release candidate. Publishing requires explicit user approval.
+  // This file is the single source for version checks, the Git tag, the image tag and release notes.
+  "version": "1.0.0",
+  "new": [
+    "Local-first persistent memory for MCP-compatible AI agents, with tools to add, search, update, and delete memories.",
+    "Semantic, lexical, and anchor retrieval, with namespaces for memory scope and keywords, categories, and anchors for organization.",
+    "Web UI for browsing, searching, editing, memory and retrieval statistics, and configuration.",
+    "SOURCE installation for Python 3.10+ and a Linux AMD64 Docker image.",
+    "Default local CPU embedding with BGE-M3; the Docker image includes the complete model and requires no separate embedding service.",
+    "Version checks with update guidance for SOURCE and Docker installations; upgrades remain manual."
+  ],
   "improvements": [],
   "fixes": [],
-  "upgrade": [],
+  "upgrade": [
+    "Back up the entire data directory before upgrading. SOURCE installations should follow the SOURCE installation and upgrade guide under docs/installation, linked from this release's README.",
+    "Back up the entire data directory and record the current image version or digest before upgrading. Docker installations should follow the Docker installation and upgrade guide under docs/installation, linked from this release's README."
+  ],
   "breaking": []
 }

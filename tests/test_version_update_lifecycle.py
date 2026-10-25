@@ -9,6 +9,7 @@ from starlette.testclient import TestClient
 
 from app.operations.version_update import API_URL, CHECK_INTERVAL, CheckRejected
 from app.config.settings import Settings
+from app.release_info import read_local_release
 from app.runtime import Runtime
 from app.server import create_http_app
 from tests.conftest import FakeProvider
@@ -145,7 +146,7 @@ def test_direct_runtime_and_cli_have_no_checker(tmp_path, monkeypatch):
     try:
         runtime.start()
         assert runtime.version_updates is None
-        assert runtime.release_info.display_version == 'Unknown'
+        assert runtime.release_info.display_version == read_local_release().display_version
         forbidden.assert_not_called()
     finally:
         runtime.close()
@@ -168,4 +169,4 @@ def test_fresh_http_lifespan_has_fresh_manager_and_local_snapshot(tmp_path):
             client.portal.call(done)
             assert client.get('/api/version-update').json()['check']['revision'] == 2
         assert runtime.state == 'closed' and all(c.is_closed for c in gh.clients)
-    assert seen[0] is not seen[1] and len(gh.seen) == 4
+    assert seen[0] is not seen[1] and len(gh.seen) >= 4

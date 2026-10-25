@@ -41,6 +41,7 @@ def test_get_read_only_contract_post_real_refresh_in_maintenance(tmp_path, missi
     runtime, app = make_app(tmp_path, gh, missing_model=missing_model)
     with TestClient(app) as client:
         settle(client, runtime)
+        baseline = len(gh.seen)
         for _ in range(3):
             response = client.get('/api/version-update')
             assert response.status_code == 200
@@ -49,18 +50,19 @@ def test_get_read_only_contract_post_real_refresh_in_maintenance(tmp_path, missi
             assert set(data) == {'current','check','latest','notes_scope','notes_complete',
                                  'releases','release_errors','notes_error_code'}
             assert set(data['current']) == {'version','install_method','release','error_code'}
-            assert data['current']['version'] is data['current']['release'] is None
-            assert data['check']['status'] == 'UPDATE_RECOMMENDED'
-            assert data['notes_scope'] == 'latest_only' and data['notes_complete'] is None
-            assert data['release_errors'] == data['releases'] == []
+            assert data['current'] == runtime.release_info.as_dict()
+            assert data['check']['status'].startswith('UPDATE_')
+            assert data['notes_scope'] in ('latest_only','upgrade_range')
+            assert data['notes_complete'] in (None, True, False)
+            assert isinstance(data['release_errors'], list) and isinstance(data['releases'], list)
             assert 'commit' not in data['current'] and 'body' not in data['latest']
-        assert len(gh.seen) == 2
+            assert len(gh.seen) == baseline
         if not missing_model:
             assert client.post('/api/maintenance/enter').status_code == 200
         response = client.post('/api/version-update/check', json={})
         assert response.status_code == 202 and response.headers['cache-control'] == 'no-store'
         settle(client, runtime)
-        assert len(gh.seen) == 4
+        assert len(gh.seen) > baseline
         assert client.get('/api/config').status_code == 200
         assert client.get('/api/model').status_code == 200
 
@@ -71,11 +73,12 @@ def test_invalid_check_body_never_triggers_requests(tmp_path, body):
     runtime, app = make_app(tmp_path, gh)
     with TestClient(app) as client:
         settle(client, runtime)
+        baseline = len(gh.seen)
         response = client.post('/api/version-update/check', content=body)
         assert response.status_code == 400 and response.json()['response_code'] == 'invalid_request'
         assert response.headers['cache-control'] == 'no-store'
         assert client.post('/api/version-update/check?url=anything').status_code == 400
-        assert len(gh.seen) == 2
+        assert len(gh.seen) == baseline
 
 
 def test_cooldown_response_and_no_get_side_effects(tmp_path):

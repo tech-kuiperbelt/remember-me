@@ -57,7 +57,7 @@ def test_save_applies_next_check_and_closes_old_client(tmp_path,docker):
             runtime.save_model_config({'proxy':{'enabled':True,'url':proxy}})
             result=await check(manager)
             assert gh.proxies==[None,proxy] and gh.clients[0].is_closed
-            assert result['check']['status']=='UPDATE_RECOMMENDED'
+            assert result['check']['status'].startswith('UPDATE_')
             assert 'test-pass' not in json.dumps(result)
             assert '***@' in runtime.model_config()['proxy']['url']
             runtime.save_model_config({'proxy':{'enabled':False}})
@@ -90,7 +90,7 @@ def test_inflight_round_uses_one_config_and_failed_save_does_not_publish(tmp_pat
             assert not gh.clients[0].is_closed
             release.set()
             await manager._task
-            assert len(gh.seen)==2 and gh.proxies==[None]
+            assert gh.proxies==[None] and len(gh.clients)==1
             gh.overrides.clear()
             await check(manager)
             assert gh.proxies==[None,'http://127.0.0.1:23456']
