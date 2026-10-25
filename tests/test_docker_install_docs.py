@@ -1,4 +1,4 @@
-"""README installation commands and Compose must describe one deployment policy."""
+"""Installation guides and Compose must describe one deployment policy."""
 from pathlib import Path
 import re
 import shlex
@@ -11,15 +11,18 @@ from tests.run_docker_installation import installation_blocks
 
 ROOT = Path(__file__).resolve().parents[1]
 READMES = ('README.md', 'README.zh-CN.md')
+DOCKER_GUIDES = ('docs/installation/docker.md', 'docs/installation/docker.zh-CN.md')
+SOURCE_GUIDES = ('docs/installation/source.md', 'docs/installation/source.zh-CN.md')
+ALL_DOCS = READMES + DOCKER_GUIDES + SOURCE_GUIDES
 IMAGE = 'ghcr.io/tech-kuiperbelt/remember-me:1.0.0'
 
 
 def test_bilingual_installation_commands_match():
-    assert installation_blocks(ROOT / READMES[0]) == installation_blocks(ROOT / READMES[1])
+    assert installation_blocks(ROOT / DOCKER_GUIDES[0]) == installation_blocks(ROOT / DOCKER_GUIDES[1])
 
 
-@pytest.mark.parametrize('filename', READMES)
-def test_readme_shell_blocks_are_valid_bash(filename):
+@pytest.mark.parametrize('filename', ALL_DOCS)
+def test_document_shell_blocks_are_valid_bash(filename):
     blocks = re.findall(r'```bash\n(.*?)\n```', (ROOT / filename).read_text(), flags=re.S)
     assert blocks
     for block in blocks:
@@ -27,8 +30,8 @@ def test_readme_shell_blocks_are_valid_bash(filename):
         assert result.returncode == 0, (filename, block, result.stderr)
 
 
-@pytest.mark.parametrize('filename', READMES)
-def test_readme_release_image_and_compose_source_match(filename):
+@pytest.mark.parametrize('filename', DOCKER_GUIDES)
+def test_guide_release_image_and_compose_source_match(filename):
     text = (ROOT / filename).read_text()
     assert 'export REMEMBER_ME_IMAGE=' + IMAGE in text
     assert 'https://raw.githubusercontent.com/tech-kuiperbelt/remember-me/v1.0.0/compose.yaml' in text
@@ -43,7 +46,7 @@ def test_readme_release_image_and_compose_source_match(filename):
 def test_compose_and_run_security_and_persistence_match():
     doc = yaml.safe_load((ROOT / 'compose.yaml').read_text())
     app, init = (doc['services'][name] for name in ('remember-me', 'data-init'))
-    run = shlex.split(installation_blocks(ROOT / 'README.md')['run'].replace('\\\n', ''))
+    run = shlex.split(installation_blocks(ROOT / DOCKER_GUIDES[0])['run'].replace('\\\n', ''))
     assert app['image'] == init['image'] == '${REMEMBER_ME_IMAGE:-' + IMAGE + '}'
     assert app['platform'] == init['platform'] == run[run.index('--platform') + 1] == 'linux/amd64'
     assert app['read_only'] and init['read_only'] and '--read-only' in run
@@ -65,7 +68,7 @@ def test_compose_and_run_security_and_persistence_match():
 
 def test_run_initializer_reuses_compose_helper_and_capabilities():
     doc = yaml.safe_load((ROOT / 'compose.yaml').read_text())['services']['data-init']
-    run = shlex.split(installation_blocks(ROOT / 'README.md')['initialize'].replace('\\\n', ''))
+    run = shlex.split(installation_blocks(ROOT / DOCKER_GUIDES[0])['initialize'].replace('\\\n', ''))
     assert run[run.index('--entrypoint') + 1] == doc['entrypoint'][0] == 'python'
     assert run[-1] == doc['entrypoint'][1] == '/opt/remember-me/docker/init_data.py'
     assert run[run.index('--user') + 1] == doc['user'] == '0:0'
@@ -76,16 +79,16 @@ def test_run_initializer_reuses_compose_helper_and_capabilities():
     assert '--privileged' not in run
 
 
-@pytest.mark.parametrize('filename', READMES)
-def test_public_readme_links_exist_and_exclude_internal_operations(filename):
+@pytest.mark.parametrize('filename', ALL_DOCS)
+def test_public_links_exist_and_exclude_internal_operations(filename):
     for target in re.findall(r'\]\(([^\s)]+)\)', (ROOT / filename).read_text()):
         if '://' in target or target.startswith('#'):
             continue
         assert not target.startswith(('docs/operations/', 'docs/project-management/')), target
-        assert (ROOT / target.split('#')[0]).exists(), target
+        assert (ROOT / filename).parent.joinpath(target.split('#')[0]).resolve().exists(), target
 
 
-@pytest.mark.parametrize('filename', READMES)
+@pytest.mark.parametrize('filename', DOCKER_GUIDES)
 def test_backup_restore_and_update_commands_are_present(filename):
     text = (ROOT / filename).read_text()
     assert 'sudo tar --numeric-owner -C "$REMEMBER_ME_DATA_DIR"' in text
@@ -96,10 +99,11 @@ def test_backup_restore_and_update_commands_are_present(filename):
     assert '/mcp' in text and '/sse' in text
 
 
-@pytest.mark.parametrize('filename', READMES)
+@pytest.mark.parametrize('filename', SOURCE_GUIDES)
 def test_source_update_uses_safe_current_branch_commands(filename):
-    text = (ROOT / filename).read_text().split('<a id="source-updates"></a>')[1].split('<a id="docker-updates"></a>')[0]
-    command = re.findall(r'```bash\n(.*?)\n```', text, flags=re.S)[0]
+    text = (ROOT / filename).read_text()
+    commands = re.findall(r'```bash\n(.*?)\n```', text, flags=re.S)
+    command = next(block for block in commands if 'git pull --ff-only' in block)
     assert command.splitlines() == ['git pull --ff-only', 'bash bin/install.sh', 'bash bin/start.sh']
     assert 'release.jsonc' in text and ('detached' in text.lower() or 'Detached HEAD' in text)
     for line in command.splitlines():
@@ -107,9 +111,9 @@ def test_source_update_uses_safe_current_branch_commands(filename):
         assert not set(tokens) & {'reset', 'clean', 'stash', '--force', '--hard', 'checkout'}
 
 
-@pytest.mark.parametrize('filename', READMES)
+@pytest.mark.parametrize('filename', DOCKER_GUIDES)
 def test_compose_upgrade_preserves_instance_file_and_forces_target_pull(filename):
-    text = (ROOT / filename).read_text().split('<a id="docker-updates"></a>')[1]
+    text = (ROOT / filename).read_text().split('<a id="upgrade-and-rollback"></a>')[1]
     commands = re.findall(r'```bash\n(.*?)\n```', text, flags=re.S)
     compose = next(shlex.split(block) for block in commands if 'docker compose' in block)
     assert compose[:6] == ['docker', 'compose', '-f', 'compose.yaml', 'up', '-d']
@@ -120,6 +124,46 @@ def test_compose_upgrade_preserves_instance_file_and_forces_target_pull(filename
     assert not any(option in compose for option in ('--volumes', '-v', '--renew-anon-volumes'))
 
 
+@pytest.mark.parametrize('readme,source,docker', [
+    ('README.md', 'docs/installation/source.md', 'docs/installation/docker.md'),
+    ('README.zh-CN.md', 'docs/installation/source.zh-CN.md', 'docs/installation/docker.zh-CN.md'),
+])
+def test_readme_navigation_links_to_guides_and_omits_install_commands(readme, source, docker):
+    text = (ROOT / readme).read_text()
+    assert f']({source})' in text and f']({docker})' in text
+    assert 'BGE-M3' in text
+    for command in ('git clone https://github.com/tech-kuiperbelt/remember-me.git',
+                    'bash bin/install.sh', 'docker run -d --name remember-me',
+                    'docker compose -f compose.yaml up -d',
+                    'sudo tar --numeric-owner'):
+        assert command not in text
+
+
+@pytest.mark.parametrize('filename,headings', [
+    ('docs/installation/source.md', ('## Install', '## Start', '## Stop', '## Data directory',
+                                     '## Backup and restore', '## Upgrade and rollback')),
+    ('docs/installation/source.zh-CN.md', ('## 安装', '## 启动', '## 停止', '## 数据目录',
+                                           '## 备份与恢复', '## 升级与回滚')),
+    ('docs/installation/docker.md', ('## Prepare one instance', '## Option 1: docker run',
+                                     '## Option 2: Docker Compose', '## Connect, inspect and stop',
+                                     '## Permissions, backups and restore', '## Manual upgrades and rollback')),
+    ('docs/installation/docker.zh-CN.md', ('## 准备一个实例', '## 方式一：docker run',
+                                           '## 方式二：Docker Compose', '## 连接、检查和停止',
+                                           '## 权限、备份和恢复', '## 手动升级和回滚')),
+])
+def test_installation_guides_cover_full_lifecycle(filename, headings):
+    text = (ROOT / filename).read_text()
+    for heading in headings:
+        assert heading in text, (filename, heading)
+
+
+def test_installation_guides_link_to_shared_mcp_configuration():
+    assert '../../README.md#connect--enable-agent-memory' in (ROOT / 'docs/installation/source.md').read_text()
+    assert '../../README.md#connect--enable-agent-memory' in (ROOT / 'docs/installation/docker.md').read_text()
+    assert '../../README.zh-CN.md#连接并启用-agent-记忆' in (ROOT / 'docs/installation/source.zh-CN.md').read_text()
+    assert '../../README.zh-CN.md#连接并启用-agent-记忆' in (ROOT / 'docs/installation/docker.zh-CN.md').read_text()
+
+
 def test_help_uses_canonical_bilingual_readme_sections():
     html = (ROOT / 'web/index.html').read_text()
     assert 'id="help-updates"' in html
@@ -127,3 +171,42 @@ def test_help_uses_canonical_bilingual_readme_sections():
         assert f'data-update-readme="{anchor}"' in html
         for filename in READMES:
             assert f'<a id="{anchor}"></a>' in (ROOT / filename).read_text()
+
+
+def _anchors(path):
+    text = path.read_text()
+    found = set(re.findall(r'<a id="([^"]+)"', text))
+    body = re.sub(r'```.*?```', '', text, flags=re.S)
+    for line in body.splitlines():
+        heading = re.match(r'#{1,6}\s+(.*)', line)
+        if heading:
+            slug = re.sub(r'<[^>]+>', '', heading.group(1)).strip().lower()
+            slug = re.sub(r'[^\w\s-]', '', slug, flags=re.UNICODE)
+            found.add(slug.replace(' ', '-'))
+    return found
+
+
+@pytest.mark.parametrize('filename', ALL_DOCS)
+def test_cross_document_links_and_anchors_resolve(filename):
+    path = ROOT / filename
+    for target in re.findall(r'\]\(([^)\s]+)\)', path.read_text()):
+        if '://' in target:
+            continue
+        relative, _, fragment = target.partition('#')
+        resolved = (path.parent / relative).resolve() if relative else path.resolve()
+        assert resolved.exists(), (filename, target)
+        if fragment:
+            assert fragment in _anchors(resolved), (filename, target, sorted(_anchors(resolved)))
+
+
+def test_bilingual_source_canonical_commands_match():
+    def blocks(path):
+        return re.findall(r'```bash\n(.*?)\n```', (ROOT / path).read_text(), flags=re.S)
+    english, chinese = blocks(SOURCE_GUIDES[0]), blocks(SOURCE_GUIDES[1])
+    for marker in ('git clone https://github.com/tech-kuiperbelt/remember-me.git',
+                   'bash bin/start.sh', 'git pull --ff-only',
+                   'remember-me-source-backup.tar',
+                   'restored-data'):
+        en = next(block for block in english if marker in block)
+        zh = next(block for block in chinese if marker in block)
+        assert en == zh, marker

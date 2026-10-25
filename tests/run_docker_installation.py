@@ -1,4 +1,4 @@
-"""Opt-in Phase 3.3 acceptance of the README commands against a LOCAL image.
+"""Opt-in Phase 3.3 acceptance of the installation-guide commands against a LOCAL image.
 
 Never pulls/pushes images or touches production data. Uses fresh /tmp directories
 and alternate loopback ports. Keeps evidence and stops/removes its own containers.
@@ -36,8 +36,9 @@ def main():
     args = parser.parse_args()
     assert 1024 <= args.port <= 65534 and 1314 not in (args.port, args.port + 1)
     work = Path(tempfile.mkdtemp(prefix='rm-phase33-'))
-    commands = installation_blocks(ROOT / 'README.md')
-    assert commands == installation_blocks(ROOT / 'README.zh-CN.md')
+    guide = ROOT / 'docs/installation/docker.md'
+    commands = installation_blocks(guide)
+    assert commands == installation_blocks(ROOT / 'docs/installation/docker.zh-CN.md')
     evidence = {'status': 'running', 'work': str(work), 'image': args.image, 'paths': {},
                 'formal_registry_actions': False, 'public_download_verified': False}
     print('Evidence:', work, flush=True)
@@ -225,7 +226,7 @@ with closing(sqlite3.connect('file:/data/memories.db?mode=ro',uri=True)) as c:
             passed('graceful stop and container recreation retain memory, vector bytes, Profile and configuration', {'stop_seconds': seconds})
             stop()
 
-            # Same stopped full-directory archive as README sudo tar, using the
+            # Same stopped full-directory archive as the installation guide, using the
             # already installed image's root helper instead of host sudo.
             backup = directory / 'instance.tar'
             docker('run', '--rm', '--network', 'none', '--read-only', '--user', '0:0', '--entrypoint', 'tar',
@@ -264,7 +265,7 @@ with closing(sqlite3.connect('file:/data/memories.db?mode=ro',uri=True)) as c:
             save()
     evidence['status'] = 'passed'
     save()
-    print('PASS: both README installation paths; no registry writes or production data access.', flush=True)
+    print('PASS: both Docker installation paths; no registry writes or production data access.', flush=True)
 
 
 if __name__ == '__main__':

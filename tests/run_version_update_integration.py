@@ -112,7 +112,7 @@ def docker_runtime(image, work, local_file, bundle, proxy):
     from tests.run_docker_installation import installation_blocks
     data=work/'data';data.mkdir();name='rm-version-e-'+work.name;listen_port=port()
     env=dict(os.environ,REMEMBER_ME_IMAGE=image,REMEMBER_ME_DATA_DIR=str(data),REMEMBER_ME_PORT=str(listen_port))
-    blocks=installation_blocks(ROOT/'README.md')
+    blocks=installation_blocks(ROOT/'docs/installation/docker.md')
     command(['bash','-euo','pipefail','-c',blocks['initialize']],env=env)
     fixture_config=work/'config.jsonc';fixture_config.write_text(json.dumps({
         'proxy':{'enabled':True,'url':proxy},'auto_download_model':False,'local_only':True}))

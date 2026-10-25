@@ -71,103 +71,31 @@ Inspect the content of individual memories, make corrections when needed, and re
 
 ## Quick Start
 
-The recommended setup is **Python + Sentence Transformers + BAAI/bge-m3**. You do not need Ollama, Docker, or a separate embedding server.
+Remember Me runs locally. Choose one installation path; both keep configuration,
+memories, logs and caches in a data directory you control.
 
-### 1. Install
+- **SOURCE — Git + Python 3.10+:** [Source installation and upgrade](docs/installation/source.md).
+  Uses Sentence Transformers with BAAI/bge-m3 on CPU; model weights are downloaded
+  on first use.
+- **Docker — Linux AMD64:** [Docker installation and upgrade](docs/installation/docker.md).
+  The image includes BGE-M3 and runs it on CPU, so no Python or separate embedding
+  service is required.
 
-You will need Git, Python 3.10 or newer with `venv` support, and sufficient disk space and memory for BGE-M3. The commands below use a Linux/macOS-style shell.
+The guides cover install and start, stop, the data directory, backup and restore,
+upgrade and rollback. Once the service is running, open
+<http://127.0.0.1:1314/admin/console> (Web UI) or `/read-me` for agent setup, then
+continue with [Connect & Enable Agent Memory](#connect--enable-agent-memory).
 
-```bash
-git clone https://github.com/tech-kuiperbelt/remember-me.git
-cd remember-me
-bash bin/install.sh
-```
-
-The installer creates `.venv`, installs CPU-only PyTorch, then installs the remaining dependencies while keeping that Torch version fixed. On Linux it uses the official PyTorch CPU wheel index; macOS uses its non-CUDA distribution from PyPI. Validated on Linux x86_64 with Python 3.12; macOS still needs on-device validation, and native Windows is not supported by this Bash installer.
-
-Use the installer for CPU setup: running `pip install -r requirements.txt` alone does not select a CPU wheel. An existing GPU or broken environment causes the installer to stop; preserve or rename it and rerun to create a clean `.venv`. Compatible CPU environments can be reused. The installation includes the Sentence Transformers runtime. Model weights are **not** bundled in the GitHub repository.
-
-### 2. Start the service
-
-**Default startup**
-
-```bash
-bash bin/start.sh
-```
-
-For a new installation, the default is **Sentence Transformers + BAAI/bge-m3 on CPU**. The service uses the local model cache when available. When model files are missing, the HTTP interface can start in a *model not ready* state while the model is prepared. After preparation succeeds, manually exit maintenance mode in the Web UI to enable memory writes.
-
-Existing installations retain their active database embedding profile when no Provider is explicitly configured, including historical Ollama profiles. `bin/start.sh` loads a local `.env` if present. Changing Provider or model requires an explicit target and offline reindexing.
-
-With the default local address and port:
-
-| Purpose | URL |
-| --- | --- |
-| Web UI | `http://127.0.0.1:1314/admin/console` |
-| Instructions for agents | `http://127.0.0.1:1314/read-me` |
-| MCP — Streamable HTTP | `http://127.0.0.1:1314/mcp` |
-| MCP — SSE | `http://127.0.0.1:1314/sse` |
-
-**Custom port and data directory**
-
-You can pass startup options directly to `bin/start.sh`:
-
-```bash
-# Use a different HTTP port
-bash bin/start.sh --port 8080
-
-# Bind all interfaces for this launch (for example inside a Docker bridge
-# container; MCP Host/Origin protection stays enabled)
-bash bin/start.sh --host 0.0.0.0
-
-# Choose where configuration, the database, and model caches are stored
-bash bin/start.sh --data-dir /path/to/remember-me-data
-
-# Combine both options
-bash bin/start.sh --port 8080 --data-dir /path/to/remember-me-data
-```
-
-`--port` overrides the saved port for this launch without changing the configuration file. With `--port 8080`, open `http://127.0.0.1:8080/admin/console` and use port `8080` in your MCP client URL as well.
-
-`--host` overrides the bind address for this launch only. It accepts `127.0.0.1` or `0.0.0.0`, is not written to the configuration file, and does not change the MCP Host/Origin protection, which remains controlled by `local_only`. A Docker container can therefore listen on `0.0.0.0` while the host publishes only `127.0.0.1:1314:1314`; clients still use `http://127.0.0.1:1314/...`. The publish mapping limits host-side exposure only: other containers on the same Docker network can still reach the container port directly. This option cannot be combined with `--stdio`.
-
-`--data-dir` selects the data directory, including its `config.jsonc`, and takes precedence over `MEMORY_DATA_DIR`. Relative paths are resolved from the project root. Selecting a new directory starts with separate data; it does not move an existing database or model cache.
-
-`--model-dir` (or `MEMORY_MODEL_DIR`) selects the model root, defaulting to `<data-dir>/models`. An explicit root may live outside the data directory, for example a read-only model image. Provider caches and Hugging Face hub resources then resolve inside that root, while writable metadata caches stay under `<data-dir>/cache`.
-
-### 3. First model download and proxy setup
-
-The first use may require downloading **BAAI/bge-m3** from its upstream source. The model is cached locally; after it has been downloaded, embedding inference runs on your machine without a continuously connected model service.
-
-If the download source is unreachable from your network, open the Web UI's **configuration page**, set an HTTP/HTTPS proxy for model downloads, save the settings, and choose **Retry**. A failed *background model download* does not require restarting the service just to retry after changing the proxy.
-
-**Important:** The Web UI remains available in maintenance mode for model-preparation problems: a missing model, a failed background download, and also an incomplete/corrupt cache or a load/warmup failure — these no longer stop the HTTP server. Retry re-loads the model and re-downloads an incomplete cache. Missing Python dependencies report a reinstall message; invalid provider settings and other configuration errors can still prevent the server from starting. stdio mode and model-using CLI commands fail fast instead of opening a UI.
-
-**Resource note:** Allow sufficient disk space and memory for the model and its Python dependencies. Minimum hardware requirements remain to be validated.
-
-The Web UI proxy settings are shared by version checks and SOURCE model downloads. Installing Python dependencies with pip requires its own network or proxy configuration. Automatic model downloads are controlled by `auto_download_model`; when disabled, use the configuration page to request a retry explicitly.
+### Upgrades and rollback
 
 <a id="source-updates"></a>
-## SOURCE updates
+**SOURCE:** [installation, upgrade and rollback](docs/installation/source.md#upgrade-and-rollback)
 
-Stop the service and confirm it has exited. Back up the **entire data directory**,
-including configuration, database and journals. Keep the old version and matching
-backup, and read all relevant Upgrade Notes / Breaking Changes. In the original
-checkout, resolve local changes and confirm the current branch has an upstream
-and can fast-forward before manually running:
+<a id="docker-updates"></a>
+**Docker:** [installation, upgrade, backup and rollback](docs/installation/docker.md#upgrade-and-rollback)
 
-```bash
-git pull --ff-only
-bash bin/install.sh
-bash bin/start.sh
-```
-
-`git pull --ff-only` follows the current branch and may include unreleased code.
-The displayed version comes only from the local `release.jsonc`. If the checkout
-is dirty, detached, diverged or has no upstream, stop and resolve it manually;
-do not force an overwrite. The application neither inspects Git nor runs these
-commands. Preserve the original data path, configuration, environment and startup
-arguments when restarting. Verify health and retrieve an existing memory.
+Read all relevant Upgrade Notes / Breaking Changes before updating. Keep the old
+version and a stopped, full backup of the data directory.
 
 ## Version numbering
 
@@ -201,192 +129,6 @@ and wait out rate-limit cooldowns. Keep TLS verification enabled. In a container
 Docker's built-in model. Docker Engine / Docker Desktop needs its own proxy for
 GHCR pulls; Git and pip also have separate networking. Application Settings do
 not configure them. See **Help → Configuration → Updates and networking**.
-
-## Docker (Linux AMD64)
-
-**Pre-release: the official GHCR image is not public yet.** The commands below
-are prepared for publication; `1.0.0` is the example version, not an announcement
-that it is available. Use the actual published full version when available.
-Local acceptance uses `REMEMBER_ME_IMAGE=remember-me:phase3.2-ready-fixed` instead;
-it does not prove public downloads. Neither path requires Python or a separate
-Embedding service: **BGE-M3 is included and runs on CPU without model downloads.**
-
-These Bash commands target a local, rootful Linux Docker Engine on AMD64. Compose
-also requires the Docker Compose plugin. Rootless Docker, Docker Desktop, SELinux
-hosts and network filesystems need separate permission/platform validation. The
-image is about 3.5 GB unpacked; allow extra disk space for pulls, updates, backups
-and model working memory. A minimum RAM requirement has not been established.
-
-### Prepare one instance
-
-Choose **one** installation method. Both use the same image and `./data` directory;
-never start two writers against it. Run the following in a new working directory
-and keep using that directory. Paths must be on the Docker daemon's local host.
-
-```bash
-mkdir -p remember-me
-cd remember-me
-export REMEMBER_ME_IMAGE=ghcr.io/tech-kuiperbelt/remember-me:1.0.0
-export REMEMBER_ME_DATA_DIR="$PWD/data"
-export REMEMBER_ME_PORT=1314
-```
-
-Keep a record of these settings. In a new terminal, set them again, especially if
-you selected another directory or port. Pin a full version or the published
-`ghcr.io/tech-kuiperbelt/remember-me@sha256:...` digest; avoid implicit `latest`.
-The release's Git tag is `v1.0.0`, while its image tag is `1.0.0`.
-
-### Option 1: docker run
-
-Create a dedicated directory and run the image's existing initializer. Only this
-short-lived helper starts as root; it prepares an **empty** directory for
-UID/GID `10001:10001`, then drops privileges and checks access. Reusing an existing
-directory checks permissions without recursively changing ownership or overwriting
-configuration. Do not continue if initialization fails.
-
-```bash
-mkdir -p "$REMEMBER_ME_DATA_DIR"
-docker run --rm --platform linux/amd64 --network none --read-only \
-  --user 0:0 --cap-drop ALL \
-  --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER \
-  --cap-add SETUID --cap-add SETGID --security-opt no-new-privileges:true \
-  --mount "type=bind,src=$REMEMBER_ME_DATA_DIR,dst=/data" \
-  --entrypoint python "$REMEMBER_ME_IMAGE" /opt/remember-me/docker/init_data.py
-```
-
-After the initializer succeeds, start the application:
-
-```bash
-docker run -d --name remember-me --platform linux/amd64 \
-  --restart unless-stopped --stop-timeout 120 \
-  --user 10001:10001 --read-only --cap-drop ALL \
-  --security-opt no-new-privileges:true \
-  --mount "type=bind,src=$REMEMBER_ME_DATA_DIR,dst=/data" \
-  -p "127.0.0.1:${REMEMBER_ME_PORT}:1314" "$REMEMBER_ME_IMAGE"
-```
-
-### Option 2: Docker Compose
-
-Download the [official compose.yaml](compose.yaml) from the **same release tag**
-into the working directory (Git source checkout is unnecessary):
-
-```bash
-curl -fL https://raw.githubusercontent.com/tech-kuiperbelt/remember-me/v1.0.0/compose.yaml -o compose.yaml
-docker compose -f compose.yaml up -d --wait --wait-timeout 300
-```
-
-The release file and image download require the release to exist. For local
-pre-release acceptance, copy `compose.yaml` from this checkout and use the local
-image override above. The legacy `docker-compose.yml` is unrelated; explicitly
-use `-f compose.yaml`. Compose runs the same permission initializer before the
-application. Its defaults match the setup above. For custom settings across
-terminal sessions, put the three `REMEMBER_ME_*` settings in a local `.env` file
-beside `compose.yaml`, with an absolute data path and without the `export` prefix;
-exported shell values take precedence. Check `docker compose -f compose.yaml config`
-before starting. Stop/remove the previous method's container before switching.
-
-### Connect, inspect and stop
-
-Open <http://127.0.0.1:1314/admin/console> when healthy. First startup may take
-several minutes. If using another host port, replace `1314` in browser and MCP
-URLs. Use `/mcp` for Streamable HTTP or `/sse` for legacy SSE; see
-[client configuration below](#connect--enable-agent-memory).
-
-| Operation | docker run | Docker Compose |
-| --- | --- | --- |
-| Status | `docker ps --filter name=remember-me` | `docker compose -f compose.yaml ps -a` |
-| Logs | `docker logs --tail 100 -f remember-me` | `docker compose -f compose.yaml logs --tail 100 -f remember-me` |
-| Health | `docker inspect --format '{{.State.Health.Status}}' remember-me` | `docker compose -f compose.yaml ps` |
-| Stop | `docker stop --time 120 remember-me` | `docker compose -f compose.yaml stop` |
-| Start again | `docker start remember-me` | `docker compose -f compose.yaml up -d --wait --wait-timeout 300` |
-| Remove stopped container | `docker rm remember-me` | `docker compose -f compose.yaml down` |
-
-Health observes model readiness and does not initiate a download. If startup
-fails, check the logs, disk space and data permissions. Language/Debug and the version-check proxy remain
-editable in the configuration page; Docker manages model settings. Retry reloads
-the included model locally. The root filesystem and model stay read-only; the
-single `/data` bind mount retains configuration, SQLite and its sidecars, Dual
-JSONL, logs and caches. Deleting/recreating a container does not delete this host
-directory. Do not delete it or mount over the image's model directory.
-
-The service publishes only `127.0.0.1`; do not change it to a public bind without
-a separate access-control design. Containers on the same Docker network can
-still access the container directly. Host/Origin protection remains enabled.
-Neither API nor Admin UI provides user authentication. `unless-stopped` enables
-restart after unexpected exits; stop from the terminal. Allow active imports to
-finish before stopping; if 120 seconds expires, Docker can force-kill the process.
-
-### Permissions, backups and restore
-
-A new empty directory is initialized with mode `0750`. For existing nonempty
-data, initialization stops on incompatible ownership, unreadable files or
-symlinks. After stopping the service, an administrator must prepare **only that
-dedicated instance directory** for numeric UID/GID `10001:10001`; do not apply
-recursive ownership changes to shared directories, use `chmod 777`, or run the
-application as root. Preserve existing data before changing permissions.
-
-Back up the **entire data directory after graceful shutdown**, not just the JSONL
-export or SQLite main file. Use your method's Stop command above, then verify
-exit code **0** (`docker inspect --format '{{.State.ExitCode}}' remember-me`, or
-`docker compose -f compose.yaml ps -a` for Compose). A successful stop command
-alone does not prove a clean exit. If force-killed, start and stop cleanly before
-backing up. Record the image version/digest, data path and port with the backup.
-
-```bash
-sudo tar --numeric-owner -C "$REMEMBER_ME_DATA_DIR" -cpf "$PWD/remember-me-backup.tar" .
-```
-
-Restart using the table above. Protect the archive: it contains private memories.
-To restore, stop the instance, create a **new empty** directory and preserve
-numeric ownership/permissions when extracting:
-
-```bash
-mkdir "$PWD/restored-data"
-sudo tar --numeric-owner --same-owner -C "$PWD/restored-data" -xpf "$PWD/remember-me-backup.tar"
-export REMEMBER_ME_DATA_DIR="$PWD/restored-data"
-```
-
-Update any saved `.env` data path too. Recreate the container with the restored mount: for `docker run`, remove the
-stopped container, rerun the initializer and start commands; for Compose, run
-`docker compose -f compose.yaml up -d --wait --wait-timeout 300`. Check health,
-configuration, memory details and semantic search before retiring the original
-copy. Never run both copies as writers to the same directory.
-
-<a id="docker-updates"></a>
-### Manual upgrades and rollback
-
-Read the target release's compatibility notes and take a stopped full backup.
-Keep the old image/version and backup. Set `REMEMBER_ME_IMAGE` to the chosen
-published full version or digest (also update `.env` if used), then pull it:
-
-```bash
-docker pull --platform linux/amd64 "$REMEMBER_ME_IMAGE"
-```
-
-For `docker run`, pulling alone does not upgrade a running container. After
-stopping and backing up, remove the old container, then repeat the initialization
-and start steps above from your deployment records, changing only the image
-reference. Preserve the actual mounts, ports, environment, UID/GID, read-only
-filesystem and security options; do not replace custom settings with examples.
-
-For Compose, keep the existing `compose.yaml`, data path, ports and settings in
-the original instance directory. Set and export `REMEMBER_ME_IMAGE` to the verified
-target full version and **update its saved value in `.env` too**. Exported shell
-values override `.env`. After stopping and backing up, run:
-
-```bash
-docker compose -f compose.yaml up -d --pull always --wait --wait-timeout 300
-```
-
-The changed image setting recreates the service. Check health and retrieve an
-existing memory. Read all relevant Upgrade Notes / Breaking Changes first;
-version notifications do not prove data compatibility or perform updates or migrations.
-
-Rollback follows the same steps with the previous version/digest. Reuse current
-data only when that release's database schema and Embedding Profile are compatible.
-Otherwise restore the matching full backup into a new directory and run its
-matching image; post-backup changes are not included. Local recreation tests do
-not establish compatibility between arbitrary future versions.
 
 ## Connect & Enable Agent Memory
 
