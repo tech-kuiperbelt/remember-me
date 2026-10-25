@@ -215,8 +215,14 @@ arbitrary future versions.
 
 ## Next steps
 
-- [Connect & Enable Agent Memory](../../README.md#connect--enable-agent-memory)
-  for MCP client configuration and verification.
+Open <http://127.0.0.1:1314/admin/console> → **Help → Getting Started** and complete
+the three steps: connect AI, choose a namespace, and set memory rules. Give your
+agent <http://127.0.0.1:1314/read-me> for the agent-facing connection guide. If you
+started the service on another port, use that port in both addresses.
+
+Detailed MCP client configuration and memory rules are maintained in Web Help;
+this guide does not duplicate them.
+
 - [Docker installation and upgrade](docker.md) if you prefer the container.
 - [Version numbering](../../README.md#version-numbering) and
   [version checks and networking](../../README.md#version-checks-and-networking).

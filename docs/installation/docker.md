@@ -88,8 +88,10 @@ before starting. Stop/remove the previous method's container before switching.
 
 Open <http://127.0.0.1:1314/admin/console> when healthy. First startup may take
 several minutes. If using another host port, replace `1314` in browser and MCP
-URLs. Use `/mcp` for Streamable HTTP or `/sse` for legacy SSE; see
-[client configuration](../../README.md#connect--enable-agent-memory).
+URLs. Use `/mcp` for Streamable HTTP or `/sse` for legacy SSE. Connection examples
+and client-specific instructions are maintained in Web Help:
+<http://127.0.0.1:1314/read-me>. If you published another host port, replace `1314`
+with that port.
 
 | Operation | docker run | Docker Compose |
 | --- | --- | --- |
@@ -191,9 +193,17 @@ not establish compatibility between arbitrary future versions.
 
 ## Next steps
 
+On the Docker host, open <http://127.0.0.1:1314/admin/console> →
+**Help → Getting Started** and complete the three steps: connect AI, choose a
+namespace, and set memory rules. Give your agent
+<http://127.0.0.1:1314/read-me> for the agent-facing connection guide. The container
+always listens on `1314`; if you published another **host port**, use that port in
+both addresses.
+
+Detailed MCP client configuration and memory rules are maintained in Web Help;
+this guide does not duplicate them.
+
 - [Source installation and upgrade](source.md) if you prefer Python.
-- [Connect & Enable Agent Memory](../../README.md#connect--enable-agent-memory)
-  for MCP client configuration and verification.
 - [Version numbering](../../README.md#version-numbering) and
   [version checks and networking](../../README.md#version-checks-and-networking).
 

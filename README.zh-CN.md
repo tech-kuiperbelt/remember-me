@@ -79,9 +79,8 @@ Remember Me 在本机运行。请选择一种安装方式；两种方式都把�
 - **Docker — Linux AMD64：**[Docker 安装与升级](docs/installation/docker.zh-CN.md)。
   镜像内置 BGE-M3 并在 CPU 上运行，无需 Python 或独立 Embedding 服务。
 
-安装指南涵盖安装与启动、停止、数据目录、备份与恢复、升级与回滚。服务启动后，打开
-<http://127.0.0.1:1314/admin/console>（Web UI），Agent 接入使用 `/read-me`，然后继续阅读
-[连接并启用 Agent 记忆](#连接并启用-agent-记忆)。
+安装指南涵盖安装与启动、停止、数据目录、备份与恢复、升级与回滚。服务启动后，请按
+[安装完成后](#安装完成后)继续配置 Agent。
 
 ### 升级与回滚
 
@@ -118,60 +117,22 @@ HTTP/Web 启动后异步检查一次，之后默认每 24 小时检查；Sidebar
 Docker Engine / Docker Desktop 拉取 GHCR 镜像的代理、Git 和 pip 的网络需分别配置，
 应用 Settings 不会配置它们。完整操作见 Web UI 的 Help → 配置 → 更新与网络。
 
-## 连接并启用 Agent 记忆
+## 安装完成后
 
-连接 MCP 让 Agent **具备使用记忆的能力**；合适的记忆指令则帮助它知道**何时、如何**使用记忆。两个步骤都很重要。
+Agent 接入与记忆使用说明只在运行中的 Web Help 维护；README 不重复 MCP 客户端配置或记忆提示词。
 
-### 推荐：让 Agent 自动配置 MCP
+1. 按对应安装指南启动 Remember Me。
+2. 打开 `http://127.0.0.1:1314/read-me`（默认本机地址）；如使用其他端口或 Docker
+   宿主机映射端口，请替换 `1314`。这是面向 Agent 的接入说明。
+3. 打开 Web UI `http://127.0.0.1:1314/admin/console`（同一主机和端口），进入
+   **Help → 开始使用**，依次完成三步：连接 AI、为记忆分组、设置记忆规则。
 
-启动 Remember Me 后，可以向能够访问本地服务、并有权限管理自身配置的 Coding Agent 发送：
-
-> 请阅读 `http://127.0.0.1:1314/read-me`，按照说明为你自己配置 Remember Me MCP，并验证连接。修改配置文件前先征求我的确认。
-
-`/read-me` 是面向 Agent 的配置说明。如需手动操作或排查问题，Web UI 的 **Help** 页面提供详细指导。
-
-### 手动配置示例
-
-**Codex — Streamable HTTP**
-
-```bash
-codex mcp add remember-me --url http://127.0.0.1:1314/mcp
-codex mcp list
-```
-
-**OpenCode — SSE**（将以下示例合并到 OpenCode 配置中，保留已有的 MCP 条目）：
-
-```json
-{
-  "mcp": {
-    "remember-me": {
-      "type": "remote",
-      "url": "http://127.0.0.1:1314/sse",
-      "enabled": true
-    }
-  }
-}
-```
-
-不同客户端版本的配置位置与细节请以 Web UI Help 为准。如果 Agent 运行在远程环境，不能在没有网络连接配置的情况下直接访问你电脑上的 `127.0.0.1`。
-
-### 给 Agent 配置记忆使用策略
-
-**MCP 连接成功，不等于 Agent 就会自动记住一切，或总能在正确时机检索到经验。** 长期记忆的效果很大程度上取决于 Agent 的使用策略。
-
-Web UI 的 **Help** 页面准备了可直接复制的记忆提示词。将其放入 Agent 使用的指令文件，例如 `AGENTS.md`，再按项目需要调整。提示词覆盖主动回忆、保存值得复用的决策和经验、写入前去重、更新已有记忆，以及按 Namespace 隔离项目上下文。
-
-### 验证跨会话记忆
-
-1. 请 Agent 在指定项目 Namespace 中保存一条非敏感的测试记忆。
-2. 开始一个新的 Agent 会话，让它从相同 Namespace 中检索刚才的内容。
-3. 打开 Web UI，查看这条记忆和可用的检索活动。
-4. 如有需要，验证后删除测试记忆。
+Web Help 还包含接入请求、Namespace 说明、可复制的记忆规则、各客户端配置方法和故障排查。
 
 ## 文档与安全
 
-- **Web UI → Help**：安装配置、Agent 接入、记忆提示词和故障排查。
-- **`/read-me`**：服务运行后提供的面向 Agent 的配置说明。
+- **Web UI → Help**：Agent 接入、Namespace、记忆规则和故障排查的详细维护入口。
+- **`/read-me`**：服务运行后提供的面向 Agent 的接入说明。
 
 Remember Me 默认以本地运行为目标。**没有身份认证及合适访问保护时，不要把记忆或管理接口直接暴露到公网。** Namespace 用于组织记忆，不等同于访问控制和身份认证。
 

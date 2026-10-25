@@ -75,7 +75,8 @@ docker compose -f compose.yaml up -d --wait --wait-timeout 300
 
 健康后访问 <http://127.0.0.1:1314/admin/console>。首次加载可能需要数分钟；如修改宿主机端口，
 同步修改浏览器与 MCP 地址中的 `1314`。Streamable HTTP 使用 `/mcp`，传统 SSE 使用 `/sse`；
-见[客户端配置](../../README.zh-CN.md#连接并启用-agent-记忆)。
+连接示例与各客户端配置方法由 Web Help 维护：<http://127.0.0.1:1314/read-me>。
+如使用其他宿主机映射端口，请把 `1314` 替换为该端口。
 
 | 操作 | docker run | Docker Compose |
 | --- | --- | --- |
@@ -156,8 +157,14 @@ Upgrade Notes / Breaking Changes；版本提示不证明数据兼容，也不会
 
 ## 下一步
 
+在 Docker 宿主机上打开 <http://127.0.0.1:1314/admin/console>，进入 **Help → 开始使用**，
+依次完成连接 AI、为记忆分组、设置记忆规则三步。将 <http://127.0.0.1:1314/read-me>
+交给 Agent，作为面向 Agent 的接入说明。容器内部始终监听 `1314`；如使用其他
+**宿主机映射端口**，请把两个地址中的端口一并替换。
+
+MCP 客户端配置与记忆规则的详细说明只在 Web Help 维护；本指南不重复这些内容。
+
 - 如更希望使用 Python，见[源码安装与升级](source.zh-CN.md)。
-- [连接并启用 Agent 记忆](../../README.zh-CN.md#连接并启用-agent-记忆)，配置 MCP 客户端并验证连接。
 - [版本编号规则](../../README.zh-CN.md#版本编号规则)与[版本检查与网络](../../README.zh-CN.md#版本检查与网络)。
 
 备份与更新策略的背景说明见 Web UI 版本窗口及各目标版本的 Release Notes。

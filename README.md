@@ -82,9 +82,8 @@ memories, logs and caches in a data directory you control.
   service is required.
 
 The guides cover install and start, stop, the data directory, backup and restore,
-upgrade and rollback. Once the service is running, open
-<http://127.0.0.1:1314/admin/console> (Web UI) or `/read-me` for agent setup, then
-continue with [Connect & Enable Agent Memory](#connect--enable-agent-memory).
+upgrade and rollback. After the service starts, follow
+[After Installation](#after-installation).
 
 ### Upgrades and rollback
 
@@ -130,60 +129,26 @@ Docker's built-in model. Docker Engine / Docker Desktop needs its own proxy for
 GHCR pulls; Git and pip also have separate networking. Application Settings do
 not configure them. See **Help → Configuration → Updates and networking**.
 
-## Connect & Enable Agent Memory
+## After Installation
 
-Connecting MCP gives an agent the **ability** to use memory. Giving it good memory instructions helps it decide **when and how** to do so. Both steps matter.
+Detailed agent setup is maintained in the running service's Web Help; this README
+does not duplicate MCP client configuration or memory prompts.
 
-### Recommended: let your coding agent set up MCP
+1. Start Remember Me using the guide for your installation method.
+2. Open `http://127.0.0.1:1314/read-me` (default local address); replace `1314`
+   if you use another port or a Docker host port. This is the agent-facing setup
+   guide.
+3. Open the Web UI at `http://127.0.0.1:1314/admin/console` (same host and port),
+   then go to **Help → Getting Started** and complete the three steps: connect AI,
+   choose a namespace, and set memory rules.
 
-After starting Remember Me, ask a coding agent that can access the local service and edit its own configuration:
-
-> Read `http://127.0.0.1:1314/read-me`. Follow its instructions to configure Remember Me MCP for yourself and verify the connection. Ask me before modifying configuration files.
-
-The `/read-me` endpoint is written for agents. For manual setup and troubleshooting, the Web UI **Help** page provides detailed guidance.
-
-### Manual examples
-
-**Codex — Streamable HTTP**
-
-```bash
-codex mcp add remember-me --url http://127.0.0.1:1314/mcp
-codex mcp list
-```
-
-**OpenCode — SSE** (merge this example into your OpenCode configuration, preserving any existing MCP entries):
-
-```json
-{
-  "mcp": {
-    "remember-me": {
-      "type": "remote",
-      "url": "http://127.0.0.1:1314/sse",
-      "enabled": true
-    }
-  }
-}
-```
-
-For configuration file locations and client-version-specific details, use the Web UI Help. A remote agent cannot reach `127.0.0.1` on your computer unless an appropriate network path has been configured.
-
-### Give the agent a memory strategy
-
-**A successful MCP connection does not make an agent automatically remember everything or consistently recall the right experience.** Its memory strategy matters.
-
-The **Help** page includes a ready-to-copy memory instruction prompt. Place it in your agent's instruction file (for example, `AGENTS.md`) and adjust it for the project. The guidance covers proactive recall, saving useful decisions and lessons, avoiding duplicate memories, updating existing information, and selecting the right namespace.
-
-### Verify persistence across sessions
-
-1. Ask your agent to save a harmless test memory in a chosen project namespace.
-2. Start a new agent session and ask it to recall that memory from the same namespace.
-3. Open the Web UI to see the memory and any available retrieval activity.
-4. Remove the test memory when finished, if desired.
+Web Help also contains the connection request, namespace guidance, copyable memory
+rules, client-specific instructions, and troubleshooting.
 
 ## Documentation & Security
 
-- **Web UI → Help:** setup, agent configuration, memory prompts, and troubleshooting.
-- **`/read-me`:** machine-readable, agent-oriented connection guidance from the running service.
+- **Web UI → Help:** the maintained guide for connecting agents, namespaces, memory rules, and troubleshooting.
+- **`/read-me`:** agent-facing connection guidance served by the running service.
 
 Remember Me is intended to run locally by default. **Do not expose memory or administrative endpoints directly to the public internet without authentication and appropriate access controls.** Namespaces organize memory; they are not an authentication or authorization boundary.
 

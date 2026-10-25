@@ -170,6 +170,11 @@ bash bin/start.sh
 
 ## 下一步
 
-- [连接并启用 Agent 记忆](../../README.zh-CN.md#连接并启用-agent-记忆)，配置 MCP 客户端并验证连接。
+打开 <http://127.0.0.1:1314/admin/console>，进入 **Help → 开始使用**，依次完成
+连接 AI、为记忆分组、设置记忆规则三步。将 <http://127.0.0.1:1314/read-me>
+交给 Agent，作为面向 Agent 的接入说明。如使用其他端口，请把两个地址中的端口一并替换。
+
+MCP 客户端配置与记忆规则的详细说明只在 Web Help 维护；本指南不重复这些内容。
+
 - 如更希望使用容器，见 [Docker 安装与升级](docker.zh-CN.md)。
 - [版本编号规则](../../README.zh-CN.md#版本编号规则)与[版本检查与网络](../../README.zh-CN.md#版本检查与网络)。

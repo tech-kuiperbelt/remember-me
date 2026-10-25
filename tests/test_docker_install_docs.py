@@ -24,7 +24,8 @@ def test_bilingual_installation_commands_match():
 @pytest.mark.parametrize('filename', ALL_DOCS)
 def test_document_shell_blocks_are_valid_bash(filename):
     blocks = re.findall(r'```bash\n(.*?)\n```', (ROOT / filename).read_text(), flags=re.S)
-    assert blocks
+    if filename in DOCKER_GUIDES + SOURCE_GUIDES:
+        assert blocks
     for block in blocks:
         result = subprocess.run(['bash', '-n'], input=block, capture_output=True, text=True)
         assert result.returncode == 0, (filename, block, result.stderr)
@@ -157,11 +158,37 @@ def test_installation_guides_cover_full_lifecycle(filename, headings):
         assert heading in text, (filename, heading)
 
 
-def test_installation_guides_link_to_shared_mcp_configuration():
-    assert '../../README.md#connect--enable-agent-memory' in (ROOT / 'docs/installation/source.md').read_text()
-    assert '../../README.md#connect--enable-agent-memory' in (ROOT / 'docs/installation/docker.md').read_text()
-    assert '../../README.zh-CN.md#连接并启用-agent-记忆' in (ROOT / 'docs/installation/source.zh-CN.md').read_text()
-    assert '../../README.zh-CN.md#连接并启用-agent-记忆' in (ROOT / 'docs/installation/docker.zh-CN.md').read_text()
+@pytest.mark.parametrize('filename,help_label', [
+    ('docs/installation/source.md', 'Help → Getting Started'),
+    ('docs/installation/source.zh-CN.md', 'Help → 开始使用'),
+    ('docs/installation/docker.md', 'Help → Getting Started'),
+    ('docs/installation/docker.zh-CN.md', 'Help → 开始使用'),
+])
+def test_installation_guides_point_to_web_help_without_duplicating_configuration(filename, help_label):
+    text = (ROOT / filename).read_text()
+    assert 'http://127.0.0.1:1314/admin/console' in text
+    assert 'http://127.0.0.1:1314/read-me' in text
+    assert help_label in text
+    assert '../../README.md#connect--enable-agent-memory' not in text
+    assert '../../README.zh-CN.md#连接并启用-agent-记忆' not in text
+    for detail in ('codex mcp add', '"memory-server"', 'AGENTS.md'):
+        assert detail not in text
+
+
+@pytest.mark.parametrize('readme,heading,help_label', [
+    ('README.md', '## After Installation', 'Help → Getting Started'),
+    ('README.zh-CN.md', '## 安装完成后', 'Help → 开始使用'),
+])
+def test_readme_keeps_short_after_installation_guidance(readme, heading, help_label):
+    text = (ROOT / readme).read_text()
+    assert heading in text
+    assert 'http://127.0.0.1:1314/read-me' in text
+    assert 'http://127.0.0.1:1314/admin/console' in text
+    assert help_label in text
+    for detail in ('Connect & Enable Agent Memory', '连接并启用 Agent 记忆',
+                   'codex mcp add', '"memory-server"', 'AGENTS.md', 'CLAUDE.md',
+                   'http://127.0.0.1:1314/mcp', 'http://127.0.0.1:1314/sse'):
+        assert detail not in text
 
 
 def test_help_uses_canonical_bilingual_readme_sections():
