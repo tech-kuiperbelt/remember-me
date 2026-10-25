@@ -1,5 +1,20 @@
 # remember-me — Memory MCP Server
 
+### Engineering Principle: Minimum Sufficient Solution
+
+Prefer the simplest solution that adequately satisfies the project's current requirements.
+
+- Optimize for simplicity, maintainability, and current practical value rather than maximum completeness or theoretical correctness.
+- Do not introduce abstractions, automation, dependencies, compatibility layers, or infrastructure solely for hypothetical future requirements.
+- Accept limited functionality, reasonable manual operations, or explicitly documented limitations when they substantially reduce complexity without compromising essential requirements.
+- Before proposing a non-trivial technical solution, consider whether a materially simpler approach can meet the core requirements.
+- If a more complex approach is recommended, explain what concrete current problem justifies its additional complexity.
+- Do not silently choose a significantly more complex design merely because it is more robust, general, or automated.
+- Escalate meaningful simplicity-versus-capability tradeoffs for user decision.
+- For routine implementation details without meaningful architectural or product impact, decide independently and proceed.
+
+**The goal is not the most complete system. The goal is the least complex system that adequately solves the current problem.**
+
 ## Release metadata maintenance
 
 Before a release, the final content-maintenance step is to update the root
