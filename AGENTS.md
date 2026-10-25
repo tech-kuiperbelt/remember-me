@@ -15,6 +15,49 @@ Prefer the simplest solution that adequately satisfies the project's current req
 
 **The goal is not the most complete system. The goal is the least complex system that adequately solves the current problem.**
 
+## Engineering Decision Policy
+
+### Core Principle
+
+Prefer the minimum sufficient solution for the project's current stage.
+
+Optimize for simplicity, maintainability, and practical value rather than maximum completeness, generality, or automation.
+
+Accept reasonable limitations or manual steps when they significantly reduce complexity without compromising essential requirements.
+
+### Decision Escalation
+
+During investigation or design, identify meaningful architectural trade-offs.
+
+Escalate to the user **before implementation** when:
+
+1. A simpler solution meets the core requirements, but a more complex solution provides additional capabilities.
+2. The proposed solution introduces significant new dependencies, services, persistent data structures, or long-term maintenance obligations.
+3. The design adds complexity primarily to support hypothetical future requirements.
+4. A small amount of manual work could substantially simplify the implementation.
+5. A decision creates significant technical commitments that would be costly or difficult to reverse.
+
+For each escalation, briefly provide:
+
+- **Recommended approach:** The simplest adequate solution.
+- **Alternative:** The more complex approach, when relevant.
+- **Trade-off:** What is gained, lost, and what additional complexity is introduced.
+- **Recommendation:** Which approach is preferable for the project's current stage and why.
+
+Do not proceed with the affected design decision until the user confirms the trade-off.
+
+### Autonomous Decisions
+
+Do not escalate routine implementation choices, minor refactoring, or technical details that have no meaningful impact on architecture, product behavior, maintenance cost, or established constraints.
+
+Make these decisions independently and continue implementation.
+
+Avoid unnecessary approval requests. Escalate only when a genuine product, architectural, or long-term maintenance trade-off requires user judgment.
+
+### Scope
+
+Follow existing approved decisions and project constraints. Never sacrifice essential correctness, security, or data integrity merely to reduce complexity.
+
 ## Release metadata maintenance
 
 Before a release, the final content-maintenance step is to update the root
