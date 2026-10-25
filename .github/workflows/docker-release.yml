@@ -1,28 +1,24 @@
 name: docker-release
-run-name: Docker ${{ inputs.operation }} ${{ inputs.tag }}
+run-name: Docker ${{ inputs.operation }} ${{ inputs.expected_commit }}
 
 on:
   workflow_dispatch:
     inputs:
-      tag:
-        description: "Existing Git tag, e.g. v1.0.0 or v1.1.0-rc.1"
-        type: string
-        required: true
       expected_commit:
-        description: "Reviewed full 40-character commit SHA of the tag"
+        description: "Required for publish/resume; optional metadata preview for validate. Full reviewed commit SHA."
         type: string
-        required: true
+        required: false
       operation:
-        description: "publish refuses existing versions; resume verifies an existing digest"
+        description: "validate runs only tests; publish creates a Tag; resume verifies an existing digest"
         type: choice
-        options: [publish, resume]
-        default: publish
+        options: [validate, publish, resume]
+        default: validate
       existing_digest:
         description: "resume only: sha256 digest recorded by the original run"
         type: string
         default: ""
       confirm_publish:
-        description: "I authorize this release operation and checked all Go/No-Go evidence"
+        description: "I authorize Tag creation / image publication or digest recovery and checked all Go/No-Go evidence"
         type: boolean
         default: false
 
@@ -33,18 +29,45 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  RELEASE_TAG: ${{ inputs.tag }}
   EXPECTED_COMMIT: ${{ inputs.expected_commit }}
   RELEASE_OPERATION: ${{ inputs.operation }}
   CONFIRM_PUBLISH: ${{ inputs.confirm_publish }}
 
 jobs:
+  validate:
+    if: github.repository == 'tech-kuiperbelt/remember-me' && github.ref == 'refs/heads/master' && inputs.operation == 'validate'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout release controls
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Test controls without publishing or creating Tags
+        run: |
+          python -m pip install --quiet pytest PyYAML httpx
+          python -m pytest -q tests/test_docker_release.py tests/test_docker_ci_script.py tests/test_docker_assets.py tests/test_docker_install_docs.py --junitxml=artifacts/tests.xml
+      - name: Preview committed metadata without creating Tag or publishing
+        if: inputs.expected_commit != ''
+        run: python .github/scripts/docker_release.py metadata --commit "$EXPECTED_COMMIT" --artifacts artifacts/metadata
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-validation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/
+          retention-days: 30
+
   prepare-publish:
-    if: github.repository == 'tech-kuiperbelt/remember-me' && github.ref == 'refs/heads/master' && inputs.confirm_publish
+    if: github.repository == 'tech-kuiperbelt/remember-me' && github.ref == 'refs/heads/master' && inputs.operation != 'validate' && inputs.confirm_publish
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     permissions:
-      contents: read
+      contents: write # Create-only Git Tag after candidate verification; no Release API calls.
       packages: write
     outputs:
       tag: ${{ steps.prepare.outputs.tag }}
@@ -52,6 +75,7 @@ jobs:
       version: ${{ steps.prepare.outputs.version }}
       digest: ${{ steps.prepare.outputs.digest }}
       image_id: ${{ steps.prepare.outputs.image_id }}
+      release_sha256: ${{ steps.prepare.outputs.release_sha256 }}
     steps:
       - name: Checkout release controls
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -89,10 +113,10 @@ jobs:
       - name: Validate controls
         working-directory: control
         run: |
-          python -m pip install --quiet pytest PyYAML
+          python -m pip install --quiet pytest PyYAML httpx
           python -m pytest -q tests/test_docker_release.py tests/test_docker_ci_script.py tests/test_docker_assets.py tests/test_docker_install_docs.py
 
-      - name: Build and verify, then publish version (or resume)
+      - name: Derive metadata, verify candidate, create Tag and publish (or resume digest)
         id: prepare
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -113,6 +137,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions: {}
+    env:
+      RELEASE_TAG: ${{ needs.prepare-publish.outputs.tag }}
+      EXPECTED_COMMIT: ${{ needs.prepare-publish.outputs.commit }}
+      RELEASE_SHA256: ${{ needs.prepare-publish.outputs.release_sha256 }}
     outputs:
       verified_digest: ${{ steps.verify.outputs.verified_digest }}
     steps:
@@ -147,6 +175,10 @@ jobs:
     permissions:
       contents: read
       packages: write
+    env:
+      RELEASE_TAG: ${{ needs.prepare-publish.outputs.tag }}
+      EXPECTED_COMMIT: ${{ needs.prepare-publish.outputs.commit }}
+      RELEASE_SHA256: ${{ needs.prepare-publish.outputs.release_sha256 }}
     steps:
       - name: Checkout release controls
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

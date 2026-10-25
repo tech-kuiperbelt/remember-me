@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import subprocess
 import threading
+from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -20,6 +21,10 @@ ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("docker_release", ROOT / ".github/scripts/docker_release.py")
 R = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(R)
+
+
+def release_document(value="1.0.0", **updates):
+    return {"version": value, **{field: [] for field in R.CONTENT_FIELDS}, **updates}
 
 
 def encoded(value):
@@ -35,6 +40,9 @@ class MockRegistry:
         self.refs, self.blobs, self.manifests = {}, {}, {}
         self.visibility = "private"
         self.fail = None
+        self.releases, self.posts = [], []
+        self.source_repo = None
+        self.tag_failure = None
         self.add("amd64", "0.0.0", "a" * 40, repository=R.CACHE)
 
     def add(self, ref, value, commit, *, repository=R.REPOSITORY):
@@ -73,7 +81,16 @@ def registry():
             if state.fail:
                 self.reply(state.fail, {"errors": [{"code": "DENIED"}]})
                 return
-            if path.startswith("/orgs/"):
+            if path == f"/repos/{R.REPOSITORY}/releases":
+                self.reply(200, state.releases)
+            elif path.endswith("/versions"):
+                items = {}
+                for (repo, tag), body in state.refs.items():
+                    if repo == R.REPOSITORY:
+                        items.setdefault(sha(body), []).append(tag)
+                self.reply(200, [{"name": key, "metadata": {"container": {"tags": tags}}}
+                                 for key, tags in items.items()])
+            elif path.startswith("/orgs/"):
                 name = path.rsplit("/", 1)[-1]
                 if name == "remember-me-buildcache":
                     self.reply(200, {"visibility": state.visibility})
@@ -99,6 +116,21 @@ def registry():
                 self.reply(200, state.blobs[key], raw=True)
             else:
                 self.reply(404, {})
+
+        def do_POST(self):
+            data = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            state.posts.append((self.path, data))
+            assert self.path == f"/repos/{R.REPOSITORY}/git/refs"
+            if state.tag_failure:
+                self.reply(state.tag_failure, {})
+                return
+            assert state.source_repo is not None
+            result = subprocess.run(["git", "update-ref", data["ref"], data["sha"], "0" * 40],
+                                    cwd=state.source_repo, capture_output=True)
+            if result.returncode:
+                self.reply(422, {})
+            else:
+                self.reply(201, {"ref": data["ref"], "object": {"type": "commit", "sha": data["sha"]}})
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     worker = threading.Thread(target=server.serve_forever, daemon=True)
@@ -137,7 +169,8 @@ def git_repo(tmp_path):
 
     git("init", "-b", "master")
     (repo / "content").write_text("synthetic release input")
-    git("add", "content")
+    (repo / "release.jsonc").write_text("// synthetic release\n" + json.dumps(release_document()))
+    git("add", "content", "release.jsonc")
     git("commit", "-m", "synthetic fixture")
     commit = git("rev-parse", "HEAD")
     git("remote", "add", "origin", str(repo))
@@ -146,7 +179,8 @@ def git_repo(tmp_path):
 
 def arguments(tmp_path, **updates):
     values = dict(tag="v1.0.0", commit="a" * 40, operation="publish", existing_digest="",
-                  verified_digest="", image_id="", control=tmp_path, work=tmp_path / "work", builder="test")
+                  verified_digest="", image_id="", release_sha256="b" * 64,
+                  control=tmp_path, work=tmp_path / "work", builder="test")
     return argparse.Namespace(**{**values, **updates})
 
 
@@ -257,9 +291,9 @@ def test_cache_network_failure_does_not_prove_privacy(registry, monkeypatch):
 @pytest.fixture
 def prepare_fixture(tmp_path, monkeypatch, workflow, git_repo, registry):
     repo, commit, git = git_repo
-    git("tag", "v1.0.0")
+    registry.source_repo = repo
     monkeypatch.setenv("GITHUB_SHA", commit)
-    args = arguments(tmp_path, control=repo, commit=commit)
+    args = arguments(tmp_path, tag="", control=repo, commit=commit)
     preview = MockRegistry().add("1.0.0", "1.0.0", commit)
     calls = []
     real_command = R.command
@@ -270,6 +304,11 @@ def prepare_fixture(tmp_path, monkeypatch, workflow, git_repo, registry):
         calls.append(argv)
         if argv[:2] == ["docker", "push"]:
             registry.add("1.0.0", "1.0.0", commit)
+        if argv[:2] == ["docker", "run"]:
+            return subprocess.CompletedProcess(argv, 0, json.dumps({
+                "sha256": hashlib.sha256((repo / "release.jsonc").read_bytes()).hexdigest(),
+                "current": {"version": "1.0.0", "release": release_document(),
+                            "install_method": "DOCKER", "error_code": None}}), "")
         return subprocess.CompletedProcess(argv, 0, "", "")
 
     def candidate(*args, **kwargs):
@@ -321,22 +360,14 @@ def test_version_race_and_tag_change_stop_push(prepare_fixture, monkeypatch):
         return result
 
     monkeypatch.setattr(R.checks, "verify_candidate", verify)
-    with pytest.raises(R.Failure, match="appeared before push"):
+    with pytest.raises(R.Failure, match="already exists"):
         R.prepare(args, registry.client, journal)
     assert not any(argv[:2] == ["docker", "push"] for argv in calls)
 
 
 def test_remote_tag_change_after_build_stops_push(prepare_fixture, monkeypatch):
     args, journal, calls, registry, _ = prepare_fixture
-    original = R.remote_tag
-    count = 0
-
-    def remote(*values):
-        nonlocal count
-        count += 1
-        return original(*values) if count == 1 else {"tag_oid": "f" * 40, "commit": "f" * 40}
-
-    monkeypatch.setattr(R, "remote_tag", remote)
+    monkeypatch.setattr(R, "remote_tag", lambda *a: {"tag_oid": "f" * 40, "commit": "f" * 40})
     with pytest.raises(R.Failure, match="Remote Tag changed"):
         R.prepare(args, registry.client, journal)
     assert not any(argv[:2] == ["docker", "push"] for argv in calls)
@@ -361,7 +392,8 @@ def test_push_error_records_committed_digest_without_retry(prepare_fixture, monk
 
 
 def test_resume_revalidates_without_build_or_version_push(prepare_fixture):
-    args, journal, calls, registry, _ = prepare_fixture
+    args, journal, calls, registry, git = prepare_fixture
+    git("tag", "v1.0.0")
     info = registry.add("1.0.0", "1.0.0", args.commit)
     args.operation, args.existing_digest = "resume", info["digest"]
     R.prepare(args, registry.client, journal)
@@ -370,7 +402,8 @@ def test_resume_revalidates_without_build_or_version_push(prepare_fixture):
 
 
 def test_resume_refuses_wrong_digest_before_docker(prepare_fixture):
-    args, journal, calls, registry, _ = prepare_fixture
+    args, journal, calls, registry, git = prepare_fixture
+    git("tag", "v1.0.0")
     registry.add("1.0.0", "1.0.0", args.commit)
     args.operation, args.existing_digest = "resume", "sha256:" + "f" * 64
     with pytest.raises(R.Failure, match="digest mismatch"):
@@ -387,6 +420,10 @@ def test_anonymous_pull_has_no_credentials_and_confirms_both_refs(tmp_path, regi
 
     def command(argv, **kwargs):
         calls.append(argv)
+        if argv[:2] == ["docker", "run"]:
+            return subprocess.CompletedProcess(argv, 0, json.dumps({"sha256": args.release_sha256,
+                "current": {"version": "1.0.0", "release": release_document(),
+                            "install_method": "DOCKER", "error_code": None}}), "")
         assert "GITHUB_TOKEN" not in kwargs["env"]
         assert "DOCKER_AUTH_CONFIG" not in kwargs["env"]
         assert not list(Path(kwargs["env"]["DOCKER_CONFIG"]).iterdir())
@@ -395,7 +432,7 @@ def test_anonymous_pull_has_no_credentials_and_confirms_both_refs(tmp_path, regi
     monkeypatch.setattr(R, "command", command)
     journal = R.Journal(tmp_path / "evidence", {})
     R.verify_public(args, registry.anonymous, journal)
-    assert len(calls) == 2 and all("pull" in call for call in calls)
+    assert len(calls) == 3 and all("pull" in call for call in calls[:2])
     assert journal.data["anonymous_verified"] is True
 
 
@@ -410,8 +447,8 @@ def test_anonymous_failure_produces_no_verification_receipt(tmp_path, registry, 
 
 
 @pytest.mark.parametrize("candidate,current,promoted", [
-    ("1.0.0", None, True), ("1.1.0", "1.0.0", True), ("1.10.0", "1.9.0", True),
-    ("1.1.1", "1.2.0", False), ("1.0.0", "1.0.0", False), ("2.0.0-rc.1", "1.0.0", False),
+    ("1.0.0", None, True), ("1.2.0", "1.0.0", True), ("1.10.0", "1.9.0", True),
+    ("1.0.0", "1.0.0", False),
 ])
 def test_latest_only_advances_verified_stable(tmp_path, registry, workflow, monkeypatch, candidate, current, promoted):
     info = registry.add(candidate, candidate, "a" * 40)
@@ -421,6 +458,8 @@ def test_latest_only_advances_verified_stable(tmp_path, registry, workflow, monk
     args = arguments(tmp_path, tag="v" + candidate, existing_digest=info["digest"],
                      verified_digest=info["digest"], image_id=info["image_id"])
     monkeypatch.setattr(R, "resolve_source", lambda *a: {})
+    monkeypatch.setattr(R, "release_at_commit", lambda *a: (SimpleNamespace(version=candidate), args.release_sha256))
+    monkeypatch.setattr(R, "release_gate", lambda *a, **kw: None)
     calls = []
 
     def command(argv, **kwargs):
@@ -445,6 +484,8 @@ def test_latest_failure_can_resume_without_replacing_version(tmp_path, registry,
     info = registry.add("1.0.0", "1.0.0", "a" * 40)
     args = arguments(tmp_path, existing_digest=info["digest"], verified_digest=info["digest"], image_id=info["image_id"])
     monkeypatch.setattr(R, "resolve_source", lambda *a: {})
+    monkeypatch.setattr(R, "release_at_commit", lambda *a: (SimpleNamespace(version="1.0.0"), args.release_sha256))
+    monkeypatch.setattr(R, "release_gate", lambda *a, **kw: None)
     monkeypatch.setattr(R, "command", lambda *a, **kw: R.require(False, "latest push failed"))
     with pytest.raises(R.Failure, match="latest push failed"):
         R.promote(args, registry.client, R.Journal(tmp_path / "evidence", {}))
@@ -461,6 +502,8 @@ def test_latest_equal_version_with_different_digest_is_rejected(tmp_path, regist
     # Both labels claim the same version but the mutable alias was tampered with.
     args = arguments(tmp_path, existing_digest=info["digest"], verified_digest=info["digest"], image_id=info["image_id"])
     monkeypatch.setattr(R, "resolve_source", lambda *a: {})
+    monkeypatch.setattr(R, "release_at_commit", lambda *a: (SimpleNamespace(version="1.0.0"), args.release_sha256))
+    monkeypatch.setattr(R, "release_gate", lambda *a, **kw: None)
     calls = []
     monkeypatch.setattr(R, "command", lambda *a, **kw: calls.append(a))
     with pytest.raises(R.Failure, match="conflict"):
@@ -539,8 +582,16 @@ def test_workflows_are_manual_pinned_and_least_privilege():
     assert public["permissions"] == {}
     assert not any("login-action" in step.get("uses", "") or "checkout@" in step.get("uses", "") for step in public["steps"])
     assert release["jobs"]["promote-latest"]["needs"] == ["prepare-publish", "verify-public"]
-    for job in release["jobs"].values():
-        assert job["permissions"].get("contents") != "write"
+    assert release["jobs"]["prepare-publish"]["permissions"] == {"contents": "write", "packages": "write"}
+    for name, job in release["jobs"].items():
+        if name != "prepare-publish":
+            assert job["permissions"].get("contents") != "write"
+    inputs = release[True]["workflow_dispatch"]["inputs"]
+    assert "tag" not in inputs and "version" not in inputs
+    assert inputs["operation"]["default"] == "validate"
+    assert release["jobs"]["validate"]["permissions"] == {"contents": "read"}
+    for name in ("verify-public", "promote-latest"):
+        assert release["jobs"][name]["env"]["RELEASE_TAG"] == "${{ needs.prepare-publish.outputs.tag }}"
 
 
 def test_shared_candidate_checks_do_not_bake_tools_into_runtime(tmp_path):
@@ -564,3 +615,333 @@ def test_shared_candidate_checks_do_not_bake_tools_into_runtime(tmp_path):
     assert "TMPDIR=/data" in verifier
     assert all("readonly" in verifier[i + 1] for i, arg in enumerate(verifier) if arg == "--mount")
     assert not any(argv[:3] == ["docker", "buildx", "build"] for argv in calls)
+
+
+@pytest.mark.parametrize("lower,higher", [
+    ("1.9.0", "1.10.0"), ("2.0.0", "10.0.0"), ("1.0.9", "1.0.10"),
+    ("1.0.0-alpha", "1.0.0-alpha.1"), ("1.0.0-alpha.2", "1.0.0-alpha.10"),
+    ("1.0.0-2", "1.0.0-alpha"), ("1.0.0-beta.2", "1.0.0-beta.11"),
+    ("1.0.0-rc.99", "1.0.0"), ("1.0.0", "1.0.1-rc.1"),
+])
+def test_history_uses_semver_precedence(lower, higher):
+    assert R.version_key(lower) < R.version_key(higher)
+
+
+def test_metadata_reads_target_blob_not_branch_or_dirty_worktree(git_repo, tmp_path):
+    from app.release_info import read_local_release
+    repo, commit, git = git_repo
+    expected = hashlib.sha256((repo / 'release.jsonc').read_bytes()).hexdigest()
+    (repo / 'release.jsonc').write_text(json.dumps(release_document('9.0.0')))
+    git('commit', '-am', 'later version')
+    workflow_commit = git('rev-parse', 'HEAD')
+    (repo / 'release.jsonc').write_text('{invalid dirty input')
+    source = tmp_path / 'exact-source'
+    release, release_hash = R.resolve_commit(repo, commit, workflow_commit, source)
+    assert release.version == '1.0.0' and release_hash == expected
+    assert read_local_release(source, environment={'REMEMBER_ME_INSTALL_METHOD':'SOURCE'}).version == release.version
+    assert read_local_release(source, environment={'REMEMBER_ME_INSTALL_METHOD':'DOCKER'}).version == release.version
+
+
+@pytest.mark.parametrize('content', [
+    '{bad', json.dumps(release_document(None)), json.dumps(release_document('v1.0.0')),
+    json.dumps(release_document('01.0.0')), json.dumps(release_document('1.0')),
+    json.dumps(release_document('1.0.0-rc.1')), json.dumps(release_document('1.0.0+build')),
+    json.dumps(release_document(new='wrong type')), json.dumps({'version':'1.0.0'}),
+    '{"version":"1.0.0","version":"2.0.0"}', ' ' * (R.MAX_RELEASE_BYTES + 1),
+], ids=['malformed','unknown','v-prefix','leading-zero','short','prerelease','build-metadata',
+        'wrong-array-type','missing-fields','duplicate-key','oversized'])
+def test_invalid_committed_metadata_is_not_publishable(git_repo, content):
+    repo, _, git = git_repo
+    (repo / 'release.jsonc').write_text(content)
+    git('commit', '-am', 'invalid fixture')
+    with pytest.raises(R.Failure):
+        R.release_at_commit(repo, git('rev-parse', 'HEAD'))
+
+
+@pytest.mark.parametrize('kind', ['missing','symlink'])
+def test_committed_release_must_be_regular_file(git_repo, kind):
+    repo, _, git = git_repo
+    (repo / 'release.jsonc').unlink()
+    if kind == 'symlink':
+        (repo / 'release.jsonc').symlink_to('content')
+    git('add', 'release.jsonc'); git('commit', '-m', 'missing or symlink fixture')
+    with pytest.raises(R.Failure, match='regular file'):
+        R.release_at_commit(repo, git('rev-parse', 'HEAD'))
+
+
+def test_metadata_preview_generates_notes_without_any_remote_access(git_repo, tmp_path, monkeypatch):
+    repo, commit, _ = git_repo
+    monkeypatch.setattr(R.sys, 'argv', ['docker_release.py','metadata','--commit',commit,
+        '--control',str(repo),'--artifacts',str(tmp_path/'notes')])
+    monkeypatch.setattr(R, 'Registry', lambda *a, **kw: pytest.fail('metadata contacted registry'))
+    assert R.main() == 0
+    notes = (tmp_path/'notes/release-notes.md').read_text()
+    assert 'v1.0.0' in notes and commit in notes and R.IMAGE+':1.0.0' in notes
+    assert all(heading in notes for heading in ['New','Improvements','Fixes','Upgrade Notes','Breaking Changes'])
+
+
+def test_notes_escape_plain_text_and_keep_all_structured_fields(tmp_path):
+    content = {'new':['<script>alert(1)</script>'], 'improvements':['[link](https://example.invalid)'],
+               'fixes':['a\n# not a heading'], 'upgrade':['Back up 中文'], 'breaking':['Schema changed']}
+    release = R.validate_release(release_document(**content))
+    journal = R.Journal(tmp_path, {})
+    R.write_notes(journal, release, 'a'*40, 'b'*64, 'sha256:'+'c'*64)
+    notes = (tmp_path/'release-notes.md').read_text()
+    assert '<script>' not in notes and '&lt;script&gt;' in notes
+    assert '\\[link\\]' in notes and '\n  \\# not a heading' in notes
+    assert 'Back up 中文' in notes and 'Schema changed' in notes and 'sha256:'+'c'*64 in notes
+    assert notes.index('## Upgrade Notes') < notes.index('## New')
+
+
+@pytest.mark.parametrize('history_source', ['tag','release','ghcr'])
+@pytest.mark.parametrize('previous,allowed', [('0.9.0',True),('1.0.0',False),('1.1.0',False),
+                                            ('1.0.0-rc.10',True),('1.1.0-rc.1',False)])
+def test_all_histories_enforce_strict_increase(git_repo, registry, history_source, previous, allowed):
+    repo, commit, git = git_repo
+    if history_source == 'tag':
+        git('tag','v'+previous)
+    elif history_source == 'release':
+        registry.releases = [{'tag_name':'v'+previous,'draft':False}]
+    else:
+        registry.add(previous,previous,commit)
+    if allowed:
+        assert R.release_gate(repo,registry.client,'1.0.0',commit) == previous
+    else:
+        with pytest.raises(R.Failure):
+            R.release_gate(repo,registry.client,'1.0.0',commit)
+
+
+def test_first_release_has_no_ceiling_and_drafts_do_not_publish(git_repo, registry):
+    repo, commit, _ = git_repo
+    registry.releases = [{'tag_name':'v99.0.0','draft':True}]
+    assert R.release_gate(repo,registry.client,'1.0.0',commit) is None
+
+
+def test_history_pagination_cannot_silently_ignore_high_versions(monkeypatch):
+    client = R.Registry('synthetic')
+    pages = {1:[{'n':i} for i in range(100)], 2:[{'n':100}]}
+    monkeypatch.setattr(client,'github',lambda path:pages[int(parse_qs(urlsplit(path).query)['page'][0])])
+    assert list(client.pages('/fixture'))[-1] == {'n':100}
+    monkeypatch.setattr(client,'github',lambda path:[{}]*100)
+    with pytest.raises(R.Failure,match='pagination limit'):
+        list(client.pages('/fixture'))
+    monkeypatch.setattr(client,'github',lambda path:{'unexpected':'object'})
+    with pytest.raises(R.Failure,match='history page'):
+        list(client.pages('/fixture'))
+
+
+def test_deleted_alias_does_not_hide_retained_manifest(registry, monkeypatch):
+    info = registry.add('2.0.0','2.0.0','a'*40)
+    original = registry.client.pages
+    def pages(path):
+        if path.endswith('/versions'):
+            yield {'name':info['digest'],'metadata':{'container':{'tags':[]}}}
+        else:
+            yield from original(path)
+    monkeypatch.setattr(registry.client,'pages',pages)
+    assert registry.client.published_versions() == {'2.0.0'}
+
+
+def test_tag_creation_is_after_validation_and_bound_to_exact_commit(prepare_fixture, monkeypatch):
+    args, journal, calls, registry, git = prepare_fixture
+    original = registry.client.create_tag
+    def create(tag, commit):
+        assert ['verified'] in calls
+        assert any(call[:2] == ['docker','run'] for call in calls)
+        assert not any(call[:2] == ['docker','push'] for call in calls)
+        original(tag,commit)
+    monkeypatch.setattr(registry.client,'create_tag',create)
+    R.prepare(args,registry.client,journal)
+    assert registry.posts == [(f'/repos/{R.REPOSITORY}/git/refs',{'ref':'refs/tags/v1.0.0','sha':args.commit})]
+    assert git('rev-parse','v1.0.0') == args.commit
+    assert journal.data['runtime_identity']['current']['version'] == journal.data['version']
+
+
+@pytest.mark.parametrize('status',[403,409,422,500])
+def test_tag_creation_failure_never_pushes(prepare_fixture,status):
+    args,journal,calls,registry,_ = prepare_fixture
+    registry.tag_failure=status
+    with pytest.raises(R.Failure,match='Create-only Tag failed'):
+        R.prepare(args,registry.client,journal)
+    assert not any(call[:2] == ['docker','push'] for call in calls)
+
+
+def test_existing_tag_rejected_even_at_same_commit(prepare_fixture):
+    args,journal,calls,registry,git = prepare_fixture
+    git('tag','v1.0.0')
+    with pytest.raises(R.Failure,match='Tag already exists'):
+        R.prepare(args,registry.client,journal)
+    assert not calls and not registry.posts
+
+
+def test_validation_failure_creates_no_tag(prepare_fixture,monkeypatch):
+    args,journal,_,registry,git=prepare_fixture
+    monkeypatch.setattr(R.checks,'verify_candidate',lambda *a: R.require(False,'bad candidate'))
+    with pytest.raises(R.Failure,match='bad candidate'):
+        R.prepare(args,registry.client,journal)
+    assert not registry.posts and not git('tag','--list')
+
+
+@pytest.mark.parametrize('mutation',['bytes','version','method','unknown'])
+def test_image_runtime_must_match_committed_release(monkeypatch,mutation):
+    observed={'sha256':'b'*64,'current':{'version':'1.0.0','install_method':'DOCKER',
+              'error_code':None,'release':release_document()}}
+    if mutation=='bytes':observed['sha256']='c'*64
+    if mutation=='version':observed['current']['version']='2.0.0'
+    if mutation=='method':observed['current']['install_method']='SOURCE'
+    if mutation=='unknown':observed['current']['error_code']='local_release_invalid'
+    monkeypatch.setattr(R,'command',lambda *a,**kw:subprocess.CompletedProcess(a,0,json.dumps(observed),''))
+    with pytest.raises(R.Failure):R.verify_release_file('synthetic:local','1.0.0','b'*64)
+
+
+@pytest.mark.parametrize('history_source',['tag','release','ghcr'])
+def test_resume_cannot_bypass_newer_history(prepare_fixture,history_source):
+    args,journal,calls,registry,git=prepare_fixture
+    git('tag','v1.0.0')
+    info=registry.add('1.0.0','1.0.0',args.commit)
+    args.operation,args.existing_digest='resume',info['digest']
+    if history_source=='tag':git('tag','v2.0.0')
+    elif history_source=='release':registry.releases=[{'tag_name':'v2.0.0','draft':False}]
+    else:registry.add('2.0.0','2.0.0',args.commit)
+    with pytest.raises(R.Failure,match='strictly higher'):
+        R.prepare(args,registry.client,journal)
+    assert not calls and not registry.posts
+
+
+def test_complete_publish_anonymous_promote_and_digest_resume(prepare_fixture,monkeypatch,tmp_path):
+    args,journal,calls,registry,_=prepare_fixture
+    R.prepare(args,registry.client,journal)
+    args.existing_digest=journal.data['digest'];args.image_id=journal.data['image_id']
+    args.release_sha256=journal.data['release_sha256']
+    R.verify_public(args,registry.anonymous,R.Journal(tmp_path/'public',{}))
+    args.verified_digest=args.existing_digest
+    original=R.command
+    def command(argv,**kw):
+        result=original(argv,**kw)
+        if argv[:3]==['docker','buildx','imagetools']:
+            registry.refs[(R.REPOSITORY,'latest')]=registry.refs[(R.REPOSITORY,'1.0.0')]
+        return result
+    monkeypatch.setattr(R,'command',command)
+    R.promote(args,registry.client,R.Journal(tmp_path/'latest',{}))
+    assert registry.client.inspect('latest')['digest']==args.existing_digest
+    resume=arguments(tmp_path,tag='',commit=args.commit,control=args.control,
+                     work=tmp_path/'resumed-source',operation='resume',existing_digest=args.existing_digest)
+    calls.clear()
+    R.prepare(resume,registry.client,R.Journal(tmp_path/'resume',{}))
+    assert len(registry.posts)==1
+    assert not any(call[:2]==['docker','push'] or call[:3]==['docker','buildx','build'] for call in calls)
+
+
+def test_derived_version_is_the_version_check_runtime_and_remote_target(git_repo,tmp_path):
+    import asyncio
+    from app.release_info import read_local_release
+    from tests.version_update_helpers import Github,check
+    repo,commit,_=git_repo
+    release,_=R.resolve_commit(repo,commit,commit,tmp_path/'source')
+    current=read_local_release(tmp_path/'source',environment={'REMEMBER_ME_INSTALL_METHOD':'DOCKER'})
+    gh=Github(release.version);gh.raw[release.version]=release.as_dict()
+    async def scenario():
+        manager=gh.manager(current)
+        try:
+            state=await check(manager)
+            assert state['check']['status']=='UP_TO_DATE'
+            assert state['current']['version']==state['latest']['version']==release.version
+            assert any('/v'+release.version+'/release.jsonc' in url for url in gh.seen)
+        finally:
+            await manager.aclose()
+    asyncio.run(scenario())
+
+
+def test_same_tag_creation_race_cannot_overwrite(prepare_fixture,monkeypatch):
+    args,journal,calls,registry,git=prepare_fixture
+    original=registry.client.create_tag
+    def race(tag,commit):
+        git('tag',tag)
+        original(tag,commit)
+    monkeypatch.setattr(registry.client,'create_tag',race)
+    with pytest.raises(R.Failure,match='HTTP 422'):
+        R.prepare(args,registry.client,journal)
+    assert not any(call[:2]==['docker','push'] for call in calls)
+    assert git('rev-parse','v1.0.0')==args.commit
+
+
+@pytest.mark.parametrize('when',['during-build','after-tag'])
+def test_newer_history_race_stops_version_push(prepare_fixture,monkeypatch,when):
+    args,journal,calls,registry,git=prepare_fixture
+    if when=='during-build':
+        original=R.checks.verify_candidate
+        def candidate(*values):
+            result=original(*values)
+            registry.releases=[{'tag_name':'v2.0.0','draft':False}]
+            return result
+        monkeypatch.setattr(R.checks,'verify_candidate',candidate)
+    else:
+        original=registry.client.create_tag
+        def create(tag,commit):
+            original(tag,commit)
+            git('tag','v2.0.0')
+        monkeypatch.setattr(registry.client,'create_tag',create)
+    with pytest.raises(R.Failure,match='strictly higher|Higher or equal'):
+        R.prepare(args,registry.client,journal)
+    assert not any(call[:2]==['docker','push'] for call in calls)
+
+
+def test_tag_only_failed_publication_cannot_reuse_version(prepare_fixture,monkeypatch,tmp_path):
+    args,journal,calls,registry,git=prepare_fixture
+    original=R.command
+    def failed_push(argv,**kw):
+        if argv[:2]==['docker','push']:
+            raise R.Failure('failed before manifest commit')
+        return original(argv,**kw)
+    monkeypatch.setattr(R,'command',failed_push)
+    with pytest.raises(R.Failure,match='failed before manifest'):
+        R.prepare(args,registry.client,journal)
+    assert git('rev-parse','v1.0.0')==args.commit and registry.client.existing_version('1.0.0') is None
+    calls.clear()
+    retry=arguments(tmp_path,tag='',commit=args.commit,control=args.control,work=tmp_path/'retry')
+    with pytest.raises(R.Failure,match='Tag already exists'):
+        R.prepare(retry,registry.client,R.Journal(tmp_path/'retry-evidence',{}))
+    assert not calls
+
+
+def test_newer_release_prevents_latest_even_after_anonymous_verification(prepare_fixture,monkeypatch,tmp_path):
+    args,journal,calls,registry,_=prepare_fixture
+    R.prepare(args,registry.client,journal)
+    args.existing_digest=args.verified_digest=journal.data['digest']
+    args.image_id=journal.data['image_id'];args.release_sha256=journal.data['release_sha256']
+    registry.add('2.0.0','2.0.0',args.commit)
+    calls.clear()
+    with pytest.raises(R.Failure,match='strictly higher'):
+        R.promote(args,registry.client,R.Journal(tmp_path/'latest-refused',{}))
+    assert not calls
+
+
+def test_prepare_cannot_receive_independently_entered_tag(prepare_fixture):
+    args,journal,calls,registry,_=prepare_fixture
+    args.tag='v1.0.0'
+    with pytest.raises(R.Failure,match='derive it'):
+        R.prepare(args,registry.client,journal)
+    assert not calls and not registry.posts
+
+
+@pytest.mark.parametrize('value',['0.0.0','1.0.1','1.2.1','1.2.2','2.4.7','10.10.3'])
+def test_even_minor_stable_policy_does_not_restrict_major_or_patch(value):
+    assert R.stable_version(value) == tuple(map(int,value.split('.')))
+
+
+@pytest.mark.parametrize('value',['1.1.0','1.3.0','2.1.2','1.2.0-rc.1','1.3.0-rc.1'])
+def test_odd_minor_and_semver_prereleases_cannot_be_published(git_repo,value):
+    repo,_,git=git_repo
+    (repo/'release.jsonc').write_text(json.dumps(release_document(value)))
+    git('commit','-am','development series fixture')
+    with pytest.raises(R.Failure,match='even minor|formal X.Y.Z'):
+        R.release_at_commit(repo,git('rev-parse','HEAD'))
+
+
+def test_readmes_document_minor_policy_without_claiming_releases_exist():
+    english=(ROOT/'README.md').read_text()
+    chinese=(ROOT/'README.zh-CN.md').read_text()
+    assert '**minor**' in english and '**次版本号**' in chinese
+    for text in (english,chinese):
+        assert all(value in text for value in ('1.2.x','1.4.x','1.3.x','1.2.1'))
+    assert 'not announcements' in english and '不表示已有对应版本' in chinese

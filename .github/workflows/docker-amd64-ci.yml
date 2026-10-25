@@ -81,7 +81,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m py_compile .github/scripts/docker_ci.py .github/scripts/docker_checks.py tests/run_docker_ci_smoke.py
-          python -m pip install --quiet pytest PyYAML
+          python -m pip install --quiet pytest PyYAML httpx
           python -m pytest -q tests/test_docker_assets.py tests/test_docker_ci_script.py tests/test_docker_release.py tests/test_docker_install_docs.py
 
       - name: Build and verify

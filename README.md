@@ -169,6 +169,20 @@ do not force an overwrite. The application neither inspects Git nor runs these
 commands. Preserve the original data path, configuration, environment and startup
 arguments when restarting. Verify health and retrieve an existing memory.
 
+## Version numbering
+
+Remember Me uses `MAJOR.MINOR.PATCH` versions. The **minor** number identifies
+the release series: even minor numbers (`1.2.x`, `1.4.x`) are stable release
+series; odd minor numbers (`1.3.x`) are development/prerelease series. Patch
+numbers have no parity restriction: `1.2.1` is a valid stable version.
+
+This is Remember Me's project convention. The current release workflow only
+publishes stable versions with an even minor number; publishing odd-minor series
+or versions such as `1.3.0-rc.1` is not supported yet. Version checks use the latest
+official stable GitHub Release. SOURCE checkouts may contain development code;
+their displayed version still comes only from the shipped `release.jsonc`.
+The numbers above are examples, not announcements of available releases.
+
 ## Version checks and networking
 
 HTTP/Web checks asynchronously after startup and every 24 hours by default.

@@ -1,5 +1,28 @@
 # remember-me — Memory MCP Server
 
+## Release metadata maintenance
+
+Before a release, the final content-maintenance step is to update the root
+`release.jsonc` with the approved version and all five structured content arrays.
+If source or documentation changes afterward, review and maintain this file last
+again. Subsequent validation, committing and deriving release identifiers are not
+content maintenance. A development `version: null` is not a publishable version.
+Remember Me uses the minor component for release channels: even MINOR series
+(1.2.x, 1.4.x) are stable; odd MINOR series (1.3.x) are development/prerelease.
+PATCH parity is irrelevant. The current workflow publishes only stable X.Y.Z
+with even MINOR; odd MINOR and SemVer prerelease suffixes are explicitly rejected.
+This is a project policy, not a change to the runtime JSONC/SemVer schema.
+
+All distributions read their shipped `release.jsonc`; never infer runtime version
+from Git or independently enter a release version. Manual Docker release dispatch
+selects a reviewed full commit on master history. Tag, image version and the
+human-reviewed Release Notes artifact derive from that commit's file. A publish
+creates its Tag only after candidate validation and explicit confirmation; it
+never updates/deletes an existing Tag. Version history must strictly increase;
+digest resume is only recovery of the same identity and cannot bypass that rule.
+GitHub Release publication and first Package Public remain manual user actions;
+implementation/validation alone never authorizes production publication.
+
 ## Entry point & execution
 
 ```bash
