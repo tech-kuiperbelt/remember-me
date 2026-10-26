@@ -1,4 +1,4 @@
-"""Opt-in ownership acceptance for the actual image initializer, rootful Linux."""
+"""Opt-in ownership acceptance for the optional UID/GID 10001 initializer."""
 import argparse
 import json
 from pathlib import Path

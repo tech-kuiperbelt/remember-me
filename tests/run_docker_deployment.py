@@ -40,7 +40,16 @@ def main():
         return result
 
     def compose(*argv, **kwargs):
+        if argv and argv[0] == 'up':
+            argv = ('up', '--pull', 'never', *argv[1:])
         return command(base + list(argv), **kwargs)
+
+    def stop():
+        cid = compose('ps', '-q', 'remember-me').stdout.strip()
+        compose('stop')
+        state = json.loads(command(['docker', 'inspect', cid]).stdout)[0]['State']
+        assert state['ExitCode'] == 0 and not state['OOMKilled'], state
+        evidence.setdefault('stops', []).append({'container': cid, 'exit_code': state['ExitCode']})
 
     def passed(name, detail=True):
         evidence['checks'].append({'name': name, 'result': detail})
@@ -87,17 +96,24 @@ print(json.dumps({'vectors':[(m,p,hashlib.sha256(b).hexdigest()) for m,p,b in ro
 
     try:
         print('Evidence:', work, flush=True)
+        command(['docker', 'image', 'inspect', args.image, args.old_image])
         compose('up', '-d', '--wait', '--wait-timeout', '240')
         ready()
         cid = compose('ps', '-q', 'remember-me').stdout.strip()
         info = json.loads(command(['docker', 'inspect', cid]).stdout)[0]
-        assert info['Config']['User'] == '10001:10001'
-        assert info['HostConfig']['ReadonlyRootfs']
+        assert info['Config']['User'] == '0:0'
+        assert not info['HostConfig']['ReadonlyRootfs']
         assert info['HostConfig']['PortBindings']['1314/tcp'] == [{'HostIp': '127.0.0.1', 'HostPort': str(args.port)}]
-        assert execute('import os; print(os.getuid(), os.getgid())') == '10001 10001'
+        assert execute('import os; print(os.getuid(), os.getgid())') == '0 0'
+        mounts = {item['Destination']: item for item in info['Mounts']}
+        assert mounts['/data']['Type'] == 'bind' and mounts['/data']['RW']
+        assert mounts['/etc/localtime']['Type'] == 'bind' and not mounts['/etc/localtime']['RW']
+        observed_at = int(time.time())
+        expected_time = time.strftime('%Y-%m-%d %H:%M:%S %z', time.localtime(observed_at))
+        assert execute(f"import time; print(time.strftime('%Y-%m-%d %H:%M:%S %z', time.localtime({observed_at})))") == expected_time
         assert request('/api/config')['auto_download_model'] is False
         assert 'data-deployment-mode="docker"' in request('/admin/console')
-        passed('empty bind directory, non-root, read-only root, loopback publication and HTTP health')
+        passed('empty bind directory without initialization, default root, loopback publication, host timezone and HTTP health')
 
         for path in ['/mcp', '/sse', '/messages/?session_id=unknown']:
             method = 'GET' if path == '/sse' else 'POST'
@@ -132,9 +148,7 @@ print(json.dumps({'vectors':[(m,p,hashlib.sha256(b).hexdigest()) for m,p,b in ro
 
         request('/api/config', {'debug': True, 'language': 'en'}, method='POST')
         persisted = request('/api/config')
-        compose('stop')
-        stopped = json.loads(command(['docker', 'inspect', cid]).stdout)[0]
-        assert stopped['State']['ExitCode'] == 0
+        stop()
         compose('down')
         compose('up', '-d', '--wait', '--wait-timeout', '240')
         ready()
@@ -143,26 +157,31 @@ print(json.dumps({'vectors':[(m,p,hashlib.sha256(b).hexdigest()) for m,p,b in ro
         assert request('/api/config') == persisted
         passed('graceful stop exit 0, down/up retains data, vectors, profile and configuration')
 
-        # An old compatible image has no init helper: reuse the already prepared data.
-        compose('stop')
+        # Older images default to UID 10001, which cannot necessarily read files
+        # newly created by root. Override the old process user explicitly so this
+        # checks business-data compatibility without silently changing ownership.
+        stop()
         old_env = dict(env, REMEMBER_ME_IMAGE=args.old_image)
-        compose('up', '-d', '--no-deps', '--force-recreate', 'remember-me', environment=old_env)
+        old_user = work / 'old-image-user.yaml'
+        old_user.write_text('services:\n  remember-me:\n    user: "0:0"\n')
+        command(base + ['-f', str(old_user), 'up', '--pull', 'never', '-d', '--no-deps', '--force-recreate', 'remember-me'],
+                environment=old_env)
         ready()
         verify_memory()
         assert snapshot() == original
-        compose('stop')
+        stop()
         compose('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '240')
         ready()
         assert snapshot() == original
-        passed(f'compatible {args.image} → {args.old_image} → {args.image} reuse, vector bytes unchanged')
+        passed(f'compatible {args.image} → {args.old_image} → {args.image} reuse with explicit root on old image, vector bytes unchanged')
 
-        compose('stop')
-        command(['docker', 'run', '--rm', '--network', 'none', '--user', '0:0', '--entrypoint', 'tar',
+        stop()
+        command(['docker', 'run', '--pull', 'never', '--rm', '--network', 'none', '--user', '0:0', '--entrypoint', 'tar',
                  '-v', str(work / 'data') + ':/source:ro', '-v', str(work) + ':/backup', args.image,
                  '-C', '/source', '-cpf', '/backup/instance.tar', '.'])
         restored = work / ('restored-' + str(time.time_ns()))
         restored.mkdir()
-        command(['docker', 'run', '--rm', '--network', 'none', '--user', '0:0', '--entrypoint', 'tar',
+        command(['docker', 'run', '--pull', 'never', '--rm', '--network', 'none', '--user', '0:0', '--entrypoint', 'tar',
                  '-v', str(restored) + ':/target', '-v', str(work) + ':/backup:ro', args.image,
                  '-C', '/target', '--same-owner', '-xpf', '/backup/instance.tar'])
         compose('down')
@@ -177,9 +196,12 @@ print(json.dumps({'vectors':[(m,p,hashlib.sha256(b).hexdigest()) for m,p,b in ro
         evidence['image'] = json.loads(command(['docker', 'image', 'inspect', args.image]).stdout)[0]['Id']
         evidence['old_image'] = json.loads(command(['docker', 'image', 'inspect', args.old_image]).stdout)[0]['Id']
         evidence['backup_sha256'] = hashlib.sha256((work / 'instance.tar').read_bytes()).hexdigest()
+        stop()
+        compose('down')
+        evidence['cleanup'] = 'all acceptance containers stopped with exit 0 and removed'
         evidence['status'] = 'passed'
         (work / 'results.json').write_text(json.dumps(evidence, indent=2))
-        print('Acceptance complete. Container remains available for real browser/client tests.', flush=True)
+        print('Acceptance complete. All acceptance containers stopped and removed.', flush=True)
     except BaseException:
         (work / 'compose.log').write_text(compose('logs', '--no-color', check=False).stdout)
         raise

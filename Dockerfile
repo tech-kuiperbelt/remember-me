@@ -46,7 +46,7 @@ RUN groupadd --gid 10001 remember-me && \
 COPY --from=deps /opt/venv /opt/venv
 WORKDIR /opt/remember-me
 EXPOSE 1314
-USER 10001:10001
+USER 0:0
 ENTRYPOINT ["python", "/opt/remember-me/docker/entrypoint.py"]
 CMD ["--host", "0.0.0.0", "--port", "1314"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=3 \
@@ -80,7 +80,7 @@ USER 0:0
 COPY --from=model-tools /build /build
 RUN python /build/package_model.py --download-cache /tmp/model-download --output /opt/remember-me/models \
     && rm -rf /tmp/model-download /build
-USER 10001:10001
+USER 0:0
 ENV REMEMBER_ME_INSTALL_METHOD=DOCKER
 COPY app/ ./app/
 COPY web/ ./web/

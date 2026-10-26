@@ -7,14 +7,14 @@ import subprocess
 import pytest
 import yaml
 
-from tests.run_docker_installation import installation_blocks
+from tests.run_docker_installation import installation_blocks, docker_run_argv
 
 ROOT = Path(__file__).resolve().parents[1]
 READMES = ('README.md', 'README.zh-CN.md')
 DOCKER_GUIDES = ('docs/installation/docker.md', 'docs/installation/docker.zh-CN.md')
 SOURCE_GUIDES = ('docs/installation/source.md', 'docs/installation/source.zh-CN.md')
 ALL_DOCS = READMES + DOCKER_GUIDES + SOURCE_GUIDES
-IMAGE = 'ghcr.io/tech-kuiperbelt/remember-me:1.0.0'
+IMAGE = 'ghcr.io/tech-kuiperbelt/remember-me:latest'
 
 
 def test_bilingual_installation_commands_match():
@@ -34,50 +34,78 @@ def test_document_shell_blocks_are_valid_bash(filename):
 @pytest.mark.parametrize('filename', DOCKER_GUIDES)
 def test_guide_release_image_and_compose_source_match(filename):
     text = (ROOT / filename).read_text()
-    assert 'export REMEMBER_ME_IMAGE=' + IMAGE in text
-    assert 'https://raw.githubusercontent.com/tech-kuiperbelt/remember-me/v1.0.0/compose.yaml' in text
+    commands = installation_blocks(ROOT / filename)
+    assert commands['minimal'] == 'docker run --name remember-me -v "$PWD:/data" -p 127.0.0.1:1314:1314 ' + IMAGE
+    assert 'https://raw.githubusercontent.com/tech-kuiperbelt/remember-me/master/compose.yaml' in text
     assert 'remember-me:phase2.2-amd64' not in text
-    assert 'REMEMBER_ME_IMAGE=remember-me:phase3.2-ready-fixed' in text
-    assert 'REMEMBER_ME_DATA_DIR="$PWD/data"' in text
-    assert 'REMEMBER_ME_PORT=1314' in text
-    assert '1.0.0' in text and 'v1.0.0' in text
-    assert '10001:10001' in text and '0750' in text
+    assert 'remember-me:phase3.2-ready-fixed' not in text
+    assert 'init_data.py' not in text
+    assert 'ghcr.io/tech-kuiperbelt/remember-me@sha256:...' in text
+    assert 'http://127.0.0.1:5263/admin/console' in text
+    assert 'http://127.0.0.1:1314/admin/console' in text
 
 
-def test_compose_and_run_security_and_persistence_match():
+def test_compose_and_recommended_run_persistence_and_defaults():
     doc = yaml.safe_load((ROOT / 'compose.yaml').read_text())
-    app, init = (doc['services'][name] for name in ('remember-me', 'data-init'))
-    run = shlex.split(installation_blocks(ROOT / DOCKER_GUIDES[0])['run'].replace('\\\n', ''))
-    assert app['image'] == init['image'] == '${REMEMBER_ME_IMAGE:-' + IMAGE + '}'
-    assert app['platform'] == init['platform'] == run[run.index('--platform') + 1] == 'linux/amd64'
-    assert app['read_only'] and init['read_only'] and '--read-only' in run
-    assert app['user'] == run[run.index('--user') + 1] == '10001:10001'
-    assert app['cap_drop'] == [run[run.index('--cap-drop') + 1]] == ['ALL']
-    assert app['security_opt'] == [run[run.index('--security-opt') + 1]] == ['no-new-privileges:true']
+    assert set(doc['services']) == {'remember-me'}
+    app = doc['services']['remember-me']
+    run = shlex.split(installation_blocks(ROOT / DOCKER_GUIDES[0])['run'])
+    assert app['image'] == '${REMEMBER_ME_IMAGE:-' + IMAGE + '}'
+    assert app['platform'] == 'linux/amd64'
+    assert 'user' not in app and not app.get('read_only')
+    assert not app.get('cap_drop') and not app.get('security_opt') and not app.get('depends_on')
+    assert not {'--user', '--read-only', '--cap-drop', '--security-opt', '--platform'} & set(run)
     assert app['restart'] == run[run.index('--restart') + 1] == 'unless-stopped'
     assert app['stop_grace_period'] == run[run.index('--stop-timeout') + 1] + 's' == '120s'
     assert app['ports'] == ['127.0.0.1:${REMEMBER_ME_PORT:-1314}:1314']
-    assert run[run.index('-p') + 1] == '127.0.0.1:${REMEMBER_ME_PORT}:1314'
-    assert run.count('--mount') == 1
-    assert run[run.index('--mount') + 1] == 'type=bind,src=$REMEMBER_ME_DATA_DIR,dst=/data'
-    assert app['volumes'] == init['volumes'] and len(app['volumes']) == 1
-    assert app['volumes'][0] == {'type': 'bind', 'source': '${REMEMBER_ME_DATA_DIR:-./data}',
+    assert run[run.index('-p') + 1] == '127.0.0.1:1314:1314'
+    assert [run[i + 1] for i, value in enumerate(run) if value == '-v'] == [
+        '$PWD:/data', '/etc/localtime:/etc/localtime:ro']
+    volumes = {item['target']: item for item in app['volumes']}
+    assert set(volumes) == {'/data', '/etc/localtime'}
+    assert volumes['/data'] == {'type': 'bind', 'source': '${REMEMBER_ME_DATA_DIR:-.}',
                                 'target': '/data', 'bind': {'create_host_path': True}}
-    assert app['depends_on'] == {'data-init': {'condition': 'service_completed_successfully'}}
+    assert volumes['/etc/localtime'] == {'type': 'bind', 'source': '/etc/localtime',
+                                        'target': '/etc/localtime', 'read_only': True}
     assert app['command'] == ['--host', '0.0.0.0', '--port', '1314']
 
 
-def test_run_initializer_reuses_compose_helper_and_capabilities():
-    doc = yaml.safe_load((ROOT / 'compose.yaml').read_text())['services']['data-init']
-    run = shlex.split(installation_blocks(ROOT / DOCKER_GUIDES[0])['initialize'].replace('\\\n', ''))
-    assert run[run.index('--entrypoint') + 1] == doc['entrypoint'][0] == 'python'
-    assert run[-1] == doc['entrypoint'][1] == '/opt/remember-me/docker/init_data.py'
-    assert run[run.index('--user') + 1] == doc['user'] == '0:0'
-    assert run[run.index('--network') + 1] == doc['network_mode'] == 'none'
-    assert '--read-only' in run and '--rm' in run
-    assert run[run.index('--cap-drop') + 1] == 'ALL'
-    assert [run[i+1] for i,v in enumerate(run) if v == '--cap-add'] == doc['cap_add']
-    assert '--privileged' not in run
+def test_optional_security_is_separate_from_default_commands():
+    commands = installation_blocks(ROOT / DOCKER_GUIDES[0])
+    minimal, run, secure = (shlex.split(commands[key]) for key in ('minimal', 'run', 'secure'))
+    assert '-d' not in minimal and '--user' not in minimal
+    assert minimal[minimal.index('-p') + 1] == '127.0.0.1:1314:1314'
+    assert secure[secure.index('--user') + 1] == '$(id -u):$(id -g)'
+    assert '--read-only' in secure
+    assert secure[secure.index('--cap-drop') + 1] == 'ALL'
+    assert secure[secure.index('--security-opt') + 1] == 'no-new-privileges:true'
+    assert '--read-only' not in run
+
+
+@pytest.mark.parametrize('mode', ['minimal', 'run', 'secure'])
+def test_acceptance_adapts_hardcoded_examples_to_isolated_local_image(mode, tmp_path):
+    block = installation_blocks(ROOT / DOCKER_GUIDES[0])[mode]
+    data = tmp_path / 'data with spaces'
+    extra = ['--mount', 'type=bind,src=/tmp/fixture,dst=/fixture,readonly']
+    argv = docker_run_argv(block, image='remember-me:local-fixture', name='isolated-name',
+                           data=data, port=19143, extra=extra)
+    assert argv[-1] == 'remember-me:local-fixture' and IMAGE not in argv
+    assert argv[argv.index('--name') + 1] == 'isolated-name'
+    assert argv[argv.index('-v') + 1] == str(data) + ':/data'
+    assert argv[argv.index('--pull') + 1] == 'never'
+    assert argv[-3:-1] == extra
+    assert argv[argv.index('-p') + 1] == '127.0.0.1:19143:1314'
+    assert '127.0.0.1:1314:1314' not in argv and '127.0.0.1:5263:1314' not in argv
+    if mode == 'minimal':
+        assert '-d' not in argv
+
+
+@pytest.mark.parametrize('port', [1314, 5263])
+def test_acceptance_refuses_documented_or_production_ports(port, tmp_path):
+    block = installation_blocks(ROOT / DOCKER_GUIDES[0])['run']
+    with pytest.raises(AssertionError):
+        docker_run_argv(block, image='remember-me:local-fixture', name='isolated-name',
+                        data=tmp_path, port=port)
 
 
 @pytest.mark.parametrize('filename', ALL_DOCS)
@@ -93,7 +121,10 @@ def test_public_links_exist_and_exclude_internal_operations(filename):
 def test_backup_restore_and_update_commands_are_present(filename):
     text = (ROOT / filename).read_text()
     assert 'sudo tar --numeric-owner -C "$REMEMBER_ME_DATA_DIR"' in text
-    assert 'sudo tar --numeric-owner --same-owner -C "$PWD/restored-data"' in text
+    assert 'sudo tar --numeric-owner --same-owner -C "$REMEMBER_ME_RESTORE_DIR"' in text
+    assert 'REMEMBER_ME_DATA_DIR="$PWD"' in text
+    assert 'REMEMBER_ME_BACKUP_DIR="$(dirname "$REMEMBER_ME_DATA_DIR")/remember-me-backups"' in text
+    assert 'REMEMBER_ME_RESTORE_DIR="$(dirname "$REMEMBER_ME_DATA_DIR")/remember-me-restored"' in text
     assert 'docker pull --platform linux/amd64 "$REMEMBER_ME_IMAGE"' in text
     assert 'docker stop --time 120 remember-me' in text
     assert "{{.State.ExitCode}}" in text

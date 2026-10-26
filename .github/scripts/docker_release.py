@@ -36,6 +36,11 @@ DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 SEMVER = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?\Z")
 MANIFEST_TYPES = ", ".join(("application/vnd.oci.image.manifest.v1+json",
                             "application/vnd.docker.distribution.manifest.v2+json"))
+EXISTING_VERSION = (
+    "Version already exists; publish never overwrites. Inspect the original run's commit and digest; "
+    "recover with operation=resume, expected_commit=<original full commit> and "
+    "existing_digest=<original recorded digest>. Recovery cannot bypass newer release history."
+)
 
 
 class Failure(RuntimeError):
@@ -138,7 +143,7 @@ def release_gate(repo, registry, value, commit, *, recovery=False, expected_dige
         require(tag in tags, "Recovery Tag missing")
         require(remote_tag(repo, tag)["commit"] == commit, "Recovery Tag/commit conflict")
     else:
-        require(existing is None, "Version already exists; publish never overwrites")
+        require(existing is None, EXISTING_VERSION)
         require(tag not in tags, "Tag already exists; publish never overwrites")
     history = {tag_version(name) for name in tags}
     history.update(registry.published_versions())
@@ -487,7 +492,7 @@ def prepare(args, registry, journal):
     existing = registry.existing_version(value)
     local_image = f"remember-me:release-{env.get('GITHUB_RUN_ID', 'local')}-{env.get('GITHUB_RUN_ATTEMPT', '1')}"
     if args.operation == "publish":
-        require(existing is None, "Version already exists; publish never overwrites")
+        require(existing is None, EXISTING_VERSION)
         cache_digest = cache_gate(registry)
         budget = {}
         ci.preflight("cold", budget)
@@ -681,7 +686,15 @@ def main():
                 "Public cannot be changed back to Private. After correcting the failure, dispatch resume with "
                 "the same full commit and recorded digest; the tag is derived from its release.jsonc. "
                 "Recovery refuses a higher version already in history; never overwrite a version."))
+        if args.command == "promote":
+            journal.save(next_action=(
+                "Latest promotion is incomplete or unverified. Inspect the recorded version and latest state; "
+                "after correcting the failure, dispatch resume with the same full commit and recorded digest. "
+                "A failed Registry command may already have updated latest; resume verifies that state. "
+                "Recovery refuses a higher version already in history; never overwrite a version."))
         print(f"Release stopped: {exc}", file=sys.stderr)
+        if journal.data.get("next_action"):
+            print(f"Next action: {journal.data['next_action']}", file=sys.stderr)
         return 1
     finally:
         summary = os.environ.get("GITHUB_STEP_SUMMARY")

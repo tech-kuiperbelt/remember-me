@@ -88,3 +88,13 @@ def test_runtime_includes_same_release_file_and_install_declaration(target):
     assert stage.index("COPY release.jsonc") > stage.index("COPY app/")
     assert "!release.jsonc" in (ROOT / ".dockerignore").read_text().splitlines()
     assert (ROOT / "release.jsonc").is_file()
+
+
+@pytest.mark.parametrize("target", ["runtime-base", "runtime-download"])
+def test_runtime_defaults_to_root_and_keeps_explicit_nonroot_account(target):
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    stage = dockerfile.split(f" AS {target}\n", 1)[1].split("\nFROM ", 1)[0]
+    users = [line.split(maxsplit=1)[1] for line in stage.splitlines() if line.startswith("USER ")]
+    assert users[-1] == "0:0"
+    assert "groupadd --gid 10001 remember-me" in dockerfile
+    assert "useradd --uid 10001 --gid 10001" in dockerfile

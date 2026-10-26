@@ -1,11 +1,8 @@
 # Docker 安装与升级（Linux AMD64）
 
-安装并运行 Remember Me 官方容器。若希望用 Python 从源码安装，见[源码安装与升级](source.zh-CN.md)。
-
-**发布前状态：官方 GHCR 镜像尚未公开。** 以下命令为正式发布准备；`1.0.0`
-是示例版本，不代表已可下载。公开后请使用实际发布的完整版本。本地验收改用
-`REMEMBER_ME_IMAGE=remember-me:phase3.2-ready-fixed`，不能据此认定匿名下载通过。
-两种方式都无需安装 Python 或独立 Embedding 服务：**镜像内置 BGE-M3，CPU 推理，无需配置或下载模型。**
+官方镜像 `ghcr.io/tech-kuiperbelt/remember-me:latest` 已公开，无需登录 GHCR 即可拉取。
+**镜像内置 BGE-M3，CPU 推理，无需安装 Python、下载模型或准备独立 Embedding 服务。**
+若希望从源码安装，见[源码安装与升级](source.zh-CN.md)。
 
 以下 Bash 命令面向本机 rootful Linux Docker Engine、AMD64；Compose 方式还需
 Docker Compose 插件。Rootless、Docker Desktop、SELinux 和网络文件系统需独立验证权限与平台。
@@ -13,158 +10,208 @@ Docker Compose 插件。Rootless、Docker Desktop、SELinux 和网络文件系�
 
 ## 准备一个实例
 
-**选择一种**安装方式。两种方式使用相同镜像和 `./data`，不要让两个实例同时写入同一目录。
-在新的工作目录执行以下命令，后续继续使用该目录。路径必须位于 Docker daemon 本机。
-
-```bash
-mkdir -p remember-me
-cd remember-me
-export REMEMBER_ME_IMAGE=ghcr.io/tech-kuiperbelt/remember-me:1.0.0
-export REMEMBER_ME_DATA_DIR="$PWD/data"
-export REMEMBER_ME_PORT=1314
-```
-
-记录这些设置；新终端需要重新设置，尤其是自定义目录或端口。固定完整版本或发布说明中的
-`ghcr.io/tech-kuiperbelt/remember-me@sha256:...`，避免隐式使用 `latest`。
-Git Tag 为 `v1.0.0`，镜像 Tag 为 `1.0.0`。
+**选择一种**安装方式，使用专用工作目录，不要让两个实例同时写入同一数据目录。
+路径必须位于 Docker daemon 本机。两种方式默认使用 `latest`，也可按需指定完整版本或 digest。
+仅拉取新镜像不会更新已创建的容器。
 
 ## 方式一：docker run
 
-创建专用目录，执行镜像已有的初始化器。只有这个短暂运行的辅助容器以 root 启动；
-它将**空目录**准备为 UID/GID `10001:10001`，随后降权检查访问。
-已有非空目录只检查权限，不递归修改属主或覆盖配置；初始化失败时不要继续启动。
+### 最简单启动
 
 ```bash
-mkdir -p "$REMEMBER_ME_DATA_DIR"
-docker run --rm --platform linux/amd64 --network none --read-only \
-  --user 0:0 --cap-drop ALL \
-  --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER \
-  --cap-add SETUID --cap-add SETGID --security-opt no-new-privileges:true \
-  --mount "type=bind,src=$REMEMBER_ME_DATA_DIR,dst=/data" \
-  --entrypoint python "$REMEMBER_ME_IMAGE" /opt/remember-me/docker/init_data.py
+mkdir remember-me
+cd remember-me
+docker run --name remember-me -v "$PWD:/data" -p 127.0.0.1:1314:1314 ghcr.io/tech-kuiperbelt/remember-me:latest
 ```
 
-初始化成功后启动应用：
+应用在前台运行，终端直接显示日志。数据保存在**宿主机当前目录**，它被挂载到容器的 `/data`。
+容器端口 `1314` 映射到宿主机本机端口 `1314`。浏览器访问
+<http://127.0.0.1:1314/admin/console>，MCP 客户端连接
+`http://127.0.0.1:1314/mcp`（传统 SSE 使用 `/sse`）。
+
+镜像默认以容器内 root 运行，普通本地目录无需单独初始化或执行 `chown`。
+已有文件和目录的属主、权限不会自动修改；新建文件通常归 root 所有。
+只读挂载等文件系统限制仍然有效。
+
+### 推荐启动
+
+在准备好的数据目录中，**选择此命令或上面的最简命令之一**：
 
 ```bash
-docker run -d --name remember-me --platform linux/amd64 \
+docker run -d --name remember-me \
   --restart unless-stopped --stop-timeout 120 \
-  --user 10001:10001 --read-only --cap-drop ALL \
-  --security-opt no-new-privileges:true \
-  --mount "type=bind,src=$REMEMBER_ME_DATA_DIR,dst=/data" \
-  -p "127.0.0.1:${REMEMBER_ME_PORT}:1314" "$REMEMBER_ME_IMAGE"
+  -v "$PWD:/data" \
+  -v /etc/localtime:/etc/localtime:ro \
+  -p 127.0.0.1:1314:1314 \
+  ghcr.io/tech-kuiperbelt/remember-me:latest
 ```
+
+| 参数 | 含义 |
+| --- | --- |
+| `-d` | 后台运行，启动后返回终端。 |
+| `--name remember-me` | 指定容器名称，方便后续管理。 |
+| `--restart unless-stopped` | 容器退出后自动重启，随 Docker 启动；手动停止后保持停止。宿主机重启后自动运行还要求 Docker 服务自启动。 |
+| `--stop-timeout 120` | 停止时最多等待 120 秒，让应用完成清理，超时后强制终止。 |
+| `-v "$PWD:/data"` | 配置、记忆、日志和缓存保存在宿主机当前目录。 |
+| `-v /etc/localtime:/etc/localtime:ro` | 只读挂载宿主机时区文件，让应用日志使用宿主机时区。最简命令使用容器默认时区；存储记录中的 UTC 时间格式不变。 |
+| `-p 127.0.0.1:1314:1314` | 顺序为 `宿主机地址:宿主机访问端口:容器端口`；访问 <http://127.0.0.1:1314/admin/console>。修改宿主机端口时，只改 IP 地址后的第一个端口号，保留最后的容器端口 `1314`。 |
+| `ghcr.io/tech-kuiperbelt/remember-me:latest` | 使用最新发布的稳定镜像。需要固定部署时，将 `latest` 替换为已发布完整版本，或使用 `ghcr.io/tech-kuiperbelt/remember-me@sha256:...`。 |
+
+如果宿主机 `1314` 已被占用，将 `-p 127.0.0.1:1314:1314` 改为
+`-p 127.0.0.1:5263:1314`，然后访问 <http://127.0.0.1:5263/admin/console>，
+MCP 地址也使用 `5263`。容器内部仍监听 `1314`。
+
+用 `docker logs -f remember-me` 查看后台日志。首次加载模型可能需要数分钟。
+`latest` 不会自动替换已运行的容器，见[手动升级和回滚](#upgrade-and-rollback)。
+
+### 其他可选启动参数
+
+| 参数 | 用途 | 不填写时 |
+| --- | --- | --- |
+| `--platform linux/amd64` | 显式指定 Linux AMD64 平台。 | Docker 按默认平台选择镜像。 |
+| `--user UID:GID` | 指定非 root 用户和组，要求该用户已能读写 `/data`。 | 使用镜像默认的 root 用户。 |
+| `--read-only` | 容器根文件系统只读，挂载的 `/data` 仍可写。 | 容器自身文件系统可写。 |
+| `--cap-drop ALL` | 移除额外 Linux capabilities 系统特权。 | 保留 Docker 默认的一组 capabilities。 |
+| `--security-opt no-new-privileges:true` | 禁止进程通过执行程序获得额外权限。 | 不额外启用此限制。 |
+| `--pull always` | 创建容器前检查并拉取指定镜像。 | `docker run` 在本地已有镜像时优先使用本地镜像。 |
+| `--mount "type=bind,src=$PWD,dst=/data"` | 可替代 `-v "$PWD:/data"`，两种写法选一种。 | 示例已使用 `-v` 挂载数据。 |
+
+对于**全新实例**，下面的可选组合使用宿主机当前用户的 UID/GID，并增加上表中的文件系统和
+进程限制。它是另一种启动方式：
+
+```bash
+docker run -d --name remember-me --restart unless-stopped --stop-timeout 120 --user "$(id -u):$(id -g)" --read-only --cap-drop ALL --security-opt no-new-privileges:true -v "$PWD:/data" -v /etc/localtime:/etc/localtime:ro -p 127.0.0.1:1314:1314 ghcr.io/tech-kuiperbelt/remember-me:latest
+```
+
+请从非 root 宿主机账号运行。已有 root 创建的数据切换用户前，可能需要管理员处理权限；
+镜像不会递归改属主。改权限前保留原数据。
 
 ## 方式二：Docker Compose
 
-将**同一版本 Tag** 中的[官方 compose.yaml](../../compose.yaml) 下载到工作目录，无需克隆源码：
+在新的工作目录下载[官方 compose.yaml](../../compose.yaml)。维护中的示例默认使用 `latest`，
+无需克隆源码，也不需要每次发布都修改下面命令的版本号：
 
 ```bash
-curl -fL https://raw.githubusercontent.com/tech-kuiperbelt/remember-me/v1.0.0/compose.yaml -o compose.yaml
+mkdir remember-me
+cd remember-me
+curl -fL https://raw.githubusercontent.com/tech-kuiperbelt/remember-me/master/compose.yaml -o compose.yaml
 docker compose -f compose.yaml up -d --wait --wait-timeout 300
 ```
 
-发布文件和镜像下载都要求对应版本已存在。发布前本地验收使用当前源码中的 `compose.yaml`
-副本，并按上文覆盖本地镜像。历史 `docker-compose.yml` 与本部署无关，请显式使用
-`-f compose.yaml`。Compose 在应用前执行相同的权限初始化，默认值与准备步骤一致。
-长期使用自定义配置时，可把三个 `REMEMBER_ME_*` 设置写进 `compose.yaml` 旁的本地 `.env`，
-数据目录使用绝对路径、不写 `export`；已导出的 Shell 变量优先。启动前运行
-`docker compose -f compose.yaml config` 核对。切换安装方式前先停止并移除原容器。
+Compose 与推荐 Run 保持一致：默认 root、`latest`、宿主机时区、自动重启和 120 秒停止宽限。
+数据保存在 **`compose.yaml` 所在目录**（按示例进入该目录执行时，就是当前目录），
+发布**宿主机本机端口 `1314`**，无需独立数据初始化。健康后访问
+<http://127.0.0.1:1314/admin/console>。
+
+可在 `compose.yaml` 旁的本地 `.env` 中覆盖 `REMEMBER_ME_IMAGE`、`REMEMBER_ME_DATA_DIR`
+（建议绝对路径）或 `REMEMBER_ME_PORT`，不写 `export`；已导出的 Shell 变量优先。
+启动前运行 `docker compose -f compose.yaml config` 核对。固定版本部署也可从对应 Git Tag
+下载 Compose，并指定完整镜像版本或 digest。切换方式前先停止并移除原容器；
+要复用数据时，明确指定同一个数据目录。
+
+Compose 也可显式配置服务的 `user`、`read_only`、`cap_drop` 和 `security_opt`，启用上文可选限制。
+启用非 root 用户前先确认数据访问权限。历史 `docker-compose.yml` 与本部署无关，
+请显式使用 `-f compose.yaml`。
 
 ## 连接、检查和停止
 
-健康后访问 <http://127.0.0.1:1314/admin/console>。首次加载可能需要数分钟；如修改宿主机端口，
-同步修改浏览器与 MCP 地址中的 `1314`。Streamable HTTP 使用 `/mcp`，传统 SSE 使用 `/sse`；
-连接示例与各客户端配置方法由 Web Help 维护：<http://127.0.0.1:1314/read-me>。
-如使用其他宿主机映射端口，请把 `1314` 替换为该端口。
+三种启动示例均默认访问 <http://127.0.0.1:1314/admin/console>。
+Streamable HTTP 使用 `/mcp`，传统 SSE 使用 `/sse`。连接示例与各客户端配置方法由 Web Help
+维护：使用实际宿主机映射端口打开 `/read-me`，如 <http://127.0.0.1:1314/read-me>。
 
 | 操作 | docker run | Docker Compose |
 | --- | --- | --- |
-| 状态 | `docker ps --filter name=remember-me` | `docker compose -f compose.yaml ps -a` |
+| 状态 | `docker ps -a --filter name=remember-me` | `docker compose -f compose.yaml ps -a` |
 | 日志 | `docker logs --tail 100 -f remember-me` | `docker compose -f compose.yaml logs --tail 100 -f remember-me` |
 | 健康 | `docker inspect --format '{{.State.Health.Status}}' remember-me` | `docker compose -f compose.yaml ps` |
 | 停止 | `docker stop --time 120 remember-me` | `docker compose -f compose.yaml stop` |
 | 再启动 | `docker start remember-me` | `docker compose -f compose.yaml up -d --wait --wait-timeout 300` |
 | 移除已停止容器 | `docker rm remember-me` | `docker compose -f compose.yaml down` |
 
-健康检查只观察模型就绪，不触发下载。启动失败请检查日志、空间和目录权限。
+健康检查只观察模型就绪，不触发下载。启动失败请检查日志、空间和数据目录访问权限。
+配置、SQLite 及其 sidecar、Dual JSONL、日志和缓存均保存在 `/data`。
+删除容器不会删除挂载的宿主机目录；不要删除该目录或覆盖内置模型目录。
 语言、Debug 与版本检查代理仍可在配置页修改；Docker 管理模型设置，Retry 只在本地重载内置模型。
-根文件系统和模型只读；单个 `/data` Bind Mount 保留配置、SQLite 及其 sidecar、Dual JSONL、
-日志和缓存。删除或重建容器不会删除宿主机目录；不要删除该目录或覆盖镜像模型路径。
 
-端口仅发布到 `127.0.0.1`，未经独立访问控制设计不要改成公网监听。同一 Docker 网络中的
-容器仍可直接访问容器端口；Host/Origin 防护保留。API 和管理界面没有用户认证。
-`unless-stopped` 在异常退出后重启容器，请从终端停止。停止前让导入等任务完成；
-超过 120 秒宽限期时 Docker 可能强杀进程。
+端口仅发布到宿主机回环地址。同一 Docker 网络中的容器仍可直接访问容器端口；
+Host/Origin 防护保留。API 和管理界面没有用户认证。停止前让导入等任务完成；
+超过停止宽限期时 Docker 可能强杀进程。
 
 ## 权限、备份和恢复
 
-全新空目录初始化为 `0750`。已有非空目录如属主不兼容、文件不可读写或包含符号链接，
-初始化会停止。停服后由管理员仅为**此实例的专用目录**准备 UID/GID `10001:10001` 权限；
-不要对共享目录递归改属主、使用 `chmod 777` 或让应用以 root 运行。改权限前保留原数据。
+普通启动无需准备权限。非 root 模式要求选定 UID/GID 能读写已有数据；
+不要对共享目录递归改属主或使用 `chmod 777`。
 
-必须在**优雅停机后备份整个数据目录**，不能只保留 JSONL 导出或 SQLite 主文件。
-先执行上表对应停止命令，确认退出码为 **0**（`docker run` 使用
+按上表优雅停机，确认退出码为 **0**（Run 使用
 `docker inspect --format '{{.State.ExitCode}}' remember-me`，Compose 使用
 `docker compose -f compose.yaml ps -a`）。停止命令成功不等于未被强杀；若被强杀，
-先正常启动再干净停止。备份时一并记录镜像版本/digest、数据路径和端口。
+先正常启动再干净停止。备份**整个数据目录**，不能只保留 JSONL 导出或 SQLite 主文件。
+同时记录实际运行版本/digest、数据路径和端口；仅记录 `latest` 不能确定回滚镜像。
+
+先将下面的数据路径设置为实际值：在实例目录执行命令时，Run 和新 Compose 部署均为 `$PWD`；
+已有或自定义部署使用其实际数据路径。归档必须放在数据目录**之外**；示例在同级备份目录生成带时间戳的文件：
 
 ```bash
-sudo tar --numeric-owner -C "$REMEMBER_ME_DATA_DIR" -cpf "$PWD/remember-me-backup.tar" .
+export REMEMBER_ME_DATA_DIR="$PWD"
+export REMEMBER_ME_BACKUP_DIR="$(dirname "$REMEMBER_ME_DATA_DIR")/remember-me-backups"
+mkdir -p "$REMEMBER_ME_BACKUP_DIR"
+export REMEMBER_ME_BACKUP="$REMEMBER_ME_BACKUP_DIR/remember-me-$(date -u +%Y%m%dT%H%M%SZ).tar"
+sudo tar --numeric-owner -C "$REMEMBER_ME_DATA_DIR" -cpf "$REMEMBER_ME_BACKUP" .
 ```
 
-随后按上表重启。备份包含私有记忆，请妥善保管。恢复时先停止实例，将数据解压到
-**新的空目录**，保留数字属主和权限：
+归档完成后按上表重启。备份包含私有记忆，请妥善保管；换终端时重新设置这些变量为实际路径。
+恢复时先停止实例，解压到**新的空同级目录**，保留数字属主和权限：
 
 ```bash
-mkdir "$PWD/restored-data"
-sudo tar --numeric-owner --same-owner -C "$PWD/restored-data" -xpf "$PWD/remember-me-backup.tar"
-export REMEMBER_ME_DATA_DIR="$PWD/restored-data"
+export REMEMBER_ME_RESTORE_DIR="$(dirname "$REMEMBER_ME_DATA_DIR")/remember-me-restored"
+mkdir "$REMEMBER_ME_RESTORE_DIR"
+sudo tar --numeric-owner --same-owner -C "$REMEMBER_ME_RESTORE_DIR" -xpf "$REMEMBER_ME_BACKUP"
 ```
 
-如使用 `.env`，同步更新其中的数据目录。使用恢复目录重建容器：`docker run` 方式先移除已停止容器，再执行初始化和启动命令；
-Compose 方式运行 `docker compose -f compose.yaml up -d --wait --wait-timeout 300`。
-检查健康、配置、记忆明细和语义检索，再决定是否停用原副本。不要同时运行两个实例写入同一目录。
+Run 方式先移除已停止容器，把 `-v "$PWD:/data"` 替换为
+`-v "$REMEMBER_ME_RESTORE_DIR:/data"` 后重建。Compose 方式将 `REMEMBER_ME_DATA_DIR`
+设为恢复目录，同步 `.env`（如使用），然后运行
+`docker compose -f compose.yaml up -d --wait --wait-timeout 300`。
+检查健康、配置、记忆明细和语义检索，再决定是否停用原副本。
 
 <a id="upgrade-and-rollback"></a>
 ## 手动升级和回滚
 
-阅读目标版本兼容性说明，停机做完整备份，保留旧镜像/版本和备份。
-把 `REMEMBER_ME_IMAGE` 改成选定的公开完整版本或 digest（如使用 `.env`，也同步修改），再拉取：
+在原实例工作目录操作。拉取前记录实际运行版本和镜像 digest：用 `docker inspect`
+查看运行容器的 `.Image`，再用 `docker image inspect` 查看该镜像的 `RepoDigests`。
+Compose 的容器 ID 可通过 `docker compose -f compose.yaml ps -q remember-me` 获取。
+保留原镜像和引用供回滚，先阅读所有相关版本的 Upgrade Notes / Breaking Changes。
+
+选择 `latest` 或已发布的完整版本/digest；如使用 `.env`，同步修改其中保存的值，再拉取：
 
 ```bash
+export REMEMBER_ME_IMAGE=ghcr.io/tech-kuiperbelt/remember-me:latest
 docker pull --platform linux/amd64 "$REMEMBER_ME_IMAGE"
 ```
 
-`docker run`：拉取镜像本身不会升级运行中的容器。完成停服备份后移除旧容器，
-按原部署记录重新执行上文初始化与启动步骤，仅更换目标镜像引用；保留实际使用的数据挂载、
-端口、环境变量、UID/GID、只读文件系统和安全选项，不要照搬与现有实例不同的参数。
-
-Compose：在原实例目录保留现有 `compose.yaml`、数据目录、端口与配置。将
-`REMEMBER_ME_IMAGE` 设置并导出为已确认的目标完整版本，**同步 `.env` 中保存的值**；
-当前 shell 导出值优先于 `.env`。停服备份后执行：
+拉取后按上文优雅停机并做完整备份。Run 方式移除已停止容器，按原记录重建并替换为目标镜像，
+保留数据挂载、端口、时区、用户和其他选项。Compose 方式保留原 `compose.yaml`、数据目录、
+端口与配置。旧 Compose 默认使用 `./data` 和宿主机端口 `1314`，升级时保留这些值；
+不要用新模板覆盖原文件而意外切换数据目录。导出选定的 `REMEMBER_ME_IMAGE` 后运行：
 
 ```bash
 docker compose -f compose.yaml up -d --pull always --wait --wait-timeout 300
 ```
 
-镜像设置变化会重建服务。检查健康并检索一条旧记忆。先阅读所有相关版本的
-Upgrade Notes / Breaking Changes；版本提示不证明数据兼容，也不会自动更新或迁移。
+检查健康、Web UI 版本窗口的运行版本，并检索一条旧记忆。`docker restart` 和 `docker start`
+仍使用原镜像，升级需要重建容器。版本提示不会自动更新、迁移，也不证明兼容性。
 
-回滚时按相同步骤选择旧版本/digest。只有数据库 Schema 和 Embedding Profile 兼容时
-才可直接复用当前数据；否则把对应完整备份恢复到新目录，并使用与备份匹配的镜像，备份后的
-变更不包含在内。本地重建测试不代表任意未来版本之间均可升级或降级。
+回滚使用记录的旧版本/digest，不能使用此时的 `latest`。只有数据库 Schema 和 Embedding Profile
+兼容时才可复用当前数据；否则将对应完整备份恢复到新目录，并使用匹配镜像，备份后的变更不包含在内。
+root 创建的数据交给旧版非 root 镜像前可能需要准备权限。回滚后再检查健康、版本和旧记忆检索。
 
 ## 下一步
 
-在 Docker 宿主机上打开 <http://127.0.0.1:1314/admin/console>，进入 **Help → 开始使用**，
-依次完成连接 AI、为记忆分组、设置记忆规则三步。将 <http://127.0.0.1:1314/read-me>
-交给 Agent，作为面向 Agent 的接入说明。容器内部始终监听 `1314`；如使用其他
-**宿主机映射端口**，请把两个地址中的端口一并替换。
-
-MCP 客户端配置与记忆规则的详细说明只在 Web Help 维护；本指南不重复这些内容。
+在实际宿主机映射端口打开 Admin UI，进入 **Help → 开始使用**，完成连接 AI、为记忆分组、
+设置记忆规则。把 `/read-me` 地址交给 Agent，默认是 <http://127.0.0.1:1314/read-me>。
+容器内部始终监听 `1314`；使用其他映射时，只替换宿主机端口。MCP 客户端配置与记忆规则的详细说明只在 Web Help 维护。
 
 - 如更希望使用 Python，见[源码安装与升级](source.zh-CN.md)。
 - [版本编号规则](../../README.zh-CN.md#版本编号规则)与[版本检查与网络](../../README.zh-CN.md#版本检查与网络)。
 
-备份与更新策略的背景说明见 Web UI 版本窗口及各目标版本的 Release Notes。
+备份与更新策略的背景说明见 Web UI 版本窗口及各目标版本的发布说明。

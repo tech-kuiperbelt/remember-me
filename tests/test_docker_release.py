@@ -337,8 +337,11 @@ def test_publish_only_after_candidate_verified_and_no_cache_export(prepare_fixtu
 def test_existing_version_refused_before_build(prepare_fixture):
     args, journal, calls, registry, _ = prepare_fixture
     registry.add("1.0.0", "1.0.0", args.commit)
-    with pytest.raises(R.Failure, match="already exists"):
+    with pytest.raises(R.Failure, match="already exists") as error:
         R.prepare(args, registry.client, journal)
+    assert all(value in str(error.value) for value in (
+        "operation=resume", "expected_commit=<original full commit>",
+        "existing_digest=<original recorded digest>", "newer release history"))
     assert not calls
 
 
@@ -521,6 +524,36 @@ def test_check_subcommand_is_registry_free(tmp_path, monkeypatch):
     assert evidence["release_state"] == "not_released" and evidence["version_pushed"] is False
 
 
+@pytest.mark.parametrize("phase", ["prepare", "verify-public", "promote"])
+def test_release_failure_exposes_recovery_in_logs_and_summary(tmp_path, monkeypatch, workflow, capsys, phase):
+    def fail(args, registry, journal):
+        if phase == "prepare":
+            journal.save(tag_creation="started")
+        raise R.Failure("synthetic interrupted release")
+
+    monkeypatch.setattr(R, {"prepare": "prepare", "verify-public": "verify_public", "promote": "promote"}[phase], fail)
+    monkeypatch.setattr(R, "Registry", lambda *args: object())
+    monkeypatch.setattr(R.sys, "argv", [
+        "docker_release.py", phase, "--commit", workflow["GITHUB_SHA"],
+        "--tag", "v1.0.0", "--existing-digest", "sha256:" + "c" * 64,
+        "--image-id", "sha256:" + "d" * 64, "--artifacts", str(tmp_path),
+    ])
+    assert R.main() == 1
+    evidence = json.loads((tmp_path / "release.json").read_text())
+    stderr = capsys.readouterr().err
+    assert evidence["result"] == "failed"
+    assert evidence["error"] == "synthetic interrupted release"
+    assert "resume" in evidence["next_action"]
+    assert f"Next action: {evidence['next_action']}" in stderr
+    assert evidence["next_action"] in (tmp_path / "summary.md").read_text()
+    if phase == "verify-public":
+        assert "latest was not updated" in stderr and "remember-me-buildcache" in stderr
+    elif phase == "promote":
+        assert "same full commit and recorded digest" in stderr
+        assert "may already have updated latest" in stderr
+        assert "latest was not updated" not in stderr
+
+
 def test_compatibility_comparison_rejects_numerical_drift():
     spec = importlib.util.spec_from_file_location("compatibility", ROOT / "tests/run_docker_release_compatibility.py")
     module = importlib.util.module_from_spec(spec)
@@ -594,7 +627,8 @@ def test_workflows_are_manual_pinned_and_least_privilege():
         assert release["jobs"][name]["env"]["RELEASE_TAG"] == "${{ needs.prepare-publish.outputs.tag }}"
 
 
-def test_shared_candidate_checks_do_not_bake_tools_into_runtime(tmp_path):
+@pytest.mark.parametrize("user", ["10001:10001", "0:0"])
+def test_shared_candidate_checks_preserve_old_and_new_users_without_baking_tools(tmp_path, user):
     calls = []
     labels = {"org.opencontainers.image.source": "https://github.com/" + R.REPOSITORY,
               "org.opencontainers.image.licenses": "Apache-2.0", "io.remember-me.model.revision": R.checks.REVISION,
@@ -604,7 +638,14 @@ def test_shared_candidate_checks_do_not_bake_tools_into_runtime(tmp_path):
         calls.append(argv)
         stdout = ""
         if argv[:3] == ["docker", "image", "inspect"]:
-            stdout = json.dumps([{"Id": "sha256:" + "a" * 64, "Config": {"Labels": labels}}])
+            stdout = json.dumps([{"Id": "sha256:" + "a" * 64,
+                                  "Config": {"Labels": labels, "User": user}}])
+        elif "--entrypoint" in argv and argv[argv.index("--entrypoint") + 1] == "sh":
+            # Content validation must not force the current default user onto
+            # a historical digest when prepare(resume) reuses these controls.
+            assert "--user" not in argv
+            assert 'test "$(id -u):$(id -g)" =' not in argv[-1]
+            stdout = f"runtime_uid_gid={user}\n"
         elif "--mount" in argv:
             stdout = json.dumps({"model_validation": "offline_inference_passed", "profile": {"profile_id": R.checks.PROFILE_ID}})
         return subprocess.CompletedProcess(argv, 0, stdout, "")
@@ -615,6 +656,9 @@ def test_shared_candidate_checks_do_not_bake_tools_into_runtime(tmp_path):
     assert "TMPDIR=/data" in verifier
     assert all("readonly" in verifier[i + 1] for i, arg in enumerate(verifier) if arg == "--mount")
     assert not any(argv[:3] == ["docker", "buildx", "build"] for argv in calls)
+    evidence = json.loads((tmp_path / "candidate.json").read_text())
+    assert evidence["metadata"]["config"]["User"] == user
+    assert f"runtime_uid_gid={user}" in evidence["content_checks"][0]["output"]
 
 
 @pytest.mark.parametrize("lower,higher", [

@@ -54,7 +54,9 @@ def image_content_checks(image, results, *, run=command):
         "test ! -e /opt/remember-me/tests; "
         "test ! -e /opt/remember-me/bin/verify_cpu_runtime.py; "
         "test ! -e /opt/remember-me/requirements/docker-cpu-py312-linux-amd64.lock; "
-        "test \"$(id -u):$(id -g)\" = 10001:10001; "
+        # Record the actual user without imposing today's default on recovery
+        # of an older, otherwise identical release digest.
+        "printf 'runtime_uid_gid=%s:%s\\n' \"$(id -u)\" \"$(id -g)\"; "
         "/opt/venv/bin/python -m pip check"
     )
     result = run(["docker", "run", "--rm", "--network", "none", "--read-only",

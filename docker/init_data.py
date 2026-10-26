@@ -1,4 +1,4 @@
-"""Prepare an empty bind mount, then check access as the application user.
+"""Optionally prepare a bind mount for an explicit UID/GID 10001 deployment.
 
 Never recursively change ownership or follow links outside the data directory.
 Existing nonempty directories require operator-managed compatible permissions.
@@ -64,5 +64,6 @@ if __name__ == '__main__':
         print(f'Data directory initialization failed: {exc}. '
               'Existing data was not changed. Prepare the selected bind directory '
               'for UID/GID 10001:10001 (see Docker deployment instructions); '
-              'then run docker compose up -d again.', file=sys.stderr)
+              'then rerun this initializer before starting with --user 10001:10001.',
+              file=sys.stderr)
         sys.exit(1)

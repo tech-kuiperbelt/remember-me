@@ -2,8 +2,8 @@
 
 SOURCE uses the real file loader with an isolated root and a fake embedding provider.
 DOCKER uses a local, already-built image and its actual BGE provider/entrypoint.
-The Docker TLS fixture adds read-only CA (and optionally release) mounts; ordinary
-single-mount deployment acceptance is performed separately by run_docker_installation.
+The Docker TLS fixture adds read-only CA and per-case release metadata mounts;
+ordinary deployment acceptance is performed separately by run_docker_installation.
 No GitHub traffic is forwarded, and no release/tag/registry action is performed.
 """
 import argparse
@@ -14,7 +14,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import shlex
 import socket
 import subprocess
 import sys
@@ -109,24 +108,23 @@ def host_runtime(data, local_root, bundle, proxy):
 
 @contextmanager
 def docker_runtime(image, work, local_file, bundle, proxy):
-    from tests.run_docker_installation import installation_blocks
+    from tests.run_docker_installation import installation_blocks, docker_run_argv
     data=work/'data';data.mkdir();name='rm-version-e-'+work.name;listen_port=port()
     env=dict(os.environ,REMEMBER_ME_IMAGE=image,REMEMBER_ME_DATA_DIR=str(data),REMEMBER_ME_PORT=str(listen_port))
     blocks=installation_blocks(ROOT/'docs/installation/docker.md')
-    command(['bash','-euo','pipefail','-c',blocks['initialize']],env=env)
+    command(['docker','image','inspect',image])
     fixture_config=work/'config.jsonc';fixture_config.write_text(json.dumps({
         'proxy':{'enabled':True,'url':proxy},'auto_download_model':False,'local_only':True}))
-    # Seed only the isolated, initialized root without changing runtime ownership policy.
-    command(['docker','run','--rm','--network','none','--read-only','--user','0:0','--entrypoint','python',
+    # Seed only the isolated root using the fixture image; never pull a public tag.
+    command(['docker','run','--rm','--pull','never','--network','none','--read-only','--user','0:0','--entrypoint','python',
         '--mount',f'type=bind,src={data},dst=/data','--mount',f'type=bind,src={fixture_config},dst=/fixture.jsonc,readonly',image,
-        '-c',"import shutil,os;shutil.copyfile('/fixture.jsonc','/data/config.jsonc');os.chown('/data/config.jsonc',10001,10001)"])
-    ca_path=command(['docker','run','--rm','--network','none','--read-only','--entrypoint','python',image,'-c','import certifi;print(certifi.where())'])
+        '-c',"import shutil;shutil.copyfile('/fixture.jsonc','/data/config.jsonc')"])
+    ca_path=command(['docker','run','--rm','--pull','never','--network','none','--read-only','--entrypoint','python',image,'-c','import certifi;print(certifi.where())'])
     additions=['--mount',f'type=bind,src={bundle},dst={ca_path},readonly','-e','MEMORY_DEFAULT_NAMESPACE=phase-e-test']
     if local_file:
         additions+=['--mount',f'type=bind,src={local_file},dst=/opt/remember-me/release.jsonc,readonly']
-    block=blocks['run'].replace('--name remember-me','--name '+name)
-    block=block.replace('"$REMEMBER_ME_IMAGE"',' '.join(shlex.quote(arg) for arg in additions)+' "$REMEMBER_ME_IMAGE"')
-    command(['bash','-euo','pipefail','-c',block],env=env)
+    argv=docker_run_argv(blocks['run'],image=image,name=name,data=data,port=listen_port,extra=additions)
+    command(argv,env=env,cwd=data)
     try:
         upstream=f'http://127.0.0.1:{listen_port}';wait_ready(upstream)
         yield upstream,None
@@ -166,8 +164,8 @@ def main():
             fixture.mode='ok'
             if args.mode=='source':ctx=host_runtime(scenario/'data',local_root,bundle,good_url)
             else:
-                assert case in ('valid','null'),'Docker only needs shipped-null and valid fixture'
-                local_file=local_root/'release.jsonc' if case=='valid' else None
+                assert case in ('valid','null'),'Docker uses valid and null release fixtures'
+                local_file=local_root/'release.jsonc'
                 ctx=docker_runtime(args.image,scenario,local_file,bundle,good_url)
                 evidence['image_id']=json.loads(command(['docker','image','inspect',args.image]))[0]['Id']
             with ctx as (upstream,advance):

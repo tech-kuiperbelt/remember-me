@@ -1,20 +1,27 @@
 {
-  // First public release candidate. Publishing requires explicit user approval.
+  // Docker startup and release recovery update for 1.0.1. Publishing requires explicit user approval.
   // This file is the single source for version checks, the Git tag, the image tag and release notes.
-  "version": "1.0.0",
-  "new": [
-    "Local-first persistent memory for MCP-compatible AI agents, with tools to add, search, update, and delete memories.",
-    "Semantic, lexical, and anchor retrieval, with namespaces for memory scope and keywords, categories, and anchors for organization.",
-    "Web UI for browsing, searching, editing, memory and retrieval statistics, and configuration.",
-    "SOURCE installation for Python 3.10+ and a Linux AMD64 Docker image.",
-    "Default local CPU embedding with BGE-M3; the Docker image includes the complete model and requires no separate embedding service.",
-    "Version checks with update guidance for SOURCE and Docker installations; upgrades remain manual."
+  "version": "1.0.1",
+  "new": [],
+  "improvements": [
+    "Docker images now run as container root by default, so ordinary local bind-mounted data directories need no separate initializer or chown. Explicit non-root users and optional security hardening remain supported.",
+    "Compose now defaults to the latest image tag and starts a single application service without mandatory data initialization. The default host port remains 1314.",
+    "Recommended docker run and Compose deployments mount the host's /etc/localtime read-only so application logs use the host timezone; stored UTC timestamps are unchanged.",
+    "Simplified Chinese and English Docker installation guides with minimal and recommended startup commands, optional parameter explanations, and manual upgrade, backup and rollback instructions."
   ],
-  "improvements": [],
-  "fixes": [],
+  "fixes": [
+    "Release failures now show recovery instructions in logs, including operation=resume with the original full commit and recorded digest when a version already exists or latest promotion is incomplete.",
+    "Candidate image checks record the actual runtime user instead of requiring the current default, preserving validation of older non-root images during digest recovery."
+  ],
   "upgrade": [
-    "Back up the entire data directory before upgrading. SOURCE installations should follow the SOURCE installation and upgrade guide under docs/installation, linked from this release's README.",
-    "Back up the entire data directory and record the current image version or digest before upgrading. Docker installations should follow the Docker installation and upgrade guide under docs/installation, linked from this release's README."
+    "Before upgrading, stop gracefully and back up the entire actual data directory. Record the exact current image version or digest, data path and port; latest alone is not a rollback identity.",
+    "Existing Compose instances should retain their previous compose.yaml and data mount. If adopting the new template, explicitly set REMEMBER_ME_DATA_DIR to the old ./data directory or the actual existing data path before starting; the new default is the directory containing compose.yaml, and selecting the wrong path can create an empty database.",
+    "New files created by the default container root user usually belong to root. Before switching to a non-root user or rolling back to an older non-root image, ensure that user can read and write the data. Existing ownership and permissions are not changed automatically.",
+    "Pulling latest does not update an existing container. Recreate it with the selected image while preserving its actual data mount, port, timezone and user settings. Follow the Docker installation and upgrade guide under docs/installation."
   ],
-  "breaking": []
+  "breaking": [
+    "The Docker image's default UID/GID changes from 10001:10001 to 0:0. Set an explicit user when non-root operation is required, and prepare writable data permissions for that user.",
+    "The new Compose template changes the default host data directory from ./data to the directory containing compose.yaml (.). Existing instances must preserve their old mount or explicitly configure REMEMBER_ME_DATA_DIR to avoid starting with a different database.",
+    "The new Compose template no longer enables a read-only root filesystem, drops all capabilities, or forbids privilege gains by default. Configure read_only, cap_drop and security_opt explicitly to retain those restrictions."
+  ]
 }

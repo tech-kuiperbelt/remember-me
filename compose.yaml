@@ -1,37 +1,18 @@
 x-runtime: &runtime
-  image: "${REMEMBER_ME_IMAGE:-ghcr.io/tech-kuiperbelt/remember-me:1.0.0}"
+  image: "${REMEMBER_ME_IMAGE:-ghcr.io/tech-kuiperbelt/remember-me:latest}"
   platform: linux/amd64
   pull_policy: missing
-  read_only: true
-  cap_drop: [ALL]
-  security_opt: [no-new-privileges:true]
 
 x-data: &data
   type: bind
-  source: "${REMEMBER_ME_DATA_DIR:-./data}"
+  source: "${REMEMBER_ME_DATA_DIR:-.}"
   target: /data
   bind:
     create_host_path: true
 
 services:
-  data-init:
-    <<: *runtime
-    user: "0:0"
-    entrypoint: [python, /opt/remember-me/docker/init_data.py]
-    command: []
-    restart: "no"
-    network_mode: none
-    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
-    healthcheck:
-      disable: true
-    volumes: [*data]
-
   remember-me:
     <<: *runtime
-    user: "10001:10001"
-    depends_on:
-      data-init:
-        condition: service_completed_successfully
     restart: unless-stopped
     stop_grace_period: 120s
     environment:
@@ -40,7 +21,12 @@ services:
     command: [--host, 0.0.0.0, --port, "1314"]
     ports:
       - "127.0.0.1:${REMEMBER_ME_PORT:-1314}:1314"
-    volumes: [*data]
+    volumes:
+      - *data
+      - type: bind
+        source: /etc/localtime
+        target: /etc/localtime
+        read_only: true
     healthcheck:
       test: [CMD, python, /opt/remember-me/docker/healthcheck.py]
       interval: 30s
