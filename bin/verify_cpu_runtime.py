@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the locked production venv; optionally infer from an existing cache.
+"""Verify the locked production environment; optionally infer from a model cache.
 
 Does not start a server or open a business database. Model verification forbids
 socket connections and uses local_files_only, never downloading model weights.
@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import platform
 import re
+import site
 import sys
 import sysconfig
 from urllib.parse import unquote, urlsplit
@@ -28,6 +29,25 @@ REVISION = "5617a9f61b028005a4858fdac845db406aefb181"
 def require(condition, message):
     if not condition:
         raise SystemExit(message)
+
+
+def verify_prefix(standalone_root=None):
+    """Keep the default venv gate, or verify the explicitly selected private runtime."""
+    if standalone_root is None:
+        require(sys.prefix != sys.base_prefix, "Use an isolated virtual environment")
+        return ROOT
+    root = standalone_root.resolve()
+    runtime = root / "runtime/python"
+    require(Path(sys.prefix).resolve() == runtime.resolve()
+            and sys.prefix == sys.base_prefix,
+            "Standalone verification must use its private runtime/python prefix")
+    require(Path(sys.executable).resolve().is_relative_to(runtime.resolve()),
+            "Standalone verification must use its bundled Python executable")
+    require(site.ENABLE_USER_SITE is False, "Disable user site-packages for standalone verification")
+    require(Path(sysconfig.get_path("purelib")).resolve().is_relative_to(runtime.resolve()),
+            "Standalone site-packages escaped its private runtime")
+    require((root / "app/server.py").is_file(), "Standalone application is missing")
+    return root
 
 
 def lock_versions():
@@ -58,6 +78,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model-cache", type=Path, help="Existing HF cache containing models--BAAI--bge-m3")
     parser.add_argument("--expected-profile-id", help="Optional known profile identity; never reads its database")
+    parser.add_argument("--standalone-root", type=Path,
+                        help="Verify the bundled runtime and app at this root instead of a venv")
     args = parser.parse_args()
     require(sys.version_info[:2] == (3, 12), "CPython 3.12 is required")
     require(platform.python_implementation() == "CPython", "CPython is required")
@@ -66,7 +88,10 @@ def main():
     libc, libc_version = platform.libc_ver()
     require(libc == "glibc" and tuple(map(int, libc_version.split(".")[:2])) >= (2, 34),
             "This lock requires glibc >=2.34")
-    require(sys.prefix != sys.base_prefix, "Use an isolated virtual environment")
+    app_root = verify_prefix(args.standalone_root)
+    if args.standalone_root and args.model_cache:
+        require(args.model_cache.resolve().is_relative_to(app_root / "models"),
+                "Standalone model verification must use its bundled models directory")
 
     from packaging.utils import canonicalize_name
     expected = lock_versions()
@@ -90,11 +115,14 @@ def main():
     import tokenizers
     import transformers
     import google.protobuf
-    sys.path.insert(0, str(ROOT))
+    sys.path.insert(0, str(app_root))
     import app.server
+    require(Path(app.server.__file__).resolve().is_relative_to(app_root),
+            "Application import escaped the selected application root")
     from app.embedding.embed import SentenceTransformersEmbedder
 
     result = {"python": platform.python_version(), "platform": platform.platform(),
+              "environment": "standalone" if args.standalone_root else "venv",
               "locked_packages": len(expected), "torch": torch.__version__,
               "torch_cuda": torch.version.cuda, "torch_hip": getattr(torch.version, "hip", None),
               "torch_source": direct_url, "sentence_transformers": sentence_transformers.__version__,

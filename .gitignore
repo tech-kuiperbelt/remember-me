@@ -25,6 +25,7 @@ memories.json
 /config.jsonc
 /models/
 /cache/
+/dist/
 /tmp/
 /anchor-backfill/
 
