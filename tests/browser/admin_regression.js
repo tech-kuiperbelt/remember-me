@@ -543,6 +543,8 @@ try {
   await waitFor(() => $('btn-status').textContent === t('status.normal') && $('btn-sync').disabled, 'status recovers');
   assert($('btn-maintenance-enter').disabled === false, 'enter re-enabled after recovery');
   S.reset();
+  // Restore the real registry after the recovery-only Stats response.
+  await (await import('/admin/console/static/js/stats.js')).loadStats();
 
   // Shell layout: header + sidebar fixed, work area scrolls, no page-level h-scroll.
   assert($('app-shell').contains($('nav')), 'sidebar inside shell');

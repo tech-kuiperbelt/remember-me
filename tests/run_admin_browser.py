@@ -65,7 +65,7 @@ class BrowserProvider(FakeProvider):
         return [1., 0.]
 
 
-config_debug_case = sys.argv[1:] == ['--case', 'config-debug']
+config_debug_case = len(sys.argv) == 1 or sys.argv[1:] in (['--case', 'config-debug'], ['--case', 'debug-disabled'])
 browser_runtime = None
 if config_debug_case:
     from app.runtime import Runtime
@@ -524,7 +524,9 @@ try:
                 failures.append(label)
         if selected('debug-disabled'):
             previous_debug = admin.debug
+            previous_runtime_debug = browser_runtime.debug_effective if browser_runtime else None
             admin.debug = False
+            if browser_runtime: browser_runtime.debug_effective = False
             try:
                 proc, shot = run_case(profile, 'debug-disabled', '1280,800', '1', shots, 'debug-disabled')
                 ok, text = check(proc)
@@ -533,6 +535,7 @@ try:
                     failures.append('debug-disabled')
             finally:
                 admin.debug = previous_debug
+                if browser_runtime: browser_runtime.debug_effective = previous_runtime_debug
         detail_cases = [('detail-functional', '1280,800', 'light'), ('create-functional', '1280,800', 'light')]
         detail_cases += [(f'create-{size.replace(',', 'x')}-{mode}-{scheme}',size,scheme)
                          for size in ('390,844','1024,768','1440,900','1920,1080')
