@@ -353,7 +353,8 @@ try:
             print(('PASS ' if ok else 'FAIL ') + label + ' -> ' + str(shot) + ('' if ok else ' :: ' + output), flush=True)
             if not ok: failures.append(label)
         help_cases = [(name, '1440,900', 'light') for name in
-                      ('help-disabled', 'help-functional', 'help-deeplink', 'help-refresh', 'help-invalid', 'help-model')]
+                      ('help-disabled', 'help-functional', 'help-deeplink', 'help-refresh', 'help-invalid', 'help-model',
+                       'help-launcher-memories', 'help-launcher-stats', 'help-launcher-ops')]
         help_cases += [(f'help-layout-{topic}-{width}-{scheme}', f'{width},1000', scheme)
                        for topic in ('home', 'connect', 'memory', 'configuration')
                        for width in (1440, 390) for scheme in ('light', 'dark')]

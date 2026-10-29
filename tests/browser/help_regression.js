@@ -7,8 +7,21 @@ async function runHelpRegression(scenario) {
     assert($('content').scrollWidth<=$('content').clientWidth+1,'content fits '+label);
   };
   if(innerWidth<=390&&!$('app-shell').classList.contains('sidebar-collapsed'))$('nav').click();
+  if(scenario.startsWith('help-launcher-')) {
+    const page=scenario.split('-').at(-1), key=scenario+'-refresh';
+    assert($('page-'+page).classList.contains('active'),'launcher deep link selects '+page);
+    assert(location.hash===(page==='memories'?'':'#'+page),'launcher route normalized');
+    if(!sessionStorage.getItem(key)) {
+      sessionStorage.setItem(key,'1');location.reload();return;
+    }
+    sessionStorage.removeItem(key);
+    $('nav-help').click();
+    history.back();await waitFor(()=>$('page-'+page).classList.contains('active'),'launcher route history back');
+    history.forward();await waitFor(()=>visible('home'),'launcher route history forward');
+    result.textContent='PASS: '+scenario;return;
+  }
   if(scenario==='help-model') {
-    assert($('page-ops').classList.contains('active')&&!location.hash,'model preparation takes startup priority');
+    assert($('page-ops').classList.contains('active')&&location.hash==='#ops','model preparation takes startup priority');
     $('nav-help').click();assert(visible('home'),'Help remains accessible while model unavailable');
     result.textContent='PASS: '+scenario;return;
   }

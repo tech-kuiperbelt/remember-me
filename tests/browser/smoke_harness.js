@@ -9,6 +9,9 @@
   let maintenanceFrozen = false;
 
   const scenario = new URLSearchParams(location.search).get('smoke');
+  if (scenario?.startsWith('help-launcher-') && !sessionStorage.getItem(scenario + '-refresh')) {
+    history.replaceState(null, '', location.pathname + location.search + '#' + scenario.split('-').at(-1));
+  }
   if (['help-deeplink', 'help-refresh', 'help-invalid', 'help-model'].includes(scenario)) {
     const initial = scenario === 'help-invalid' ? '#help/unknown' : '#help/rules';
     if (!sessionStorage.getItem('help-refresh-stage')) history.replaceState(null, '', location.pathname + location.search + initial);

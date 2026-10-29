@@ -1,4 +1,4 @@
-// Application page switching; Help alone exposes public deep links.
+// Public links target existing pages; Help additionally exposes topic links.
 import { $ } from './core.js';
 
 const pages = new Map();
@@ -16,11 +16,13 @@ function route(page, topic = 'home') {
 }
 function fromURL() {
   if (/^#help(?:\/|$)/.test(location.hash)) return route('help', location.hash.slice(6) || 'home');
+  if (['#memories', '#stats', '#ops'].includes(location.hash)) return route(location.hash.slice(1));
   return route('memories');
 }
 function routeURL(target) {
   const url = new URL(location.href);
-  url.hash = target.page === 'help' ? (target.topic === 'home' ? 'help' : 'help/' + target.topic) : '';
+  url.hash = target.page === 'help' ? (target.topic === 'home' ? 'help' : 'help/' + target.topic)
+    : ['stats', 'ops'].includes(target.page) ? target.page : '';
   return url;
 }
 function write(method, value) {
