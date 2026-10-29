@@ -58,7 +58,7 @@ fi
 if [[ -z "$GUI" ]]; then
     GUI="$(mktemp -d "$CACHE/gui-output-XXXXXX")"
     rmdir -- "$GUI"
-    bash "$ROOT/packaging/tray-prototype/build.sh" --output "$GUI" --cache-dir "$ROOT/cache/tray-s2a/build"
+    bash "$ROOT/packaging/launcher/build_gui.sh" --output "$GUI" --cache-dir "$ROOT/cache/tray-s3-r1/build"
 else
     GUI="$(realpath -e -- "$GUI")"
 fi

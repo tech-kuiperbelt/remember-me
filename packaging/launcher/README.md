@@ -17,7 +17,7 @@ To reuse already-built, locally trusted inputs without downloading/recompiling:
 ```bash
 bash packaging/launcher/build.sh \
   --runner-source "$PWD/dist/remember-me-standalone-linux-x86_64-manual" \
-  --gui-source "$PWD/dist/remember-me-tray-s2a-clean"
+  --gui-source "$PWD/dist/remember-me-gui-ubuntu2204-r1"
 ```
 
 The task validates source manifests, controlled input/resource hashes, installed
@@ -26,6 +26,10 @@ runtime/model/license resources, then ships the current app/Web/Launcher source.
 It does not copy source-root runtime data or a host `.env`. The original source
 manifests are retained as historical provenance; the new manifest describes the
 actual current resources and Launcher inputs. No source output is modified.
+The GUI source must include its hash-locked PyGObject sdist under `sources/`;
+only its verified COPYING and a short GUI license/source index are shipped in
+`licenses/launcher/`, not the source archive. The index also points to the other
+five GUI packages' retained wheel license materials.
 
 Copy the complete generated directory elsewhere, preserving symlinks, and run:
 
@@ -55,7 +59,14 @@ window. Missing core GUI libraries cause a clear startup error before a service
 is left running. Customers need no system Python, pip, compiler or development
 headers.
 
-The GUI build recipe currently uses the S2-A Ubuntu 24.04 x86_64 baseline and
-its documented build tools/headers. This does not establish other distro or
-Wayland compatibility; complete desktop compatibility acceptance belongs to S3.
+The default GUI task (`packaging/launcher/build_gui.sh`) builds the fixed
+PyGObject 3.48.2 and pycairo 1.26.1 wheels in an isolated Ubuntu 22.04 x86_64
+environment using Portable CPython 3.12.15. Build tools remain in that build
+environment; they are not customer prerequisites. GUI manifests retain the
+baseline, input hashes and resulting wheel hashes. Docker is required only on
+the GUI build machine; running the final copied directory does not use Docker.
+The earlier S2-A Ubuntu 24.04 wheels reference newer GLib/Cairo APIs and are
+rejected by assembly.
+An older build baseline alone does not establish real GNOME/Wayland compatibility;
+complete desktop compatibility acceptance belongs to S3.
 AppImage, Windows/macOS and release publication are outside this build task.

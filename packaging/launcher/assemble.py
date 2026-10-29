@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import tarfile
 
 
 INPUTS = (
@@ -23,6 +24,7 @@ INPUTS = (
 )
 GUI_PACKAGES = {'pygobject': '3.48.2', 'pycairo': '1.26.1', 'pystray': '0.19.5',
                 'pillow': '12.0.0', 'six': '1.17.0', 'python-xlib': '0.33'}
+PYGOBJECT_COPYING_SHA256 = '32434afcc8666ba060e111d715bfdb6c2d5dd8a35fa4d3ab8ad67d8f850d2f2b'
 
 
 def require(condition, message):
@@ -101,6 +103,41 @@ def copy_tree(source, target, *, source_code=False):
     shutil.copytree(source, target, symlinks=True, ignore=ignore)
 
 
+def gui_licenses(gui, output):
+    """Retain the fixed upstream license and an index of shipped GUI materials."""
+    inputs = {canonical(item['name']): item for item in
+              json.loads((gui / 'inputs.json').read_text())}
+    source = inputs['pygobject']
+    archive = gui / 'sources' / source['filename']
+    require(sha(archive) == source['sha256'], 'PyGObject license source hash mismatch')
+    with tarfile.open(archive, 'r:gz') as package:
+        member = package.getmember('pygobject-3.48.2/COPYING')
+        require(member.isfile(), 'PyGObject COPYING is not a regular file')
+        with package.extractfile(member) as stream:
+            copying = stream.read()
+    require(hashlib.sha256(copying).hexdigest() == PYGOBJECT_COPYING_SHA256,
+            'PyGObject upstream COPYING differs from the verified fixed source')
+    target = output / 'licenses/launcher'
+    target.mkdir(parents=True, exist_ok=True)
+    (target / 'PyGObject-COPYING').write_bytes(copying)
+    components = []
+    for distribution in sorted(metadata.distributions(path=[str(gui / 'vendor')]),
+                               key=lambda item: canonical(item.metadata['Name'])):
+        name = canonical(distribution.metadata['Name'])
+        origin = inputs[name]
+        files = ['launcher/vendor/' + str(entry) for entry in distribution.files
+                 if 'license' in Path(str(entry)).name.lower() or
+                 'copying' in Path(str(entry)).name.lower()]
+        if name == 'pygobject':
+            files.append('licenses/launcher/PyGObject-COPYING')
+        components.append({'name': name, 'version': distribution.version,
+                           'license': distribution.metadata.get('License-Expression') or
+                                      distribution.metadata.get('License'),
+                           'source_url': origin['url'], 'source_sha256': origin['sha256'],
+                           'license_files': files})
+    (target / 'GUI-SOURCES.json').write_text(json.dumps(components, indent=2) + '\n')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('root', 'runner', 'gui', 'output'):
@@ -136,9 +173,13 @@ def main():
     gui_packages, gui_records = recorded_packages(gui / 'vendor', gui / 'vendor')
     require(gui_packages == GUI_PACKAGES, 'GUI package versions differ from validated S2-A inputs')
     require(gui_packages == {canonical(k): v for k, v in gui_manifest['packages'].items()}, 'GUI manifest mismatch')
-    for path in (gui / 'vendor/gi').glob('*.so'):
+    for path in [*(gui / 'vendor/gi').glob('*.so'), *(gui / 'vendor/cairo').glob('*.so')]:
         dynamic = subprocess.check_output(['readelf', '-d', str(path)], text=True)
-        require('RPATH' not in dynamic and 'RUNPATH' not in dynamic, f'GI extension contains runtime search path: {path}')
+        require('RPATH' not in dynamic and 'RUNPATH' not in dynamic, f'GUI extension contains runtime search path: {path}')
+        symbols = subprocess.check_output(['readelf', '--dyn-syms', '--wide', str(path)], text=True)
+        require(not any(name in symbols for name in
+                        ('g_assertion_message_cmpint', 'cairo_font_options_get_color_mode')),
+                f'GUI extension still references known incompatible Ubuntu22.04 API: {path}')
     if not fresh_runner:
         output.mkdir(parents=True)
     (output / '.launcher-build-incomplete').touch()
@@ -153,6 +194,7 @@ def main():
         (output / 'start.sh').chmod(0o755)
     copy_tree(root / 'launcher', output / 'launcher', source_code=True)
     copy_tree(gui / 'vendor', output / 'launcher/vendor')
+    gui_licenses(gui, output)
     shutil.copy2(root / 'packaging/launcher/launch.sh', output / 'launch.sh')
     (output / 'launch.sh').chmod(0o755)
     shutil.copy2(root / 'packaging/launcher/README.md', output / 'LAUNCHER-README.md')
