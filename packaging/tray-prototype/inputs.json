@@ -1,0 +1,106 @@
+[
+  {
+    "name": "setuptools",
+    "version": "70.3.0",
+    "filename": "setuptools-70.3.0-py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/ef/15/88e46eb9387e905704b69849618e699dc2f54407d8953cc4ec4b8b46528d/setuptools-70.3.0-py3-none-any.whl",
+    "sha256": "fe384da74336c398e0d956d1cae0669bc02eed936cdb1d49b57de1990dc11ffc",
+    "kind": "any"
+  },
+  {
+    "name": "wheel",
+    "version": "0.44.0",
+    "filename": "wheel-0.44.0-py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/1b/d1/9babe2ccaecff775992753d8686970b1e2755d21c8a63be73aba7a4e7d77/wheel-0.44.0-py3-none-any.whl",
+    "sha256": "2376a90c98cc337d18623527a97c31797bd02bad0033d41547043a1cbfbe448f",
+    "kind": "any"
+  },
+  {
+    "name": "pygobject",
+    "version": "3.48.2",
+    "filename": "pygobject-3.48.2.tar.gz",
+    "url": "https://files.pythonhosted.org/packages/f9/9e/6bab1ed3bd878f0912d9a0600c21f3d88bab0e8a8d4c3ce50f5cf336faaf/pygobject-3.48.2.tar.gz",
+    "sha256": "c3c0a7afbe5b2c1c64dc0530109b4dd571085153dbedfbccb8ec7c5ad233f977",
+    "kind": "sdist"
+  },
+  {
+    "name": "pycairo",
+    "version": "1.26.1",
+    "filename": "pycairo-1.26.1.tar.gz",
+    "url": "https://files.pythonhosted.org/packages/19/4f/0d48a017090d4527e921d6892bc550ae869902e67859fc960f8fe63a9094/pycairo-1.26.1.tar.gz",
+    "sha256": "a11b999ce55b798dbf13516ab038e0ce8b6ec299b208d7c4e767a6f7e68e8430",
+    "kind": "sdist"
+  },
+  {
+    "name": "meson-python",
+    "version": "0.16.0",
+    "filename": "meson_python-0.16.0-py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/91/c0/104cb6244c83fe6bc3886f144cc433db0c0c78efac5dc00e409a5a08c87d/meson_python-0.16.0-py3-none-any.whl",
+    "sha256": "842dc9f5dc29e55fc769ff1b6fe328412fe6c870220fc321060a1d2d395e69e8",
+    "kind": "any"
+  },
+  {
+    "name": "meson",
+    "version": "1.5.2",
+    "filename": "meson-1.5.2-py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/55/a6/47b9353c331318a13eb050887eacfd61eb075746285f9baf7ef7de6ae235/meson-1.5.2-py3-none-any.whl",
+    "sha256": "77706e2368a00d789c097632ccf4fc39251fba56d03e1e1b262559a3c7a08f5b",
+    "kind": "any"
+  },
+  {
+    "name": "packaging",
+    "version": "24.1",
+    "filename": "packaging-24.1-py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/08/aa/cc0199a5f0ad350994d660967a8efb233fe0416e4639146c089643407ce6/packaging-24.1-py3-none-any.whl",
+    "sha256": "5b8f2217dbdbd2f7f384c41c628544e6d52f2d0f53c6d0c3ea61aa5d1d7ff124",
+    "kind": "any"
+  },
+  {
+    "name": "pyproject-metadata",
+    "version": "0.8.0",
+    "filename": "pyproject_metadata-0.8.0-py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/aa/5f/bb5970d3d04173b46c9037109f7f05fc8904ff5be073ee49bb6ff00301bc/pyproject_metadata-0.8.0-py3-none-any.whl",
+    "sha256": "ad858d448e1d3a1fb408ac5bac9ea7743e7a8bbb472f2693aaa334d2db42f526",
+    "kind": "any"
+  },
+  {
+    "name": "ninja",
+    "version": "1.11.1.1",
+    "filename": "ninja-1.11.1.1-py2.py3-none-manylinux1_x86_64.manylinux_2_5_x86_64.whl",
+    "url": "https://files.pythonhosted.org/packages/6d/92/8d7aebd4430ab5ff65df2bfee6d5745f95c004284db2d8ca76dcbfd9de47/ninja-1.11.1.1-py2.py3-none-manylinux1_x86_64.manylinux_2_5_x86_64.whl",
+    "sha256": "84502ec98f02a037a169c4b0d5d86075eaf6afc55e1879003d6cab51ced2ea4b",
+    "kind": "linux"
+  },
+  {
+    "name": "pystray",
+    "version": "0.19.5",
+    "filename": "pystray-0.19.5-py2.py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/5c/64/927a4b9024196a4799eba0180e0ca31568426f258a4a5c90f87a97f51d28/pystray-0.19.5-py2.py3-none-any.whl",
+    "sha256": "a0c2229d02cf87207297c22d86ffc57c86c227517b038c0d3c59df79295ac617",
+    "kind": "any"
+  },
+  {
+    "name": "Pillow",
+    "version": "12.0.0",
+    "filename": "pillow-12.0.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+    "url": "https://files.pythonhosted.org/packages/88/e1/9098d3ce341a8750b55b0e00c03f1630d6178f38ac191c81c97a3b047b44/pillow-12.0.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+    "sha256": "82240051c6ca513c616f7f9da06e871f61bfd7805f566275841af15015b8f98d",
+    "kind": "pillow"
+  },
+  {
+    "name": "six",
+    "version": "1.17.0",
+    "filename": "six-1.17.0-py2.py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl",
+    "sha256": "4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274",
+    "kind": "any"
+  },
+  {
+    "name": "python-xlib",
+    "version": "0.33",
+    "filename": "python_xlib-0.33-py2.py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/fc/b8/ff33610932e0ee81ae7f1269c890f697d56ff74b9f5b2ee5d9b7fa2c5355/python_xlib-0.33-py2.py3-none-any.whl",
+    "sha256": "c3534038d42e0df2f1392a1b30a15a4ff5fdc2b86cfa94f072bf11b10a164398",
+    "kind": "any"
+  }
+]

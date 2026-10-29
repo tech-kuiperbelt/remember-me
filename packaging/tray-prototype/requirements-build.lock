@@ -1,0 +1,8 @@
+# S2-A fixed build-only tools; never installed into service or host.
+setuptools==70.3.0 --hash=sha256:fe384da74336c398e0d956d1cae0669bc02eed936cdb1d49b57de1990dc11ffc
+wheel==0.44.0 --hash=sha256:2376a90c98cc337d18623527a97c31797bd02bad0033d41547043a1cbfbe448f
+meson-python==0.16.0 --hash=sha256:842dc9f5dc29e55fc769ff1b6fe328412fe6c870220fc321060a1d2d395e69e8
+meson==1.5.2 --hash=sha256:77706e2368a00d789c097632ccf4fc39251fba56d03e1e1b262559a3c7a08f5b
+packaging==24.1 --hash=sha256:5b8f2217dbdbd2f7f384c41c628544e6d52f2d0f53c6d0c3ea61aa5d1d7ff124
+pyproject-metadata==0.8.0 --hash=sha256:ad858d448e1d3a1fb408ac5bac9ea7743e7a8bbb472f2693aaa334d2db42f526
+ninja==1.11.1.1 --hash=sha256:84502ec98f02a037a169c4b0d5d86075eaf6afc55e1879003d6cab51ced2ea4b
