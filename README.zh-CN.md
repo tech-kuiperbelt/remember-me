@@ -71,15 +71,16 @@ Web UI 主要用于**透明性和可观察性**，而不是让用户每天手动
 
 ## 快速开始
 
-Remember Me 在本机运行。请选择一种安装方式；两种方式都把配置、记忆、日志和缓存
-保存在你控制的数据目录中。
+Remember Me 在本机运行。请选择一种安装方式；对应指南会说明数据保存位置。
 
 - **SOURCE — Git + Python 3.10+：**[源码安装与升级](docs/installation/source.zh-CN.md)。
   使用 Sentence Transformers + BAAI/bge-m3，CPU 推理；模型权重在首次使用时下载。
 - **Docker — Linux AMD64：**[Docker 安装与升级](docs/installation/docker.zh-CN.md)。
   镜像内置 BGE-M3 并在 CPU 上运行，无需 Python 或独立 Embedding 服务。
+- **Linux x86_64 原生发行：**[Standalone](docs/installation/standalone.zh-CN.md)、
+  [托盘 Launcher](docs/installation/launcher.zh-CN.md)或 [AppImage 原型](docs/installation/appimage.zh-CN.md)。
 
-安装指南涵盖安装与启动、停止、数据目录、备份与恢复、升级与回滚。服务启动后，请按
+服务启动后，请按
 [安装完成后](#安装完成后)继续配置 Agent。
 
 ### 升级与回滚

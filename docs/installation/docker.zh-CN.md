@@ -14,6 +14,26 @@ Docker Compose 插件。Rootless、Docker Desktop、SELinux 和网络文件系�
 路径必须位于 Docker daemon 本机。两种方式默认使用 `latest`，也可按需指定完整版本或 digest。
 仅拉取新镜像不会更新已创建的容器。
 
+## 数据保存位置
+
+镜像默认使用**容器内的 `/data`**。`docker run` 示例中的 `-v "$PWD:/data"`
+将其绑定到运行命令时的宿主机当前目录。提供的 Compose 文件将
+`${REMEMBER_ME_DATA_DIR:-.}` 绑定到 `/data`；默认的 `.` 是 Compose 项目目录
+（按示例操作时即 `compose.yaml` 所在目录）。
+
+要使用其他宿主机目录，请把 Run 绑定中的 `$PWD` 替换为绝对路径，或在 shell
+或 Compose 的本地 `.env` 中将 `REMEMBER_ME_DATA_DIR` 设置为宿主机绝对路径。
+可通过 `docker compose -f compose.yaml config` 查看解析后的 Compose 配置。
+对已有 Run 容器，可查看其 `/data` 挂载源：
+
+```bash
+docker inspect --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Source}}{{end}}{{end}}' remember-me
+```
+
+该命令也可用于 Compose 容器 ID。如果 `/data` 没有持久挂载，删除容器会丢失容器文件系统中的数据。
+采用文档中的 bind mount 时，替换或删除容器不会删除宿主机目录。切换安装方式不会自动迁移数据；
+请保留或明确选择需要复用的已有目录。
+
 ## 方式一：docker run
 
 ### 最简单启动

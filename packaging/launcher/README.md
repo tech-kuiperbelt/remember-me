@@ -39,12 +39,21 @@ Copy the complete generated directory elsewhere, preserving symlinks, and run:
 ./launch.sh --data-dir /absolute/path/to/separate-data --port 1315
 ```
 
-The Launcher defaults to its own persistent data root:
-`$XDG_DATA_HOME/remember-me-launcher` (or `~/.local/share/remember-me-launcher`).
 It starts only its own service, displays status and opens existing Web pages on
 menu selection. Browser closure does not stop the service. Quit waits for the
 owned service's graceful shutdown; it never takes over Source/Docker instances.
 The original `./start.sh` remains available as an independent foreground Runner.
+
+## Data Location
+
+`launch.sh` uses `$XDG_DATA_HOME/remember-me-launcher`, or
+`~/.local/share/remember-me-launcher` when `XDG_DATA_HOME` is unset or empty.
+Use `--data-dir` to select another directory; relative paths resolve against the
+Launcher directory. `MEMORY_DATA_DIR` does not override the Launcher choice.
+The independent `start.sh` uses the [Standalone data location](../standalone/README.md#data-location).
+Switching installation methods does not migrate data; replacing the program does
+not delete persistent data. See the [installation guide](../../docs/installation/launcher.md)
+or [中文指南](../../docs/installation/launcher.zh-CN.md).
 
 Run automatically at login is off by default. The checkbox manages one owned
 user XDG Autostart entry. After moving the directory, run it at its new location

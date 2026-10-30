@@ -71,8 +71,8 @@ Inspect the content of individual memories, make corrections when needed, and re
 
 ## Quick Start
 
-Remember Me runs locally. Choose one installation path; both keep configuration,
-memories, logs and caches in a data directory you control.
+Remember Me runs locally. Choose an installation path; its guide explains where
+your data is stored.
 
 - **SOURCE — Git + Python 3.10+:** [Source installation and upgrade](docs/installation/source.md).
   Uses Sentence Transformers with BAAI/bge-m3 on CPU; model weights are downloaded
@@ -80,9 +80,10 @@ memories, logs and caches in a data directory you control.
 - **Docker — Linux AMD64:** [Docker installation and upgrade](docs/installation/docker.md).
   The image includes BGE-M3 and runs it on CPU, so no Python or separate embedding
   service is required.
+- **Linux x86_64 native:** [Standalone](docs/installation/standalone.md),
+  [Tray Launcher](docs/installation/launcher.md), or [AppImage prototype](docs/installation/appimage.md).
 
-The guides cover install and start, stop, the data directory, backup and restore,
-upgrade and rollback. After the service starts, follow
+After the service starts, follow
 [After Installation](#after-installation).
 
 ### Upgrades and rollback

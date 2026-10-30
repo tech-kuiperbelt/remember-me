@@ -50,6 +50,15 @@ It disables Transformers' optional online safetensors conversion: the pinned
 complete `pytorch_model.bin` is used as-is, and no conversion thread should keep
 the foreground process alive after Ctrl+C. Weights and dependency pins are unchanged.
 
+## Data Location
+
+On Linux, `start.sh` defaults to `~/.remember-me/`; `--data-dir` takes precedence
+over `MEMORY_DATA_DIR`, and relative paths resolve against the standalone directory.
+The bundled model is under `models/`, separate from the default data directory.
+Switching installation methods does not migrate data; replacing the program does
+not delete the persistent data directory. See the [installation guide](../../docs/installation/standalone.md)
+or [中文指南](../../docs/installation/standalone.zh-CN.md).
+
 `app/`, `web/`, the shipped `release.jsonc`, licenses and Python/wheel metadata are
 retained. `build-manifest.json` records source commit/dirty state, controlled input
 hashes, installed versions, model revision and shipped application-resource hashes.

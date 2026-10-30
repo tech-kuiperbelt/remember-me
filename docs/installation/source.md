@@ -144,16 +144,28 @@ while the service is still running.
 
 ## Data directory
 
-By default the service uses the OS per-user data directory (for example
-`~/.remember-me/` on Linux and `~/Library/Application Support/remember-me/` on
-macOS). Use `--data-dir` or `MEMORY_DATA_DIR` to choose an explicit root; relative
-paths are resolved from the project root, and `--data-dir` takes precedence.
+### Data Location
+
+By default, data is saved in `~/.remember-me/` on Linux and
+`~/Library/Application Support/remember-me/` on macOS. The Windows application
+default is `%LOCALAPPDATA%\remember-me\` (or `~/AppData/Local/remember-me/` if
+`LOCALAPPDATA` is unset), although the Bash installer does not support native
+Windows. To identify the selected directory, check the startup command's
+`--data-dir`, then `MEMORY_DATA_DIR`, then the OS default. `bin/start.sh` also
+loads the project's local `.env` when present, so check it for an override.
+
+To choose another location, use `bash bin/start.sh --data-dir /absolute/path`
+or set `MEMORY_DATA_DIR`; the command-line option takes precedence. Relative
+paths are resolved from the project root.
 
 The data directory contains `config.jsonc`, the SQLite database and its writer
 lock/outbox state, the audit journal, caches, and the model root (`models/` by
 default). Dual-storage installations (the default when launched with
 `bin/start.sh`) also keep the NDJSON replica. Selecting a different directory
-does not move existing data, and a new directory starts empty.
+does not move existing data, and a new directory starts empty. Switching installation
+methods does not automatically migrate data. Upgrading or replacing the program
+does not itself delete the existing persistent data directory. Keep an explicitly
+chosen data directory outside any program directory you plan to replace or delete.
 
 ## Backup and restore
 

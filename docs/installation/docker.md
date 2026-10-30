@@ -18,6 +18,30 @@ two instances against the same data directory. Paths refer to the Docker daemon'
 local host. Both methods use `latest` by default; a fixed version or digest can be
 selected when needed. Pulling a new image does not update an existing container.
 
+## Data Location
+
+The image uses **`/data` inside the container**. In the `docker run` examples,
+`-v "$PWD:/data"` binds it to the host directory where the command is run. In
+the supplied Compose file, `${REMEMBER_ME_DATA_DIR:-.}` is bound to `/data`;
+by default `.` is the Compose project directory (the directory containing
+`compose.yaml` in the examples).
+
+To use another host directory, replace `$PWD` in the Run bind mount with its
+absolute path, or set `REMEMBER_ME_DATA_DIR` to an absolute host path for Compose
+in the shell or its local `.env`. Use `docker compose -f compose.yaml config`
+to inspect the resolved Compose configuration. For an existing Run container,
+inspect its `/data` mount with:
+
+```bash
+docker inspect --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Source}}{{end}}{{end}}' remember-me
+```
+
+This also works with a Compose container ID. Without a persistent mount at
+`/data`, data in the container filesystem is lost when that container is removed.
+With the documented bind mount, replacing or removing the container does not
+delete the host directory. Switching installation methods does not automatically
+migrate data; keep or explicitly select the intended existing directory.
+
 ## Option 1: docker run
 
 ### Simplest startup

@@ -113,13 +113,23 @@ Web UI 的代理设置同时用于版本检查和 SOURCE 模型下载。用 pip 
 
 ## 数据目录
 
-默认使用操作系统按用户划分的数据目录（例如 Linux 的 `~/.remember-me/`，
-macOS 的 `~/Library/Application Support/remember-me/`）。可用 `--data-dir` 或
-`MEMORY_DATA_DIR` 指定显式根目录；相对路径以项目根目录为基准，`--data-dir` 优先。
+### 数据保存位置
+
+默认保存在 Linux 的 `~/.remember-me/`，或 macOS 的
+`~/Library/Application Support/remember-me/`。Windows 应用默认路径为
+`%LOCALAPPDATA%\remember-me\`（未设置 `LOCALAPPDATA` 时为
+`~/AppData/Local/remember-me/`），但 Bash 安装器不支持原生 Windows。
+要确认所选目录，依次检查启动命令的 `--data-dir`、`MEMORY_DATA_DIR` 和系统默认值；
+`bin/start.sh` 还会加载项目中的本地 `.env`，存在时也应检查其中的覆盖设置。
+
+要指定其他位置，可使用 `bash bin/start.sh --data-dir /absolute/path` 或设置
+`MEMORY_DATA_DIR`；命令行选项优先。相对路径以项目根目录为基准。
 
 数据目录包含 `config.jsonc`、SQLite 数据库及其 writer lock/outbox 状态、审计日志、缓存，
 以及模型根目录（默认 `models/`）。使用 `bin/start.sh` 启动时默认启用 Dual 存储，
 同时保留 NDJSON 副本。选择其他目录不会移动已有数据；新目录从空数据开始。
+切换安装方式不会自动迁移数据；升级或替换程序本身不会删除已有的持久数据目录。
+请将显式选择的数据目录放在计划替换或删除的程序目录之外。
 
 ## 备份与恢复
 
