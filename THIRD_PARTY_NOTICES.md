@@ -20,9 +20,9 @@ See [verification details](web/static/vendor/README.md).
 
 ## Dependencies installed separately
 
-Python packages listed in [requirements.txt](requirements.txt),
-[requirements-fastembed.txt](requirements-fastembed.txt) and
-[requirements-sentence-transformers.txt](requirements-sentence-transformers.txt)
+Python packages listed in [requirements.txt](https://github.com/tech-kuiperbelt/remember-me/blob/master/requirements.txt),
+[requirements-fastembed.txt](https://github.com/tech-kuiperbelt/remember-me/blob/master/requirements-fastembed.txt) and
+[requirements-sentence-transformers.txt](https://github.com/tech-kuiperbelt/remember-me/blob/master/requirements-sentence-transformers.txt)
 are obtained by the installer; their wheels and site-packages are not bundled
 in this source repository. They retain their own licenses. Upstream projects
 include [MCP](https://github.com/modelcontextprotocol/python-sdk),
@@ -44,7 +44,7 @@ files described below. Remember Me's license does not relicense these materials.
 | Provider | Default model / source | Evidence and limits |
 |---|---|---|
 | Ollama | [bge-m3](https://ollama.com/library/bge-m3); an optional external service, not included in the Docker image | Check the selected artifact's license; no specific digest is cleared for redistribution here |
-| Sentence Transformers | [BAAI/bge-m3](https://huggingface.co/BAAI/bge-m3) | Docker bundles dense runtime files at revision `5617a9f61b028005a4858fdac845db406aefb181`; the [pinned model card](https://huggingface.co/BAAI/bge-m3/blob/5617a9f61b028005a4858fdac845db406aefb181/README.md) declares MIT. See the [11-file source/digest manifest](docker/bge-m3-manifest.json), [attribution](docker/licenses/BGE-M3-NOTICE.txt) and [full MIT text](docker/licenses/BGE-M3-MIT.txt) retained under `/opt/remember-me/models/` in the image |
+| Sentence Transformers | [BAAI/bge-m3](https://huggingface.co/BAAI/bge-m3) | Docker bundles dense runtime files at revision `5617a9f61b028005a4858fdac845db406aefb181`; the [pinned model card](https://huggingface.co/BAAI/bge-m3/blob/5617a9f61b028005a4858fdac845db406aefb181/README.md) declares MIT. See the [11-file source/digest manifest](https://github.com/tech-kuiperbelt/remember-me/blob/master/docker/bge-m3-manifest.json), [attribution](https://github.com/tech-kuiperbelt/remember-me/blob/master/docker/licenses/BGE-M3-NOTICE.txt) and [full MIT text](https://github.com/tech-kuiperbelt/remember-me/blob/master/docker/licenses/BGE-M3-MIT.txt) retained under `/opt/remember-me/models/` in the image |
 | FastEmbed | intfloat/multilingual-e5-large; FastEmbed 0.8.0 maps to [qdrant/multilingual-e5-large-onnx](https://huggingface.co/qdrant/multilingual-e5-large-onnx), model.onnx and model.onnx_data, with a Qdrant-hosted archive alternative | Installed registry declares MIT; exact converted artifacts/revisions have not been independently cleared. The original model license alone does not establish every conversion's terms |
 
 In Python installations, local providers try the cache first, downloading on a

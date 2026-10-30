@@ -50,10 +50,11 @@ The original `./start.sh` remains available as an independent foreground Runner.
 `~/.local/share/remember-me-launcher` when `XDG_DATA_HOME` is unset or empty.
 Use `--data-dir` to select another directory; relative paths resolve against the
 Launcher directory. `MEMORY_DATA_DIR` does not override the Launcher choice.
-The independent `start.sh` uses the [Standalone data location](../standalone/README.md#data-location).
+The independent `start.sh` defaults to `~/.remember-me/` on Linux;
+`--data-dir` takes precedence over `MEMORY_DATA_DIR` for that entry point.
 Switching installation methods does not migrate data; replacing the program does
-not delete persistent data. See the [installation guide](../../docs/installation/launcher.md)
-or [中文指南](../../docs/installation/launcher.zh-CN.md).
+not delete persistent data. See the project's [English README](https://github.com/tech-kuiperbelt/remember-me/blob/master/README.md)
+or [中文 README](https://github.com/tech-kuiperbelt/remember-me/blob/master/README.zh-CN.md).
 
 Run automatically at login is off by default. The checkbox manages one owned
 user XDG Autostart entry. After moving the directory, run it at its new location
