@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Remember Me
+Comment=Local-first long-term memory
+Exec=AppRun
+Icon=remember-me
+Categories=Utility;
+Terminal=false

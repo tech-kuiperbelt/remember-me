@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+actual_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+# A manually extracted AppDir can inherit APPIMAGE from an unrelated parent.
+# Only retain it when the runtime-provided APPDIR identifies this AppRun.
+runtime_dir=""
+if [[ -n "${APPDIR:-}" && -d "$APPDIR" ]]; then
+    runtime_dir="$(cd -- "$APPDIR" && pwd -P)"
+fi
+if [[ "$runtime_dir" != "$actual_dir" ]]; then
+    unset APPIMAGE
+fi
+APPDIR="$actual_dir"
+export APPDIR REMEMBER_ME_APPIMAGE=1
+exec "$APPDIR/payload/launch.sh" "$@"
