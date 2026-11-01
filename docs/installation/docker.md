@@ -18,6 +18,20 @@ two instances against the same data directory. Paths refer to the Docker daemon'
 local host. Both methods use `latest` by default; a fixed version or digest can be
 selected when needed. Pulling a new image does not update an existing container.
 
+`latest` is the stable channel and does not select Beta releases. Once the
+1.1.0 Beta is published, select it explicitly by replacing `:latest` in a Run
+command with `:1.1.0`, or set the following in Compose's local `.env` before
+starting or recreating the container:
+
+```dotenv
+REMEMBER_ME_IMAGE=ghcr.io/tech-kuiperbelt/remember-me:1.1.0
+```
+
+The Beta tag is a public preview, not the stable `latest` channel. When changing
+an existing installation, first stop it and back up the full data directory;
+follow [Manual upgrades and rollback](#upgrade-and-rollback), preserving its
+mount and other settings. The versioned image is available only after release.
+
 ## Data Location
 
 The image uses **`/data` inside the container**. In the `docker run` examples,

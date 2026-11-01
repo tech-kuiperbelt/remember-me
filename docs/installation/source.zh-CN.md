@@ -2,6 +2,9 @@
 
 从 Git 获取 Remember Me，并用 Python 在本机运行。若使用官方容器，见 [Docker 安装与升级](docker.zh-CN.md)。
 
+`master` 分支是开发通道，可能包含尚未发布的改动。更新跟踪该分支的源码可能获得已发布版本之外的改动；
+更新前请阅读相关说明并备份数据。
+
 推荐的 Python 方式是 **Sentence Transformers + BAAI/bge-m3，CPU 推理**。
 不需要 Ollama、Docker 或独立 Embedding 服务。模型权重**不包含**在 GitHub 仓库中，首次使用时下载。
 

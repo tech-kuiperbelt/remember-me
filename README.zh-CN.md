@@ -78,7 +78,7 @@ Remember Me 在本机运行。请选择一种安装方式；对应指南会说�
 - **Docker — Linux AMD64：**[Docker 安装与升级](docs/installation/docker.zh-CN.md)。
   镜像内置 BGE-M3 并在 CPU 上运行，无需 Python 或独立 Embedding 服务。
 - **Linux x86_64 原生发行：**[Standalone](docs/installation/standalone.zh-CN.md)、
-  [托盘 Launcher](docs/installation/launcher.zh-CN.md)或 [AppImage 原型](docs/installation/appimage.zh-CN.md)。
+  [托盘 Launcher](docs/installation/launcher.zh-CN.md)或 [AppImage Beta](docs/installation/appimage.zh-CN.md)。
 
 服务启动后，请按
 [安装完成后](#安装完成后)继续配置 Agent。

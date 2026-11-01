@@ -3,6 +3,10 @@
 Install Remember Me from Git and run it with Python. For the official container,
 see [Docker installation and upgrade](docker.md).
 
+The `master` branch is the development channel and can contain unreleased
+changes. Updating a checkout that tracks it can bring in changes beyond a
+published release; read the relevant notes and back up data before updating.
+
 The recommended Python setup is **Sentence Transformers + BAAI/bge-m3 on CPU**.
 You do not need Ollama, Docker, or a separate embedding server. Model weights are
 **not** bundled in the GitHub repository; they are downloaded on first use.

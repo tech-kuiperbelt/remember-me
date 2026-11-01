@@ -81,7 +81,7 @@ your data is stored.
   The image includes BGE-M3 and runs it on CPU, so no Python or separate embedding
   service is required.
 - **Linux x86_64 native:** [Standalone](docs/installation/standalone.md),
-  [Tray Launcher](docs/installation/launcher.md), or [AppImage prototype](docs/installation/appimage.md).
+  [Tray Launcher](docs/installation/launcher.md), or [AppImage Beta](docs/installation/appimage.md).
 
 After the service starts, follow
 [After Installation](#after-installation).
