@@ -67,8 +67,9 @@ again. Subsequent validation, committing and deriving release identifiers are no
 content maintenance. A development `version: null` is not a publishable version.
 Remember Me uses the minor component for release channels: even MINOR series
 (1.2.x, 1.4.x) are stable; odd MINOR series (1.3.x) are development/prerelease.
-PATCH parity is irrelevant. The current workflow publishes only stable X.Y.Z
-with even MINOR; odd MINOR and SemVer prerelease suffixes are explicitly rejected.
+PATCH parity is irrelevant. The Docker workflow publishes numeric X.Y.Z for both channels; odd MINOR releases
+must be GitHub Pre-releases and cannot move Docker latest. Only validated even
+MINOR releases may advance latest. SemVer prerelease suffixes remain rejected.
 This is a project policy, not a change to the runtime JSONC/SemVer schema.
 
 All distributions read their shipped `release.jsonc`; never infer runtime version

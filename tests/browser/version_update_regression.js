@@ -5,7 +5,7 @@ async function runVersionUpdateRegression(scenario) {
   let revision = 10;
   const release = (version, values = {}) => ({tag:'v'+version, version,
     url:'https://github.com/tech-kuiperbelt/remember-me/releases/tag/v'+version,
-    published_at:'2026-10-23T01:00:00Z',
+    published_at:'2026-10-23T01:00:00Z', channel:Number(version.split('.')[1]) % 2 ? 'beta' : 'stable',
     release:{version, new:[], improvements:[], fixes:[], upgrade:[], breaking:[], ...values}});
   const latest = release('1.2.0', {new:['A new feature'], upgrade:['Back up data before upgrade.'], breaking:['Intermediate storage format changed.']});
   function state(status = 'UPDATE_AVAILABLE', current = '1.0.0') {
@@ -44,7 +44,7 @@ async function runVersionUpdateRegression(scenario) {
     assert($('app-shell').classList.contains('sidebar-collapsed') === collapsed && location.hash === hash, 'entry never toggles/navs');
     assert(page === document.querySelector('.nav-item[aria-current=page]'), 'selected page preserved');
     assertState('UPDATE_AVAILABLE','v1.0.0','Update');
-    assert([...panel.querySelectorAll('h3')].map(n=>n.textContent).join(',') === 'v1.2.0,v1.1.0', 'all versions newest first');
+    assert([...panel.querySelectorAll('h3')].map(n=>n.textContent).join(',') === `v1.2.0 (${t('version.channel.stable')}),v1.1.0 (${t('version.channel.beta')})`, 'all versions newest first and channels translated');
     assert(panel.querySelectorAll('.version-notes-breaking').length === 2, 'intermediate breaking notes expanded');
     assert(panel.querySelector('.version-notes-upgrade h4').textContent === t('version.notes.upgrade'), 'upgrade label translated');
     assert(panel.querySelector('.version-release .version-notes').classList.contains('version-notes-upgrade'), 'upgrade notes prioritized');

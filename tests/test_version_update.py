@@ -39,21 +39,18 @@ def test_compare_and_unknown(current, status, scope):
     asyncio.run(run())
 
 
-def test_no_release_needs_successful_list_and_ignores_prerelease():
+def test_no_release_requires_successful_list_and_ignores_draft():
     async def run():
         gh = Github()
-        gh.overrides[API_URL + "/latest"] = httpx.Response(404)
-        gh.pages[1] = [meta("2.0.0-rc.1", prerelease=True), meta(draft=True)]
+        gh.pages[1] = [meta(draft=True)]
         manager = gh.manager()
         try:
             result = await check(manager)
             assert result["check"]["status"] == "NO_RELEASE"
             assert result["latest"] is None and result["check"]["last_success_at"]
-            assert not any(url.startswith(RAW_URL) for url in gh.seen)
-            gh.pages[1] = [meta("9.0.0")]
+            gh.pages[1] = [meta("1.1.0", prerelease=True)]
             result = await check(manager)
-            assert result["check"]["status"] == "UNAVAILABLE"
-            assert result["latest"] is None  # List maximum cannot replace Latest.
+            assert result["latest"]["version"] == "1.1.0"
             gh.overrides[API_URL + "?per_page=100&page=1"] = httpx.Response(500)
             assert (await check(manager))["check"]["status"] == "UNAVAILABLE"
         finally:
@@ -92,14 +89,14 @@ def test_latest_file_failure_clears_previous_success(response, code):
 
 
 @pytest.mark.parametrize("change", [
-    {"draft": True}, {"prerelease": True}, {"tag_name": "v01.2.0"},
+    {"tag_name": "v01.2.0"},
     {"tag_name": "v1.2.0/../../evil"}, {"tag_name": "1.2.0"},
     {"tag_name": "v1.2.0+build"}, {"published_at": "not a date"},
 ])
 def test_invalid_latest_metadata(change):
     async def run():
         gh = Github()
-        gh.overrides[API_URL + "/latest"] = httpx.Response(200, json=meta(**change))
+        gh.overrides[API_URL + "?per_page=100&page=1"] = httpx.Response(200, json=[meta(**change)])
         manager = gh.manager()
         try:
             result = await check(manager)
@@ -128,7 +125,7 @@ def test_network_errors_safe(host, kind, code):
             error.__cause__ = ssl.SSLCertVerificationError("certificate failure")
         else:
             error = httpx.Response(503 if kind == "server" else 403)
-        gh.overrides[API_URL + "/latest" if host == "api" else RAW_URL + "/v1.2.0/release.jsonc"] = error
+        gh.overrides[API_URL + "?per_page=100&page=1" if host == "api" else RAW_URL + "/v1.2.0/release.jsonc"] = error
         manager = gh.manager()
         try:
             result = await check(manager)
@@ -144,8 +141,8 @@ def test_network_errors_safe(host, kind, code):
 def test_history_sorted_deduplicated_latest_only_target():
     async def run():
         gh = Github("1.3.0")
-        gh.pages[1] = [meta("1.0.0"), meta("1.2.0"), meta("9.0.0"), meta("1.1.0"),
-                       meta("1.2.0"), meta("1.3.0"), meta("1.4.0-rc.1", prerelease=True)]
+        gh.pages[1] = [meta("1.0.0"), meta("1.2.0"), meta("1.1.0"),
+                       meta("1.2.0"), meta("1.3.0", prerelease=True)]
         gh.raw["1.1.0"] = release("1.1.0", breaking=["Do not omit this intermediate change"])
         manager = gh.manager(local("1.0.0"))
         try:
@@ -192,7 +189,7 @@ def test_history_pagination_does_not_stop_on_old_version():
         first = API_URL + "?per_page=100&page=1"
         gh.overrides[first] = httpx.Response(200, json=[meta("0.1.0")], headers={
             "Link": '<' + API_URL + '?per_page=100&page=2>; rel="next"'})
-        gh.pages[2] = [meta("1.1.0")]
+        gh.pages[2] = [meta("1.1.0"), meta("1.2.0")]
         manager = gh.manager(local("1.0.0"))
         try:
             result = await check(manager)
@@ -200,12 +197,12 @@ def test_history_pagination_does_not_stop_on_old_version():
             assert len(result["releases"]) == 2
             gh.overrides[API_URL + "?per_page=100&page=2"] = httpx.Response(500)
             result = await check(manager)
-            assert result["latest"] and result["notes_complete"] is False
-            assert result["notes_error_code"] == "release_list_failed"
+            assert result["check"]["status"] == "UNAVAILABLE"
+            assert result["latest"] is None
             gh.overrides[first] = httpx.Response(200, json=[], headers={
                 "Link": '<https://evil.invalid/?page=2>; rel="next"'})
             result = await check(manager)
-            assert result["notes_complete"] is False
+            assert result["check"]["status"] == "UNAVAILABLE"
             assert all("evil.invalid" not in url for url in gh.seen)
         finally:
             await manager.aclose()
@@ -228,9 +225,13 @@ def test_limits_report_incomplete_without_losing_target(monkeypatch, limit):
         manager = gh.manager(local("1.0.0"))
         try:
             result = await check(manager)
-            assert result["check"]["status"] == "UPDATE_AVAILABLE"
-            assert result["latest"] and result["notes_complete"] is False
-            assert result["notes_error_code"] == "release_limit_exceeded"
+            if limit == "pages":
+                assert result["check"]["status"] == "UNAVAILABLE"
+                assert result["check"]["error_code"] == "release_limit_exceeded"
+            else:
+                assert result["check"]["status"] == "UPDATE_AVAILABLE"
+                assert result["latest"] and result["notes_complete"] is False
+                assert result["notes_error_code"] == "release_limit_exceeded"
         finally:
             await manager.aclose()
     asyncio.run(run())
@@ -246,7 +247,7 @@ def test_limits_report_incomplete_without_losing_target(monkeypatch, limit):
 def test_rate_limit_wait_and_manual_recovery(headers):
     async def run():
         gh, clock = Github(), Clock()
-        gh.overrides[API_URL + "/latest"] = httpx.Response(429, headers=headers)
+        gh.overrides[API_URL + "?per_page=100&page=1"] = httpx.Response(429, headers=headers)
         manager = gh.manager(**clock.options())
         try:
             result = await check(manager)
@@ -268,7 +269,7 @@ def test_rate_limit_wait_and_manual_recovery(headers):
 def test_history_rate_limit_keeps_target_and_stops_new_requests():
     async def run():
         gh, clock = Github(), Clock()
-        gh.pages[1] = [meta("1.1.0"), meta("1.0.1")]
+        gh.pages[1] = [meta("1.2.0"), meta("1.1.0"), meta("1.0.1")]
         gh.overrides[RAW_URL + '/v1.1.0/release.jsonc'] = httpx.Response(429, headers={'Retry-After':'120'})
         manager = gh.manager(local('1.0.0'), **clock.options())
         try:
@@ -288,8 +289,8 @@ def test_history_rate_limit_keeps_target_and_stops_new_requests():
 def test_api_markdown_is_ignored_and_structured_text_is_not_executed():
     async def run():
         gh = Github()
-        gh.overrides[API_URL+'/latest'] = httpx.Response(200, json=meta(
-            body='this legacy body must not reach clients', html_url='https://evil.invalid/'))
+        gh.overrides[API_URL+'?per_page=100&page=1'] = httpx.Response(200, json=[meta(
+            body='this legacy body must not reach clients', html_url='https://evil.invalid/')])
         gh.raw['1.2.0'] = release(new=['<script>unsafe()</script>', '[bad](javascript:unsafe)'])
         manager = gh.manager()
         try:
@@ -321,7 +322,7 @@ def test_canonical_pagination_hint_never_changes_repository():
 def test_malformed_history_never_overwrites_valid_target(monkeypatch,failure):
     async def run():
         gh=Github()
-        gh.pages[1]=[meta('1.1.0')]
+        gh.pages[1]=[meta('1.2.0'), meta('1.1.0')]
         if failure=='link':
             gh.overrides[API_URL+'?per_page=100&page=1']=httpx.Response(200,json=gh.pages[1],
                 headers={'Link':'<https://[broken/releases?per_page=100&page=2>; rel="next"'})
@@ -336,9 +337,12 @@ def test_malformed_history_never_overwrites_valid_target(monkeypatch,failure):
         manager=gh.manager(local('1.0.0'))
         try:
             result=await check(manager)
-            assert result['check']['status']=='UPDATE_AVAILABLE'
-            assert result['check']['error_code'] is None
-            assert result['latest']['release']==release() and result['notes_complete'] is False
+            if failure in ('link', 'date'):
+                assert result['check']['status']=='UNAVAILABLE'
+            else:
+                assert result['check']['status']=='UPDATE_AVAILABLE'
+                assert result['check']['error_code'] is None
+                assert result['latest']['release']==release() and result['notes_complete'] is False
             assert 'private' not in json.dumps(result)
         finally:
             await manager.aclose()

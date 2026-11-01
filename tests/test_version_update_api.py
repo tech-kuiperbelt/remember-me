@@ -83,7 +83,7 @@ def test_invalid_check_body_never_triggers_requests(tmp_path, body):
 
 def test_cooldown_response_and_no_get_side_effects(tmp_path):
     gh = Github()
-    gh.overrides[API_URL + '/latest'] = httpx.Response(403, headers={'Retry-After': '120'})
+    gh.overrides[API_URL + '?per_page=100&page=1'] = httpx.Response(403, headers={'Retry-After': '120'})
     runtime, app = make_app(tmp_path, gh)
     with TestClient(app) as client:
         settle(client, runtime)
@@ -131,9 +131,8 @@ def test_four_unknown_paths_continue_remote_checks(tmp_path,monkeypatch,failure,
         (tmp_path/'release.jsonc').write_text(body)
     gh=Github()
     if remote=='failure':
-        gh.overrides[API_URL+'/latest']=httpx.ConnectError('DNS failure')
+        gh.overrides[API_URL+'?per_page=100&page=1']=httpx.ConnectError('DNS failure')
     elif remote=='empty':
-        gh.overrides[API_URL+'/latest']=httpx.Response(404)
         gh.pages[1]=[]
     runtime,app=make_app(tmp_path,gh)
     with TestClient(app) as client:
@@ -143,6 +142,6 @@ def test_four_unknown_paths_continue_remote_checks(tmp_path,monkeypatch,failure,
         assert result['check']['status']==status
         assert result['releases']==result['release_errors']==[]
         assert result['notes_complete'] is None
-        assert gh.seen[0]==API_URL+'/latest'
+        assert gh.seen[0]==API_URL+'?per_page=100&page=1'
         if remote=='release':
             assert len(gh.seen)==2 and result['notes_scope']=='latest_only'

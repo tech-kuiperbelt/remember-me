@@ -76,10 +76,16 @@ def version_key(value):
     return numbers, not bool(pre), identifiers
 
 
-def stable_version(value):
-    """Remember Me policy: only even MINOR series can be formally released."""
+def release_version(value):
+    """Numeric releases may be beta or stable; suffixes remain unsupported."""
     numbers, pre = version(value)
-    require(pre is None, "Prerelease publication is not supported by this workflow")
+    require(pre is None, "Prerelease suffixes are not supported by this workflow")
+    return numbers
+
+
+def stable_version(value):
+    """Only even MINOR versions may advance latest."""
+    numbers = release_version(value)
     require(numbers[1] % 2 == 0, "Formal releases require an even minor version; odd minor series are development/prerelease only")
     return numbers
 
@@ -99,7 +105,7 @@ def release_at_commit(repo, commit):
         release = validate_release(jsonc.loads(body.decode("utf-8")))
     except (ValueError, RecursionError):
         raise Failure("Committed release.jsonc is invalid; a formal X.Y.Z version and all five arrays are required") from None
-    stable_version(release.version)
+    release_version(release.version)
     return release, hashlib.sha256(body).hexdigest()
 
 
@@ -177,7 +183,7 @@ def write_notes(journal, release, commit, release_hash, manifest_digest=None):
 
 def verify_release_file(image, value, release_hash):
     """Check the shipped bytes AND the same reader used by Version Check."""
-    stable_version(value)
+    release_version(value)
     require(re.fullmatch(r"[0-9a-f]{64}", release_hash), "Release file hash required")
     code = ("import hashlib,json;from app.release_info import read_local_release;"
             "from app.config.configuration import PROJECT_ROOT;"
@@ -570,7 +576,7 @@ def prepare(args, registry, journal):
 
 def verify_public(args, registry, journal):
     value = tag_version(args.tag)
-    stable_version(value)
+    release_version(value)
     digest(args.existing_digest)
     require(SHA.fullmatch(args.commit), "Full commit required")
     require(not registry.token, "Anonymous verification must not use Registry credentials")
@@ -593,7 +599,7 @@ def verify_public(args, registry, journal):
 def promote(args, registry, journal):
     workflow_gate(os.environ)
     value = tag_version(args.tag)
-    stable_version(value)
+    release_version(value)
     digest(args.existing_digest)
     require(args.verified_digest == args.existing_digest, "Anonymous verification receipt mismatch")
     resolve_source(args.control, args.tag, args.commit, os.environ["GITHUB_SHA"])
@@ -601,12 +607,16 @@ def promote(args, registry, journal):
     require(release.version == value and release_hash == args.release_sha256, "Promotion release metadata mismatch")
     release_gate(args.control, registry, value, args.commit, recovery=True, expected_digest=args.existing_digest)
     identity(registry.inspect(value), value, args.commit, args.existing_digest, args.image_id)
-    candidate_version = stable_version(value)
+    candidate_version = release_version(value)
+    if candidate_version[1] % 2:
+        journal.save(latest="unchanged (beta)", result="verified", release_state="released")
+        return
+    stable_version(value)  # Independent guard before any latest write.
     current = registry.inspect("latest", missing=True)
     if current:
         current_value = current["labels"].get("org.opencontainers.image.version", "")
         current_version, current_pre = version(current_value)
-        require(not current_pre, "Existing latest must be a stable version")
+        require(not current_pre and current_version[1] % 2 == 0, "Existing latest must be a stable version")
         require(current["labels"].get("org.opencontainers.image.source") == "https://github.com/" + REPOSITORY,
                 "Existing latest has wrong source")
         require(registry.inspect(current_value)["digest"] == current["digest"], "Existing latest/version conflict")

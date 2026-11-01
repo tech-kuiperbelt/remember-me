@@ -157,7 +157,7 @@ function renderNotes() {
   for (const item of releases) {
     const section = element('section', 'version-release');
     const heading = element('div', 'version-release-heading');
-    heading.append(element('h3', '', `v${item.version}`));
+    heading.append(element('h3', '', `v${item.version} (${t('version.channel.' + (item.channel === 'stable' ? 'stable' : 'beta'))})`));
     const link = releaseLink(item); if (link) heading.append(link);
     section.append(heading);
     let hasNotes = false;
@@ -250,7 +250,7 @@ function render() {
   const focusedAction = focused?.dataset.versionAction;
   body.replaceChildren();
   const versions = element('dl', 'version-comparison');
-  for (const [key, value] of [['current', currentVersion()], ['latest', !localError && snapshot?.latest ? `v${snapshot.latest.version}` : t('version.notKnown')]]) {
+  for (const [key, value] of [['current', currentVersion()], ['latest', !localError && snapshot?.latest ? `v${snapshot.latest.version} (${t('version.channel.' + (snapshot.latest.channel === 'stable' ? 'stable' : 'beta'))})` : t('version.notKnown')]]) {
     const column = element('div'); column.append(element('dt', '', t('version.' + key)), element('dd', '', value)); versions.append(column);
   }
   body.append(versions, element('p', 'version-explanation', explanation()));

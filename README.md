@@ -104,10 +104,11 @@ the release series: even minor numbers (`1.2.x`, `1.4.x`) are stable release
 series; odd minor numbers (`1.3.x`) are development/prerelease series. Patch
 numbers have no parity restriction: `1.2.1` is a valid stable version.
 
-This is Remember Me's project convention. The current release workflow only
-publishes stable versions with an even minor number; publishing odd-minor series
-or versions such as `1.3.0-rc.1` is not supported yet. Version checks use the latest
-official stable GitHub Release. SOURCE checkouts may contain development code;
+This is Remember Me's project convention. Numeric odd-minor Beta releases are
+GitHub Pre-releases and may have a versioned Docker image; Docker `latest` advances
+only after a stable release is verified. Suffixes such as `1.3.0-rc.1` remain
+unsupported. Version checks include published Pre-releases and exclude drafts.
+SOURCE checkouts follow master and may contain development code;
 their displayed version still comes only from the shipped `release.jsonc`.
 The numbers above are examples, not announcements of available releases.
 
@@ -116,7 +117,7 @@ The numbers above are examples, not announcements of available releases.
 HTTP/Web checks asynchronously after startup and every 24 hours by default.
 Refresh manually in the sidebar's version dialog. stdio and offline CLI do not
 check. `Unknown` means the local version is unknown and does not prevent checks;
-`No Release` means no official release exists, rather than a network failure.
+`No Release` means no published release exists, rather than a network failure.
 The application only offers guidance and copying; it does not upgrade or back up.
 
 For `Unavailable`, choose **Configure proxy** in the version dialog to reach the

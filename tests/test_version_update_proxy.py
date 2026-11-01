@@ -78,7 +78,7 @@ def test_inflight_round_uses_one_config_and_failed_save_does_not_publish(tmp_pat
             entered.set()
             await release.wait()
             return httpx.Response(200,json=meta())
-        gh.overrides[API_URL+'/latest']=waiting
+        gh.overrides[API_URL+'?per_page=100&page=1']=waiting
         runtime=Runtime(Settings.from_config(tmp_path,environment={
             'MEMORY_STORAGE_PATH':':memory:','EMBED_PRELOAD':'false'}),
             provider_factory=lambda **_:FakeProvider(),configure_logging=False).start()
@@ -134,7 +134,7 @@ def test_real_client_uses_local_proxy_for_both_fixed_https_hosts(tmp_path,monkey
     settings=Settings.from_config(tmp_path,environment={'MEMORY_DEPLOYMENT_MODE':'docker'})
     async def run():
         async with production_client(settings.PROXY_URL if settings.PROXY_ENABLED else None) as client:
-            for destination in (API_URL+'/latest',RAW_URL+'/v1.2.0/release.jsonc'):
+            for destination in (API_URL+'?per_page=100&page=1',RAW_URL+'/v1.2.0/release.jsonc'):
                 with pytest.raises(httpx.ProxyError):
                     await client.get(destination)
     try:

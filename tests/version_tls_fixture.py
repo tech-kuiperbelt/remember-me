@@ -40,20 +40,17 @@ class Fixture:
     def response(self, host, path):
         self.seen.append({'host': host, 'path': path, 'mode': self.mode})
         headers = {}
-        if self.mode == 'slow' and host == 'api.github.com' and path.endswith('/latest'):
+        if self.mode == 'slow' and host == 'api.github.com' and path.startswith('/repos/tech-kuiperbelt/remember-me/releases'):
             self.delay.wait(2)
         if host == 'api.github.com':
             if self.mode == 'forbidden':
                 return 403, {}, headers
             if self.mode == 'rate':
                 return 429, {}, {'Retry-After': '2'}
-            if path.endswith('/latest'):
-                if self.mode == 'no_release':
-                    return 404, {}, headers
-                target = {'equal':'1.0.0','older':'0.9.0'}.get(self.mode,'1.3.0')
-                return 200, self.meta(target), headers
             if path.startswith('/repos/tech-kuiperbelt/remember-me/releases'):
-                return 200, ([] if self.mode == 'no_release' else [self.meta(v) for v in ('1.3.0','1.2.0','1.1.0')]), headers
+                target = {'equal':'1.0.0', 'older':'0.9.0'}.get(self.mode)
+                versions = [] if self.mode == 'no_release' else ([target] if target else ['1.3.0', '1.2.0', '1.1.0'])
+                return 200, [self.meta(v) for v in versions], headers
         if host == 'raw.githubusercontent.com' and path.startswith('/tech-kuiperbelt/remember-me/'):
             version = path.split('/')[3].removeprefix('v')
             if self.mode == 'raw_missing' or (self.mode == 'gap' and version == '1.2.0'):

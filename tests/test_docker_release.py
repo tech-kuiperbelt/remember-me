@@ -450,7 +450,7 @@ def test_anonymous_failure_produces_no_verification_receipt(tmp_path, registry, 
 
 
 @pytest.mark.parametrize("candidate,current,promoted", [
-    ("1.0.0", None, True), ("1.2.0", "1.0.0", True), ("1.10.0", "1.9.0", True),
+    ("1.0.0", None, True), ("1.2.0", "1.0.0", True), ("1.10.0", "1.8.0", True),
     ("1.0.0", "1.0.0", False),
 ])
 def test_latest_only_advances_verified_stable(tmp_path, registry, workflow, monkeypatch, candidate, current, promoted):
@@ -973,8 +973,8 @@ def test_even_minor_stable_policy_does_not_restrict_major_or_patch(value):
     assert R.stable_version(value) == tuple(map(int,value.split('.')))
 
 
-@pytest.mark.parametrize('value',['1.1.0','1.3.0','2.1.2','1.2.0-rc.1','1.3.0-rc.1'])
-def test_odd_minor_and_semver_prereleases_cannot_be_published(git_repo,value):
+@pytest.mark.parametrize('value',['1.2.0-rc.1','1.3.0-rc.1'])
+def test_semver_prereleases_cannot_be_published(git_repo,value):
     repo,_,git=git_repo
     (repo/'release.jsonc').write_text(json.dumps(release_document(value)))
     git('commit','-am','development series fixture')

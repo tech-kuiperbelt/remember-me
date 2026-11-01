@@ -56,8 +56,8 @@ def test_concurrent_start_manual_and_automatic_singleflight():
             entered.set()
             await release.wait()
             from tests.version_update_helpers import meta
-            return httpx.Response(200, json=meta())
-        gh.overrides[API_URL + "/latest"] = delayed
+            return httpx.Response(200, json=[meta()])
+        gh.overrides[API_URL + "?per_page=100&page=1"] = delayed
         manager = gh.manager(**clock.options())
         try:
             manager.start()
@@ -89,8 +89,16 @@ def test_total_timeout_preserves_only_valid_target(stage):
                 await asyncio.Future()
             finally:
                 cancelled.set()
-        url = API_URL + ("/latest" if stage == "target" else "?per_page=100&page=1")
-        gh.overrides[url] = stuck
+        url = API_URL + "?per_page=100&page=1"
+        calls = 0
+        async def maybe_stuck(request):
+            nonlocal calls
+            calls += 1
+            if stage == "history" and calls == 1:
+                from tests.version_update_helpers import meta
+                return httpx.Response(200, json=[meta()])
+            return await stuck(request)
+        gh.overrides[url] = maybe_stuck
         manager = gh.manager(local("1.0.0"), timeout=.01)
         try:
             result = await check(manager)
@@ -115,7 +123,7 @@ def test_shutdown_cancels_network_closes_client_before_provider(tmp_path):
             await asyncio.Future()
         finally:
             cancelled.set()
-    gh.overrides[API_URL + "/latest"] = stuck
+    gh.overrides[API_URL + "?per_page=100&page=1"] = stuck
     provider = FakeProvider()
     def closed():
         assert cancelled.is_set() and all(client.is_closed for client in gh.clients)

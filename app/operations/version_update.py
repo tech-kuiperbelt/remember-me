@@ -100,7 +100,7 @@ def _metadata(item):
     if (not isinstance(item, dict) or type(item.get("draft")) is not bool
             or type(item.get("prerelease")) is not bool):
         raise CheckError("latest_release_invalid")
-    if item["draft"] or item["prerelease"]:
+    if item["draft"]:
         return None
     tag = item.get("tag_name")
     try:
@@ -114,7 +114,8 @@ def _metadata(item):
     except (KeyError, TypeError, ValueError, AttributeError, OverflowError):
         raise CheckError("latest_release_invalid") from None
     return {"tag": tag, "version": tag[1:], "url": f"{RELEASES_URL}/tag/{tag}",
-            "published_at": published_at}
+            "published_at": published_at,
+            "channel": "beta" if parse_version(tag[1:])[1] % 2 or item["prerelease"] else "stable"}
 
 
 class GitHubReleases:
@@ -217,17 +218,15 @@ class GitHubReleases:
             raise
 
     async def latest(self):
-        status, body, _ = await self._get(API_URL + "/latest")
-        if status == 404:
-            # A 404 is not proof. Successfully enumerate without selecting a target.
-            async for values in self._pages():
-                for item in values:
-                    if _metadata(item) is not None:
-                        raise CheckError("latest_release_invalid")
+        candidates = []
+        async for values in self._pages():
+            for item in values:
+                meta = _metadata(item)
+                if meta is not None:
+                    candidates.append(meta)
+        if not candidates:
             return None
-        meta = _metadata(self._json(body))
-        if meta is None:
-            raise CheckError("latest_release_invalid")
+        meta = max(candidates, key=lambda row: parse_version(row["version"]))
         return await self._release(meta, latest=True)
 
     async def history(self, current, latest, result):
