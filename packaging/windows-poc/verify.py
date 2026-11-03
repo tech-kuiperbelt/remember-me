@@ -5,8 +5,9 @@ import importlib.metadata
 import json
 import multiprocessing
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import platform
+import re
 import site
 import socket
 import sqlite3
@@ -61,6 +62,68 @@ def memory():
     c = Counters(); c.cb = ctypes.sizeof(c)
     assert api(kernel.GetCurrentProcess(), ctypes.byref(c), c.cb)
     return {name: getattr(c, name) for name in ('PeakWorkingSetSize', 'WorkingSetSize', 'PagefileUsage', 'PeakPagefileUsage')}
+
+
+def defender_candidate(path, program_data):
+    relative = PureWindowsPath(path).relative_to(PureWindowsPath(program_data) / 'Microsoft/Windows Defender/Platform')
+    return (len(relative.parts) == 2 and relative.name.lower() == 'mpoav.dll'
+            and re.fullmatch(r'\d+\.\d+\.\d+\.\d+-\d+', relative.parts[0]) is not None)
+
+
+def verified_defender(path, program_data, identity):
+    try:
+        if not defender_candidate(path, program_data):
+            return False
+    except ValueError:
+        return False
+    if not isinstance(identity, dict) or not isinstance(identity.get('amsi_providers'), list):
+        return False
+    fields = ('path', 'sha256', 'sha256_after', 'signature_status', 'signer_name',
+              'signer_subject', 'signer_thumbprint', 'company_name', 'original_filename', 'file_version')
+    if not all(isinstance(identity.get(k), str) for k in fields):
+        return False
+    version = PureWindowsPath(path).parent.name.split('-')[0]
+    return (PureWindowsPath(identity.get('path', '')) == PureWindowsPath(path)
+            and re.fullmatch('[0-9a-f]{64}', identity.get('sha256', '')) is not None
+            and identity['sha256'] == identity.get('sha256_after')
+            and identity.get('signature_status') == 'Valid'
+            and identity.get('signer_name') in ('Microsoft Windows', 'Microsoft Windows Publisher', 'Microsoft Corporation')
+            and re.search(r'(^|,\s*)O=Microsoft Corporation(,|$)', identity.get('signer_subject', '')) is not None
+            and bool(identity.get('signer_thumbprint'))
+            and identity.get('company_name') == 'Microsoft Corporation'
+            and identity.get('original_filename', '').lower() == 'mpoav.dll'
+            and re.match(re.escape(version) + r'(?:\s|$)', identity.get('file_version', '')) is not None
+            and any(PureWindowsPath(p.get('path', '')) == PureWindowsPath(path)
+                    and re.fullmatch(r'\{[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}\}', p.get('clsid', ''))
+                    for p in identity['amsi_providers'] if isinstance(p, dict)))
+
+
+def audit_dlls(dlls, runtime, windows, program_data, evidence):
+    classifications = []
+    for index, path in enumerate(dlls):
+        resolved = Path(path).resolve()
+        if resolved.is_relative_to(runtime):
+            kind = 'private_runtime'
+        elif resolved.is_relative_to(windows):
+            kind = 'windows_system'
+        else:
+            kind = 'unknown_external'
+            identity_file = evidence / f'dll-identity-{index}.json'
+            try:
+                if defender_candidate(str(resolved), program_data):
+                    shell = windows / 'System32/WindowsPowerShell/v1.0/powershell.exe'
+                    subprocess.run([str(shell), '-NoProfile', '-NonInteractive', '-File',
+                                    str(Path(__file__).with_name('defender_identity.ps1')),
+                                    '-Dll', str(resolved), '-Output', str(identity_file)],
+                                   check=True, timeout=60, capture_output=True)
+                    identity = json.loads(identity_file.read_text(encoding='utf-8'))
+                    if verified_defender(str(resolved), program_data, identity):
+                        kind = 'verified_host_defender'
+            except (ValueError, OSError, subprocess.SubprocessError) as exc:
+                (evidence / f'dll-identity-{index}-error.txt').write_text(str(exc) + '\n' + str(getattr(exc, 'stderr', '')), encoding='utf-8')
+        classifications.append({'path': str(resolved), 'classification': kind})
+    (evidence / 'dll-audit.json').write_text(json.dumps(classifications, indent=2), encoding='utf-8')
+    assert all(p['classification'] != 'unknown_external' for p in classifications), 'Unverified external DLL; inspect dll-audit.json'
 
 
 def main():
@@ -140,22 +203,26 @@ def main():
     profile = EmbeddingSpec(provider='sentence_transformers', model=manifest['model'],
                             dimension=int(vectors.shape[1]), normalized=True)
     assert profile.profile_id == 'ep_6134c0b15d2bb471', profile.as_dict()
-    dlls = modules()
-    (evidence / 'loaded-modules.json').write_text(json.dumps(dlls, indent=2), encoding="utf-8")
-    windows = Path(os.environ['SystemRoot']).resolve()
-    assert all(Path(p).resolve().is_relative_to(runtime) or Path(p).resolve().is_relative_to(windows) for p in dlls), 'External DLL; inspect loaded-modules.json'
-    assert any(Path(p).name.lower() == 'torch_cpu.dll' for p in dlls)
-    assert any(Path(p).name.lower().startswith('python312') for p in dlls)
-    assert not any('cuda' in Path(p).name.lower() or 'cudnn' in Path(p).name.lower() for p in dlls)
-    result = {'status': 'passed', 'python': sys.version, 'prefix': sys.prefix,
+    result = {'status': 'partial', 'model_validation': 'passed', 'dll_audit': 'pending', 'python': sys.version, 'prefix': sys.prefix,
               'ssl': ssl.OPENSSL_VERSION, 'sqlite': sqlite3.sqlite_version,
               'model_revision': manifest['revision'], 'shape': list(vectors.shape),
+              'pooling': poolings[0].get_config_dict(), 'norms': vectors.norm(dim=1).tolist(),
+              'max_cls_difference': (vectors - expected).abs().max().item(),
               'profile': profile.as_dict(), 'profile_validation': 'metadata_identity_and_direct_model_inference',
               'provider_storage_integration': 'pending_S1-B',
               'load_seconds': load_seconds, 'inference_seconds': inference_seconds,
               'memory_bytes': memory(), 'disk_free_bytes': shutil.disk_usage(bundle).free,
               'bundle_bytes': sum(p.stat().st_size for p in bundle.rglob('*') if p.is_file()),
               'packages': {d.metadata['Name']: d.version for d in importlib.metadata.distributions()}}
+    (evidence / 'model-results.json').write_text(json.dumps(result, indent=2), encoding="utf-8")
+    dlls = modules()
+    (evidence / 'loaded-modules.json').write_text(json.dumps(dlls, indent=2), encoding="utf-8")
+    windows = Path(os.environ['SystemRoot']).resolve()
+    audit_dlls(dlls, runtime, windows, os.environ['ProgramData'], evidence)
+    assert any(Path(p).name.lower() == 'torch_cpu.dll' for p in dlls)
+    assert any(Path(p).name.lower().startswith('python312') for p in dlls)
+    assert not any('cuda' in Path(p).name.lower() or 'cudnn' in Path(p).name.lower() for p in dlls)
+    result.update(status='passed', dll_audit='passed')
     (evidence / 'native-results.json').write_text(json.dumps(result, indent=2), encoding="utf-8")
 
 

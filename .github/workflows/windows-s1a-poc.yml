@@ -25,15 +25,18 @@ jobs:
           $evidence = Join-Path $env:RUNNER_TEMP 'remember-me-windows-s1a-preflight'
           New-Item -ItemType Directory -Force $evidence | Out-Null
           Get-PSDrive -PSProvider FileSystem | Format-List | Out-File "$evidence/disk-before.txt"
-          $tokens = $null
-          $parseErrors = $null
-          $script = Join-Path $env:GITHUB_WORKSPACE 'packaging/windows-poc/build.ps1'
-          $null = [System.Management.Automation.Language.Parser]::ParseFile($script, [ref]$tokens, [ref]$parseErrors)
-          if ($parseErrors.Count -gt 0) {
-            $parseErrors | Format-List * | Out-File "$evidence/powershell-syntax.txt"
-            throw 'build.ps1 PowerShell syntax validation failed'
+          '' | Out-File "$evidence/powershell-syntax.txt"
+          foreach ($name in @('build.ps1', 'defender_identity.ps1')) {
+            $tokens = $null
+            $parseErrors = $null
+            $script = Join-Path $env:GITHUB_WORKSPACE "packaging/windows-poc/$name"
+            $null = [System.Management.Automation.Language.Parser]::ParseFile($script, [ref]$tokens, [ref]$parseErrors)
+            if ($parseErrors.Count -gt 0) {
+              $parseErrors | Format-List * | Out-File "$evidence/powershell-syntax.txt" -Append
+              throw "$name PowerShell syntax validation failed"
+            }
+            "$name`: syntax passed" | Out-File "$evidence/powershell-syntax.txt" -Append
           }
-          'build.ps1: syntax passed' | Out-File "$evidence/powershell-syntax.txt"
       - name: Native build and verification
         run: |
           $work = Join-Path $env:RUNNER_TEMP 'remember-me-windows-s1a'
