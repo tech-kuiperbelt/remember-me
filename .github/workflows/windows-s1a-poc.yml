@@ -1,0 +1,57 @@
+name: windows-s1a-poc
+on:
+  push:
+    branches: [poc/windows-s1a-native]
+permissions:
+  contents: read
+concurrency:
+  group: windows-s1a-poc
+  cancel-in-progress: false
+jobs:
+  native:
+    if: github.repository == 'tech-kuiperbelt/remember-me' && github.ref == 'refs/heads/poc/windows-s1a-native'
+    runs-on: windows-2022
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Preflight PowerShell syntax and disk state
+        run: |
+          $evidence = Join-Path $env:RUNNER_TEMP 'remember-me-windows-s1a-preflight'
+          New-Item -ItemType Directory -Force $evidence | Out-Null
+          Get-PSDrive -PSProvider FileSystem | Format-List | Out-File "$evidence/disk-before.txt"
+          $tokens = $null
+          $parseErrors = $null
+          $script = Join-Path $env:GITHUB_WORKSPACE 'packaging/windows-poc/build.ps1'
+          $null = [System.Management.Automation.Language.Parser]::ParseFile($script, [ref]$tokens, [ref]$parseErrors)
+          if ($parseErrors.Count -gt 0) {
+            $parseErrors | Format-List * | Out-File "$evidence/powershell-syntax.txt"
+            throw 'build.ps1 PowerShell syntax validation failed'
+          }
+          'build.ps1: syntax passed' | Out-File "$evidence/powershell-syntax.txt"
+      - name: Native build and verification
+        run: |
+          $work = Join-Path $env:RUNNER_TEMP 'remember-me-windows-s1a'
+          ./packaging/windows-poc/build.ps1 -Work $work
+      - name: Record runner resources even on failure
+        if: always()
+        run: |
+          $evidence = Join-Path $env:RUNNER_TEMP 'remember-me-windows-s1a/evidence'
+          New-Item -ItemType Directory -Force $evidence | Out-Null
+          Get-ComputerInfo | Out-File "$evidence/runner.txt"
+          Get-PSDrive -PSProvider FileSystem | Format-List | Out-File "$evidence/disk.txt"
+          "ImageOS=$env:ImageOS ImageVersion=$env:ImageVersion SHA=$env:GITHUB_SHA" | Out-File "$evidence/image.txt"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: windows-s1a-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/remember-me-windows-s1a/evidence/
+            ${{ runner.temp }}/remember-me-windows-s1a-preflight/
+          retention-days: 14
+          if-no-files-found: error
