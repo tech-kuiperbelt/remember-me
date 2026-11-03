@@ -7,6 +7,7 @@ import tempfile
 from dataclasses import dataclass, field, replace
 from urllib.parse import urlsplit
 from app.config import jsonc
+from app.platform_files import fsync_directory
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -138,11 +139,7 @@ def atomic_text(path, text, *, exclusive=False):
             os.link(temporary, path)
         else:
             os.replace(temporary, path)
-        descriptor = os.open(path.parent, os.O_RDONLY)
-        try:
-            os.fsync(descriptor)
-        finally:
-            os.close(descriptor)
+        fsync_directory(path.parent)
     finally:
         Path(temporary).unlink(missing_ok=True)
 

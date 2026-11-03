@@ -20,6 +20,7 @@ from pathlib import Path
 from app.storage import create_storage, SQLitePrimaryStorage
 from app.storage.jsonl_transfer import load_jsonl
 from app.storage.database_lock import DatabaseWriterLock
+from app.platform_files import fsync_directory
 
 logger = logging.getLogger("recovery")
 
@@ -134,11 +135,7 @@ def install_recovery_database(temp_path, target_path, primary: SQLitePrimaryStor
         handle.write("replica sync required\n")
         handle.flush()
         os.fsync(handle.fileno())
-    directory_fd = os.open(str(marker.parent), os.O_RDONLY)
-    try:
-        os.fsync(directory_fd)
-    finally:
-        os.close(directory_fd)
+    fsync_directory(str(marker.parent))
     primary.close_connection()
     try:
         with closing(sqlite3.connect(temp_path)) as source, \

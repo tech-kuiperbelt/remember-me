@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$Work)
+param([Parameter(Mandatory=$true)][string]$Work, [switch]$PrepareOnly, [string]$ResolvedReport)
 $ErrorActionPreference = 'Stop'
 if (-not $IsWindows -or [Environment]::Is64BitProcess -ne $true) { throw 'Requires Windows x64 PowerShell 7' }
 $Work = [IO.Path]::GetFullPath($Work)
@@ -27,9 +27,15 @@ try {
     $env:PYTHONNOUSERSITE = '1'
     $env:TEMP = "$Work/tmp"; $env:TMP = $env:TEMP
     New-Item -ItemType Directory $env:TEMP | Out-Null
-    & "$Work/runtime/python/python.exe" -I "$PSScriptRoot/prepare.py" --work $Work
+    $prepareArgs = @('-I', "$PSScriptRoot/prepare.py", '--work', $Work)
+    if ($ResolvedReport) { $prepareArgs += @('--resolved-report', $ResolvedReport) }
+    & "$Work/runtime/python/python.exe" @prepareArgs
     if ($LASTEXITCODE -ne 0) { throw 'Windows POC failed; inspect retained evidence' }
     Move-Item "$Work/runtime" "$Work/bundle/runtime"
+    if ($PrepareOnly) {
+        Write-Host 'Prepared only: strict S1-A verification was not run or claimed passed.'
+        return
+    }
     & "$Work/bundle/runtime/python/python.exe" -I "$PSScriptRoot/verify.py" "$Work/bundle" "$Work/evidence"
     if ($LASTEXITCODE -ne 0) { throw 'Native verification failed' }
 } finally { Stop-Transcript }

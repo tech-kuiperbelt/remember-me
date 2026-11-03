@@ -1,6 +1,6 @@
 """Process-lifetime writer locks for SQLite primary databases."""
 
-import fcntl
+from app.platform_files import acquire_file_lock, release_file_lock
 import os
 
 
@@ -23,7 +23,7 @@ class DatabaseWriterLock:
         os.makedirs(os.path.dirname(self.lock_path) or ".", exist_ok=True)
         handle = open(self.lock_path, "a+", encoding="utf-8")
         try:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            acquire_file_lock(handle)
         except BlockingIOError as exc:
             handle.close()
             raise RuntimeError(
@@ -31,6 +31,9 @@ class DatabaseWriterLock:
                 f"{self.database_path}; connect clients to the single HTTP service "
                 "or stop the current writer before starting another instance"
             ) from exc
+        except BaseException:
+            handle.close()
+            raise
         self._handle = handle
 
     def release(self) -> None:
@@ -38,7 +41,7 @@ class DatabaseWriterLock:
         self._handle = None
         if handle is not None:
             try:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                release_file_lock(handle)
             finally:
                 handle.close()
 

@@ -4,7 +4,7 @@ import json
 import os
 import threading
 import logging
-import fcntl
+from app.platform_files import acquire_file_lock, release_file_lock, fsync_directory
 from datetime import datetime, timezone
 
 logger = logging.getLogger("storage_ndjson")
@@ -64,13 +64,16 @@ class NDJSONReplica(ReplicaStorage):
         os.makedirs(os.path.dirname(lock_path) or ".", exist_ok=True)
         handle = open(lock_path, "a+")
         try:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            acquire_file_lock(handle)
         except BlockingIOError as exc:
             handle.close()
             raise RuntimeError(
                 f"NDJSON replica already has an active writer: {self.path}; "
                 "connect clients to the single HTTP service instead of starting another dual instance"
             ) from exc
+        except BaseException:
+            handle.close()
+            raise
         self._writer_lock_file = handle
 
     def release_writer_lock(self):
@@ -78,7 +81,7 @@ class NDJSONReplica(ReplicaStorage):
         self._writer_lock_file = None
         if handle is not None:
             try:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                release_file_lock(handle)
             finally:
                 handle.close()
 
@@ -133,12 +136,7 @@ class NDJSONReplica(ReplicaStorage):
     def _fsync_directory(path: str) -> None:
         """Persist a preceding rename in the containing local directory."""
         directory = os.path.dirname(os.path.abspath(path)) or "."
-        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-        fd = os.open(directory, flags)
-        try:
-            os.fsync(fd)
-        finally:
-            os.close(fd)
+        fsync_directory(directory)
 
     @staticmethod
     def _without_embedding(record: dict) -> dict:
