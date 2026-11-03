@@ -100,7 +100,7 @@ def main():
             child.terminate(); child.join(5)
         child.close()
     subprocess.run([sys.executable, '-I', '-m', 'pip', 'check'], check=True)
-    report = json.loads((evidence / 'resolve.json').read_text())
+    report = json.loads((evidence / 'resolve.json').read_text(encoding="utf-8"))
     for entry in report['install']:
         assert importlib.metadata.version(entry['metadata']['name']) == entry['metadata']['version']
     start = time.perf_counter()
@@ -110,7 +110,7 @@ def main():
     assert torch.__version__ == '2.14.1+cpu'
     assert torch.version.cuda is None and not torch.cuda.is_available()
     assert not any(d.metadata['Name'].lower().startswith(('nvidia-', 'triton')) for d in importlib.metadata.distributions())
-    manifest = json.loads((bundle / 'models/manifest.json').read_text())
+    manifest = json.loads((bundle / 'models/manifest.json').read_text(encoding="utf-8"))
     model = SentenceTransformer(str(bundle / 'models' / manifest['revision']), device='cpu', local_files_only=True)
     load_seconds = time.perf_counter() - start
     assert any(isinstance(m, Pooling) and m.pooling_mode_cls_token and not m.pooling_mode_mean_tokens for m in model)
@@ -137,7 +137,7 @@ def main():
                             dimension=int(vectors.shape[1]), normalized=True)
     assert profile.profile_id == 'ep_6134c0b15d2bb471', profile.as_dict()
     dlls = modules()
-    (evidence / 'loaded-modules.json').write_text(json.dumps(dlls, indent=2))
+    (evidence / 'loaded-modules.json').write_text(json.dumps(dlls, indent=2), encoding="utf-8")
     windows = Path(os.environ['SystemRoot']).resolve()
     assert all(Path(p).resolve().is_relative_to(runtime) or Path(p).resolve().is_relative_to(windows) for p in dlls), 'External DLL; inspect loaded-modules.json'
     assert any(Path(p).name.lower() == 'torch_cpu.dll' for p in dlls)
@@ -152,7 +152,7 @@ def main():
               'memory_bytes': memory(), 'disk_free_bytes': shutil.disk_usage(bundle).free,
               'bundle_bytes': sum(p.stat().st_size for p in bundle.rglob('*') if p.is_file()),
               'packages': {d.metadata['Name']: d.version for d in importlib.metadata.distributions()}}
-    (evidence / 'native-results.json').write_text(json.dumps(result, indent=2))
+    (evidence / 'native-results.json').write_text(json.dumps(result, indent=2), encoding="utf-8")
 
 
 if __name__ == '__main__':
