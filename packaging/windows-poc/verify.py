@@ -113,7 +113,11 @@ def main():
     manifest = json.loads((bundle / 'models/manifest.json').read_text(encoding="utf-8"))
     model = SentenceTransformer(str(bundle / 'models' / manifest['revision']), device='cpu', local_files_only=True)
     load_seconds = time.perf_counter() - start
-    assert any(isinstance(m, Pooling) and m.pooling_mode_cls_token and not m.pooling_mode_mean_tokens for m in model)
+    # Preserve native module evidence even when a model assertion below fails.
+    (evidence / 'loaded-modules-before-model-checks.json').write_text(
+        json.dumps(modules(), indent=2), encoding="utf-8")
+    poolings = [m for m in model if isinstance(m, Pooling)]
+    assert len(poolings) == 1 and poolings[0].get_config_dict()["pooling_mode"] == "cls", 'Expected pure CLS pooling'
     assert isinstance(model[-1], Normalize)
     texts = ['Remember this portable memory.', '请记住这段中文。']
     start = time.perf_counter()
