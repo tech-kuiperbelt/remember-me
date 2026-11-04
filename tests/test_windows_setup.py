@@ -96,3 +96,27 @@ def test_pinned_inputs_have_independent_identity_requirements():
     assert "@(0, 3010, 1641)" in helper
     assert '1602' in helper and '1223' in helper
     assert helper.count('Get-RuntimeVersion') >= 3
+
+
+def test_pinned_model_configs_are_assets_not_user_configuration(bundle):
+    manifest = json.loads((ROOT / 'docker/bge-m3-manifest.json').read_text(encoding='utf-8'))
+    snapshot = bundle / 'models/sentence-transformers/models--BAAI--bge-m3/snapshots' / manifest['revision']
+    for relative in ('config.json', '1_Pooling/config.json'):
+        source = ROOT / 'tests/fixtures/windows-bge-m3-configs' / relative
+        record = next(item for item in manifest['files'] if item['path'] == relative)
+        assert hashlib.sha256(source.read_bytes()).hexdigest() == record['sha256']
+        destination = snapshot / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(source.read_bytes())
+    assert validator.validate(bundle) == '1.1.0'
+    (snapshot / 'config.json').write_text('{"user":"state"}', encoding='utf-8')
+    with pytest.raises(ValueError, match='Pinned model configuration mismatch'):
+        validator.validate(bundle)
+
+
+def test_model_config_name_or_contents_do_not_allow_unknown_paths(bundle):
+    unknown = bundle / 'models/unknown/config.json'
+    unknown.parent.mkdir(parents=True)
+    unknown.write_bytes((ROOT / 'tests/fixtures/windows-bge-m3-configs/config.json').read_bytes())
+    with pytest.raises(ValueError, match='Unexpected user/runtime state'):
+        validator.validate(bundle)

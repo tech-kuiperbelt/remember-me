@@ -62,7 +62,7 @@ jobs:
           $status = 'failed'
           Start-Transcript -Path "$evidence/setup-transcript.txt"
           try {
-            $inventory = @(Get-ChildItem -LiteralPath "$work/bundle" -Recurse -File | ForEach-Object { [ordered]@{ path = [IO.Path]::GetRelativePath("$work/bundle", $_.FullName); bytes = $_.Length } })
+            $inventory = @(Get-ChildItem -LiteralPath "$work/bundle" -Recurse -File | ForEach-Object { [pscustomobject]@{ path = [IO.Path]::GetRelativePath("$work/bundle", $_.FullName); bytes = $_.Length } })
             $inventory | ConvertTo-Json -Depth 3 | Set-Content -Encoding utf8 "$evidence/bundle-inventory.json"
             [ordered]@{ files = $inventory.Count; bytes = ($inventory | Measure-Object -Property bytes -Sum).Sum } | ConvertTo-Json | Set-Content -Encoding utf8 "$evidence/bundle-size.json"
             ./packaging/windows-setup/build.ps1 -Bundle "$work/bundle" -Output $output
