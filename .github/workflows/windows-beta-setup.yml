@@ -1,0 +1,108 @@
+name: windows-beta-setup
+on:
+  push:
+    branches: [poc/windows-beta-setup]
+permissions:
+  contents: read
+concurrency:
+  group: windows-beta-setup
+  cancel-in-progress: false
+jobs:
+  candidate:
+    if: github.repository == 'tech-kuiperbelt/remember-me' && github.ref == 'refs/heads/poc/windows-beta-setup'
+    runs-on: windows-2022
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Preflight scripts and runner resources
+        run: |
+          $evidence = Join-Path $env:RUNNER_TEMP 'remember-me-setup-evidence'
+          New-Item -ItemType Directory -Force $evidence | Out-Null
+          Get-PSDrive -PSProvider FileSystem | Format-List * | Out-File "$evidence/disk-before.txt"
+          $os = Get-CimInstance Win32_OperatingSystem
+          [ordered]@{ commit = $env:GITHUB_SHA; runner = $env:RUNNER_NAME; image = $env:ImageOS; image_version = $env:ImageVersion; os = $os.Caption; memory_total_kib = $os.TotalVisibleMemorySize; memory_free_kib = $os.FreePhysicalMemory; processors = [Environment]::ProcessorCount; started_utc = [DateTime]::UtcNow.ToString('o') } | ConvertTo-Json | Set-Content -Encoding utf8 "$evidence/runner.json"
+          foreach ($name in @('packaging/windows-beta/build.ps1', 'packaging/windows-poc/build.ps1', 'packaging/windows-setup/build.ps1', 'packaging/windows-setup/install-vcredist.ps1', 'packaging/windows-setup/check-running.ps1')) {
+            $tokens = $null
+            $errors = $null
+            $null = [Management.Automation.Language.Parser]::ParseFile((Join-Path $env:GITHUB_WORKSPACE $name), [ref]$tokens, [ref]$errors)
+            if ($errors.Count) { $errors | Out-File "$evidence/parser-errors.txt" -Append; throw "Parser failed: $name" }
+            "Parser passed: $name" | Out-File "$evidence/parser.txt" -Append
+          }
+      - name: Prepare complete offline bundle and native business smoke
+        timeout-minutes: 55
+        run: |
+          $work = Join-Path $env:RUNNER_TEMP 'remember-me-setup-runtime'
+          $evidence = Join-Path $env:RUNNER_TEMP 'remember-me-setup-evidence'
+          $timer = [Diagnostics.Stopwatch]::StartNew()
+          $status = 'failed'
+          Start-Transcript -Path "$evidence/runtime-transcript.txt"
+          try {
+            ./packaging/windows-beta/build.ps1 -Work $work -Storage dual
+            if ($LASTEXITCODE -ne 0) { throw 'Runtime preparation failed' }
+            $status = 'passed'
+          } finally {
+            [ordered]@{ status = $status; seconds = $timer.Elapsed.TotalSeconds; completed_utc = [DateTime]::UtcNow.ToString('o') } | ConvertTo-Json | Set-Content -Encoding utf8 "$evidence/runtime-stage.json"
+            Get-PSDrive -PSProvider FileSystem | Format-List * | Out-File "$evidence/disk-after-runtime.txt"
+            Stop-Transcript
+          }
+      - name: Compile full offline Setup
+        id: setup
+        timeout-minutes: 25
+        run: |
+          $work = Join-Path $env:RUNNER_TEMP 'remember-me-setup-runtime'
+          $output = Join-Path $env:RUNNER_TEMP 'remember-me-setup-output'
+          $evidence = Join-Path $env:RUNNER_TEMP 'remember-me-setup-evidence'
+          $timer = [Diagnostics.Stopwatch]::StartNew()
+          $status = 'failed'
+          Start-Transcript -Path "$evidence/setup-transcript.txt"
+          try {
+            $inventory = @(Get-ChildItem -LiteralPath "$work/bundle" -Recurse -File | ForEach-Object { [ordered]@{ path = [IO.Path]::GetRelativePath("$work/bundle", $_.FullName); bytes = $_.Length } })
+            $inventory | ConvertTo-Json -Depth 3 | Set-Content -Encoding utf8 "$evidence/bundle-inventory.json"
+            [ordered]@{ files = $inventory.Count; bytes = ($inventory | Measure-Object -Property bytes -Sum).Sum } | ConvertTo-Json | Set-Content -Encoding utf8 "$evidence/bundle-size.json"
+            ./packaging/windows-setup/build.ps1 -Bundle "$work/bundle" -Output $output
+            if ($LASTEXITCODE -ne 0) { throw 'Setup build failed' }
+            $status = 'passed'
+          } finally {
+            [ordered]@{ status = $status; seconds = $timer.Elapsed.TotalSeconds; completed_utc = [DateTime]::UtcNow.ToString('o') } | ConvertTo-Json | Set-Content -Encoding utf8 "$evidence/setup-stage.json"
+            Get-PSDrive -PSProvider FileSystem | Format-List * | Out-File "$evidence/disk-after-setup.txt"
+            Stop-Transcript
+          }
+      - name: Upload Setup candidate and checksum
+        if: steps.setup.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: windows-beta-setup-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/remember-me-setup-output/remember-me-windows-x64-beta-setup.exe
+            ${{ runner.temp }}/remember-me-setup-output/remember-me-windows-x64-beta-setup.exe.sha256
+            ${{ runner.temp }}/remember-me-setup-output/setup-build-evidence.json
+          compression-level: 0
+          retention-days: 14
+          if-no-files-found: error
+      - name: Record final resources
+        if: always()
+        run: |
+          $evidence = Join-Path $env:RUNNER_TEMP 'remember-me-setup-evidence'
+          New-Item -ItemType Directory -Force $evidence | Out-Null
+          Get-PSDrive -PSProvider FileSystem | Format-List * | Out-File "$evidence/disk-final.txt"
+          [ordered]@{ completed_utc = [DateTime]::UtcNow.ToString('o'); memory_free_kib = (Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory } | ConvertTo-Json | Set-Content -Encoding utf8 "$evidence/runner-final.json"
+      - name: Upload evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: windows-beta-setup-evidence-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/remember-me-setup-evidence/
+            ${{ runner.temp }}/remember-me-setup-runtime/evidence/
+            ${{ runner.temp }}/remember-me-setup-runtime/bundle/beta-build.json
+            ${{ runner.temp }}/remember-me-setup-runtime/bundle/beta-policy.json
+            ${{ runner.temp }}/remember-me-setup-runtime/bundle/models/manifest.json
+            ${{ runner.temp }}/remember-me-setup-output/setup-build-evidence.json
+          retention-days: 14
+          if-no-files-found: warn
