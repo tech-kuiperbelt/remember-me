@@ -1,25 +1,17 @@
-# Remember Me Windows Beta — Windows 11 手工测试
+# Remember Me Windows Beta — Setup 手工验收
 
-这是待手工验收的 Beta 候选，不是正式 Windows 发行。无需系统 Python。
-建议先在 Windows 11 x64 虚拟机、本地固定 NTFS 磁盘测试，至少留出 8 GiB 可用空间。
+完整离线 Beta 候选，需 Windows 11 x64、本地固定 NTFS；无需系统 Python。严格 S1-A Defender 身份审计历史限制保留。
 
-1. 将整个 ZIP 解压到短路径，例如 `C:\RememberMeBeta`。不要在 ZIP 内直接运行，也不要只复制 start.cmd。
-2. 双击 start.cmd，保持控制台打开，等待服务就绪。默认仅监听本机。
-3. 打开 http://127.0.0.1:1314/admin/console 。MCP 客户端使用 Streamable HTTP：
-   `http://127.0.0.1:1314/mcp`；旧客户端可用 `/sse`。本版优先测试 HTTP，不要求 stdio。
-4. 添加一条中文和一条英文记忆，记录 ID，进行语义搜索；连接 MCP 重复添加和搜索。
-5. 断网后重复添加/搜索，确认没有模型下载提示。完整模型已包含在 ZIP 中。
-6. 按 Ctrl+C 一次并等待进程退出，或在 Web Ops 进入维护模式后点击 Shut Down Server；不要把直接关闭窗口当作正常退出。
-7. 重启，检查旧记忆仍能搜索。将下一版解压到另一个目录，确认旧数据仍存在。
+1. 核对 Setup 的 SHA256，双击安装到默认当前用户目录。如缺 VC++，只批准微软官方运行库子安装程序的 UAC；取消/失败时保留提示和安装日志，不关闭安全防护。
+2. 从开始菜单启动 Remember Me Beta，确认托盘出现图标，后台初始化。打开托盘 **Open Remember Me**，访问 Web；默认 `http://127.0.0.1:1314/admin/console`。自定义端口按配置。MCP 为同端口 `/mcp`，旧客户端可用 `/sse`。
+3. 添加中英文记忆、搜索，连接 MCP；断网后重复核心操作，确认完整模型不需要下载。
+4. 再次从开始菜单启动，确认没有第二个活动服务，也不影响当前实例。
+5. 托盘 **Exit** 后等待退出，再从开始菜单启动，确认记忆与搜索正常。Web 维护后关闭也应移除托盘；Web 重启后托盘应继续跟踪服务。
+6. 服务运行时尝试升级/卸载，必须提示先正常退出。退出后覆盖安装，旧数据仍可读。卸载后数据应保留，VC++ 不被卸载；重装后可读旧记忆。
+7. 补测中文/空格安装路径、正常 Windows 重启，以及无 VC++/已有新版本/拒绝 UAC 三种前置条件路径。
 
-持久化数据默认在 `%LOCALAPPDATA%\remember-me-beta`，与程序目录分离；更新时只替换程序，不删除数据。
-如需不同数据目录，在启动前设置 `REMEMBER_ME_BETA_DATA_DIR` 为绝对路径；不可放在程序目录中。
-不要把虚拟机测试数据指向已有真实数据库。需要清空测试环境时先退出，再由维护者自行备份/处理数据目录。
+程序默认 `%LOCALAPPDATA%\Programs\Remember Me Beta`，持久数据默认 `%LOCALAPPDATA%\remember-me-beta`。自定义数据沿用 `REMEMBER_ME_BETA_DATA_DIR` 绝对路径规则，不可放程序目录内；从开始菜单启动时需确保该变量对当前用户进程可见。升级前备份整个实际数据目录，不自动迁移。
 
-日志：数据目录 `logs\memory-server.log`、`logs\startup-error.log`（若存在），另附控制台报错截图和 ZIP SHA256。
-提交反馈时说明系统版本、解压路径、剩余磁盘、复现步骤和相关记忆 ID；日志/导出可能包含记忆内容，分享前检查隐私。
+日志在实际数据目录 `logs\`：服务日志、Launcher 日志、`startup-timing.jsonl`（启用时）、`startup-error.log`（发生时）。安装/VC++ 日志按安装提示定位。反馈附 Windows 版本、安装路径、实际数据路径、剩余磁盘、复现步骤、Setup SHA256 和相关日志；分享前检查记忆内容等隐私。
 
-已知限制：严格 S1-A Defender 身份审计未通过，不作为本 Beta 构建门槛，历史证据保留。
-本版保留 dual（SQLite 主库和 NDJSON 副本）。Windows 保留文件 fsync 和同目录原子替换，跳过不支持的目录 fsync；仅支持本地 NTFS，不承诺突发断电时与 POSIX 完全相同的目录持久性。不要在网络盘使用。
-宿主 VC++ 运行库依赖仍需干净 Windows 11 验证；若提示 DLL 缺失，保留原始报错，不下载来历不明 DLL。
-无托盘、自启动、正式 EXE；端口冲突会在控制台/日志中显示，不自动改端口或开放局域网。
+不要通过任务管理器强杀当作正常退出。若长时间无法退出，保留日志并反馈；不删除数据库或 sidecar 文件来绕过锁。Windows dual 仅本地 NTFS，保留文件 fsync/原子替换，但不承诺 POSIX 等价的断电目录持久性。

@@ -61,7 +61,7 @@ def configure(root):
     return data
 
 
-def main():
+def _run_service():
     root = Path(__file__).resolve().parent
     sys.path.insert(0, str(root))
     data = configure(root)
@@ -76,6 +76,15 @@ def main():
         with (logs / 'startup-error.log').open('a', encoding='utf-8') as stream:
             traceback.print_exc(file=stream)
         raise
+
+
+def main():
+    if sys.platform == 'win32':
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from tray_launcher import service_guard
+        with service_guard():
+            return _run_service()
+    return _run_service()
 
 
 if __name__ == '__main__':

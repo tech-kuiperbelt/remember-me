@@ -43,23 +43,60 @@ def test_beta_smoke_and_finalizer_compile():
         compile(ast.parse(p.read_text()),str(p),'exec')
 
 
-def test_zip_is_gated_by_smoke_and_excludes_external_test_data(tmp_path):
+def test_setup_input_is_gated_by_smoke_and_excludes_external_test_data(tmp_path):
     import subprocess
     import sys
-    from zipfile import ZipFile
-    import hashlib
     bundle=tmp_path/'bundle';(bundle/'build-evidence').mkdir(parents=True)
-    (bundle/'start.cmd').write_text('fixture')
     evidence=tmp_path/'evidence';evidence.mkdir()
-    (evidence/'business-smoke.json').write_text('{"status":"failed"}')
-    (tmp_path/'smoke-data').mkdir();(tmp_path/'smoke-data/private.db').write_text('test data')
-    args=[sys.executable,'-I',str(ROOT/'packaging/windows-beta/finalize.py'),'--work',str(tmp_path),'--storage','dual','--zip']
+    (evidence/'business-smoke.json').write_text('{"status":"failed"}', encoding='utf-8')
+    (tmp_path/'smoke-data').mkdir()
+    (tmp_path/'smoke-data/private.db').write_text('test data', encoding='utf-8')
+    args=[sys.executable,'-I',str(ROOT/'packaging/windows-beta/finalize.py'),'--work',str(tmp_path),'--storage','dual','--seal']
     assert subprocess.run(args,capture_output=True).returncode!=0
-    (evidence/'business-smoke.json').write_text('{"status":"passed","fixture":true}')
+    (evidence/'business-smoke.json').write_text('{"status":"passed","fixture":true}', encoding='utf-8')
     subprocess.run(args,check=True,capture_output=True)
-    archive=tmp_path/'remember-me-windows-x64-beta-candidate.zip'
-    with ZipFile(archive) as z:
-        assert z.testzip() is None
-        assert 'remember-me-windows-beta/start.cmd' in z.namelist()
-        assert not any('private.db' in n or 'smoke-data' in n for n in z.namelist())
-    assert archive.with_suffix('.zip.sha256').read_text().split()[0]==hashlib.sha256(archive.read_bytes()).hexdigest()
+    assert json.loads((bundle/'build-evidence/business-smoke.json').read_text())['status']=='passed'
+    assert not list(tmp_path.glob('*.zip'))
+    assert not list(bundle.rglob('private.db'))
+
+
+def test_windows_entry_holds_service_guard_around_existing_service(monkeypatch):
+    from contextlib import contextmanager
+    import sys
+    from types import SimpleNamespace
+    events=[]
+    @contextmanager
+    def guard():
+        events.append('acquired')
+        try:
+            yield
+        finally:
+            events.append('released')
+    monkeypatch.setitem(sys.modules, 'tray_launcher', SimpleNamespace(service_guard=guard))
+    monkeypatch.setattr(start, 'sys', SimpleNamespace(platform='win32',path=[]))
+    monkeypatch.setattr(start, '_run_service', lambda: events.append('service'))
+    start.main()
+    assert events==['acquired','service','released']
+
+
+def test_windows_entry_releases_guard_after_startup_failure(monkeypatch):
+    from contextlib import contextmanager
+    import sys
+    from types import SimpleNamespace
+    held=[]
+    @contextmanager
+    def guard():
+        held.append(True)
+        try:
+            yield
+        finally:
+            held.clear()
+    def fail():
+        assert held
+        raise RuntimeError('startup failed')
+    monkeypatch.setitem(sys.modules, 'tray_launcher', SimpleNamespace(service_guard=guard))
+    monkeypatch.setattr(start, 'sys', SimpleNamespace(platform='win32',path=[]))
+    monkeypatch.setattr(start, '_run_service', fail)
+    with pytest.raises(RuntimeError,match='startup failed'):
+        start.main()
+    assert not held

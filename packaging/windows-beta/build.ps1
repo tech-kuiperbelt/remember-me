@@ -6,6 +6,6 @@ $python = Join-Path $Work 'bundle/runtime/python/python.exe'
 & $python -I "$PSScriptRoot/finalize.py" --work $Work --storage $Storage
 if ($LASTEXITCODE -ne 0) { throw 'Beta layout preparation failed' }
 & $python -I "$PSScriptRoot/smoke.py" --work $Work
-if ($LASTEXITCODE -ne 0) { throw 'Beta business smoke failed; evidence retained, no ZIP emitted' }
-& $python -I "$PSScriptRoot/finalize.py" --work $Work --storage $Storage --zip
-if ($LASTEXITCODE -ne 0) { throw 'Beta ZIP creation failed' }
+if ($LASTEXITCODE -ne 0) { throw 'Beta business smoke failed; evidence retained, no Setup input sealed' }
+& $python -I "$PSScriptRoot/finalize.py" --work $Work --storage $Storage --seal
+if ($LASTEXITCODE -ne 0) { throw 'Beta Setup input sealing failed' }
