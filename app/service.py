@@ -14,6 +14,7 @@ from app.domain.time_filters import normalize_updated_range
 from app.domain.search_filters import normalize_min_score
 from app.domain.anchors import normalize_anchors, InvalidAnchors
 from app import audit
+from app.performance_timing import phase, operation_id
 from app.domain.summary_policy import derive_summary, normalize_summary
 from app.storage.jsonl_transfer import load_jsonl, write_clean_jsonl, sha256_file
 from app.domain.categories import (
@@ -282,37 +283,42 @@ class MemoryService:
     def memory_add(self, text: str, metadata: dict | None = None,
                    namespace: str | None = None, summary: str | None = None,
                    confirm_codes: list | None = None) -> dict:
-        ns = self.check_namespace(namespace, confirm_codes)
-        summary = _normalize_summary(summary)
-        # Validate caller anchors before embedding or any storage work.
-        metadata = _apply_anchors_to_metadata(metadata)
-        logger.info("add: namespace=%s text_len=%d has_summary=%s",
-                    ns, len(text), summary is not None)
-        try:
-            embedding = self.embed(text)
-            dropped = categories_dropped(metadata)
-            metadata = _apply_keywords_to_metadata(metadata)
-            metadata = _apply_categories_to_metadata(metadata)
-            index_embeddings = self._index_resolver().prepare_embeddings(metadata)
-            write_kwargs = {"index_embeddings": index_embeddings} if index_embeddings else {}
-            result = self.storage.add(text, embedding, metadata=metadata, namespace=ns,
-                                 summary=summary, **write_kwargs)
-            eid = result["id"]
-            if result.get("created"):
-                logger.info("add: ok id=%s (summary %s)", eid,
-                            "supplied" if summary is not None else "text extract")
-            else:
-                # Duplicate (namespace + text): existing record returned untouched.
-                logger.info("add: duplicate skipped id=%s", eid)
-            out = {"id": eid, "created": result.get("created", True)}
-            if result.get("created") and dropped:
-                # Surface the cap so the MCP hint can steer the LLM for next time.
-                out["categories_dropped"] = dropped
-                out["categories"] = normalize_categories((metadata or {}).get("categories"))
-            return out
-        except Exception as e:
-            logger.error("add failed: %s", e, exc_info=True)
-            raise
+        timing_id = operation_id()
+        with phase("memory_add", operation_id=timing_id, text_chars=len(text) if isinstance(text, str) else None):
+            ns = self.check_namespace(namespace, confirm_codes)
+            summary = _normalize_summary(summary)
+            # Validate caller anchors before embedding or any storage work.
+            metadata = _apply_anchors_to_metadata(metadata)
+            logger.info("add: namespace=%s text_len=%d has_summary=%s",
+                        ns, len(text), summary is not None)
+            try:
+                with phase("embedding", operation_id=timing_id):
+                    embedding = self.embed(text)
+                with phase("index_embeddings", operation_id=timing_id):
+                    dropped = categories_dropped(metadata)
+                    metadata = _apply_keywords_to_metadata(metadata)
+                    metadata = _apply_categories_to_metadata(metadata)
+                    index_embeddings = self._index_resolver().prepare_embeddings(metadata)
+                    write_kwargs = {"index_embeddings": index_embeddings} if index_embeddings else {}
+                with phase("database", operation_id=timing_id):
+                    result = self.storage.add(text, embedding, metadata=metadata, namespace=ns,
+                                         summary=summary, **write_kwargs)
+                eid = result["id"]
+                if result.get("created"):
+                    logger.info("add: ok id=%s (summary %s)", eid,
+                                "supplied" if summary is not None else "text extract")
+                else:
+                    # Duplicate (namespace + text): existing record returned untouched.
+                    logger.info("add: duplicate skipped id=%s", eid)
+                out = {"id": eid, "created": result.get("created", True)}
+                if result.get("created") and dropped:
+                    # Surface the cap so the MCP hint can steer the LLM for next time.
+                    out["categories_dropped"] = dropped
+                    out["categories"] = normalize_categories((metadata or {}).get("categories"))
+                return out
+            except Exception as e:
+                logger.error("add failed: %s", e, exc_info=True)
+                raise
 
     def memory_search(self, query: str, k: int = 5, threshold: float = 0.0,
                       namespace: str | None = None,

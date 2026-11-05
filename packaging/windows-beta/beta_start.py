@@ -1,4 +1,8 @@
 """Minimal foreground Beta entrypoint; data survives replacement of this directory."""
+import time
+
+_PYTHON_ENTRY = time.perf_counter()
+
 import json
 import ctypes
 import os
@@ -6,6 +10,8 @@ from pathlib import Path
 import runpy
 import sys
 import traceback
+
+_BOOTSTRAP_IMPORTS_DONE = time.perf_counter()
 
 
 def configure(root):
@@ -64,7 +70,19 @@ def configure(root):
 def _run_service():
     root = Path(__file__).resolve().parent
     sys.path.insert(0, str(root))
+    config_begin = time.perf_counter()
     data = configure(root)
+    logs = data / 'logs'
+    logs.mkdir(exist_ok=True)
+    os.environ['REMEMBER_ME_STARTUP_LOG'] = str(logs / 'startup-timing.jsonl')
+    os.environ['REMEMBER_ME_PERFORMANCE_LOG'] = str(logs / 'performance-timing.jsonl')
+    from app.startup_timing import begin, mark
+    config_done = time.perf_counter()
+    begin(_PYTHON_ENTRY, os.environ.get('REMEMBER_ME_STARTUP_CMD_TIME'))
+    mark('python_entry', at=_PYTHON_ENTRY)
+    mark('bootstrap_imports_done', at=_BOOTSTRAP_IMPORTS_DONE, since=_PYTHON_ENTRY)
+    mark('beta_config_begin', at=config_begin)
+    mark('beta_config_done', at=config_done, since=config_begin)
     print(f'Beta data/logs: {data}', flush=True)
     sys.dont_write_bytecode = True
     os.chdir(root)

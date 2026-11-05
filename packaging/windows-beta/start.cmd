@@ -1,5 +1,7 @@
 @echo off
 setlocal
+set "REMEMBER_ME_STARTUP_CMD_TIME=%TIME%"
+echo [startup] Launcher entered at %REMEMBER_ME_STARTUP_CMD_TIME%
 cd /d "%~dp0"
 echo Remember Me Windows Beta - local access only by default.
 echo Web: http://127.0.0.1:1314/admin/console   MCP: http://127.0.0.1:1314/mcp

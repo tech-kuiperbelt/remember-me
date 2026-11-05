@@ -3,6 +3,10 @@
 Run with the bundled pythonw.exe -I -B. Win32 imports acquire no resources until
 main(); database writer locks remain independently owned by the application.
 """
+import time
+
+_LAUNCHER_ENTRY = time.perf_counter()
+
 from contextlib import contextmanager
 import ctypes
 from ctypes import wintypes as W
@@ -17,8 +21,10 @@ import struct
 import subprocess
 import sys
 import threading
-import time
 import webbrowser
+
+
+_LAUNCHER_IMPORT_DONE = time.perf_counter()
 
 
 class LauncherError(RuntimeError):
@@ -209,6 +215,8 @@ class Controller:
         # Read-only configuration; no model import, DB access or migration.
         sys.path.insert(0, str(self.root))
         from app.config.configuration import Configuration
+        from app.startup_timing import mark
+        mark("launcher_service_start_begin")
         self.port = Configuration.load(self.data, create=False).port
         if not self.port:
             raise LauncherError('Tray requires a configured port from 1 to 65535.')
@@ -222,6 +230,7 @@ class Controller:
         environment = dict(os.environ, PYTHONIOENCODING='utf-8', PYTHONUNBUFFERED='1')
         command = [str(self.root / 'runtime/python/python.exe'), '-I', '-B',
                    str(self.root / 'tray_launcher.py'), '--service-child']
+        mark("launcher_child_spawn_begin")
         self.process = self.popen(command, cwd=self.root, env=environment,
                                   stdin=subprocess.PIPE, stdout=self.stream, stderr=subprocess.STDOUT,
                                   creationflags=0x08000000, close_fds=True)
@@ -231,6 +240,7 @@ class Controller:
             self.api.assign(self.job, self.process)
             self.process.stdin.write(b'G')
             self.process.stdin.flush()
+            mark('launcher_child_spawn_done')
         finally:
             self.process.stdin.close()
 
@@ -292,6 +302,9 @@ class Controller:
             self.state = 'Stopping' if self.stopping else 'Starting'
             return self.state
         self._restart_pending = False
+        if self.state == 'Starting':
+            from app.startup_timing import mark
+            mark('launcher_http_observed', service_pid=self._last_listener, port=self.port)
         if self.stopping:
             self.state = 'Stopping'
             if not self._shutdown_sent:
@@ -357,6 +370,11 @@ def main():
     logs.mkdir(parents=True, exist_ok=True)
     handler = RotatingFileHandler(logs / 'launcher.log', maxBytes=2*1024*1024,
                                   backupCount=2, encoding='utf-8')
+    os.environ['REMEMBER_ME_STARTUP_LOG'] = str(logs / 'startup-timing.jsonl')
+    from app.startup_timing import begin, mark
+    begin(_LAUNCHER_ENTRY)
+    mark('launcher_entry', at=_LAUNCHER_ENTRY)
+    mark('launcher_import_done', at=_LAUNCHER_IMPORT_DONE, since=_LAUNCHER_ENTRY)
     logging.basicConfig(handlers=[handler], level=logging.INFO,
                         format='%(asctime)s %(levelname)s %(message)s')
     from windows_tray import Tray, alert

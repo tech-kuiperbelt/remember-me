@@ -1,3 +1,7 @@
+import time
+
+_SERVER_IMPORT_BEGIN = time.perf_counter()
+
 import json
 import sys
 import secrets
@@ -28,6 +32,10 @@ from app.operations.calls import INLINE_RUNNER
 from app.operations.maintenance import MaintenanceRejected
 from app.transport.report_feedback import SearchReceiptRegistry
 from app.transport.tools import ToolContext, _ok, execute_tool, list_tool_definitions, tool_spec_for
+
+from app.startup_timing import begin as timing_begin, mark as startup_mark
+
+_SERVER_IMPORT_END = time.perf_counter()
 
 logger = logging.getLogger("server")
 
@@ -468,10 +476,16 @@ async def main(argv=None):
         parser.error("--port must be between 0 and 65535")
     if args.stdio and args.host is not None:
         parser.error("--host cannot be used with --stdio")
+    timing_begin(_SERVER_IMPORT_BEGIN)
+    startup_mark('server_import_begin', at=_SERVER_IMPORT_BEGIN)
+    startup_mark('server_import_done', at=_SERVER_IMPORT_END, since=_SERVER_IMPORT_BEGIN)
+    settings_begin = time.perf_counter()
+    startup_mark('settings_begin', at=settings_begin)
     try:
         settings = Settings.from_config(args.data_dir, model_dir=args.model_dir, create=True)
     except (ValueError, OSError) as exc:
         parser.error(str(exc))
+    startup_mark('settings_done', since=settings_begin)
     activate_environment(settings.environment)
     runtime = create_runtime(settings)
     if args.stdio:
@@ -488,6 +502,11 @@ async def main(argv=None):
                         "admin UI and REST API are reachable on all interfaces")
         config = uvicorn.Config(app, host=host, port=port, log_level="info")
         class GracefulServer(uvicorn.Server):
+            async def startup(self, sockets=None):
+                await super().startup(sockets=sockets)
+                if self.started:
+                    startup_mark('http_listening', model_ready=runtime.model_status()['ready'], port=port)
+
             async def shutdown(self, sockets=None):
                 runtime.request_shutdown(restart=runtime.restart_requested)
                 app.state.close_connections()

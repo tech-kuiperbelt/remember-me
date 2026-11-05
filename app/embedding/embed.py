@@ -10,6 +10,8 @@ and Sentence Transformers import their dependency only when selected.
 from __future__ import annotations
 
 import hashlib
+import time
+from app.startup_timing import mark as startup_mark
 import inspect
 from contextlib import contextmanager
 import json
@@ -517,6 +519,8 @@ class SentenceTransformersEmbedder(_BaseEmbedder):
                  max_input_tokens: int = 8192, batch_size: int = 8,
                  query_prefix: str = "", document_prefix: str = "",
                  auto_download: bool | None = None):
+        dependencies_begin = time.perf_counter()
+        startup_mark("embedding_dependencies_import_begin", at=dependencies_begin)
         try:
             from sentence_transformers import SentenceTransformer
         except ImportError as exc:
@@ -525,6 +529,7 @@ class SentenceTransformersEmbedder(_BaseEmbedder):
                 "bash bin/install.sh"
             ) from exc
 
+        startup_mark("embedding_dependencies_import_done", since=dependencies_begin)
         kwargs = {}
         signature = inspect.signature(SentenceTransformer)
         supports_extra_kwargs = any(
@@ -561,7 +566,10 @@ class SentenceTransformersEmbedder(_BaseEmbedder):
             with _quiet_transformers_progress():
                 return SentenceTransformer(model, **options)
 
+        model_begin = time.perf_counter()
+        startup_mark("model_load_begin", at=model_begin)
         self._model = _load_local_model(load, model, cache_dir, offline, auto_download)
+        startup_mark("model_load_done", since=model_begin)
         try:
             dimension_fn = getattr(self._model, "get_embedding_dimension", None)
             if dimension_fn is None:

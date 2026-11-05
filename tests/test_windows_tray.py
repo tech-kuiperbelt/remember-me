@@ -339,6 +339,9 @@ def test_isolated_python_entry_imports_sibling_before_gui(tmp_path):
     # that sibling imports are available without PYTHONPATH or a system package.
     (tmp_path / 'tray_launcher.py').write_text(SOURCE.read_text(encoding='utf-8'), encoding='utf-8')
     (tmp_path / 'windows_tray.py').write_text('class Tray: pass\ndef alert(x): pass\n', encoding='utf-8')
+    (tmp_path / 'app').mkdir()
+    (tmp_path / 'app/__init__.py').write_text('', encoding='utf-8')
+    (tmp_path / 'app/startup_timing.py').write_text((SOURCE.parents[2] / 'app/startup_timing.py').read_text(encoding='utf-8'), encoding='utf-8')
     script = '''
 import importlib.util,sys
 spec=importlib.util.spec_from_file_location('entry',sys.argv[1])

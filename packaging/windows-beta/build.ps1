@@ -7,5 +7,7 @@ $python = Join-Path $Work 'bundle/runtime/python/python.exe'
 if ($LASTEXITCODE -ne 0) { throw 'Beta layout preparation failed' }
 & $python -I "$PSScriptRoot/smoke.py" --work $Work
 if ($LASTEXITCODE -ne 0) { throw 'Beta business smoke failed; evidence retained, no Setup input sealed' }
+& $python -I "$PSScriptRoot/diagnostics.py" --work $Work
+if ($LASTEXITCODE -ne 0) { throw 'Native icon/controller/performance checks failed; evidence retained' }
 & $python -I "$PSScriptRoot/finalize.py" --work $Work --storage $Storage --seal
 if ($LASTEXITCODE -ne 0) { throw 'Beta Setup input sealing failed' }

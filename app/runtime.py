@@ -1,5 +1,7 @@
 """Resource ownership and lifecycle for one server process."""
 import logging
+import time
+from app.startup_timing import mark as startup_mark
 import os
 import re
 import tempfile
@@ -67,6 +69,7 @@ class Runtime:
                 return self
             if self.state != "created":
                 raise RuntimeError(f"cannot start runtime in state {self.state}")
+            startup_mark("runtime_start_begin")
             self.state = "starting"
             self.calls.enable()
             try:
@@ -81,7 +84,10 @@ class Runtime:
                     options = {"environment": self.settings.environment}
                     if self.settings.DOCKER_MODE or (background_model and self.provider_factory is create_embedder):
                         options["cache_only"] = True
+                    provider_begin = time.perf_counter()
+                    startup_mark("provider_prepare_begin", at=provider_begin)
                     self.provider = wrap_provider(self.provider_factory(**options))
+                    startup_mark("provider_prepare_done", since=provider_begin)
                 except ModelCacheMissing:
                     if not background_model:
                         raise
@@ -121,6 +127,7 @@ class Runtime:
                     self.state = "running"
                     return self
                 self.state = "running"
+                startup_mark("runtime_ready")
                 return self
             except BaseException:
                 try:
@@ -166,6 +173,8 @@ class Runtime:
 
     def _start_business(self):
         s = self.settings
+        storage_begin = time.perf_counter()
+        startup_mark("storage_open_begin", at=storage_begin)
         self.storage = self.storage_factory(
             s.STORAGE_BACKEND, path=s.STORAGE_PATH, primary_path=s.STORAGE_PATH,
             secondary_path=s.REPLICA_PATH, embedding_dtype=s.EMBED_DTYPE,
@@ -174,16 +183,26 @@ class Runtime:
             compact_min_ratio=s.COMPACT_MIN_RATIO, health_check_interval=s.HEALTH_CHECK_INTERVAL,
             start_background=False, audit_journal=self.audit,
         )
+        startup_mark("storage_open_done", since=storage_begin)
+        business_begin = time.perf_counter()
+        startup_mark("business_init_begin", at=business_begin)
         if not self.storage.index_embedding_completeness()["complete"]:
             raise RuntimeError("active embedding profile is missing keyword/category vectors; "
                                "stop the service and run embedding_cli reindex-index-values")
         self.service = MemoryService(s, self.storage, self.provider, audit_journal=self.audit)
+        startup_mark("business_init_done", since=business_begin)
+        warmup_begin = time.perf_counter()
+        startup_mark("warmup_begin", at=warmup_begin)
         self.service.warmup_embedding_provider()
+        startup_mark("warmup_done", since=warmup_begin)
+        checks_begin = time.perf_counter()
+        startup_mark("recovery_replica_checks_begin", at=checks_begin)
         self._finish_interrupted_recovery()
         if isinstance(self.storage, DualStorage):
             self.storage.start()
             if self.maintenance.state == "maintenance":
                 self.storage.pause_background()
+        startup_mark("recovery_replica_checks_done", since=checks_begin)
 
     def model_status(self):
         return {**self.model_progress.snapshot(), "ready": self.service is not None

@@ -1,22 +1,25 @@
 {
-  // 1.1.0 Beta / Public Preview. Publication requires explicit user approval.
-  // This file is the single source for version checks, the Git tag, the image tag and release notes.
-  "version": "1.1.0",
+  // 1.1.1 Windows Beta candidate. Publication requires explicit maintainer approval.
+  // All distribution identities read this file; no Tag or Release is created by preparing it.
+  "version": "1.1.1",
   "new": [
-    "Linux x86_64 AppImage bundles Remember Me, Web UI, MCP, Portable Python, CPU PyTorch and the complete pinned BGE-M3 model for offline inference.",
-    "The Launcher provides tray shortcuts and optional login autostart; a minimal Open/Quit window is available when GTK is present without a tray host."
+    "Windows 11 x64 Beta uses a complete offline Setup containing private Python, CPU dependencies, Web/MCP, the complete pinned BGE-M3 model and a minimal tray launcher.",
+    "Current-user Setup includes the official Microsoft x64 VC++ prerequisite and elevates only that installer when required."
   ],
   "improvements": [
-    "Launcher menus and the fallback window support Simplified Chinese and English.",
-    "Version checks include published GitHub Pre-releases, exclude Drafts and distinguish Beta and Stable; updates remain manual.",
-    "Docker 1.1.0 is an explicit Beta tag; latest remains the verified stable channel. Source master is a development channel."
+    "Windows starts from the Start menu in the background; the tray provides Open Remember Me and safe Exit.",
+    "Windows Beta records startup and memory-add phase timings to diagnose slow initialization and long-text additions without recording memory text or vectors.",
+    "This candidate prepares Windows delivery only; existing Linux and Docker distributions and stable/latest behavior are unchanged."
   ],
-  "fixes": [],
+  "fixes": [
+    "Start-menu, installer and tray use the existing Remember Me brand icon instead of an unrecognizable generic icon."
+  ],
   "upgrade": [
-    "Stop the service and back up the complete actual data directory before upgrading. Installation methods use different defaults and do not automatically migrate data.",
-    "AppImage data defaults to $XDG_DATA_HOME/remember-me-launcher, or ~/.local/share/remember-me-launcher if unset or empty; --data-dir accepts an absolute path.",
-    "Verify the AppImage checksum before running it. Moving the file does not move data; re-enable login autostart from the new path if needed.",
-    "AppImage requires working FUSE and system GUI libraries; a compatible tray host is needed for the tray icon. Actual GNOME desktop coverage is incomplete across target distributions."
+    "Exit normally and back up the complete actual data directory before upgrading; keep the same user and data-directory selection.",
+    "Windows program files default to %LOCALAPPDATA%\\Programs\\Remember Me Beta; persistent data remains %LOCALAPPDATA%\\remember-me-beta or the existing absolute REMEMBER_ME_BETA_DATA_DIR override.",
+    "Running installation or removal requires normal service exit; uninstall retains memories, configuration, logs and shared VC++ Runtime. No automatic data migration is introduced.",
+    "Verify the downloaded Setup SHA256. Windows Beta has no login autostart or automatic updater; final GUI, upgrade protection and performance acceptance must be checked on the target VM.",
+    "Windows Beta is limited to local fixed NTFS with file fsync and atomic replacement; POSIX-equivalent power-loss directory durability is not promised."
   ],
   "breaking": []
 }

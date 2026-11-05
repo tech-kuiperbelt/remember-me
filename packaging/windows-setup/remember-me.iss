@@ -35,7 +35,8 @@ ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
 Uninstallable=yes
 UninstallDisplayName=Remember Me Beta
-UninstallDisplayIcon={app}\runtime\python\pythonw.exe
+UninstallDisplayIcon={app}\web\static\img\brand\favicon-neutral.ico
+SetupIconFile={#BundleDir}\web\static\img\brand\favicon-neutral.ico
 SetupLogging=yes
 OutputDir={#Destination}
 OutputBaseFilename=remember-me-windows-x64-beta-setup
@@ -54,7 +55,7 @@ Source: "install-vcredist.ps1"; Flags: dontcopy
 Source: "check-running.ps1"; Flags: dontcopy
 Source: "check-running.ps1"; DestDir: "{app}\setup"; Flags: ignoreversion
 [Icons]
-Name: "{group}\Remember Me Beta"; Filename: "{app}\runtime\python\pythonw.exe"; Parameters: "-I ""{app}\tray_launcher.py"""; WorkingDir: "{app}"
+Name: "{group}\Remember Me Beta"; Filename: "{app}\runtime\python\pythonw.exe"; Parameters: "-I ""{app}\tray_launcher.py"""; WorkingDir: "{app}"; IconFilename: "{app}\web\static\img\brand\favicon-neutral.ico"
 Name: "{group}\Uninstall Remember Me Beta"; Filename: "{uninstallexe}"
 [Code]
 var

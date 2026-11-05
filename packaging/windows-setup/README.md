@@ -2,7 +2,7 @@
 
 Windows public delivery is Setup only. The prepared bundle remains an internal build input, not a second Portable ZIP product. Setup installs the existing private Python/App/Web/full BGE-M3 payload and starts `tray_launcher.py` through private `pythonw.exe`; no system Python or application freezing is used.
 
-## Step 2 build inputs and commands (not executed by Step 1)
+## Build inputs and commands (require separate remote authorization)
 
 Use Windows x64 PowerShell 7 and the reviewed source commit. Build the existing full bundle with native business smoke, then compile Setup:
 
@@ -37,3 +37,11 @@ Stable Inno AppId supports in-place upgrades. CloseApplications/RestartApplicati
 Local targeted Python tests validate real JSONC version derivation, complete inputs, smoke gate, rejection of user state/symlinks and installation safety contracts. A tiny unrelated fixture can be compiled by pinned ISCC under an isolated Wine prefix to check actual Inno section/Pascal syntax; that is not a complete Windows Setup build or installation test.
 
 Windows-only acceptance remains: real Microsoft/Pyrsys Authenticode chain validation; PowerShell/CIM execution; same-user cross-session guard behavior; UAC approve/cancel and alternate credentials; genuine runtime install/post-check/reboot branches; tray GUI; install/uninstall/upgrade on a clean Windows 11 VM; full-size single-file Setup and actual disk/temp space. Existing Linux tests and the tiny compiler fixture do not claim these have passed. Strict S1-A Defender identity remains unresolved and is not misrepresented as accepted.
+
+## 1.1.1 release preparation
+
+Maintainer approved 1.1.1 Beta; v1.1.0 already exists and must not be reused or moved. The current source includes the existing neutral brand ICO in Setup/Start-menu/tray, reviewed startup tracing, and opt-in add-phase tracing enabled by the Beta entrypoint. No model/dependency/storage changes.
+
+The bundle build now also runs native `diagnostics.py`: actual LoadImage, headless Launcher Controller startup/stop, and short/2000-character real additions. Results and startup/performance traces remain in work/evidence, outside the installed data. This is Windows runner evidence, not VM visual or installer GUI acceptance. A fresh reviewed-source bundle is required; do not relabel the previously tested 1.1.0 installer as 1.1.1.
+
+Prior Run 41959636700 and user VM testing established the baseline; new icon visual acceptance, old-to-new overwrite upgrade, and running install/uninstall refusal still require targeted VM confirmation. Windows timings for this new candidate require a separately approved Push/build. Publication remains manual and separately authorized.

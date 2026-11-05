@@ -2,6 +2,7 @@
 import ctypes
 from ctypes import wintypes as W
 import logging
+from pathlib import Path
 import threading
 
 
@@ -10,6 +11,18 @@ def alert(message):
     function.argtypes = [W.HWND, W.LPCWSTR, W.LPCWSTR, W.UINT]
     function.restype = ctypes.c_int
     function(None, str(message), 'Remember Me Beta', 0x10)
+
+
+def load_brand_icon(root):
+    user = ctypes.WinDLL('user32', use_last_error=True)
+    load = user.LoadImageW
+    load.argtypes = [W.HINSTANCE, W.LPCWSTR, W.UINT, ctypes.c_int, ctypes.c_int, W.UINT]
+    load.restype = W.HANDLE
+    handle = load(None, str(Path(root) / 'web/static/img/brand/favicon-neutral.ico'),
+                  1, 0, 0, 0x10 | 0x40)
+    if not handle:
+        raise ctypes.WinError(ctypes.get_last_error())
+    return handle
 
 
 class Tray:
@@ -46,7 +59,7 @@ class Tray:
                                  ctypes.c_int, ctypes.c_int, ctypes.c_int, W.HWND, W.HMENU,
                                  W.HINSTANCE, ctypes.c_void_p], W.HWND),
             'DefWindowProcW': ([W.HWND, W.UINT, W.WPARAM, W.LPARAM], result_type),
-            'LoadIconW': ([W.HINSTANCE, ctypes.c_void_p], W.HICON),
+            'DestroyIcon': ([W.HICON], W.BOOL),
             'CreatePopupMenu': ([], W.HMENU),
             'AppendMenuW': ([W.HMENU, W.UINT, ctypes.c_size_t, W.LPCWSTR], W.BOOL),
             'TrackPopupMenu': ([W.HMENU, W.UINT, ctypes.c_int, ctypes.c_int, ctypes.c_int,
@@ -72,7 +85,6 @@ class Tray:
         taskbar_created = user.RegisterWindowMessageW('TaskbarCreated')
         icon = Icon()
         icon.size, icon.id, icon.flags, icon.callback = ctypes.sizeof(Icon), 1, 7, 0x8001
-        icon.icon = user.LoadIconW(None, ctypes.c_void_p(32512))
 
         def publish(add=False):
             icon.tip = ('Remember Me Beta - ' + self.controller.state)[:127]
@@ -157,7 +169,10 @@ class Tray:
             raise ctypes.WinError(ctypes.get_last_error())
         icon.window = window
         try:
+            icon.icon = load_brand_icon(self.controller.root)
             publish(True)
+            from app.startup_timing import mark
+            mark('tray_icon_ready')
             if not user.SetTimer(window, 1, 1000, None):
                 raise ctypes.WinError(ctypes.get_last_error())
             self.controller.start()
@@ -172,3 +187,5 @@ class Tray:
                 user.DispatchMessageW(ctypes.byref(message))
         finally:
             shell.Shell_NotifyIconW(2, ctypes.byref(icon))
+            if icon.icon:
+                user.DestroyIcon(icon.icon)

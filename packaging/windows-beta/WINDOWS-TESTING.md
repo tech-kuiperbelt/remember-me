@@ -15,3 +15,5 @@
 日志在实际数据目录 `logs\`：服务日志、Launcher 日志、`startup-timing.jsonl`（启用时）、`startup-error.log`（发生时）。安装/VC++ 日志按安装提示定位。反馈附 Windows 版本、安装路径、实际数据路径、剩余磁盘、复现步骤、Setup SHA256 和相关日志；分享前检查记忆内容等隐私。
 
 不要通过任务管理器强杀当作正常退出。若长时间无法退出，保留日志并反馈；不删除数据库或 sidecar 文件来绕过锁。Windows dual 仅本地 NTFS，保留文件 fsync/原子替换，但不承诺 POSIX 等价的断电目录持久性。
+
+最终 1.1.1 补充检查：旧 Setup 正常退出后覆盖升级；运行中分别尝试安装及卸载，应要求先正常退出且原服务仍可使用。图标需在开始菜单和托盘人工确认。日志另收集 logs\startup-timing.jsonl 与 logs\performance-timing.jsonl，记录 VM 配置、启动秒数和长文本字符数/耗时。
