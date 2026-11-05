@@ -120,3 +120,15 @@ def test_model_config_name_or_contents_do_not_allow_unknown_paths(bundle):
     unknown.write_bytes((ROOT / 'tests/fixtures/windows-bge-m3-configs/config.json').read_bytes())
     with pytest.raises(ValueError, match='Unexpected user/runtime state'):
         validator.validate(bundle)
+
+
+def test_inno_version_checks_actual_compiler_not_bootstrap_pe_version():
+    inputs = json.loads((SETUP / 'inputs.json').read_text(encoding='utf-8'))
+    script = (SETUP / 'remember-me.iss').read_text(encoding='utf-8')
+    compiler = ', '.join(inputs['inno']['version'].split('.'))
+    assert f'#if Ver != EncodeVer({compiler})' in script
+    build = (SETUP / 'build.ps1').read_text(encoding='utf-8')
+    assert "Receive-VerifiedInput $inputs.inno 'innosetup.exe'" in build
+    assert "Receive-VerifiedInput $inputs.vcredist 'vc_redist.x64.exe' -CheckPeVersion" in build
+    assert 'if ($CheckPeVersion -and [version]$version -ne $required)' in build
+    assert 'pinned_release_and_compiler_guard' in build

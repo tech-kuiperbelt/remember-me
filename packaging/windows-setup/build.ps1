@@ -24,7 +24,7 @@ $appVersion = & $python -I (Join-Path $PSScriptRoot 'validate_bundle.py') $bundl
 if ($LASTEXITCODE -ne 0) { throw 'Setup bundle validation failed' }
 $appVersion = ([string]$appVersion).Trim()
 $evidence = [ordered]@{ app_version = $appVersion; inputs = @(); bundle = $bundlePath }
-function Receive-VerifiedInput($entry, [string]$fileName) {
+function Receive-VerifiedInput($entry, [string]$fileName, [switch]$CheckPeVersion) {
     $path = Join-Path $inputsDir $fileName
     Invoke-WebRequest -Uri $entry.url -OutFile $path
     $sha = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -38,13 +38,15 @@ function Receive-VerifiedInput($entry, [string]$fileName) {
     $version = '{0}.{1}.{2}.{3}' -f $fileInfo.FileMajorPart, $fileInfo.FileMinorPart, $fileInfo.FileBuildPart, $fileInfo.FilePrivatePart
     $required = [version]$entry.version
     $required = [version]::new($required.Major, $required.Minor, [Math]::Max(0, $required.Build), [Math]::Max(0, $required.Revision))
-    if ([version]$version -ne $required) { throw "Input version mismatch: $fileName ($version)" }
-    $evidence.inputs += [ordered]@{ name = $fileName; url = $entry.url; sha256 = $sha; version = $version; signature = [string]$signature.Status; signer = $signature.SignerCertificate.Subject }
+    # The Inno bootstrap installer has no useful numeric PE version. Its bytes
+    # are pinned to the official release; remember-me.iss checks compiler Ver.
+    $evidence.inputs += [ordered]@{ name = $fileName; url = $entry.url; sha256 = $sha; package_version = $entry.version; pe_version = $version; version_check = $(if ($CheckPeVersion) { 'numeric_pe' } else { 'pinned_release_and_compiler_guard' }); signature = [string]$signature.Status; signer = $signature.SignerCertificate.Subject }
+    if ($CheckPeVersion -and [version]$version -ne $required) { throw "Input version mismatch: $fileName ($version)" }
     return $path
 }
 try {
     $inno = Receive-VerifiedInput $inputs.inno 'innosetup.exe'
-    $vc = Receive-VerifiedInput $inputs.vcredist 'vc_redist.x64.exe'
+    $vc = Receive-VerifiedInput $inputs.vcredist 'vc_redist.x64.exe' -CheckPeVersion
     $toolDir = Join-Path $outputPath 'inno'
     $install = Start-Process -FilePath $inno -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', ('/DIR="' + $toolDir + '"')) -Wait -PassThru
     if ($install.ExitCode -ne 0) { throw "Inno compiler installation failed: $($install.ExitCode)" }

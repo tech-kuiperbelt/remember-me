@@ -1,3 +1,8 @@
+; The compiler itself exposes Ver; the bootstrap EXE's PE version is 0.0.0.0.
+; Keep this exact guard consistent with the pinned release in inputs.json.
+#if Ver != EncodeVer(6, 7, 3)
+  #error The pinned Inno Setup 6.7.3 compiler is required
+#endif
 ; Inputs are generated/validated by build.ps1. No independent application version.
 #ifndef BundleDir
   #error BundleDir is required
