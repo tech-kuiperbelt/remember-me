@@ -1,11 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 cd "$ROOT"
 
 # Use this distribution's interpreter and model, never a developer's .env or Python.
 unset PYTHONHOME PYTHONPATH PYTHONUSERBASE VIRTUAL_ENV
 unset MEMORY_DEPLOYMENT_MODE REMEMBER_ME_INSTALL_METHOD
+# AppRun owns the AppImage marker. Do not reuse an inherited install-method
+# string or infer this distribution merely from an unrelated APPIMAGE path.
+if [[ "${REMEMBER_ME_APPIMAGE:-}" == 1 && -n "${APPDIR:-}" && -d "$APPDIR" ]]; then
+    image_root="$(cd -- "$APPDIR" && pwd -P)"
+    if [[ "$ROOT" == "$image_root/payload" ]]; then
+        export REMEMBER_ME_INSTALL_METHOD=APPIMAGE
+    fi
+fi
 unset SENTENCE_TRANSFORMERS_CACHE_DIR FASTEMBED_CACHE_DIR
 unset HF_HOME HF_HUB_CACHE HUGGINGFACE_HUB_CACHE TRANSFORMERS_CACHE TORCH_HOME
 export PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1

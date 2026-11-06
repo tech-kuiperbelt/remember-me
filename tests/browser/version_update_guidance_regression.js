@@ -63,6 +63,10 @@ async function runVersionGuidanceRegression(scenario) {
     assert($('version-popover').textContent.includes(t('version.guide.composeContext')),'original file/env override/saved .env retained');
     assert($('version-popover').textContent.includes(t('version.guide.runRecreate')),'pull is not recreation');
   } else if(scenario==='version-guide-unknown') {
+    method='APPIMAGE'; await load(state());
+    assert($('version-popover').textContent.includes('APPIMAGE'),'AppImage installation identity is displayed');
+    assert($('version-popover').textContent.includes(t('version.guide.appimage')),'platform-specific manual AppImage guidance');
+    assert(!commands().length,'AppImage never receives source or Docker commands');
     method='WINDOWS_SETUP'; await load(state());
     assert($('version-popover').textContent.includes('WINDOWS_SETUP'),'Windows installation identity is displayed');
     assert($('version-popover').textContent.includes(t('version.guide.windowsSetup')),'Windows Setup update guidance');

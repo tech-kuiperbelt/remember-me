@@ -28,7 +28,7 @@ def write_release(root, value=None):
     return path
 
 
-@pytest.mark.parametrize("method", ["SOURCE", "DOCKER", "UNKNOWN"])
+@pytest.mark.parametrize("method", ["SOURCE", "DOCKER", "WINDOWS_SETUP", "APPIMAGE", "UNKNOWN"])
 def test_valid_same_metadata_in_every_distribution(tmp_path, method):
     value = content(new=["第一项", "Second\nline"], upgrade=["Backup before upgrade"],
                     extra={"ignored": True})
@@ -48,7 +48,7 @@ def test_valid_same_metadata_in_every_distribution(tmp_path, method):
         snapshot.release.version = "9.0.0"
 
 
-@pytest.mark.parametrize("method", ["SOURCE", "DOCKER", "UNKNOWN"])
+@pytest.mark.parametrize("method", ["SOURCE", "DOCKER", "WINDOWS_SETUP", "APPIMAGE", "UNKNOWN"])
 @pytest.mark.parametrize("failure", ["missing", "unparseable", "missing_version", "invalid_version"])
 def test_unknown_failures_do_not_infer_git_or_override(tmp_path, monkeypatch, method, failure):
     if failure == "unparseable":
@@ -119,7 +119,7 @@ def test_file_errors_are_safe_and_do_not_leak_paths(tmp_path, monkeypatch):
 @pytest.mark.parametrize("value,expected", [
     ("WINDOWS_SETUP", "WINDOWS_SETUP"), ("SOURCE", "SOURCE"), ("DOCKER", "DOCKER"), ("source", "SOURCE"),
     (" docker ", "DOCKER"), ("UNKNOWN", "UNKNOWN"), ("", "UNKNOWN"),
-    (None, "UNKNOWN"), ("PIP", "UNKNOWN"), ("APPIMAGE", "UNKNOWN"),
+    (None, "UNKNOWN"), ("PIP", "UNKNOWN"), ("APPIMAGE", "APPIMAGE"), (" appimage ", "APPIMAGE"),
     ("WINDOWS_INSTALLER", "UNKNOWN"), ("anything", "UNKNOWN"),
 ])
 def test_install_declaration(value, expected):
@@ -130,6 +130,7 @@ def test_undeclared_does_not_guess_docker_or_host(monkeypatch):
     monkeypatch.setenv("REMEMBER_ME_INSTALL_METHOD", "DOCKER")
     assert release_info.identify_install_method() == "DOCKER"
     assert release_info.identify_install_method({"MEMORY_DEPLOYMENT_MODE": "docker"}) == "UNKNOWN"
+    assert release_info.identify_install_method({"APPIMAGE": "/tmp/unrelated.AppImage"}) == "UNKNOWN"
 
 
 def test_default_path_is_project_root_not_cwd_data_or_environment(tmp_path, monkeypatch):

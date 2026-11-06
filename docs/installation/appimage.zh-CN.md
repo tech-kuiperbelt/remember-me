@@ -1,19 +1,19 @@
 # Linux AppImage Beta
 
-Remember Me 1.1.0 是面向 Linux x86_64 的公开预览版。以下下载链接将在 **v1.1.0 正式发布后**可用。单文件包含 Launcher、Python Runtime、CPU 依赖和完整 BGE-M3 模型；无需安装 Python、pip、Docker 或下载模型。
+Remember Me 1.1.2 是面向 Linux x86_64 的公开预览版。以下下载链接将在 **v1.1.2 正式发布后**可用。单文件包含 Launcher、Python Runtime、CPU 依赖和完整 BGE-M3 模型；无需安装 Python、pip、Docker 或下载模型。
 
 ## 下载和启动
 
-发布后，从 [v1.1.0 Release](https://github.com/tech-kuiperbelt/remember-me/releases/tag/v1.1.0) 下载 AppImage 与 SHA256 文件，并在相同目录校验：
+发布后，从 [v1.1.2 Release](https://github.com/tech-kuiperbelt/remember-me/releases/tag/v1.1.2) 下载 AppImage 与 SHA256 文件，并在相同目录校验：
 
 ```bash
-curl -fLO https://github.com/tech-kuiperbelt/remember-me/releases/download/v1.1.0/remember-me-1.1.0-linux-x86_64.AppImage
-curl -fLO https://github.com/tech-kuiperbelt/remember-me/releases/download/v1.1.0/remember-me-1.1.0-linux-x86_64.AppImage.sha256
-sha256sum -c remember-me-1.1.0-linux-x86_64.AppImage.sha256
-chmod +x remember-me-1.1.0-linux-x86_64.AppImage
-./remember-me-1.1.0-linux-x86_64.AppImage
+curl -fLO https://github.com/tech-kuiperbelt/remember-me/releases/download/v1.1.2/remember-me-1.1.2-linux-x86_64.AppImage
+curl -fLO https://github.com/tech-kuiperbelt/remember-me/releases/download/v1.1.2/remember-me-1.1.2-linux-x86_64.AppImage.sha256
+sha256sum -c remember-me-1.1.2-linux-x86_64.AppImage.sha256
+chmod +x remember-me-1.1.2-linux-x86_64.AppImage
+./remember-me-1.1.2-linux-x86_64.AppImage
 # 或指定独立的绝对数据目录和端口：
-./remember-me-1.1.0-linux-x86_64.AppImage --data-dir /absolute/path/to/remember-me-data --port 1314
+./remember-me-1.1.2-linux-x86_64.AppImage --data-dir /absolute/path/to/remember-me-data --port 1314
 ```
 
 仅在校验结果为 `OK` 时继续。使用托盘菜单打开 Remember Me 或退出；关闭浏览器不会停止服务。可在菜单中选择开启或关闭登录自启动。自启动记录外部 AppImage 路径；将文件移动或替换到不同路径后，请从新位置启动并重新启用自启动。现有 Launcher 与 AppImage 共用自启动条目，修改前请先检查当前设置。

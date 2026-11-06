@@ -77,7 +77,7 @@ Remember Me 在本机运行。请选择一种安装方式；对应指南会说�
   使用 Sentence Transformers + BAAI/bge-m3，CPU 推理；模型权重在首次使用时下载。
 - **Docker — Linux AMD64：**[Docker 安装与升级](docs/installation/docker.zh-CN.md)。
   镜像内置 BGE-M3 并在 CPU 上运行，无需 Python 或独立 Embedding 服务。
-- **Windows 11 x64 Beta 候选：**[Setup 安装、升级与卸载](docs/installation/windows.zh-CN.md)，公开发布待批准。
+- **Windows 11 x64 Beta：**[Setup 安装、升级与卸载](docs/installation/windows.zh-CN.md)。
 
 - **Linux x86_64 原生发行：**[Standalone](docs/installation/standalone.zh-CN.md)、
   [托盘 Launcher](docs/installation/launcher.zh-CN.md)或 [AppImage Beta](docs/installation/appimage.zh-CN.md)。

@@ -80,7 +80,7 @@ your data is stored.
 - **Docker — Linux AMD64:** [Docker installation and upgrade](docs/installation/docker.md).
   The image includes BGE-M3 and runs it on CPU, so no Python or separate embedding
   service is required.
-- **Windows 11 x64 Beta candidate:** [Setup installation, upgrade and uninstall](docs/installation/windows.md). Publication is pending approval.
+- **Windows 11 x64 Beta:** [Setup installation, upgrade and uninstall](docs/installation/windows.md).
 
 - **Linux x86_64 native:** [Standalone](docs/installation/standalone.md),
   [Tray Launcher](docs/installation/launcher.md), or [AppImage Beta](docs/installation/appimage.md).

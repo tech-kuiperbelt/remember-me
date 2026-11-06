@@ -202,7 +202,7 @@ function verifiedTarget() {
     && latest.tag === `v${version}` && latest.release?.version === version ? version : null;
 }
 function renderGuide() {
-  const method = ['SOURCE','DOCKER','WINDOWS_SETUP'].includes(snapshot?.current.install_method) ? snapshot.current.install_method : 'UNKNOWN';
+  const method = ['SOURCE','DOCKER','WINDOWS_SETUP','APPIMAGE'].includes(snapshot?.current.install_method) ? snapshot.current.install_method : 'UNKNOWN';
   const guide = element('section', 'version-guide');
   guide.append(element('h4', '', t('version.guide.title')), element('p', '', t('version.guide.method', {method})));
   const target = !localError && status().startsWith('UPDATE_') ? verifiedTarget() : null;
@@ -215,7 +215,8 @@ function renderGuide() {
       commandBlock('compose', `export REMEMBER_ME_IMAGE=${image}\ndocker compose -f compose.yaml up -d --pull always --wait --wait-timeout 300`),
       element('h4', '', 'Docker Run'), element('p', '', t('version.guide.runContext')),
       commandBlock('run', `export REMEMBER_ME_IMAGE=${image}\ndocker pull --platform linux/amd64 "$REMEMBER_ME_IMAGE"`), element('p', '', t('version.guide.runRecreate')));
-  } else if (method === 'WINDOWS_SETUP') guide.append(element('p', '', t('version.guide.windowsSetup')));
+  } else if (method === 'APPIMAGE') guide.append(element('p', '', t('version.guide.appimage')));
+  else if (method === 'WINDOWS_SETUP') guide.append(element('p', '', t('version.guide.windowsSetup')));
   else if (method === 'UNKNOWN') guide.append(element('p', '', t('version.guide.unknown')));
   if (status() === 'UNAVAILABLE') {
     guide.append(element('p', '', t('version.proxy.help')),

@@ -19,12 +19,12 @@ local host. Both methods use `latest` by default; a fixed version or digest can 
 selected when needed. Pulling a new image does not update an existing container.
 
 `latest` is the stable channel and does not select Beta releases. Once the
-1.1.0 Beta is published, select it explicitly by replacing `:latest` in a Run
-command with `:1.1.0`, or set the following in Compose's local `.env` before
+1.1.2 Beta is published, select it explicitly by replacing `:latest` in a Run
+command with `:1.1.2`, or set the following in Compose's local `.env` before
 starting or recreating the container:
 
 ```dotenv
-REMEMBER_ME_IMAGE=ghcr.io/tech-kuiperbelt/remember-me:1.1.0
+REMEMBER_ME_IMAGE=ghcr.io/tech-kuiperbelt/remember-me:1.1.2
 ```
 
 The Beta tag is a public preview, not the stable `latest` channel. When changing

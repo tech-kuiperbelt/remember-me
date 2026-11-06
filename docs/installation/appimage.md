@@ -1,19 +1,19 @@
 # Linux AppImage Beta
 
-Remember Me 1.1.0 is a public preview for Linux x86_64. The download links below become available **after the v1.1.0 release is published**. The single file includes the Launcher, Python runtime, CPU dependencies and complete BGE-M3 model; Python, pip, Docker and a model download are not required.
+Remember Me 1.1.2 is a public preview for Linux x86_64. The download links below become available **after the v1.1.2 release is published**. The single file includes the Launcher, Python runtime, CPU dependencies and complete BGE-M3 model; Python, pip, Docker and a model download are not required.
 
 ## Download and start
 
-After release, download the AppImage and its SHA256 file from the [v1.1.0 release](https://github.com/tech-kuiperbelt/remember-me/releases/tag/v1.1.0), then check the downloaded files in the same directory:
+After release, download the AppImage and its SHA256 file from the [v1.1.2 release](https://github.com/tech-kuiperbelt/remember-me/releases/tag/v1.1.2), then check the downloaded files in the same directory:
 
 ```bash
-curl -fLO https://github.com/tech-kuiperbelt/remember-me/releases/download/v1.1.0/remember-me-1.1.0-linux-x86_64.AppImage
-curl -fLO https://github.com/tech-kuiperbelt/remember-me/releases/download/v1.1.0/remember-me-1.1.0-linux-x86_64.AppImage.sha256
-sha256sum -c remember-me-1.1.0-linux-x86_64.AppImage.sha256
-chmod +x remember-me-1.1.0-linux-x86_64.AppImage
-./remember-me-1.1.0-linux-x86_64.AppImage
+curl -fLO https://github.com/tech-kuiperbelt/remember-me/releases/download/v1.1.2/remember-me-1.1.2-linux-x86_64.AppImage
+curl -fLO https://github.com/tech-kuiperbelt/remember-me/releases/download/v1.1.2/remember-me-1.1.2-linux-x86_64.AppImage.sha256
+sha256sum -c remember-me-1.1.2-linux-x86_64.AppImage.sha256
+chmod +x remember-me-1.1.2-linux-x86_64.AppImage
+./remember-me-1.1.2-linux-x86_64.AppImage
 # Or choose a separate absolute data directory and port:
-./remember-me-1.1.0-linux-x86_64.AppImage --data-dir /absolute/path/to/remember-me-data --port 1314
+./remember-me-1.1.2-linux-x86_64.AppImage --data-dir /absolute/path/to/remember-me-data --port 1314
 ```
 
 Proceed only if the checksum reports `OK`. Use the tray menu to open Remember Me or quit; closing the browser does not stop the service. Login autostart is optional and can be enabled or disabled in that menu. It records the external AppImage path; after moving or replacing the file at a different path, start the new file and re-enable autostart. Existing Launcher and AppImage use the same autostart entry, so check the current setting before changing it.

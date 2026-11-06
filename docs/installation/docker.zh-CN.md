@@ -14,11 +14,11 @@ Docker Compose 插件。Rootless、Docker Desktop、SELinux 和网络文件系�
 路径必须位于 Docker daemon 本机。两种方式默认使用 `latest`，也可按需指定完整版本或 digest。
 仅拉取新镜像不会更新已创建的容器。
 
-`latest` 是稳定版通道，不会选中 Beta。1.1.0 Beta 发布后，使用 Run 时请将命令中的
-`:latest` 明确替换为 `:1.1.0`；使用 Compose 时，在启动或重建容器之前于本地 `.env` 设置：
+`latest` 是稳定版通道，不会选中 Beta。1.1.2 Beta 发布后，使用 Run 时请将命令中的
+`:latest` 明确替换为 `:1.1.2`；使用 Compose 时，在启动或重建容器之前于本地 `.env` 设置：
 
 ```dotenv
-REMEMBER_ME_IMAGE=ghcr.io/tech-kuiperbelt/remember-me:1.1.0
+REMEMBER_ME_IMAGE=ghcr.io/tech-kuiperbelt/remember-me:1.1.2
 ```
 
 Beta 标签是公开预览版，不属于稳定版 `latest` 通道。切换现有安装时，先停止并备份完整数据目录，

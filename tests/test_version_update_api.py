@@ -145,3 +145,18 @@ def test_four_unknown_paths_continue_remote_checks(tmp_path,monkeypatch,failure,
         assert gh.seen[0]==API_URL+'?per_page=100&page=1'
         if remote=='release':
             assert len(gh.seen)==2 and result['notes_scope']=='latest_only'
+
+
+def test_appimage_install_method_reaches_public_version_snapshot(tmp_path):
+    gh = Github()
+    settings = Settings.from_env({'MEMORY_DATA_DIR':str(tmp_path),
+        'MEMORY_STORAGE_PATH':':memory:', 'EMBED_PRELOAD':'false',
+        'REMEMBER_ME_INSTALL_METHOD':'APPIMAGE'})
+    runtime = Runtime(settings, provider_factory=lambda **kwargs: FakeProvider(),
+                      configure_logging=False)
+    app = create_http_app(runtime,version_update_factory=lambda current,settings,**kw:
+                          gh.manager(current,settings=settings,**kw))
+    with TestClient(app) as client:
+        response = client.get('/api/version-update')
+        assert response.status_code == 200
+        assert response.json()['current']['install_method']=='APPIMAGE'
