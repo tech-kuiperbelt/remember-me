@@ -231,7 +231,7 @@ def test_restart_refreshes_changed_config_port(controller, service):
     (controller.data / 'config.jsonc').write_text(json.dumps({'port': new_port}), encoding='utf-8')
     controller.api.active = {202}
     controller.api.listener_pid = lambda port: 202 if port == new_port else None
-    controller.request = lambda *args: {'ready': True}
+    controller.request = lambda *args: {'ready': True, 'state': 'normal'}
     assert controller.poll() == 'Running'
     assert controller.port == new_port
 
@@ -353,6 +353,7 @@ class Controller:
     def close(self): pass
 module.Windows=lambda: object()
 module.Controller=Controller
+sys.argv=[sys.argv[1]]
 try: module.main()
 except TypeError as exc:
     assert "Tray() takes no arguments" in str(exc),str(exc)
@@ -362,3 +363,56 @@ else: raise AssertionError('fixture GUI should reject init after sibling import'
                             capture_output=True, text=True, env=dict(__import__('os').environ,
                             LOCALAPPDATA=str(tmp_path)))
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize('fragment', ['', '#memories', '#stats', '#ops', '#help'])
+def test_menu_pages_open_only_owned_loopback_urls(controller,fragment):
+    opened=[]
+    controller.browser=opened.append
+    assert controller.open(fragment)
+    assert opened==[f'http://127.0.0.1:{controller.port}/admin/console'+fragment]
+
+
+def test_menu_rejects_unknown_pages_and_open_while_exiting(controller):
+    controller.browser=lambda *args:pytest.fail('must not open')
+    with pytest.raises(tray.LauncherError,match='Unknown'):
+        controller.open('#unknown')
+    controller.stop()
+    assert not controller.open('#help')
+
+
+def test_browser_launch_failure_is_reported(controller):
+    controller.browser=lambda *args:False
+    with pytest.raises(tray.LauncherError,match='default browser'):
+        controller.open('#stats')
+
+
+def test_menu_language_refresh_is_read_only(controller):
+    controller.data.mkdir(parents=True)
+    config=controller.data/'config.jsonc'
+    config.write_text('{"language":"en"}',encoding='utf-8')
+    class Startup:
+        def enabled(self): return False
+    controller.autostart=Startup()
+    controller.refresh_preferences()
+    assert controller.language=='en'
+    assert config.read_text()=='{"language":"en"}'
+    assert not controller.autostart_enabled
+
+
+def test_status_follows_web_maintenance_even_when_model_is_ready(controller,service):
+    assert controller.poll()=='Running'
+    service[0].maintenance='maintenance'
+    assert controller.poll()=='Maintenance'
+    service[0].maintenance='normal'
+    assert controller.poll()=='Running'
+
+
+def test_optional_startup_read_failure_keeps_navigation_available(controller):
+    class Startup:
+        def enabled(self): raise PermissionError('registry blocked')
+    controller.autostart=Startup()
+    controller.refresh_preferences()
+    assert not controller.autostart_enabled
+    controller.browser=lambda *args:True
+    assert controller.open('#help')

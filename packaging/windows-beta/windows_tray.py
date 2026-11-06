@@ -6,6 +6,19 @@ from pathlib import Path
 import threading
 
 
+PAGES = ((1, 'Open Remember Me', ''), (10, 'Memories', '#memories'),
+         (11, 'Stats', '#stats'), (12, 'Settings', '#ops'), (13, 'Help', '#help'))
+_ZH = {'Open Remember Me':'打开 Remember Me', 'Memories':'记忆', 'Stats':'统计',
+       'Settings':'设置', 'Help':'帮助', 'Exit':'安全退出',
+       'Run automatically at login':'登录时自动启动',
+       'Starting':'启动中', 'Running':'运行中', 'Maintenance':'维护模式',
+       'Stopping':'正在退出', 'Stopped':'已停止', 'Error':'发生错误'}
+
+
+def menu_text(language, text):
+    return _ZH.get(text, text) if language == 'zh-CN' else text
+
+
 def alert(message):
     function = ctypes.WinDLL('user32').MessageBoxW
     function.argtypes = [W.HWND, W.LPCWSTR, W.LPCWSTR, W.UINT]
@@ -87,7 +100,7 @@ class Tray:
         icon.size, icon.id, icon.flags, icon.callback = ctypes.sizeof(Icon), 1, 7, 0x8001
 
         def publish(add=False):
-            icon.tip = ('Remember Me Beta - ' + self.controller.state)[:127]
+            icon.tip = ('Remember Me Beta - ' + menu_text(self.controller.language, self.controller.state))[:127]
             if not shell.Shell_NotifyIconW(0 if add else 1, ctypes.byref(icon)):
                 logging.error('Cannot publish notification icon: %s', ctypes.get_last_error())
                 if add:
@@ -113,6 +126,13 @@ class Tray:
             finally:
                 self.lock.release()
 
+        def open_page(fragment=''):
+            try:
+                self.controller.open(fragment)
+            except Exception as exc:
+                logging.exception('Could not open Remember Me page')
+                alert(str(exc))
+
         @callback
         def procedure(window, message, wparam, lparam):
             try:
@@ -121,21 +141,38 @@ class Tray:
                     return 0
                 if message == 0x8001:
                     if lparam == 0x203:  # double click
-                        self.controller.open()
+                        open_page()
                     elif lparam == 0x205:  # right button up
                         menu = user.CreatePopupMenu()
                         try:
-                            active = self.controller.state in ('Running', 'Maintenance')
-                            user.AppendMenuW(menu, 0 if active else 1, 1, 'Open Remember Me')
-                            user.AppendMenuW(menu, 1 if self.controller.stopping else 0, 2, 'Exit')
+                            self.controller.refresh_preferences()
+                            language = self.controller.language
+                            active = self.controller.state in ('Running', 'Maintenance') and not self.controller.stopping
+                            user.AppendMenuW(menu, 1, 0, 'Remember Me — ' + menu_text(language, self.controller.state))
+                            user.AppendMenuW(menu, 0x800, 0, None)
+                            for command, title, fragment in PAGES:
+                                user.AppendMenuW(menu, 0 if active else 1, command, menu_text(language, title))
+                            user.AppendMenuW(menu, 0x800, 0, None)
+                            startup_flags = (1 if self.controller.stopping else 0) | (8 if self.controller.autostart_enabled else 0)
+                            user.AppendMenuW(menu, startup_flags, 20, menu_text(language, 'Run automatically at login'))
+                            user.AppendMenuW(menu, 1 if self.controller.stopping else 0, 2, menu_text(language, 'Exit'))
                             point = W.POINT()
                             user.GetCursorPos(ctypes.byref(point))
                             user.SetForegroundWindow(window)
                             selected = user.TrackPopupMenu(menu, 0x100 | 2, point.x, point.y, 0, window, None)
-                            if selected == 1:
-                                self.controller.open()
-                            elif selected == 2:
+                            if selected == 2:
                                 self.controller.stop()
+                            elif selected == 20:
+                                try:
+                                    self.controller.toggle_autostart()
+                                except (OSError, RuntimeError, ImportError) as exc:
+                                    logging.exception('Login startup change failed')
+                                    alert(str(exc))
+                            else:
+                                for command, title, fragment in PAGES:
+                                    if selected == command:
+                                        open_page(fragment)
+                                        break
                         finally:
                             user.DestroyMenu(menu)
                     return 0

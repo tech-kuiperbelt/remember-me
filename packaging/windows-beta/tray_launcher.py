@@ -202,6 +202,9 @@ class Controller:
         self.popen, self.browser = popen, browser
         self.instance = self.job = self.process = self.stream = None
         self.state, self.error, self.port = 'Starting', None, 1314
+        self.language = 'zh-CN'
+        self.autostart = None
+        self.autostart_enabled = False
         self.stopping = False
         self._shutdown_sent = False
         self._reported_model_error = False
@@ -217,7 +220,8 @@ class Controller:
         from app.config.configuration import Configuration
         from app.startup_timing import mark
         mark("launcher_service_start_begin")
-        self.port = Configuration.load(self.data, create=False).port
+        config = Configuration.load(self.data, create=False)
+        self.port, self.language = config.port, config.language
         if not self.port:
             raise LauncherError('Tray requires a configured port from 1 to 65535.')
         with socket.socket() as probe:
@@ -318,14 +322,43 @@ class Controller:
                 self._shutdown_sent = True
             return self.state
         model = self.request('/api/model')
-        self.state = 'Running' if model.get('ready') else 'Maintenance'
+        maintenance = self.request('/api/maintenance')
+        self.state = 'Running' if model.get('ready') and maintenance.get('state') == 'normal' else 'Maintenance'
         if model.get('status') == 'failed':
             self.error = f'Model initialization failed: {model.get("error")}; see {self.log_path}'
         return self.state
 
-    def open(self):
-        if self.job and self._owned_listener():
-            self.browser(f'http://127.0.0.1:{self.port}/admin/console')
+    def refresh_preferences(self):
+        from app.config.configuration import Configuration
+        try:
+            self.language = Configuration.load(self.data, create=False).language
+        except (OSError, ValueError):
+            logging.exception('Could not refresh tray language; keeping previous setting')
+        try:
+            if self.autostart is None:
+                from windows_autostart import Autostart
+                self.autostart = Autostart(self.root, self.data)
+            self.autostart_enabled = self.autostart.enabled()
+        except (OSError, RuntimeError, ImportError):
+            logging.exception('Could not read login startup setting')
+            self.autostart_enabled = False
+
+    def toggle_autostart(self):
+        if self.stopping:
+            return
+        if self.autostart is None:
+            from windows_autostart import Autostart
+            self.autostart = Autostart(self.root, self.data)
+        self.autostart.set_enabled(not self.autostart.enabled())
+        self.autostart_enabled = self.autostart.enabled()
+
+    def open(self, fragment=''):
+        if fragment not in ('', '#memories', '#stats', '#ops', '#help'):
+            raise LauncherError('Unknown Remember Me page.')
+        if not self.stopping and self.job and self._owned_listener():
+            url = f'http://127.0.0.1:{self.port}/admin/console' + fragment
+            if self.browser(url) is False:
+                raise LauncherError(f'Could not open the default browser. Open this URL: {url}')
             return True
         return False
 
@@ -364,6 +397,13 @@ def main():
     if sys.argv[1:] == ['--service-child']:
         _service_child()
         return
+    import argparse
+    parser = argparse.ArgumentParser(description='Remember Me Windows tray launcher')
+    parser.add_argument('--data-dir', help='Absolute existing data-root selection; never migrates data')
+    args = parser.parse_args()
+    if args.data_dir is not None:
+        selected = data_directory({'REMEMBER_ME_BETA_DATA_DIR': args.data_dir})
+        os.environ['REMEMBER_ME_BETA_DATA_DIR'] = str(selected)
     root = Path(__file__).resolve().parent
     sys.path.insert(0, str(root))
     logs = data_directory() / 'logs'

@@ -14,6 +14,30 @@ from pathlib import Path
 import socket
 import shutil
 import sys
+import uuid
+
+
+def check_autostart_registry(bundle, data):
+    import windows_autostart as startup
+    import winreg
+    saved_run, saved_owner = startup.RUN_KEY, startup.OWNER_KEY
+    prefix = 'Software\\RememberMeBeta\\Diagnostics\\' + uuid.uuid4().hex
+    startup.RUN_KEY, startup.OWNER_KEY = prefix+'\\Run', prefix+'\\Owner'
+    try:
+        entry = startup.Autostart(bundle, data)
+        assert not entry.enabled()
+        entry.set_enabled(True)
+        assert entry.enabled()
+        entry.set_enabled(False)
+        assert not entry.enabled()
+        return True
+    finally:
+        startup.RUN_KEY, startup.OWNER_KEY = saved_run, saved_owner
+        for key in (prefix+'\\Run', prefix+'\\Owner', prefix):
+            try:
+                winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key)
+            except FileNotFoundError:
+                pass
 
 
 def main():
@@ -49,6 +73,9 @@ def main():
             result['native_brand_icon_loaded'] = bool(icon)
         finally:
             user.DestroyIcon(icon)
+        # Exercise the native registry API only under a fresh test subtree.
+        # Never register an OS login task during an experiment.
+        result['autostart_isolated_registry_toggle'] = check_autostart_registry(bundle, data)
         started = time.perf_counter()
         controller.start()
         deadline = time.monotonic()+240

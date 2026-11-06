@@ -21,7 +21,7 @@ Windows x64、PowerShell 7，从完整源码运行：
 
 ## 启动与生命周期
 
-开始菜单入口使用私有 `pythonw.exe -I tray_launcher.py`。仅提供 **Open Remember Me**、**Exit**；后台服务默认仅本机访问，不需要系统 Python。Launcher 单实例与服务启动保护独立于 SQLite/NDJSON 既有 sidecar 单写者锁。
+开始菜单入口使用私有 `pythonw.exe -I tray_launcher.py`。提供运行状态、主界面/记忆/统计/设置/帮助、当前用户登录自启动（默认关闭）和安全退出，支持中文/English；后台服务默认仅本机访问，不需要系统 Python。Launcher 单实例与服务启动保护独立于 SQLite/NDJSON 既有 sidecar 单写者锁。
 
 Exit 通过所属服务的维护/正常关闭流程退出，等待进程释放存储；不杀其他 Python。Web 主动关闭后托盘随之退出，异常退出显示错误并保存日志。Web 重启仍由 Launcher 跟踪。程序尚未就绪时 Open 不宣称可用；慢模型初始化期间不要反复启动。
 
@@ -33,8 +33,10 @@ Exit 通过所属服务的维护/正常关闭流程退出，等待进程释放�
 
 Windows Beta 保留 dual：标准库 msvcrt 单字节非阻塞 lifetime sidecar 锁、文件 fsync、同目录原子替换；跳过不支持的目录 fsync，仅本地固定 NTFS，不承诺 POSIX 等价的突发断电持久性。Linux 行为保持不变。
 
-用户机已有 Web、断网、路径、重复启动和重启恢复证据；新托盘 Win32、安装、UAC、升级和卸载需要第 2/3 步 Windows 验证。Linux mock 测试不等同于 Windows 原生成功。无自启动、服务、自动更新或应用 EXE 冻结。
+用户机已有 Web、断网、路径、重复启动和重启恢复证据；新托盘 Win32、安装、UAC、升级和卸载需要第 2/3 步 Windows 验证。Linux mock 测试不等同于 Windows 原生成功。无服务、自动更新或应用 EXE 冻结。
 
 原生待观察的边界：Windows Web Restart 的底层 exec 是否产生新控制台；极短的新进程若在两次轮询之间启动并失败，最终退出归类可能不完整。已观察到的新 PID 会记录真实退出码；这两个边界不由 Linux mock 证明。Launcher 意外退出不会通过 Job close 强杀正在写入的业务子进程，必要时使用 Web 正常关闭。
 
 发布收尾候选加入品牌 ICO，并在现有 business smoke 后执行 diagnostics.py：Windows LoadImage 原生载入、真实 headless Launcher Controller 启停、短文本及 2000 字符长文本写入计时。全部数据在新 performance-smoke-data，位于 bundle 外；evidence 保存 startup/performance JSONL 和 performance-results.json。不是 GUI 自动化，也不等同于 VM 视觉/升级验收。
+
+菜单补齐后，windows_autostart.py 使用 HKCU Run 与独立归属记录，仅修改匹配的本应用入口；命令固定启用时的数据目录，超出 Windows 260 UTF-16 字符限制会报错而不写入。卸载仅清理匹配归属的启动项。native diagnostics 在随机 HKCU Diagnostics 子树验证 API，不注册真实 OS 登录任务；真正注销/登录和卸载清理仍需 VM 手工验收。

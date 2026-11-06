@@ -12,7 +12,7 @@ def validate(root):
     from app.config.jsonc import loads
 
     for name in ('runtime/python/python.exe', 'runtime/python/pythonw.exe', 'beta_start.py',
-                 'tray_launcher.py', 'windows_tray.py', 'app/startup_timing.py', 'app/performance_timing.py', 'beta-policy.json',
+                 'tray_launcher.py', 'windows_tray.py', 'windows_autostart.py', 'app/startup_timing.py', 'app/performance_timing.py', 'beta-policy.json',
                  'models/manifest.json', 'web/index.html', 'web/static/img/brand/favicon-neutral.ico'):
         if not (root / name).is_file():
             raise ValueError('Missing Setup input: ' + name)

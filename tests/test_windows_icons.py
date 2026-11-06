@@ -44,3 +44,12 @@ def test_missing_icon_fails_visibly_not_silent_generic_icon(monkeypatch,tmp_path
     monkeypatch.setattr(tray.ctypes,'WinError',lambda n:OSError(n,'missing icon'),raising=False)
     with pytest.raises(OSError,match='missing icon'):
         tray.load_brand_icon(tmp_path)
+
+
+def test_full_menu_matches_existing_web_routes_and_chinese_labels():
+    assert [fragment for _,_,fragment in tray.PAGES]==['','#memories','#stats','#ops','#help']
+    assert len({command for command,_,_ in tray.PAGES})==len(tray.PAGES)
+    assert tray.menu_text('zh-CN','Stats')=='统计'
+    assert tray.menu_text('en','Stats')=='Stats'
+    assert tray.menu_text('zh-CN','Run automatically at login')=='登录时自动启动'
+    assert tray.menu_text('zh-CN','Exit')=='安全退出'

@@ -3,11 +3,11 @@
   // All distribution identities read this file; no Tag or Release is created by preparing it.
   "version": "1.1.1",
   "new": [
-    "Windows 11 x64 Beta uses a complete offline Setup containing private Python, CPU dependencies, Web/MCP, the complete pinned BGE-M3 model and a minimal tray launcher.",
+    "Windows 11 x64 Beta uses a complete offline Setup containing private Python, CPU dependencies, Web/MCP, the complete pinned BGE-M3 model and a tray launcher with page navigation and optional current-user login startup.",
     "Current-user Setup includes the official Microsoft x64 VC++ prerequisite and elevates only that installer when required."
   ],
   "improvements": [
-    "Windows starts from the Start menu in the background; the tray provides Open Remember Me and safe Exit.",
+    "Windows tray menus show service status, Open/Memory/Stats/Settings/Help, an opt-in login startup checkbox and safe Exit, following the saved Chinese/English language.",
     "Windows Beta records startup and memory-add phase timings to diagnose slow initialization and long-text additions without recording memory text or vectors.",
     "This candidate prepares Windows delivery only; existing Linux and Docker distributions and stable/latest behavior are unchanged."
   ],
@@ -18,7 +18,7 @@
     "Exit normally and back up the complete actual data directory before upgrading; keep the same user and data-directory selection.",
     "Windows program files default to %LOCALAPPDATA%\\Programs\\Remember Me Beta; persistent data remains %LOCALAPPDATA%\\remember-me-beta or the existing absolute REMEMBER_ME_BETA_DATA_DIR override.",
     "Running installation or removal requires normal service exit; uninstall retains memories, configuration, logs and shared VC++ Runtime. No automatic data migration is introduced.",
-    "Verify the downloaded Setup SHA256. Windows Beta has no login autostart or automatic updater; final GUI, upgrade protection and performance acceptance must be checked on the target VM.",
+    "Verify the downloaded Setup SHA256. Windows login startup is off by default, records the selected data path and is removed on uninstall only when owned; no automatic updater is included; final GUI, upgrade protection and performance acceptance must be checked on the target VM.",
     "Windows Beta is limited to local fixed NTFS with file fsync and atomic replacement; POSIX-equivalent power-loss directory durability is not promised."
   ],
   "breaking": []

@@ -12,9 +12,17 @@ Windows is distributed only as a complete offline Setup, not a Portable ZIP. Thi
    ```
 
 2. Start Setup normally for a current-user installation. No system Python, Docker or separate model download is required. When a suitable x64 VC++ Runtime is missing, Setup uses the bundled official Microsoft package and requests UAC only for that child installer. A sufficient newer runtime is skipped. Collect logs on cancellation or failure; do not disable security protection.
-3. Start Remember Me Beta from the Start menu. The service initializes in the background. The tray has only **Open Remember Me** and **Exit**; expand Windows' hidden notification icons if necessary. Wait for initialization instead of repeatedly launching it.
-4. Open launches the Web UI, default `http://127.0.0.1:1314/admin/console`; MCP uses `http://127.0.0.1:1314/mcp`. A saved custom port applies. The tray binds the service to loopback. Login autostart and automatic updates are not implemented.
+3. Start Remember Me Beta from the Start menu. The service initializes in the background. The tray shows service status, Open Remember Me, Memories, Stats, Settings, Help, Run automatically at login, and Exit; labels follow the saved Chinese/English interface language; expand Windows' hidden notification icons if necessary. Wait for initialization instead of repeatedly launching it.
+4. Open launches the Web UI, default `http://127.0.0.1:1314/admin/console`; MCP uses `http://127.0.0.1:1314/mcp`. A saved custom port applies. The tray binds the service to loopback. Automatic updates are not implemented.
 5. Choose Tray Exit and wait for it to disappear. Closing the browser does not stop the service. Web maintenance followed by Shut Down Server is another normal exit path.
+
+## Login startup
+
+Off by default. Check Run automatically at login in the tray to register startup for the current user only, without administrator rights. Unchecking it changes future login behavior; it does not stop the running service.
+
+The entry records the selected program and actual data paths. It never migrates or copies memories. After moving the program or choosing a different data directory, start the intended copy and enable startup again. Existing manual-launch environment rules remain unchanged. Startup uses the same private Python, single-instance guard and database locks.
+
+Windows can delay login startup or disable it through Startup Apps or system policy; the application does not bypass those controls. Commands beyond Windows' Run length limit fail explicitly instead of being truncated. Manual Start-menu launch remains available.
 
 ## Data and upgrades
 
@@ -25,7 +33,7 @@ Windows is distributed only as a complete offline Setup, not a Portable ZIP. Thi
 
 ## Uninstall
 
-Exit normally, then use Windows Installed Apps or the Start-menu uninstall entry. A running instance must be stopped normally first. Uninstall retains memories, configuration and logs, and does not remove shared VC++ Runtime. Reinstall with the same data directory to read retained memories. No delete-data shortcut is provided; do not remove lock files to bypass protection.
+Exit normally, then use Windows Installed Apps or the Start-menu uninstall entry. A running instance must be stopped normally first. Uninstall removes only an owned login startup entry, retains memories, configuration and logs, and does not remove shared VC++ Runtime. Reinstall with the same data directory to read retained memories. No delete-data shortcut is provided; do not remove lock files to bypass protection.
 
 ## Performance and logs
 
@@ -35,4 +43,4 @@ For slow startup or long additions, include Windows/VM CPU, RAM, disk configurat
 
 ## Known limitations
 
-This is a Beta; the final Setup is not code-signed and coverage does not include all Windows machines. Dual storage is limited to local fixed NTFS, with file fsync and atomic replacement but no POSIX-equivalent power-loss directory durability promise. Historical strict S1-A Defender identity auditing remains incomplete. No autostart, Windows Service or expanded tray menus; diagnostics do not imply comprehensive performance optimization.
+This is a Beta; the final Setup is not code-signed and coverage does not include all Windows machines. Dual storage is limited to local fixed NTFS, with file fsync and atomic replacement but no POSIX-equivalent power-loss directory durability promise. Historical strict S1-A Defender identity auditing remains incomplete. No Windows Service or automatic updater; diagnostics do not imply comprehensive performance optimization.

@@ -243,6 +243,22 @@ begin
   end;
 end;
 
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  Command, OwnedCommand: String;
+begin
+  if CurUninstallStep <> usUninstall then exit;
+  if RegQueryStringValue(HKCU64, 'Software\Microsoft\Windows\CurrentVersion\Run', 'RememberMeBeta', Command) and
+     RegQueryStringValue(HKCU64, 'Software\RememberMeBeta\Launcher', 'AutostartCommand', OwnedCommand) and
+     (Command = OwnedCommand) then begin
+    if not RegDeleteValue(HKCU64, 'Software\Microsoft\Windows\CurrentVersion\Run', 'RememberMeBeta') then
+      RaiseException('Unable to remove the owned Remember Me login startup entry. Check current-user registry permissions before uninstalling.');
+    if not RegDeleteValue(HKCU64, 'Software\RememberMeBeta\Launcher', 'AutostartCommand') then
+      Log('Could not remove the inactive login startup ownership marker.');
+  end;
+  // Unrecognized entries and all memory data remain untouched.
+end;
+
 procedure DeinitializeSetup;
 begin
   if InstallMutex <> 0 then CloseHandle(InstallMutex);
