@@ -151,6 +151,11 @@ def main():
             while time.monotonic() < deadline:
                 assert controller.process.poll() is None, 'Web Restart exited the owned service'
                 assert controller.api.pids(controller.job), 'Web Restart lost the owned job'
+                # Do not interrogate the old server during its closing/503
+                # phase. A new startup record proves the next listener exists.
+                if listening_cycles() <= before:
+                    time.sleep(0.2)
+                    continue
                 try:
                     state = controller.poll()
                     if state == 'Error':
