@@ -9,6 +9,9 @@ from app.config.configuration import DEFAULTS, default_document
 
 
 def main():
+    # The actual distribution entrypoint owns this declaration, including older
+    # image templates that predate the Dockerfile ENV marker.
+    os.environ["REMEMBER_ME_INSTALL_METHOD"] = "DOCKER"
     root = Path(os.environ["MEMORY_DATA_DIR"])
     root.mkdir(parents=True, exist_ok=True)
     (root / "tmp").mkdir(exist_ok=True)

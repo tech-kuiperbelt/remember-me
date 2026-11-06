@@ -35,8 +35,8 @@ ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
 Uninstallable=yes
 UninstallDisplayName=Remember Me Beta
-UninstallDisplayIcon={app}\web\static\img\brand\favicon-neutral.ico
-SetupIconFile={#BundleDir}\web\static\img\brand\favicon-neutral.ico
+UninstallDisplayIcon={app}\remember-me.ico
+SetupIconFile={#BundleDir}\remember-me.ico
 SetupLogging=yes
 OutputDir={#Destination}
 OutputBaseFilename=remember-me-windows-x64-beta-setup
@@ -47,21 +47,26 @@ CloseApplications=no
 RestartApplications=no
 DisableProgramGroupPage=yes
 WizardStyle=modern
-; Data stays external. No UninstallDelete, wildcard deletion or VC++ uninstall.
+; Optional destructive actions require explicit unchecked-by-default choices and confirmation.
 [Files]
 Source: "{#BundleDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "start.cmd"
 Source: "{#InputsDir}\vc_redist.x64.exe"; Flags: dontcopy
 Source: "install-vcredist.ps1"; Flags: dontcopy
 Source: "check-running.ps1"; Flags: dontcopy
+Source: "{#InputsDir}\vc_redist.x64.exe"; DestDir: "{app}\setup"; Flags: ignoreversion
+Source: "install-vcredist.ps1"; DestDir: "{app}\setup"; Flags: ignoreversion
+Source: "uninstall-data.py"; DestDir: "{app}\setup"; Flags: ignoreversion
 Source: "check-running.ps1"; DestDir: "{app}\setup"; Flags: ignoreversion
 [Icons]
-Name: "{group}\Remember Me Beta"; Filename: "{app}\runtime\python\pythonw.exe"; Parameters: "-I ""{app}\tray_launcher.py"""; WorkingDir: "{app}"; IconFilename: "{app}\web\static\img\brand\favicon-neutral.ico"
+Name: "{group}\Remember Me Beta"; Filename: "{app}\runtime\python\pythonw.exe"; Parameters: "-I ""{app}\tray_launcher.py"""; WorkingDir: "{app}"; IconFilename: "{app}\remember-me.ico"
 Name: "{group}\Uninstall Remember Me Beta"; Filename: "{uninstallexe}"
 [Code]
 var
   UserSid: String;
   InstallMutex: LongWord;
   RebootRequired: Boolean;
+  RemoveData, RemoveVC: Boolean;
+  RemovalDataPath: String;
 
 function CreateMutexW(Attributes: LongWord; InitialOwner: Boolean; Name: String): LongWord;
   external 'CreateMutexW@kernel32.dll stdcall';
@@ -234,20 +239,137 @@ begin
   Result := RebootRequired;
 end;
 
+function DataTask(Delete: Boolean): Boolean;
+var
+  Code: Integer;
+  Args: String;
+  Index: Integer;
+  Output: TExecOutput;
+begin
+  Args := '-I -B ' + Quote(ExpandConstant('{app}\setup\uninstall-data.py')) +
+    ' --program ' + Quote(ExpandConstant('{app}')) + ' --data ' + Quote(RemovalDataPath);
+  if Delete then Args := Args + ' --delete';
+  Result := ExecAndCaptureOutput(ExpandConstant('{app}\runtime\python\python.exe'),
+    Args, '', SW_HIDE, ewWaitUntilTerminated, Code, Output);
+  Result := Result and (Code = 0) and not Output.Error;
+  if not Result then
+    MsgBox('Data cleanup could not be completed safely. No further automatic cleanup will be attempted. Check the selected directory and close all writers. Uninstall log contains details.', mbError, MB_OK);
+  Log('Data cleanup exit code: ' + IntToStr(Code));
+  for Index := 0 to GetArrayLength(Output.StdOut) - 1 do Log(Output.StdOut[Index]);
+  for Index := 0 to GetArrayLength(Output.StdErr) - 1 do Log(Output.StdErr[Index]);
+end;
+
+function ChooseRemovalOptions: Boolean;
+var
+  Form: TSetupForm;
+  DataBox, VCBox: TNewCheckBox;
+  PathEdit: TNewEdit;
+  Description: TNewStaticText;
+  ProceedButton, CancelButton: TNewButton;
+  RecordedInstall: String;
+begin
+  Result := False;
+  RemoveData := False;
+  RemoveVC := False;
+  // Silent uninstall always retains both; no destructive command-line flags.
+  if UninstallSilent then begin Result := True; exit; end;
+  RemovalDataPath := GetEnv('REMEMBER_ME_BETA_DATA_DIR');
+  if RemovalDataPath = '' then begin
+    if RegQueryStringValue(HKCU64, 'Software\RememberMeBeta\Launcher', 'DataInstallDirectory', RecordedInstall) and
+       (CompareText(RemoveBackslashUnlessRoot(RecordedInstall), RemoveBackslashUnlessRoot(ExpandConstant('{app}'))) = 0) then
+      RegQueryStringValue(HKCU64, 'Software\RememberMeBeta\Launcher', 'DataDirectory', RemovalDataPath);
+    if RemovalDataPath = '' then RemovalDataPath := ExpandConstant('{localappdata}\remember-me-beta');
+  end;
+  Form := CreateCustomForm(ScaleX(540), ScaleY(280), False, False);
+  try
+    Form.Caption := 'Remember Me - Uninstall options';
+    Form.Position := poScreenCenter;
+    Description := TNewStaticText.Create(Form);
+    Description.Parent := Form;
+    Description.SetBounds(ScaleX(16), ScaleY(12), ScaleX(508), ScaleY(38));
+    Description.AutoSize := False;
+    Description.WordWrap := True;
+    Description.Caption := 'Both options are OFF by default. Continue normally to keep your data and shared VC++ Runtime.';
+    DataBox := TNewCheckBox.Create(Form);
+    DataBox.Parent := Form;
+    DataBox.SetBounds(ScaleX(16), ScaleY(58), ScaleX(508), ScaleY(24));
+    DataBox.Caption := 'Delete ALL Remember Me data in the directory below';
+    DataBox.Checked := False;
+    PathEdit := TNewEdit.Create(Form);
+    PathEdit.Parent := Form;
+    PathEdit.SetBounds(ScaleX(16), ScaleY(88), ScaleX(508), ScaleY(24));
+    PathEdit.Text := RemovalDataPath;
+    VCBox := TNewCheckBox.Create(Form);
+    VCBox.Parent := Form;
+    VCBox.SetBounds(ScaleX(16), ScaleY(130), ScaleX(508), ScaleY(24));
+    VCBox.Caption := 'Uninstall shared Microsoft Visual C++ x64 Runtime';
+    VCBox.Checked := False;
+    Description := TNewStaticText.Create(Form);
+    Description.Parent := Form;
+    Description.SetBounds(ScaleX(16), ScaleY(162), ScaleX(508), ScaleY(48));
+    Description.AutoSize := False;
+    Description.WordWrap := True;
+    Description.Caption := 'WARNING: removing VC++ may break other applications and requires administrator approval. Data deletion is permanent even if VC++ removal is cancelled. Other data roots and external models remain.';
+    ProceedButton := TNewButton.Create(Form);
+    ProceedButton.Parent := Form;
+    ProceedButton.SetBounds(ScaleX(300), ScaleY(234), ScaleX(108), ScaleY(28));
+    ProceedButton.Caption := 'Continue';
+    ProceedButton.ModalResult := mrOk;
+    CancelButton := TNewButton.Create(Form);
+    CancelButton.Parent := Form;
+    CancelButton.SetBounds(ScaleX(416), ScaleY(234), ScaleX(108), ScaleY(28));
+    CancelButton.Caption := 'Cancel';
+    CancelButton.Cancel := True;
+    CancelButton.ModalResult := mrCancel;
+    if Form.ShowModal <> mrOk then exit;
+    RemoveData := DataBox.Checked;
+    RemoveVC := VCBox.Checked;
+    RemovalDataPath := Trim(PathEdit.Text);
+    if RemoveData then begin
+      if MsgBox('Permanently delete ALL memories, configuration, caches and logs in:' + #13#10 +
+        RemovalDataPath + #13#10 + 'This cannot be undone. Back up first. Delete this directory?', mbConfirmation, MB_YESNO or MB_DEFBUTTON2) <> idYes then exit;
+      if not DataTask(False) then exit;
+    end;
+    if RemoveVC and (MsgBox('The Microsoft VC++ x64 Runtime is SHARED. Removing it may stop other programs from working. Only the bundled matching version can be removed automatically. Continue?', mbConfirmation, MB_YESNO or MB_DEFBUTTON2) <> idYes) then exit;
+    Result := True;
+  finally
+    Form.Free;
+  end;
+end;
+
 function InitializeUninstall: Boolean;
 begin
   Result := GateAndCheck;
   if Result then begin
     Result := not Running(ExpandConstant('{app}\setup\check-running.ps1'));
     if not Result then MsgBox('Remember Me is running, or its process state could not be verified. Exit normally using the Tray or Web maintenance shutdown, wait, and run Uninstall again. Your memory data will be retained.', mbError, MB_OK);
+    if Result then Result := ChooseRemovalOptions;
   end;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
-  Command, OwnedCommand: String;
+  Command, OwnedCommand, Logs: String;
+  Code: Integer;
 begin
   if CurUninstallStep <> usUninstall then exit;
+  if Running(ExpandConstant('{app}\setup\check-running.ps1')) then
+    RaiseException('Remember Me started during uninstall preparation. Exit it normally and retry.');
+  if RemoveData and not DataTask(True) then
+    RaiseException('Data cleanup failed or was partial; application removal stopped. Inspect the selected directory.');
+  if RemoveVC then begin
+    Logs := ExpandConstant('{%TEMP}\RememberMe-uninstall');
+    if not Exec(PowerShell, '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' +
+      Quote(ExpandConstant('{app}\setup\install-vcredist.ps1')) +
+      ' -Uninstall -InstallerPath ' + Quote(ExpandConstant('{app}\setup\vc_redist.x64.exe')) +
+      ' -ExpectedSha256 {#VcSha256} -MinimumVersion {#VcVersion} -EvidenceDirectory ' + Quote(Logs),
+      '', SW_HIDE, ewWaitUntilTerminated, Code) then
+      RaiseException('Could not run the VC++ removal helper. Data already deleted, if selected.');
+    if (Code <> 0) and (Code <> 3010) and (Code <> 1641) then
+      RaiseException('VC++ removal failed or was cancelled. Data already deleted, if selected. Logs: ' + Logs);
+    if (Code = 3010) or (Code = 1641) then
+      MsgBox('VC++ removal requires a Windows restart. Save work and restart manually. No automatic restart will occur.', mbInformation, MB_OK);
+  end;
   if RegQueryStringValue(HKCU64, 'Software\Microsoft\Windows\CurrentVersion\Run', 'RememberMeBeta', Command) and
      RegQueryStringValue(HKCU64, 'Software\RememberMeBeta\Launcher', 'AutostartCommand', OwnedCommand) and
      (Command = OwnedCommand) then begin
@@ -256,7 +378,7 @@ begin
     if not RegDeleteValue(HKCU64, 'Software\RememberMeBeta\Launcher', 'AutostartCommand') then
       Log('Could not remove the inactive login startup ownership marker.');
   end;
-  // Unrecognized entries and all memory data remain untouched.
+  // Unknown startup entries remain untouched; data removal is strictly opt-in.
 end;
 
 procedure DeinitializeSetup;

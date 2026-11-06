@@ -13,7 +13,7 @@ from app.config.configuration import PROJECT_ROOT
 from app.domain.releases import MAX_RELEASE_BYTES, ReleaseInfo, validate_release
 
 
-INSTALL_METHODS = frozenset(("SOURCE", "DOCKER"))
+INSTALL_METHODS = frozenset(("SOURCE", "DOCKER", "WINDOWS_SETUP"))
 
 
 def identify_install_method(environment: Mapping[str, str] | None = None) -> str:

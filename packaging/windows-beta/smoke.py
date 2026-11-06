@@ -72,6 +72,7 @@ def main():
                                        capture_output=True,timeout=30)
             assert contender.returncode != 0 and b'active' in contender.stderr, contender.stderr
         assert b'<html' in request('/admin/console').lower()
+        assert request('/api/version-update')['current']['install_method'] == 'WINDOWS_SETUP'
         memory = request('/api/memories', {'text':'Windows Beta remembers 中文离线验证。','namespace':'default'})
         mid = memory['id']
         found = request('/api/memories/search',{'query':'中文离线验证','namespace':'default','k':3})
@@ -87,7 +88,7 @@ def main():
         found = rpc('tools/call',{'name':'search_semantic','arguments':{'query':'Windows Beta','namespace':'default','k':3}})
         assert mid in json.dumps(found)
         stop(process);process=None
-        result.update(status='passed',checks=['HTTP startup','Web resources','HTTP add/search','MCP initialize/list/search',
+        result.update(status='passed',checks=['HTTP startup','Windows Setup installation identity','Web resources','HTTP add/search','MCP initialize/list/search',
                                              'primary and replica single-writer exclusion','graceful shutdown','restart preserves data','bundled offline model'],
                       seconds=time.perf_counter()-started, data_directory=str(data))
     except BaseException:

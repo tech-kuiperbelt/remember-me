@@ -14,6 +14,7 @@ from pathlib import Path
 import socket
 import shutil
 import sys
+import subprocess
 import uuid
 
 
@@ -76,6 +77,18 @@ def main():
         # Exercise the native registry API only under a fresh test subtree.
         # Never register an OS login task during an experiment.
         result['autostart_isolated_registry_toggle'] = check_autostart_registry(bundle, data)
+        # Exercise explicit data cleanup only in a fresh diagnostic root.
+        cleanup_data = work/'uninstall-smoke-data'
+        cleanup_data.mkdir()
+        (cleanup_data/'config.jsonc').write_text('{}', encoding='utf-8')
+        (cleanup_data/'memories.db').write_bytes(b'isolated cleanup fixture')
+        helper = Path(__file__).resolve().parents[1]/'windows-setup/uninstall-data.py'
+        command = [sys.executable, '-I', '-B', str(helper), '--program', str(bundle), '--data', str(cleanup_data)]
+        subprocess.run(command, check=True)
+        assert (cleanup_data/'memories.db').exists()
+        subprocess.run(command+['--delete'], check=True)
+        assert not cleanup_data.exists()
+        result['uninstall_isolated_data_cleanup'] = True
         started = time.perf_counter()
         controller.start()
         deadline = time.monotonic()+240

@@ -29,7 +29,7 @@ Exit 通过所属服务的维护/正常关闭流程退出，等待进程释放�
 
 ## 数据与限制
 
-默认数据 `%LOCALAPPDATA%\remember-me-beta`；`REMEMBER_ME_BETA_DATA_DIR` 可设为程序目录外的绝对路径。Setup 不迁移数据、不创建第二份数据库；卸载保留数据库、NDJSON、配置和日志，不卸载共享 VC++。升级前正常退出，并备份完整实际数据目录；沿用现有人工备份方式。
+默认数据 `%LOCALAPPDATA%\remember-me-beta`；`REMEMBER_ME_BETA_DATA_DIR` 可设为程序目录外的绝对路径。Setup 不迁移数据、不创建第二份数据库；卸载默认保留数据库、NDJSON、配置、日志和共享 VC++；用户主动勾选并再次确认后可清理所示数据目录及匹配版本的 VC++，详见安装指南。升级前正常退出，并备份完整实际数据目录；沿用现有人工备份方式。
 
 Windows Beta 保留 dual：标准库 msvcrt 单字节非阻塞 lifetime sidecar 锁、文件 fsync、同目录原子替换；跳过不支持的目录 fsync，仅本地固定 NTFS，不承诺 POSIX 等价的突发断电持久性。Linux 行为保持不变。
 

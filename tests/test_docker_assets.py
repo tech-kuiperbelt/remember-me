@@ -70,9 +70,11 @@ def test_entrypoint_preserves_existing_configuration(tmp_path, monkeypatch, file
     path = tmp_path / filename
     path.write_text(body)
     monkeypatch.setenv("MEMORY_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("REMEMBER_ME_INSTALL_METHOD", "UNKNOWN")
     calls = []
     monkeypatch.setattr(script.os, "execv", lambda *args: calls.append(args))
     script.main()
+    assert script.os.environ["REMEMBER_ME_INSTALL_METHOD"] == "DOCKER"
     assert path.read_text() == body
     if filename == "config.json":
         assert not (tmp_path / "config.jsonc").exists()

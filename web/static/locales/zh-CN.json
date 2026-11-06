@@ -821,6 +821,7 @@
   "version.guide.composeContext": "停服并备份后，在原实例目录使用现有 compose.yaml。以下命令明确设置目标镜像，优先于 .env；请同步其中保存的 REMEMBER_ME_IMAGE，并保留原数据目录、端口及其他配置。",
   "version.guide.runContext": "先拉取以下已确认的目标镜像。仅 pull 不会升级正在运行的容器。",
   "version.guide.runRecreate": "完成停服备份后，移除旧容器，按原部署记录重新运行初始化与启动步骤，仅替换镜像引用。保留原挂载、端口、环境变量、权限与安全选项；不要猜测这些参数。重建后检查健康并检索旧记忆；完整步骤见帮助中的 README 链接。",
+  "version.guide.windowsSetup": "通过官方 Windows Setup 更新：先安全退出并备份数据，再运行新安装包覆盖安装。保持原用户和数据目录；无需卸载旧版。",
   "version.guide.unknown": "未识别安装方式，请按实际部署记录和 README 更新；不生成安装命令。",
   "version.guide.copy": "复制命令",
   "version.guide.copyLabel": "复制 {kind} 命令",

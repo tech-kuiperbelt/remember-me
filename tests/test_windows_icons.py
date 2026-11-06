@@ -13,7 +13,7 @@ spec.loader.exec_module(tray)
 
 
 def test_existing_brand_ico_has_small_and_large_images():
-    body=(ROOT/'web/static/img/brand/favicon-neutral.ico').read_bytes()
+    body=(ROOT/'packaging/windows-beta/remember-me.ico').read_bytes()
     reserved,kind,count=struct.unpack_from('<HHH',body)
     assert reserved==0 and kind==1 and count>=2
     sizes=set()
@@ -32,7 +32,7 @@ def test_loader_uses_unicode_file_and_pointer_sized_handle(monkeypatch,tmp_path)
     monkeypatch.setattr(tray.ctypes,'WinDLL',lambda *a,**k: SimpleNamespace(LoadImageW=load),raising=False)
     root=tmp_path/'中文 program'
     assert tray.load_brand_icon(root)==2**40
-    assert calls[0][1]==str(root/'web/static/img/brand/favicon-neutral.ico')
+    assert calls[0][1]==str(root/'remember-me.ico')
     assert calls[0][2:]==(1,0,0,0x50)
     assert load.restype==tray.W.HANDLE
 
@@ -53,3 +53,13 @@ def test_full_menu_matches_existing_web_routes_and_chinese_labels():
     assert tray.menu_text('en','Stats')=='Stats'
     assert tray.menu_text('zh-CN','Run automatically at login')=='登录时自动启动'
     assert tray.menu_text('zh-CN','Exit')=='安全退出'
+
+
+def test_windows_icon_uses_more_of_the_canvas_without_changing_web_asset():
+    from PIL import Image
+    source = Image.open(ROOT/'web/static/img/brand/logo-neutral-128.png').convert('RGBA')
+    icon = Image.open(ROOT/'packaging/windows-beta/remember-me.ico').convert('RGBA')
+    old = source.getbbox()
+    new = icon.getbbox()
+    assert (new[3]-new[1])/icon.height > 0.93
+    assert (old[3]-old[1])/source.height < 0.8

@@ -30,7 +30,7 @@ Prerequisite summary evidence stays under `%LOCALAPPDATA%\remember-me-beta\logs\
 
 Start-menu entry launches the tray in the background. The tray includes status, Open/Memory/Stats/Settings/Help navigation, opt-in current-user login startup, and safe Exit, with Chinese/English labels. Use Tray Exit or Web maintenance → Shut Down Server before install/upgrade/uninstall. Installation and removal hold the same per-user SID installation guard checked by launcher/service startup. Both active launcher and active service guards block changes; a conservative same-user legacy process check also detects old unguarded ZIP services, including after Web restart. File detection failure blocks changes. No process is killed and no storage lock is deleted.
 
-Stable Inno AppId supports in-place upgrades. CloseApplications/RestartApplications are disabled: Setup must not silently force-close the service. Uninstall removes installer-owned program files/shortcuts/registration only. It has no data-deletion option or recursive cleanup rule and never uninstalls shared VC++.
+Stable Inno AppId supports in-place upgrades. CloseApplications/RestartApplications are disabled: Setup must not silently force-close the service. Uninstall removes installer-owned program files/shortcuts/registration only. It retains user data and shared VC++ by default; the explicit optional cleanup actions below override this only after confirmation.
 
 ## Step 1 evidence and remaining native acceptance
 
@@ -48,6 +48,12 @@ Prior Run 41959636700 and user VM testing established the baseline; new icon vis
 
 ## Full Windows menu candidate
 
-Login startup is off by default. The standard-library helper uses HKCU Run and an exact ownership marker; no administrator rights or Windows Service. Its private Python command pins the selected data path. Uninstall removes the entry only when it matches the recorded owned command; unknown values and all memory data remain untouched. Existing entries are retained across upgrades at the same paths. Windows Startup Apps/policy may override execution; the application does not alter StartupApproved policy.
+Login startup is off by default. The standard-library helper uses HKCU Run and an exact ownership marker; no administrator rights or Windows Service. Its private Python command pins the selected data path. Uninstall removes the entry only when it matches the recorded owned command; unknown values remain untouched, and memory data is retained unless explicit cleanup is selected. Existing entries are retained across upgrades at the same paths. Windows Startup Apps/policy may override execution; the application does not alter StartupApproved policy.
 
 [Microsoft Run key documentation](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys) limits command lines to 260 characters. Longer commands are rejected before writes, keeping manual launch available. Native diagnostics only toggles a fresh temporary registry subtree, never the real Run key; VM login and uninstall acceptance is still required.
+
+## Optional uninstall cleanup
+
+The uninstall dialog has two unchecked options: delete data and remove shared VC++. Leaving them unchecked preserves both; silent uninstall always preserves both. Data deletion displays the selected root and requires confirmation. It permanently deletes memories, configuration, caches and logs within that root; other data roots and external models remain. Back up first. Unknown layouts, links or active writer locks block cleanup. Removing shared VC++ may break other apps; only the verified Microsoft installer requests UAC, and removal is checked afterward. A different installed version requires manual removal using Windows Installed Apps. Actions are independent: completed data deletion cannot be rolled back if VC++ removal fails or is cancelled; application removal then stops with an error. Never remove locks to bypass protection.
+
+The verified pinned Microsoft redistributable is installed in `{app}\setup` for offline removal. Native diagnostics delete only a fresh fixture, never real data. Real uninstall checkboxes, UAC/cancellation and registry postchecks require VM acceptance.

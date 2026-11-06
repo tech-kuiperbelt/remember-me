@@ -18,6 +18,12 @@ pytestmark = pytest.mark.skipif(not PWSH, reason='PowerShell required for mocked
 
 
 @pytest.mark.parametrize('case,code,status', [
+    ('uninstall_success', 0, 'uninstalled'),
+    ('uninstall_absent', 0, 'already_absent'),
+    ('uninstall_newer', 1, 'failed'),
+    ('uninstall_cancelled', 1602, 'cancelled'),
+    ('uninstall_remaining', 1, 'failed'),
+    ('uninstall_reboot', 3010, 'uninstalled'),
     ('newer', 0, 'already_satisfied'),
     ('success', 0, 'installed'),
     ('reboot', 3010, 'installed'),
@@ -43,6 +49,12 @@ def test_real_helper_control_flow_with_mocked_windows_identity(tmp_path, case, c
 $script:runtimeReads = 0
 function Get-RuntimeVersion {
     $script:runtimeReads++
+    if ($env:RM_TEST_CASE -like 'uninstall_*') {
+        if ($env:RM_TEST_CASE -eq 'uninstall_absent') { return $null }
+        if ($env:RM_TEST_CASE -eq 'uninstall_newer') { return [version]'99.0.0.0' }
+        if ($script:runtimeReads -eq 1 -or $env:RM_TEST_CASE -eq 'uninstall_remaining') { return [version]'14.51.36247.0' }
+        return $null
+    }
     if ($env:RM_TEST_CASE -eq 'newer') { return [version]'99.0.0.0' }
     if ($script:runtimeReads -ge 2 -and $env:RM_TEST_CASE -ne 'postcheck_failed') {
         return [version]'14.51.36247.0'
@@ -58,8 +70,9 @@ function Get-AuthenticodeSignature {
 }
 function Start-Process {
     param($FilePath,$ArgumentList,$Verb,[switch]$Wait,[switch]$PassThru)
-    if ($env:RM_TEST_CASE -eq 'cancelled') { throw [ComponentModel.Win32Exception]::new(1223) }
-    $code = switch ($env:RM_TEST_CASE) { 'reboot' {3010}; 'failed' {1603}; default {0} }
+    if ($env:RM_TEST_CASE -like 'uninstall_*' -and $ArgumentList -ne '/uninstall /passive /norestart') { throw 'Wrong removal arguments' }
+    if ($env:RM_TEST_CASE -in @('cancelled','uninstall_cancelled')) { throw [ComponentModel.Win32Exception]::new(1223) }
+    $code = switch ($env:RM_TEST_CASE) { 'uninstall_reboot' {3010}; 'reboot' {3010}; 'failed' {1603}; default {0} }
     $process = [pscustomobject]@{ ExitCode = $code }
     $process | Add-Member -MemberType ScriptMethod -Name Refresh -Value {}
     return $process
@@ -73,7 +86,7 @@ function Start-Process {
                XDG_CONFIG_HOME=str(tmp_path/'config'), XDG_DATA_HOME=str(tmp_path/'data'))
     proc = subprocess.run([PWSH,'-NoProfile','-NonInteractive','-File',str(script),
                            '-InstallerPath',str(payload),'-ExpectedSha256',sha,
-                           '-MinimumVersion','14.51.36247.0','-EvidenceDirectory',str(evidence)],
+                           '-MinimumVersion','14.51.36247.0','-EvidenceDirectory',str(evidence)] + (['-Uninstall'] if case.startswith('uninstall_') else []),
                           env=env,capture_output=True,text=True,timeout=30)
     records = list(evidence.glob('vcredist-*.json'))
     assert len(records) == 1, (proc.stdout,proc.stderr)

@@ -17,7 +17,7 @@ spec.loader.exec_module(validator)
 def bundle(tmp_path):
     root = tmp_path / '中文 program with spaces'
     for name in ('runtime/python/python.exe', 'runtime/python/pythonw.exe', 'beta_start.py',
-                 'tray_launcher.py', 'windows_tray.py', 'windows_autostart.py', 'app/startup_timing.py', 'app/performance_timing.py', 'beta-policy.json', 'models/manifest.json',
+                 'remember-me.ico', 'tray_launcher.py', 'windows_tray.py', 'windows_autostart.py', 'app/startup_timing.py', 'app/performance_timing.py', 'beta-policy.json', 'models/manifest.json',
                  'web/index.html', 'web/static/img/brand/favicon-neutral.ico'):
         path = root / name
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -66,7 +66,7 @@ def test_symlink_payload_rejected(bundle):
         validator.validate(bundle)
 
 
-def test_installer_has_no_data_deletion_or_process_killing():
+def test_installer_preserves_data_by_default_and_never_kills_processes():
     source = (SETUP / 'remember-me.iss').read_text(encoding='utf-8')
     assert '[UninstallDelete]' not in source
     assert '[InstallDelete]' not in source
@@ -77,7 +77,7 @@ def test_installer_has_no_data_deletion_or_process_killing():
     assert 'tray_launcher.py' in source
     for name in ('remember-me.iss', 'check-running.ps1', 'install-vcredist.ps1'):
         text = (SETUP / name).read_text(encoding='utf-8').lower()
-        for dangerous in ('stop-process', 'taskkill', 'remove-item', '/uninstall'):
+        for dangerous in ('stop-process', 'taskkill', 'remove-item'):
             assert dangerous not in text
 
 

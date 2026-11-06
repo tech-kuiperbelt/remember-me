@@ -117,7 +117,7 @@ def test_file_errors_are_safe_and_do_not_leak_paths(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("value,expected", [
-    ("SOURCE", "SOURCE"), ("DOCKER", "DOCKER"), ("source", "SOURCE"),
+    ("WINDOWS_SETUP", "WINDOWS_SETUP"), ("SOURCE", "SOURCE"), ("DOCKER", "DOCKER"), ("source", "SOURCE"),
     (" docker ", "DOCKER"), ("UNKNOWN", "UNKNOWN"), ("", "UNKNOWN"),
     (None, "UNKNOWN"), ("PIP", "UNKNOWN"), ("APPIMAGE", "UNKNOWN"),
     ("WINDOWS_INSTALLER", "UNKNOWN"), ("anything", "UNKNOWN"),

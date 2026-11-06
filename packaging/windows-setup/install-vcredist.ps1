@@ -2,7 +2,8 @@ param(
     [Parameter(Mandatory=$true)][string]$InstallerPath,
     [Parameter(Mandatory=$true)][string]$ExpectedSha256,
     [Parameter(Mandatory=$true)][string]$MinimumVersion,
-    [Parameter(Mandatory=$true)][string]$EvidenceDirectory
+    [Parameter(Mandatory=$true)][string]$EvidenceDirectory,
+    [switch]$Uninstall
 )
 # This helper stays unelevated; only Microsoft's verified executable requests UAC.
 $ErrorActionPreference = 'Stop'
@@ -24,10 +25,14 @@ function Get-RuntimeVersion {
 try {
     $before = Get-RuntimeVersion
     $result.before = [string]$before
-    if ($null -ne $before -and $before -ge [version]$MinimumVersion) {
+    if ($Uninstall -and $null -eq $before) {
+        $result.status = 'already_absent'
+        $code = 0
+    } elseif (-not $Uninstall -and $null -ne $before -and $before -ge [version]$MinimumVersion) {
         $result.status = 'already_satisfied'
         $code = 0
     } else {
+        if ($Uninstall -and $before -ne [version]$MinimumVersion) { throw 'Installed VC++ version differs from the bundled uninstaller; use Windows Installed apps to remove it explicitly' }
         $hash = (Get-FileHash -LiteralPath $InstallerPath -Algorithm SHA256).Hash.ToLowerInvariant()
         $signature = Get-AuthenticodeSignature -LiteralPath $InstallerPath
         $result.sha256 = $hash
@@ -48,7 +53,8 @@ try {
         # The privileged installer never executes a script supplied by this helper.
         $result.status = 'installing'
         $result | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $evidence -Encoding UTF8
-        $process = Start-Process -FilePath $InstallerPath -ArgumentList '/install /passive /norestart' -Verb RunAs -Wait -PassThru
+        $arguments = if ($Uninstall) { '/uninstall /passive /norestart' } else { '/install /passive /norestart' }
+        $process = Start-Process -FilePath $InstallerPath -ArgumentList $arguments -Verb RunAs -Wait -PassThru
         $process.Refresh()
         $result.installer_exit_code = $process.ExitCode
         if ($process.ExitCode -notin @(0, 3010, 1641)) {
@@ -57,9 +63,11 @@ try {
         }
         $after = Get-RuntimeVersion
         $result.after = [string]$after
-        if ($null -eq $after -or $after -lt [version]$MinimumVersion) { throw 'VC++ post-install registry verification failed' }
+        if ($Uninstall) {
+            if ($null -ne $after) { throw 'VC++ is still registered after uninstall; removal not confirmed' }
+        } elseif ($null -eq $after -or $after -lt [version]$MinimumVersion) { throw 'VC++ post-install registry verification failed' }
         $code = $process.ExitCode
-        $result.status = 'installed'
+        $result.status = if ($Uninstall) { 'uninstalled' } else { 'installed' }
         $result.reboot_required = $code -in @(3010, 1641)
     }
 } catch {

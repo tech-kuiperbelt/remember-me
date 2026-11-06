@@ -821,6 +821,7 @@
   "version.guide.composeContext": "After stopping and backing up, use the existing compose.yaml in the original instance directory. These commands set the target image explicitly, overriding .env. Update its saved REMEMBER_ME_IMAGE too; preserve the data path, port and all other settings.",
   "version.guide.runContext": "Pull the verified target image below. Pulling alone does not upgrade a running container.",
   "version.guide.runRecreate": "After stopping and backing up, remove the old container and repeat its recorded initialization and start steps, changing only the image reference. Preserve mounts, ports, environment, permissions and security options; do not guess them. Check health and retrieve an existing memory after recreation. See the README linked from Help for full steps.",
+  "version.guide.windowsSetup": "Update using the official Windows Setup: exit safely, back up your data, then install over the existing copy. Keep the same user and data directory; uninstalling first is unnecessary.",
   "version.guide.unknown": "The installation method is unknown. Follow your deployment records and the README; no installation commands are generated.",
   "version.guide.copy": "Copy commands",
   "version.guide.copyLabel": "Copy {kind} commands",

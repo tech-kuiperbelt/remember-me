@@ -33,7 +33,7 @@ Windows can delay login startup or disable it through Startup Apps or system pol
 
 ## Uninstall
 
-Exit normally, then use Windows Installed Apps or the Start-menu uninstall entry. A running instance must be stopped normally first. Uninstall removes only an owned login startup entry, retains memories, configuration and logs, and does not remove shared VC++ Runtime. Reinstall with the same data directory to read retained memories. No delete-data shortcut is provided; do not remove lock files to bypass protection.
+Exit normally, then use Windows Installed Apps or the Start-menu uninstall entry. A running instance must be stopped normally first. Uninstall removes only an owned login startup entry, retains memories, configuration and logs, and does not remove shared VC++ Runtime. Reinstall with the same data directory to read retained memories. Both cleanup options are off by default.
 
 ## Performance and logs
 
@@ -44,3 +44,5 @@ For slow startup or long additions, include Windows/VM CPU, RAM, disk configurat
 ## Known limitations
 
 This is a Beta; the final Setup is not code-signed and coverage does not include all Windows machines. Dual storage is limited to local fixed NTFS, with file fsync and atomic replacement but no POSIX-equivalent power-loss directory durability promise. Historical strict S1-A Defender identity auditing remains incomplete. No Windows Service or automatic updater; diagnostics do not imply comprehensive performance optimization.
+
+The uninstall dialog has two unchecked options: delete data and remove shared VC++. Leaving them unchecked preserves both; silent uninstall always preserves both. Data deletion displays the selected root and requires confirmation. It permanently deletes memories, configuration, caches and logs within that root; other data roots and external models remain. Back up first. Unknown layouts, links or active writer locks block cleanup. Removing shared VC++ may break other apps; only the verified Microsoft installer requests UAC, and removal is checked afterward. A different installed version requires manual removal using Windows Installed Apps. Actions are independent: completed data deletion cannot be rolled back if VC++ removal fails or is cancelled; application removal then stops with an error. Never remove locks to bypass protection.

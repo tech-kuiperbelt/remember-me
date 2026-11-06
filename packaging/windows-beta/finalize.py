@@ -36,7 +36,7 @@ def main():
     shutil.move(bundle / 'models' / manifest['revision'], destination)
     (hub / 'refs').mkdir()
     (hub / 'refs/main').write_text(manifest['revision'], encoding='utf-8')
-    for name in ('start.cmd','beta_start.py','tray_launcher.py','windows_tray.py','windows_autostart.py','WINDOWS-TESTING.md'):
+    for name in ('remember-me.ico','start.cmd','beta_start.py','tray_launcher.py','windows_tray.py','windows_autostart.py','WINDOWS-TESTING.md'):
         shutil.copy2(ROOT / 'packaging/windows-beta' / name, bundle / name)
     policy = {'status':'Beta candidate for manual Windows 11 testing', 'storage':args.storage,
               'data_directory':'%LOCALAPPDATA%/remember-me-beta', 'delivery':'Setup with tray launcher',

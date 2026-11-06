@@ -406,6 +406,16 @@ def main():
         os.environ['REMEMBER_ME_BETA_DATA_DIR'] = str(selected)
     root = Path(__file__).resolve().parent
     sys.path.insert(0, str(root))
+    # Record the actual latest data selection for explicit uninstall confirmation.
+    # Registry failure must not prevent normal startup; uninstall then asks for it.
+    try:
+        import winreg
+        with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER,
+                r'Software\RememberMeBeta\Launcher', 0, winreg.KEY_SET_VALUE) as key:
+            winreg.SetValueEx(key, 'DataDirectory', 0, winreg.REG_SZ, str(data_directory()))
+            winreg.SetValueEx(key, 'DataInstallDirectory', 0, winreg.REG_SZ, str(root))
+    except (OSError, ImportError):
+        logging.getLogger(__name__).warning('Could not record data selection for uninstall')
     logs = data_directory() / 'logs'
     logs.mkdir(parents=True, exist_ok=True)
     handler = RotatingFileHandler(logs / 'launcher.log', maxBytes=2*1024*1024,

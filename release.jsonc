@@ -12,12 +12,13 @@
     "This candidate prepares Windows delivery only; existing Linux and Docker distributions and stable/latest behavior are unchanged."
   ],
   "fixes": [
-    "Start-menu, installer and tray use the existing Remember Me brand icon instead of an unrecognizable generic icon."
+    "Windows Setup and Docker entrypoints explicitly report their installation method in the version panel; Windows receives Setup-specific upgrade guidance.",
+    "Start-menu, installer and tray use a Windows-specific Remember Me icon with less transparent padding for better visibility."
   ],
   "upgrade": [
     "Exit normally and back up the complete actual data directory before upgrading; keep the same user and data-directory selection.",
     "Windows program files default to %LOCALAPPDATA%\\Programs\\Remember Me Beta; persistent data remains %LOCALAPPDATA%\\remember-me-beta or the existing absolute REMEMBER_ME_BETA_DATA_DIR override.",
-    "Running installation or removal requires normal service exit; uninstall retains memories, configuration, logs and shared VC++ Runtime. No automatic data migration is introduced.",
+    "Running installation or removal requires normal service exit; uninstall retains memories, configuration, logs and shared VC++ Runtime by default. Two unchecked cleanup options require explicit confirmation; data deletion is permanent and shared VC++ removal may affect other applications. No automatic data migration is introduced.",
     "Verify the downloaded Setup SHA256. Windows login startup is off by default, records the selected data path and is removed on uninstall only when owned; no automatic updater is included; final GUI, upgrade protection and performance acceptance must be checked on the target VM.",
     "Windows Beta is limited to local fixed NTFS with file fsync and atomic replacement; POSIX-equivalent power-loss directory durability is not promised."
   ],

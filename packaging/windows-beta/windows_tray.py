@@ -31,7 +31,7 @@ def load_brand_icon(root):
     load = user.LoadImageW
     load.argtypes = [W.HINSTANCE, W.LPCWSTR, W.UINT, ctypes.c_int, ctypes.c_int, W.UINT]
     load.restype = W.HANDLE
-    handle = load(None, str(Path(root) / 'web/static/img/brand/favicon-neutral.ico'),
+    handle = load(None, str(Path(root) / 'remember-me.ico'),
                   1, 0, 0, 0x10 | 0x40)
     if not handle:
         raise ctypes.WinError(ctypes.get_last_error())

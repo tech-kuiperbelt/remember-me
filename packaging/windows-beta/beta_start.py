@@ -31,6 +31,7 @@ def configure(root):
     policy = json.loads((root / 'beta-policy.json').read_text(encoding='utf-8'))
     if policy['storage'] not in ('sqlite', 'dual'):
         raise RuntimeError('Invalid Beta storage policy')
+    os.environ['REMEMBER_ME_INSTALL_METHOD'] = 'WINDOWS_SETUP'
     os.environ.update(MEMORY_DATA_DIR=str(data), MEMORY_MODEL_DIR=str(root / 'models'),
                       MEMORY_STORAGE=policy['storage'], EMBED_PROVIDER='sentence_transformers',
                       SENTENCE_TRANSFORMERS_MODEL='BAAI/bge-m3', SENTENCE_TRANSFORMERS_DEVICE='cpu',

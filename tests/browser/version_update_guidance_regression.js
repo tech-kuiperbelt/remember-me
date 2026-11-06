@@ -63,6 +63,10 @@ async function runVersionGuidanceRegression(scenario) {
     assert($('version-popover').textContent.includes(t('version.guide.composeContext')),'original file/env override/saved .env retained');
     assert($('version-popover').textContent.includes(t('version.guide.runRecreate')),'pull is not recreation');
   } else if(scenario==='version-guide-unknown') {
+    method='WINDOWS_SETUP'; await load(state());
+    assert($('version-popover').textContent.includes('WINDOWS_SETUP'),'Windows installation identity is displayed');
+    assert($('version-popover').textContent.includes(t('version.guide.windowsSetup')),'Windows Setup update guidance');
+    assert(!commands().length,'Windows never receives Linux or Docker commands');
     method='UNKNOWN'; await load(state());
     assert(!commands().length && $('version-current').textContent==='v1.0.0','unknown method does not erase known version');
     assert($('version-popover').textContent.includes(t('version.guide.unknown')),'unknown method avoids guessing');

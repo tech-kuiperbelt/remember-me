@@ -30,6 +30,7 @@ def test_beta_data_is_external_and_settings_are_local_offline(monkeypatch,tmp_pa
     with patch.dict(start.os.environ,{'REMEMBER_ME_BETA_DATA_DIR':str(data),'MEMORY_STORAGE_PATH':'outside.db'}):
         assert start.configure(root)==data
         assert start.os.environ['MEMORY_STORAGE']=='dual'
+        assert start.os.environ['REMEMBER_ME_INSTALL_METHOD']=='WINDOWS_SETUP'
         assert 'MEMORY_STORAGE_PATH' not in start.os.environ
         config=json.loads((data/'config.jsonc').read_text())
         assert config['local_only'] is True and config['auto_download_model'] is False
