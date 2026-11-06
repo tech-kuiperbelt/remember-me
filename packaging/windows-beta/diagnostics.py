@@ -119,6 +119,63 @@ def main():
                 result['requests'].append({'case':label,'text_chars':len(text),'seconds':time.perf_counter()-started})
             finally:
                 connection.close()
+        # Real Web Restart, not shutdown followed by a new Popen. The launcher
+        # and service process must remain alive while Runtime releases/reopens.
+        memory_id = body['id']
+        result['web_restarts'] = []
+        def listening_cycles():
+            count = 0
+            trace = logs/'startup-timing.jsonl'
+            if trace.exists():
+                for line in trace.read_text(encoding='utf-8').splitlines():
+                    try:
+                        if json.loads(line).get('stage') == 'http_listening':
+                            count += 1
+                    except json.JSONDecodeError:
+                        pass
+            return count
+        for cycle in (1, 2):
+            before = listening_cycles()
+            controller.request('/api/maintenance/enter', 'POST')
+            if cycle == 2:
+                from dataclasses import replace
+                from app.config.configuration import Configuration
+                with socket.socket() as sock:
+                    sock.bind(('127.0.0.1', 0))
+                    new_port = sock.getsockname()[1]
+                replace(Configuration.load(data, create=False), port=new_port).save()
+            restarted = time.perf_counter()
+            response = controller.request('/api/restart', 'POST')
+            assert response['status'] == 'restarting'
+            deadline = time.monotonic()+240
+            while time.monotonic() < deadline:
+                assert controller.process.poll() is None, 'Web Restart exited the owned service'
+                assert controller.api.pids(controller.job), 'Web Restart lost the owned job'
+                try:
+                    state = controller.poll()
+                    if state == 'Error':
+                        raise RuntimeError(controller.error)
+                    if state == 'Running' and listening_cycles() > before:
+                        break
+                except (OSError, http.client.HTTPException):
+                    pass  # Expected closed listener while the fresh Runtime starts.
+                time.sleep(0.2)
+            else:
+                raise RuntimeError('Web Restart did not return to ready')
+            assert controller.request('/api/memories/'+memory_id)['id'] == memory_id
+            connection = http.client.HTTPConnection('127.0.0.1', controller.port, timeout=120)
+            try:
+                connection.connect()
+                assert controller._owned_listener(), 'Refusing search on an unowned listener'
+                payload = json.dumps({'query':'离线测试记忆','namespace':'default','k':3}).encode('utf-8')
+                connection.request('POST','/api/memories/search',payload,{'Content-Type':'application/json'})
+                response = connection.getresponse()
+                found = json.loads(response.read())
+                assert response.status == 200 and memory_id in json.dumps(found), 'Semantic search failed after Web Restart'
+            finally:
+                connection.close()
+            result['web_restarts'].append({'cycle':cycle,'seconds':time.perf_counter()-restarted,
+                'service_pid':controller.process.pid,'port':controller.port,'memory_preserved':True,'semantic_search_passed':True})
         result['status'] = 'passed'
     finally:
         controller.stop()

@@ -35,7 +35,7 @@ Windows Beta 保留 dual：标准库 msvcrt 单字节非阻塞 lifetime sidecar 
 
 用户机已有 Web、断网、路径、重复启动和重启恢复证据；新托盘 Win32、安装、UAC、升级和卸载需要第 2/3 步 Windows 验证。Linux mock 测试不等同于 Windows 原生成功。无服务、自动更新或应用 EXE 冻结。
 
-原生待观察的边界：Windows Web Restart 的底层 exec 是否产生新控制台；极短的新进程若在两次轮询之间启动并失败，最终退出归类可能不完整。已观察到的新 PID 会记录真实退出码；这两个边界不由 Linux mock 证明。Launcher 意外退出不会通过 Job close 强杀正在写入的业务子进程，必要时使用 Web 正常关闭。
+Windows Beta 的 Web Restart 在同一受控服务进程中完成旧 Runtime 清理后重新创建 Runtime，不再用 Windows os.execv 交接进程。服务 guard 与 Launcher 单实例保持；配置/端口重新读取，旧存储和模型先关闭。异常不会自动循环重试；正常 Web Shutdown / Tray Exit 仍退出进程。Linux/Docker 保持原 exec 重启逻辑。native diagnostics 连续执行两次真实 Web Restart（第二次改变隔离配置端口），确认服务/Job 连续、HTTP 再次就绪及原记忆可读；这不等于 VM 托盘视觉验收。Launcher 意外退出不会通过 Job close 强杀正在写入的业务子进程，必要时使用 Web 正常关闭。
 
 发布收尾候选加入品牌 ICO，并在现有 business smoke 后执行 diagnostics.py：Windows LoadImage 原生载入、真实 headless Launcher Controller 启停、短文本及 2000 字符长文本写入计时。全部数据在新 performance-smoke-data，位于 bundle 外；evidence 保存 startup/performance JSONL 和 performance-results.json。不是 GUI 自动化，也不等同于 VM 视觉/升级验收。
 

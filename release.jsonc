@@ -12,6 +12,7 @@
     "This candidate prepares Windows delivery only; existing Linux and Docker distributions and stable/latest behavior are unchanged."
   ],
   "fixes": [
+    "Windows Web Restart recreates the Runtime after full cleanup inside the same owned service process, keeping the tray alive and reloading saved configuration; normal shutdown still exits.",
     "Windows Setup and Docker entrypoints explicitly report their installation method in the version panel; Windows receives Setup-specific upgrade guidance.",
     "Start-menu, installer and tray use a Windows-specific Remember Me icon with less transparent padding for better visibility."
   ],

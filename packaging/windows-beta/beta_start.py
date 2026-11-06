@@ -7,7 +7,8 @@ import json
 import ctypes
 import os
 from pathlib import Path
-import runpy
+import asyncio
+import logging
 import sys
 import traceback
 
@@ -88,7 +89,13 @@ def _run_service():
     sys.dont_write_bytecode = True
     os.chdir(root)
     try:
-        runpy.run_module('app.server', run_name='__main__')
+        from app.server import main as serve
+        # Keep the same owned Windows process and service guard across Web
+        # Restart. Each cycle first closes Runtime (workers, stores/locks,
+        # provider, audit and logging); crashes never trigger an automatic loop.
+        while asyncio.run(serve(exec_restart=False)):
+            logging.getLogger('beta_start').info(
+                'Web restart: runtime cleanup complete; starting a fresh runtime in the owned service process')
     except Exception:
         logs = data / 'logs'
         logs.mkdir(exist_ok=True)

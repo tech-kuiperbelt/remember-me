@@ -346,3 +346,65 @@ def test_host_override_survives_restart(process_config):
             if proc.poll() is None:
                 proc.kill()
                 proc.wait(5)
+
+
+def test_windows_beta_restart_loop_reopens_storage_and_reloads_port(process_config):
+    """Actual Web Restart twice in one process, using isolated fake embeddings."""
+    runner, env = process_config
+    source = runner.read_text()
+    source = source.replace('asyncio.run(main())', '''while asyncio.run(main(exec_restart=False)):
+    with Path(os.environ['RESTART_CYCLES']).open('a') as marker:
+        marker.write('cleaned\\n')
+''')
+    runner.write_text(source)
+    env['RESTART_CYCLES'] = str(runner.parent/'cycles.txt')
+    with socket.socket() as sock:
+        sock.bind(('127.0.0.1', 0))
+        port = sock.getsockname()[1]
+    config_path = runner.parent/'config.jsonc'
+    config_path.write_text(json.dumps({'port':port,'language':'zh-CN'}))
+    log_path = runner.parent/'restart-loop.log'
+    with log_path.open('w') as log, httpx.Client(timeout=2, trust_env=False) as client:
+        proc = subprocess.Popen([sys.executable,str(runner)],env=env,stdout=log,stderr=log)
+        def ready(target, cycles):
+            deadline = time.monotonic()+20
+            while time.monotonic()<deadline:
+                assert proc.poll() is None, log_path.read_text()
+                try:
+                    count = Path(env['RESTART_CYCLES']).read_text().count('cleaned') if Path(env['RESTART_CYCLES']).exists() else 0
+                    response = client.get(f'http://127.0.0.1:{target}/api/stats')
+                    if count >= cycles and response.status_code == 200:
+                        return f'http://127.0.0.1:{target}'
+                except httpx.TransportError:
+                    pass
+                time.sleep(0.05)
+            pytest.fail(log_path.read_text())
+        try:
+            base = ready(port,0)
+            response = client.post(base+'/api/memories',json={'text':'Restart preserves 中文 memory','namespace':'default'})
+            assert response.status_code == 201, response.text
+            mid = response.json()['id']
+            for cycle in (1,2):
+                assert client.post(base+'/api/maintenance/enter',json={}).status_code == 200
+                if cycle == 2:
+                    with socket.socket() as sock:
+                        sock.bind(('127.0.0.1',0))
+                        port = sock.getsockname()[1]
+                    config_path.write_text(json.dumps({'port':port,'language':'en'}))
+                response = client.post(base+'/api/restart',json={})
+                assert response.status_code == 200 and response.json()['status']=='restarting'
+                base = ready(port,cycle)
+                assert client.get(base+'/api/memories/'+mid).json()['id']==mid
+                found = client.post(base+'/api/memories/search',json={'query':'Restart 中文','namespace':'default','k':3})
+                assert found.status_code==200 and mid in found.text
+            assert client.post(base+'/api/maintenance/enter',json={}).status_code==200
+            assert client.post(base+'/api/shutdown',json={}).status_code==200
+            assert proc.wait(timeout=15)==0, log_path.read_text()
+            assert not Path(env['EXEC_PROBE']).exists(), 'The Windows restart path must not exec'
+            from app.storage import create_storage
+            store = create_storage('dual', primary_path=env['MEMORY_STORAGE_PATH'],
+                                   secondary_path=env['MEMORY_REPLICA_PATH'],start_background=False)
+            store.stop()
+        finally:
+            if proc.poll() is None:
+                proc.kill();proc.wait(timeout=5)

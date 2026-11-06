@@ -101,3 +101,32 @@ def test_windows_entry_releases_guard_after_startup_failure(monkeypatch):
     with pytest.raises(RuntimeError,match='startup failed'):
         start.main()
     assert not held
+
+
+def test_beta_entry_restarts_only_after_clean_return_and_never_retries_crashes(monkeypatch, tmp_path):
+    monkeypatch.chdir(ROOT)  # Restore cwd after exercising the real entrypoint.
+    from app import server
+    root = tmp_path/'program'
+    root.mkdir()
+    (root/'beta-policy.json').write_text('{"storage":"dual"}')
+    data = tmp_path/'data'
+    monkeypatch.setattr(start, '__file__', str(root/'beta_start.py'))
+    monkeypatch.setattr(start.sys, 'argv', ['beta_start.py','--host','127.0.0.1'])
+    calls = []
+    async def serve(*, exec_restart):
+        calls.append(exec_restart)
+        return len(calls) < 3
+    monkeypatch.setattr(server, 'main', serve)
+    with patch.dict(start.os.environ, {'REMEMBER_ME_BETA_DATA_DIR':str(data)}):
+        start._run_service()
+    assert calls == [False,False,False]
+    calls.clear()
+    async def crash(*, exec_restart):
+        calls.append(exec_restart)
+        raise RuntimeError('injected startup failure')
+    monkeypatch.setattr(server, 'main', crash)
+    with patch.dict(start.os.environ, {'REMEMBER_ME_BETA_DATA_DIR':str(data)}):
+        with pytest.raises(RuntimeError, match='injected'):
+            start._run_service()
+    assert calls == [False]
+    assert 'injected startup failure' in (data/'logs/startup-error.log').read_text()

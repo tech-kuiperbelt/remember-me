@@ -454,7 +454,12 @@ async def serve_stdio(runtime):
                 signal.signal(signal.SIGTERM, previous_handler)
 
 
-async def main(argv=None):
+async def main(argv=None, *, exec_restart=True):
+    """Run one fully owned lifecycle; the Windows Beta caller can own restart.
+
+    Returning True with exec_restart=False happens only after runtime cleanup.
+    Other entrypoints retain the existing process replacement behavior.
+    """
     import os
     from app.config.settings import Settings
     from app.runtime import create_runtime
@@ -519,8 +524,11 @@ async def main(argv=None):
         finally:
             await asyncio.to_thread(runtime.close)
     if runtime.restart_requested:
+        if not exec_restart:
+            return True
         os.execv(sys.executable, [sys.executable, "-m", "app.server"] +
                  (sys.argv[1:] if argv is None else argv))
+    return False
 
 
 if __name__ == "__main__":

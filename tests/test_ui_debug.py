@@ -23,8 +23,9 @@ def test_console_debug_state_ignores_request_override(admin, debug):
     assert response.headers['cache-control'] == 'no-store'
 
 
+@pytest.mark.parametrize('exec_restart', [False, True])
 @pytest.mark.parametrize('debug', [False, True])
-def test_cli_uses_config_debug_and_retains_restart_arguments(monkeypatch, debug):
+def test_cli_uses_config_debug_and_retains_restart_arguments(monkeypatch, debug, exec_restart):
     settings = SimpleNamespace(PORT=1314, LOCAL_ONLY=True, UI_DEBUG=debug, environment={})
     runtime = SimpleNamespace(restart_requested=True, close=Mock())
     app = SimpleNamespace(state=SimpleNamespace(close_connections=Mock()))
@@ -47,11 +48,15 @@ def test_cli_uses_config_debug_and_retains_restart_arguments(monkeypatch, debug)
     restart = Mock()
     monkeypatch.setattr(os, 'execv', restart)
     args = ['--port', '1314']
-    asyncio.run(server.main(args))
+    result = asyncio.run(server.main(args, exec_restart=exec_restart))
     build.assert_called_once_with(runtime, port=1314, local_only=True)
     runtime.close.assert_called_once()
-    restart.assert_called_once_with(server.sys.executable,
-        [server.sys.executable, '-m', 'app.server', *args])
+    if exec_restart:
+        restart.assert_called_once_with(server.sys.executable,
+            [server.sys.executable, '-m', 'app.server', *args])
+    else:
+        assert result is True
+        restart.assert_not_called()
 
 
 def test_cli_rejects_removed_debug_option_before_loading_config(monkeypatch, capsys):
