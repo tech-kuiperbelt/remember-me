@@ -44,6 +44,7 @@ def main():
     executable = app / 'Contents/MacOS/remember-me'
     py = resources / 'runtime/python/bin/python3.12'
     process = None
+    backend_pids = []
     mounted = False
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
@@ -62,21 +63,37 @@ def main():
             time.sleep(0.5)
         raise RuntimeError('Native service readiness timed out')
     def launch():
-        nonlocal process
+        nonlocal process, backend_pids
         process = subprocess.Popen([str(executable), '--data-dir', str(data), '--port', str(port)],
                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                    start_new_session=True)
         ready()
-        record('native AppKit launcher and service start', 'passed', {'launcher_pid': process.pid})
+        snapshot = subprocess.check_output(['/bin/ps', '-axo', 'pid=,ppid=,pgid=,stat=,command='], text=True)
+        children = [line.strip() for line in snapshot.splitlines()
+                    if int(line.split()[1]) == process.pid and 'bootstrap.py' in line]
+        require(len(children) == 1, 'Expected one owned Python backend: ' + repr(children))
+        backend_pids = [int(line.split()[0]) for line in children]
+        (evidence / f'owner-{process.pid}-backend.log').write_text('\n'.join(children))
+        record('native AppKit launcher and service start', 'passed',
+               {'launcher_pid': process.pid, 'backend': children})
     def cleanup_check(label):
         nonlocal process
         pid = process.pid
         process.wait(timeout=60)
         deadline = time.monotonic() + 15
-        remaining = group_members(pid)
-        while remaining and time.monotonic() < deadline:
+        def remaining_processes():
+            snapshot = subprocess.check_output(['/bin/ps', '-axo', 'pid=,ppid=,pgid=,stat=,command='], text=True)
+            return [line.strip() for line in snapshot.splitlines()
+                    if int(line.split()[0]) in backend_pids or int(line.split()[2]) == pid
+                    or str(resources / 'bootstrap.py') in line]
+        remaining = remaining_processes()
+        while time.monotonic() < deadline:
+            with socket.socket() as sock:
+                listening = sock.connect_ex(('127.0.0.1', port)) == 0
+            if not remaining and not listening:
+                break
             time.sleep(0.2)
-            remaining = group_members(pid)
+            remaining = remaining_processes()
         (evidence / (label + '-processes.log')).write_text(repr(remaining))
         require(not remaining, f'{label}: native/backend process group remains: {remaining}')
         with socket.socket() as sock:
@@ -113,6 +130,7 @@ def main():
                 (evidence / 'running-applications.log').write_text(running.stdout + running.stderr)
                 require(running.returncode == 0 and int(running.stdout.strip()) > 0,
                         'Default browser was not observed running; do not launch it through the observer')
+                record('system default browser process observed after native launch', 'passed', browser_name)
                 observed = apple(f'tell application "{browser_name}" to get URL of every tab of every window')
                 (evidence / 'browser.log').write_text(observed.stdout + observed.stderr)
                 if observed.returncode == 0 and url in observed.stdout:
@@ -126,6 +144,10 @@ def main():
         # One fixture only: check Web Restart lifecycle/persistence, not full CRUD.
         mid = client.tool('add', {'text': 'macOS GUI restart persistence fixture.', 'namespace': 'default'})['id']
         log_path = data / 'logs/macos-launcher.log'
+        navigation = '"GET /admin/console HTTP/1.1" 200' in log_path.read_text(errors='replace')
+        record('browser-driven Web UI navigation in service access log',
+               'passed' if navigation else 'unavailable',
+               'Verifier never requests /admin/console; see service log. Exact Safari tab URL remains separately classified.')
         before = log_path.read_text(errors='replace').count('Application startup complete.')
         client.request('/api/maintenance/enter', {})
         client.request('/api/restart', {})
@@ -184,6 +206,13 @@ def main():
         result['error'] = traceback.format_exc()
         raise
     finally:
+        if process is not None and process.poll() is not None:
+            # Failure cleanup only, after recording the failed observation.
+            try:
+                client.request('/api/maintenance/enter', {})
+                client.request('/api/shutdown', {})
+            except OSError:
+                pass
         if process is not None:
             try:
                 os.killpg(process.pid, signal.SIGTERM)
