@@ -278,7 +278,8 @@ class Configuration:
     def runtime_environment(self, environment=None, *, model_dir=None):
         env = dict(os.environ if environment is None else environment)
         docker = env.get("MEMORY_DEPLOYMENT_MODE") == "docker"
-        auto_download = self.auto_download_model and not docker
+        offline_bundle = env.get("MEMORY_OFFLINE_BUNDLE") == "1"
+        auto_download = self.auto_download_model and not (docker or offline_bundle)
         for key in PROXY_VARIABLES:
             env.pop(key, None)
         if self.proxy_enabled and not docker:
@@ -289,7 +290,7 @@ class Configuration:
         # Python can subsequently download when permitted. Docker also disables
         # Hub background work (e.g. Transformers' safetensors conversion lookup),
         # which is not fully covered by a loader's local_files_only argument.
-        offline = "1" if docker else "0"
+        offline = "1" if docker or offline_bundle else "0"
         env.update(HF_HUB_OFFLINE=offline, TRANSFORMERS_OFFLINE=offline, HF_HUB_DISABLE_XET="1")
         env["FASTEMBED_OFFLINE"] = env["SENTENCE_TRANSFORMERS_OFFLINE"] = str(
             not auto_download).lower()

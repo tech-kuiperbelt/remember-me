@@ -1,0 +1,54 @@
+name: macos-beta
+on:
+  push:
+    branches: [poc/macos-s1-step1]
+permissions:
+  contents: read
+concurrency:
+  group: macos-beta
+  cancel-in-progress: false
+jobs:
+  candidate:
+    if: github.repository == 'tech-kuiperbelt/remember-me' && github.ref == 'refs/heads/poc/macos-s1-step1'
+    runs-on: macos-15
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Preflight native ARM64 runner
+        run: |
+          mkdir -p "$RUNNER_TEMP/macos-logs"
+          { uname -a; sw_vers; df -h; sysctl hw.memsize; xcodebuild -version; } | tee "$RUNNER_TEMP/macos-logs/runner.txt"
+          test "$(uname -m)" = arm64
+      - name: Build complete app and DMG
+        run: |
+          set -o pipefail
+          python3 packaging/macos/build.py --work "$RUNNER_TEMP/macos-build" 2>&1 | tee "$RUNNER_TEMP/macos-logs/build.log"
+      - name: Verify final DMG offline, relocate, and exercise lifecycle
+        run: |
+          set -o pipefail
+          python3 packaging/macos/verify.py --dmg "$RUNNER_TEMP/macos-build/output/remember-me-macos-arm64-beta.dmg" --work "$RUNNER_TEMP/macos-verify" 2>&1 | tee "$RUNNER_TEMP/macos-logs/verify.log"
+      - name: Upload validated DMG and SHA256
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: macos-arm64-beta-${{ github.run_id }}
+          path: ${{ runner.temp }}/macos-build/output/
+          compression-level: 0
+          retention-days: 14
+          if-no-files-found: error
+      - name: Upload build and acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: macos-arm64-evidence-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/macos-logs/
+            ${{ runner.temp }}/macos-build/evidence/
+            ${{ runner.temp }}/macos-verify/evidence/
+          retention-days: 14
+          if-no-files-found: warn
