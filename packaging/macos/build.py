@@ -146,7 +146,11 @@ def main():
                 raise ValueError(f'Non-ARM64 Mach-O: {path}')
             listing = subprocess.check_output(['/usr/bin/otool', '-L', str(path)], text=True)
             output.write(listing + '\n')
-            for line in listing.splitlines()[1:]:
+            for line in listing.splitlines():
+                # Universal2 otool output repeats an unindented filename header
+                # for each architecture. Only indented lines are load commands.
+                if not line[:1].isspace():
+                    continue
                 reference = line.strip().split(' (')[0]
                 if reference.startswith('/') and not reference.startswith(('/usr/lib/', '/System/Library/')):
                     raise ValueError(f'External dylib dependency: {path}: {reference}')
