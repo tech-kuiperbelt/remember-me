@@ -32,7 +32,7 @@ jobs:
       - name: Verify final DMG offline, relocate, and exercise lifecycle
         run: |
           set -o pipefail
-          python3 packaging/macos/verify.py --dmg "$RUNNER_TEMP/macos-build/output/remember-me-macos-arm64-beta.dmg" --work "$RUNNER_TEMP/macos-verify" 2>&1 | tee "$RUNNER_TEMP/macos-logs/verify.log"
+          python3 packaging/macos/verify.py --dmg "$RUNNER_TEMP/macos-build/output/remember-me-macos-arm64-beta.dmg" --work "$RUNNER_TEMP/macos-verify/evidence" 2>&1 | tee "$RUNNER_TEMP/macos-logs/verify.log"
       - name: Upload validated DMG and SHA256
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
