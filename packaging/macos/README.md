@@ -1,5 +1,7 @@
 # macOS ARM64 offline Beta — S1 Step 1
 
+Validated candidate, download and remaining manual checks: [VALIDATION.md](VALIDATION.md).
+
 Build on macOS 15+ Apple Silicon (Xcode command line tools and a host Python 3
 are needed only for building):
 
