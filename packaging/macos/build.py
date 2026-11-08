@@ -146,12 +146,19 @@ def main():
                 raise ValueError(f'Non-ARM64 Mach-O: {path}')
             listing = subprocess.check_output(['/usr/bin/otool', '-L', str(path)], text=True)
             output.write(listing + '\n')
+            # -L also includes LC_ID_DYLIB (a library's own name), which is
+            # not a load dependency. Wheels may retain upstream build IDs.
+            identities = subprocess.check_output(['/usr/bin/otool', '-D', str(path)], text=True)
+            own_names = {line.strip() for line in identities.splitlines()
+                         if line.strip() and not line.endswith(':')}
             for line in listing.splitlines():
                 # Universal2 otool output repeats an unindented filename header
                 # for each architecture. Only indented lines are load commands.
                 if not line[:1].isspace():
                     continue
                 reference = line.strip().split(' (')[0]
+                if reference in own_names:
+                    continue
                 if reference.startswith('/') and not reference.startswith(('/usr/lib/', '/System/Library/')):
                     raise ValueError(f'External dylib dependency: {path}: {reference}')
     manifest = {'source_commit': subprocess.check_output(['git', '-C', str(ROOT), 'rev-parse', 'HEAD'], text=True).strip(),
