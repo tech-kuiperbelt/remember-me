@@ -46,9 +46,8 @@ def tree_digest(root):
 
 
 def group_members(pgid):
-    output = subprocess.check_output(['/bin/ps', '-axo', 'pid=,pgid='], text=True)
-    return [int(pid) for line in output.splitlines() for pid, group in [line.split()]
-            if int(group) == pgid]
+    output = subprocess.check_output(['/bin/ps', '-axo', 'pid=,ppid=,pgid=,stat=,command='], text=True)
+    return [line.strip() for line in output.splitlines() if int(line.split()[2]) == pgid]
 
 
 class Client:
@@ -297,7 +296,17 @@ def main():
             log = None
             require('Application shutdown complete.' in (work / f'{phase}-server.log').read_text(),
                     f'{phase}: graceful shutdown completion missing')
-            require(not group_members(pid), f'Service processes remain in process group {pid}')
+            # CPython helpers can observe EOF and exit just after their parent.
+            # Wait for the whole group; retain identities instead of hiding leaks.
+            initial_members = group_members(pid)
+            remaining = initial_members
+            drain_deadline = time.monotonic() + 10
+            while remaining and time.monotonic() < drain_deadline:
+                time.sleep(0.1)
+                remaining = group_members(pid)
+            (work / f'{phase}-processes.log').write_text(
+                f'Immediately after parent exit: {initial_members!r}\nAfter drain: {remaining!r}\n')
+            require(not remaining, f'Service processes remain in process group {pid}: {remaining}')
             with socket.socket() as sock:
                 require(sock.connect_ex(('127.0.0.1', port)) != 0, 'Service port remains open')
             for kind, name in (('primary', 'memories.db'), ('replica', 'memories.jsonl')):
