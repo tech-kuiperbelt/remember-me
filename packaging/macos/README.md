@@ -12,9 +12,11 @@ Ad-hoc signing enumerates every nested Mach-O, signs them deepest-first, then
 seals the outer bundle. This is neither Developer ID signing nor notarization.
 
 The app icon is `RememberMe.icns`, generated from the existing Windows brand ICO
-by `make_icns.py`. `Info.plist` declares `CFBundleIconFile`, and the build checks
-the ICNS with `iconutil` before sealing the bundle. The DMG volume itself does
-not carry a custom icon; Finder/Dock visual rendering still needs a real Mac.
+by `make_icns.py`. The ICO's largest embedded size is 256 px; the 512/1024 slots
+are LANCZOS upscales, not a redesign. `Info.plist` declares `CFBundleIconFile`,
+and the build checks the ICNS with `iconutil` before sealing the bundle. The DMG
+volume itself does not carry a custom icon; Finder/Dock visual rendering still
+needs a real Mac.
 
 Build on macOS 15+ Apple Silicon (Xcode command line tools and a host Python 3
 are needed only for building):
