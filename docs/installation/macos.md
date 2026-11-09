@@ -29,8 +29,10 @@ bytes; it is not an Apple developer identity or malware assessment.
    `~/Applications` folder instead; this installation does not require `sudo`.
 2. Eject the disk image. Open the copied app from its installed location.
 3. This free Beta has ad-hoc signatures, **no Developer ID signature and no Apple
-   notarization**. macOS may block it or say Apple cannot verify the developer or
-   check it for malicious software. This is not an assurance that it is safe.
+   notarization**. All bundled nested Mach-O code is ad-hoc signed, but that still
+   provides no Apple identity or notarization. macOS may block it or say Apple
+   cannot verify the developer or check it for malicious software. This is not an
+   assurance that it is safe.
 4. Only if you trust the source and have verified the download, follow
    [Apple's official per-app exception procedure](https://support.apple.com/en-au/102445):
    after trying to open the app, go to System Settings → Privacy & Security →

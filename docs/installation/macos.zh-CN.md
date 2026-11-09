@@ -27,6 +27,7 @@ shasum -a 256 -c remember-me-macos-arm64-beta.dmg.sha256
    Applications 需要管理员权限，可以改用自己的 `~/Applications`；安装不需要 `sudo`。
 2. 弹出磁盘映像，从复制后的安装位置打开应用。
 3. 免费 Beta 使用 ad-hoc 签名，**没有 Developer ID 签名和 Apple 公证**。
+   包内所有嵌套 Mach-O 也已逐项 ad-hoc 签名，但这仍不提供 Apple 身份或公证。
    macOS 可能阻止打开，提示无法验证开发者或无法检查是否包含恶意软件。
    这类提示不代表应用已被确认安全。
 4. 仅当确认来源可信且已校验下载时，按
