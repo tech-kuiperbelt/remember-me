@@ -78,6 +78,9 @@ signature`），这与“无 Developer ID/未公证”预期一致，不是签�
   固定在 `docker/bge-m3-manifest.json`。
 - 构建证据（`build.json`、`macho-signatures.json`、`pip-check.txt`、
   `production-pins.txt`、逐项签名 JSON、回归日志）在 CI 证据附件中保留 14 天。
+- 同一组证据在内部归档 `docs/project-management/dist/s2-step3-evidence/`；
+  该目录被 `.gitignore` 忽略，不进入公共源码树。`packaging/macos/evidence/`
+  已从公共仓库移除并加入忽略规则，构建脚本本身仍保留公开。
 
 仍不承诺位级可复现：`macos-15` runner 镜像与 Xcode/Swift 工具链未固定到完整
 身份，DMG 容器/签名元数据也未规定确定性。维护者公开前应保存候选锁、构建
