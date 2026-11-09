@@ -1,4 +1,15 @@
-# macOS ARM64 offline Beta — S1 Step 1
+# macOS ARM64 offline Beta — S2 Step 3 rebuild
+
+`macos-arm64.lock` and `macos-arm64-offline.lock` are the reviewed macOS ARM64
+wheel lock (70 SHA256-pinned wheels). When present, `build.py` installs them
+with `--require-hashes`; otherwise it resolves a candidate lock that must be
+reviewed before promotion. The Python archive URL/SHA256, model revision and
+model file manifest remain pinned in code and `docker/bge-m3-manifest.json`.
+The macOS runner image and Xcode toolchain are not pinned, so no bit-for-bit DMG
+reproducibility is claimed.
+
+Ad-hoc signing enumerates every nested Mach-O, signs them deepest-first, then
+seals the outer bundle. This is neither Developer ID signing nor notarization.
 
 Build on macOS 15+ Apple Silicon (Xcode command line tools and a host Python 3
 are needed only for building):
@@ -27,8 +38,8 @@ directory fails explicitly. Startup errors are recorded in the data directory's
 
 The app includes relocatable PBS CPython 3.12.15 (20261020), production dependency
 versions resolved to macOS ARM64 wheels, Web UI, and the existing SHA256-verified
-BGE-M3 snapshot. The build records the exact candidate wheel lock and installs
-it from a hash-checked offline wheelhouse. The torch wheel has macOS MPS support,
+BGE-M3 snapshot. The build records the exact wheel lock (reviewed and pinned
+when present) and installs it from a hash-checked offline wheelhouse. The torch wheel has macOS MPS support,
 but the launcher explicitly selects CPU. The existing embedding identity and
 database formats are retained. Version comes only from the copied release.jsonc;
 this engineering candidate does not establish a new release version.
