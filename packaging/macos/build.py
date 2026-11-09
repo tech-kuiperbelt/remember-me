@@ -120,6 +120,8 @@ def main():
     for name in ('release.jsonc', 'LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES.md'):
         shutil.copy2(ROOT / name, resources / name)
     shutil.copy2(ROOT / 'packaging/macos/bootstrap.py', resources / 'bootstrap.py')
+    icon = resources / 'RememberMe.icns'
+    shutil.copy2(ROOT / 'packaging/macos/RememberMe.icns', icon)
     licenses = resources / 'licenses/runtime'
     licenses.mkdir(parents=True)
     baseline_env = dict(re.findall(r'^(\w+)=(.*)$', (ROOT / 'packaging/standalone/runtime.env').read_text(), re.M))
@@ -141,6 +143,7 @@ def main():
     version = release.version
     info = {'CFBundleExecutable': 'remember-me', 'CFBundleIdentifier': 'org.remember-me.offline-beta',
             'CFBundleName': 'Remember Me', 'CFBundleDisplayName': 'Remember Me',
+            'CFBundleIconFile': 'RememberMe.icns',
             'CFBundlePackageType': 'APPL', 'LSMinimumSystemVersion': '15.0',
             'NSHighResolutionCapable': True}
     if version:
@@ -181,6 +184,8 @@ def main():
                 'platform': 'macos-arm64', 'minimum_macos': '15.0', 'python_url': PBS_URL, 'python_sha256': PBS_SHA,
                 'release_version': version, 'dependency_lock': dependency_lock,
                 'dependency_lock_sha256': digest(lock),
+                'icon': {'source': 'packaging/windows-beta/remember-me.ico',
+                         'bundled': 'RememberMe.icns', 'sha256': digest(icon)},
                 'wheel_sha256': {p.name: digest(p) for p in sorted(wheels.iterdir())},
                 'model': json.loads((ROOT / 'docker/bge-m3-manifest.json').read_text())['revision']}
     (evidence / 'build.json').write_text(json.dumps(manifest, indent=2) + '\n')
@@ -197,6 +202,20 @@ def main():
     signatures.append({'path': 'Remember Me.app', 'returncode': result.returncode})
     run('/usr/bin/codesign', '--verify', '--deep', '--strict', stage / 'Remember Me.app')
     (evidence / 'macho-signatures.json').write_text(json.dumps(signatures, indent=2) + '\n')
+    iconset = evidence / 'icon.iconset'
+    run('/usr/bin/iconutil', '-c', 'iconset', icon, '-o', iconset)
+    icon_files = sorted(path.name for path in iconset.glob('*.png'))
+    required_icons = {'icon_16x16.png', 'icon_16x16@2x.png', 'icon_32x32.png',
+                      'icon_32x32@2x.png', 'icon_128x128.png', 'icon_128x128@2x.png',
+                      'icon_256x256.png', 'icon_256x256@2x.png',
+                      'icon_512x512.png', 'icon_512x512@2x.png'}
+    missing_icons = sorted(required_icons - set(icon_files))
+    if missing_icons:
+        raise ValueError(f'Incomplete ICNS: {missing_icons}')
+    (evidence / 'icon.json').write_text(json.dumps(
+        {'source': 'packaging/windows-beta/remember-me.ico',
+         'bundled': 'RememberMe.icns', 'sha256': digest(icon),
+         'iconset': icon_files}, indent=2) + '\n')
     (stage / 'Applications').symlink_to('/Applications')
     (stage / 'READ ME.txt').write_text('Remember Me — macOS ARM64 offline Beta\n'
         'Copy Remember Me.app to Applications, eject this disk, then open the app.\n'

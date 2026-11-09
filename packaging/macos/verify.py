@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import plistlib
 import signal
 import socket
 import sqlite3
@@ -160,6 +161,7 @@ def main():
     mount.mkdir()
     result = {'status': 'failed', 'dmg': str(dmg), 'checks': [],
               'unverified': ['Finder drag-to-Applications installation', 'Dock/menu visual appearance',
+                             'Finder/Dock icon visual rendering on a real Mac',
                              'Automatic browser opening', 'AppKit Quit from GUI',
                              'Gatekeeper/quarantine behavior on a separate Mac']}
     mounted = False
@@ -196,6 +198,16 @@ def main():
         require(source.is_dir(), 'Final DMG has no Remember Me.app')
         subprocess.run(['/usr/bin/ditto', str(source), str(app)], check=True)
         passed('copied app from verified final read-only DMG')
+        info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
+        require(info.get('CFBundleIconFile') == 'RememberMe.icns',
+                f'Bundle icon not declared: {info.get("CFBundleIconFile")!r}')
+        icon = app / 'Contents/Resources/RememberMe.icns'
+        require(icon.is_file(), 'Bundle icon file is missing')
+        iconset = work / 'icon.iconset'
+        subprocess.run(['/usr/bin/iconutil', '-c', 'iconset', str(icon), '-o', str(iconset)], check=True)
+        icon_files = sorted(path.name for path in iconset.glob('*.png'))
+        require(len(icon_files) >= 10, f'Incomplete iconset: {icon_files}')
+        passed('bundle declares RememberMe.icns and iconutil expands a complete iconset', icon_files)
         before = tree_digest(app)
         resources = app / 'Contents/Resources'
         inference = subprocess.run(product_python(INFERENCE, resources), env=environment,

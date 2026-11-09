@@ -19,7 +19,7 @@ def main():
     work.mkdir()
     evidence = work / 'evidence'
     evidence.mkdir()
-    results = {'checks': [], 'unverified': ['Real browser download quarantine provenance', 'Finder drag and drop', 'Real-user first-open dialog and Open Anyway approval', 'Gatekeeper on another physical Mac']}
+    results = {'checks': [], 'unverified': ['Real browser download quarantine provenance', 'Finder drag and drop', 'Finder/Dock icon visual rendering on a real Mac', 'Real-user first-open dialog and Open Anyway approval', 'Gatekeeper on another physical Mac']}
     def run(name, argv, timeout=60):
         try:
             value = subprocess.run(list(map(str, argv)), capture_output=True, text=True, timeout=timeout)
@@ -60,6 +60,13 @@ def main():
         applications.mkdir()
         app=applications/'Remember Me.app'
         record('Copy app to user-writable Applications',run('copy',['/usr/bin/ditto',mount/'Remember Me.app',app])['returncode']==0)
+        plist=run('icon-plist',['/usr/bin/plutil','-extract','CFBundleIconFile','raw','-o','-',app/'Contents/Info.plist'])
+        record('Bundle icon declaration',plist.get('returncode')==0 and plist.get('stdout','').strip()=='RememberMe.icns',plist.get('stdout','').strip())
+        icon=app/'Contents/Resources/RememberMe.icns'
+        record('Bundle icon file',icon.is_file(),str(icon))
+        run('icon-iconset',['/usr/bin/iconutil','-c','iconset',icon,'-o',work/'icon.iconset'])
+        icon_pngs=sorted(p.name for p in (work/'icon.iconset').glob('*.png')) if (work/'icon.iconset').is_dir() else []
+        record('Bundle icon multi-resolution',len(icon_pngs)>=10,icon_pngs)
         record('Bundle strict deep signature',run('bundle-signature',['/usr/bin/codesign','--verify','--deep','--strict','--verbose=4',app])['returncode']==0)
         run('bundle-identity',['/usr/bin/codesign','-d','--verbose=4',app])
         nested=[]
