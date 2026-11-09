@@ -1,8 +1,9 @@
 name: macos-beta
 on:
   push:
-    branches: [poc/macos-s1-step1]
+    branches: [poc/macos-s1-step1, poc/macos-s2-step3]
     paths-ignore: ['**/*.md']
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
@@ -10,7 +11,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   candidate:
-    if: github.repository == 'tech-kuiperbelt/remember-me' && github.ref == 'refs/heads/poc/macos-s1-step1'
+    if: github.repository == 'tech-kuiperbelt/remember-me' && (github.ref == 'refs/heads/poc/macos-s1-step1' || github.ref == 'refs/heads/poc/macos-s2-step3')
     runs-on: macos-15
     timeout-minutes: 90
     defaults:
@@ -34,6 +35,14 @@ jobs:
         run: |
           set -o pipefail
           python3 packaging/macos/verify.py --dmg "$RUNNER_TEMP/macos-build/output/remember-me-macos-arm64-beta.dmg" --work "$RUNNER_TEMP/macos-verify" 2>&1 | tee "$RUNNER_TEMP/macos-logs/verify.log"
+      - name: Observe rebuilt native AppKit lifecycle
+        run: |
+          set -o pipefail
+          python3 packaging/macos/gui_verify.py --dmg "$RUNNER_TEMP/macos-build/output/remember-me-macos-arm64-beta.dmg" --work "$RUNNER_TEMP/macos-gui" 2>&1 | tee "$RUNNER_TEMP/macos-logs/gui.log"
+      - name: Inspect rebuilt DMG signatures and Gatekeeper policy
+        run: |
+          set -o pipefail
+          python3 packaging/macos/distribution_verify.py --dmg "$RUNNER_TEMP/macos-build/output/remember-me-macos-arm64-beta.dmg" --work "$RUNNER_TEMP/macos-distribution" 2>&1 | tee "$RUNNER_TEMP/macos-logs/distribution.log"
       - name: Upload validated DMG and SHA256
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
@@ -53,5 +62,7 @@ jobs:
             ${{ runner.temp }}/macos-verify/*.log
             ${{ runner.temp }}/macos-verify/results.json
             ${{ runner.temp }}/macos-verify/offline.sb
+            ${{ runner.temp }}/macos-gui/evidence/
+            ${{ runner.temp }}/macos-distribution/evidence/
           retention-days: 14
           if-no-files-found: warn

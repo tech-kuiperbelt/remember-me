@@ -7,13 +7,13 @@ from pathlib import Path
 import subprocess
 import time
 
-EXPECTED = 'dced0eec97d12287f8767c37bdd757ae9d5ec1f91c83bef117f33c7d15ea222c'
 MAGIC = {bytes.fromhex(x) for x in ('cffaedfe','feedfacf','cafebabe','bebafeca','cafebabf','bfbafeca')}
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dmg', type=Path, required=True)
     parser.add_argument('--work', type=Path, required=True)
+    parser.add_argument('--expect-sha256')
     args = parser.parse_args()
     work = args.work.resolve()
     work.mkdir()
@@ -35,7 +35,13 @@ def main():
     with dmg.open('rb') as stream:
         for chunk in iter(lambda:stream.read(8*1024*1024),b''):
             h.update(chunk)
-    record('DMG SHA256',h.hexdigest()==EXPECTED,h.hexdigest())
+    expected = args.expect_sha256
+    if not expected:
+        sidecar = dmg.with_name(dmg.name + '.sha256')
+        if sidecar.is_file():
+            expected = sidecar.read_text().split()[0]
+    record('DMG SHA256',expected is not None and h.hexdigest()==expected,
+           {'computed':h.hexdigest(),'expected':expected})
     record('Release asset below 2 GiB',dmg.stat().st_size < 2**31,dmg.stat().st_size)
     run('system', ['/usr/bin/sw_vers'])
     run('gatekeeper-status', ['/usr/sbin/spctl','--status'])

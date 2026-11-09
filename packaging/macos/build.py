@@ -74,26 +74,40 @@ def main():
     pins['torch'] = '2.14.1'
     constraints = evidence / 'production-pins.txt'
     constraints.write_text(''.join(f'{k}=={v}\n' for k, v in sorted(pins.items())))
-    report = evidence / 'resolve.json'
-    run(py, '-I', '-m', 'pip', 'install', '--dry-run', '--ignore-installed', '--no-cache-dir',
-        '--only-binary=:all:', '--index-url', 'https://pypi.org/simple', '--report', report, '-r', constraints)
-    entries = json.loads(report.read_text())['install']
-    lock = evidence / 'macos-arm64-candidate.lock'
-    offline = evidence / 'macos-arm64-offline.lock'
-    direct, local = [], []
-    for entry in entries:
-        url = entry['download_info']['url']
-        parsed = urlparse(url)
-        if parsed.scheme != 'https' or parsed.hostname != 'files.pythonhosted.org' or not parsed.path.endswith('.whl'):
-            raise ValueError(f'Unexpected wheel source: {url}')
-        sha = entry['download_info']['archive_info']['hashes']['sha256']
-        if not re.fullmatch('[a-f0-9]{64}', sha):
-            raise ValueError('Invalid wheel digest')
-        name, version = entry['metadata']['name'], entry['metadata']['version']
-        direct.append(f'{name} @ {url} --hash=sha256:{sha}\n')
-        local.append(f'{name}=={version} --hash=sha256:{sha}\n')
-    lock.write_text('# Native candidate; not an approved production lock.\n' + ''.join(direct))
-    offline.write_text(''.join(local))
+    pinned_lock = ROOT / 'packaging/macos/macos-arm64.lock'
+    pinned_offline = ROOT / 'packaging/macos/macos-arm64-offline.lock'
+    if pinned_lock.is_file() or pinned_offline.is_file():
+        if not (pinned_lock.is_file() and pinned_offline.is_file()):
+            raise ValueError('Pinned macOS lock is incomplete')
+        lock = evidence / 'macos-arm64.lock'
+        offline = evidence / 'macos-arm64-offline.lock'
+        shutil.copy2(pinned_lock, lock)
+        shutil.copy2(pinned_offline, offline)
+        if 'candidate' in pinned_lock.read_text().lower():
+            raise ValueError('Pinned macOS lock retains a candidate marker')
+        dependency_lock = 'packaging/macos/macos-arm64.lock (reviewed pinned lock)'
+    else:
+        report = evidence / 'resolve.json'
+        run(py, '-I', '-m', 'pip', 'install', '--dry-run', '--ignore-installed', '--no-cache-dir',
+            '--only-binary=:all:', '--index-url', 'https://pypi.org/simple', '--report', report, '-r', constraints)
+        entries = json.loads(report.read_text())['install']
+        lock = evidence / 'macos-arm64-candidate.lock'
+        offline = evidence / 'macos-arm64-offline.lock'
+        direct, local = [], []
+        for entry in entries:
+            url = entry['download_info']['url']
+            parsed = urlparse(url)
+            if parsed.scheme != 'https' or parsed.hostname != 'files.pythonhosted.org' or not parsed.path.endswith('.whl'):
+                raise ValueError(f'Unexpected wheel source: {url}')
+            sha = entry['download_info']['archive_info']['hashes']['sha256']
+            if not re.fullmatch('[a-f0-9]{64}', sha):
+                raise ValueError('Invalid wheel digest')
+            name, version = entry['metadata']['name'], entry['metadata']['version']
+            direct.append(f'{name} @ {url} --hash=sha256:{sha}\n')
+            local.append(f'{name}=={version} --hash=sha256:{sha}\n')
+        lock.write_text('# Native candidate; not an approved production lock.\n' + ''.join(direct))
+        offline.write_text(''.join(local))
+        dependency_lock = 'native candidate; requires review before promotion'
     wheels = work / 'wheels'
     run(py, '-I', '-m', 'pip', 'download', '--no-cache-dir', '--require-hashes', '--only-binary=:all:',
         '--dest', wheels, '-r', lock)
@@ -133,6 +147,7 @@ def main():
         info.update(CFBundleShortVersionString=version, CFBundleVersion=version)
     (contents / 'Info.plist').write_bytes(plistlib.dumps(info))
     # Audit Mach-O install names. No Homebrew, runner or build-tree libraries may ship.
+    macho_paths = []
     with (evidence / 'macho-libraries.txt').open('w') as output:
         for path in sorted(contents.rglob('*')):
             if path.is_symlink() or not path.is_file():
@@ -141,6 +156,7 @@ def main():
                 magic = source.read(4)
             if magic not in (b'\xcf\xfa\xed\xfe', b'\xfe\xed\xfa\xcf', b'\xca\xfe\xba\xbe', b'\xbe\xba\xfe\xca'):
                 continue
+            macho_paths.append(path)
             headers = subprocess.check_output(['/usr/bin/lipo', '-archs', str(path)], text=True)
             if 'arm64' not in headers.split():
                 raise ValueError(f'Non-ARM64 Mach-O: {path}')
@@ -163,14 +179,24 @@ def main():
                     raise ValueError(f'External dylib dependency: {path}: {reference}')
     manifest = {'source_commit': subprocess.check_output(['git', '-C', str(ROOT), 'rev-parse', 'HEAD'], text=True).strip(),
                 'platform': 'macos-arm64', 'minimum_macos': '15.0', 'python_url': PBS_URL, 'python_sha256': PBS_SHA,
-                'release_version': version, 'dependency_lock': 'native candidate; requires review before promotion',
+                'release_version': version, 'dependency_lock': dependency_lock,
+                'dependency_lock_sha256': digest(lock),
                 'wheel_sha256': {p.name: digest(p) for p in sorted(wheels.iterdir())},
                 'model': json.loads((ROOT / 'docker/bge-m3-manifest.json').read_text())['revision']}
     (evidence / 'build.json').write_text(json.dumps(manifest, indent=2) + '\n')
     shutil.copy2(evidence / 'build.json', resources / 'build.json')
-    # ARM64 requires ad-hoc Mach-O identity; this is neither Developer ID signing nor notarization.
-    run('/usr/bin/codesign', '--force', '--deep', '--sign', '-', stage / 'Remember Me.app')
+    # ARM64 requires ad-hoc Mach-O identity; neither Developer ID nor notarization.
+    # Enumerate nested Mach-O explicitly: signing with --deep can leave loose
+    # dylibs under non-standard resource paths unsigned. Sign deepest first,
+    # then seal the outer bundle, and retain per-file evidence.
+    signatures = []
+    for path in sorted(macho_paths, key=lambda item: len(item.relative_to(stage).parts), reverse=True):
+        result = run('/usr/bin/codesign', '--force', '--sign', '-', path)
+        signatures.append({'path': str(path.relative_to(stage)), 'returncode': result.returncode})
+    result = run('/usr/bin/codesign', '--force', '--sign', '-', stage / 'Remember Me.app')
+    signatures.append({'path': 'Remember Me.app', 'returncode': result.returncode})
     run('/usr/bin/codesign', '--verify', '--deep', '--strict', stage / 'Remember Me.app')
+    (evidence / 'macho-signatures.json').write_text(json.dumps(signatures, indent=2) + '\n')
     (stage / 'Applications').symlink_to('/Applications')
     (stage / 'READ ME.txt').write_text('Remember Me — macOS ARM64 offline Beta\n'
         'Copy Remember Me.app to Applications, eject this disk, then open the app.\n'
