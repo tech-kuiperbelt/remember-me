@@ -14,11 +14,12 @@ Docker Compose 插件。Rootless、Docker Desktop、SELinux 和网络文件系�
 路径必须位于 Docker daemon 本机。两种方式默认使用 `latest`，也可按需指定完整版本或 digest。
 仅拉取新镜像不会更新已创建的容器。
 
-`latest` 是稳定版通道，不会选中 Beta。1.1.2 Beta 发布后，使用 Run 时请将命令中的
-`:latest` 明确替换为 `:1.1.2`；使用 Compose 时，在启动或重建容器之前于本地 `.env` 设置：
+[v1.1.3 Beta 发布页](https://github.com/tech-kuiperbelt/remember-me/releases/tag/v1.1.3)
+仅在发布后可用。`latest` 是稳定版通道，不会选中 Beta。1.1.3 Beta 发布后，使用 Run 时请将命令中的
+`:latest` 明确替换为 `:1.1.3`；使用 Compose 时，在启动或重建容器之前于本地 `.env` 设置：
 
 ```dotenv
-REMEMBER_ME_IMAGE=ghcr.io/tech-kuiperbelt/remember-me:1.1.2
+REMEMBER_ME_IMAGE=ghcr.io/tech-kuiperbelt/remember-me:1.1.3
 ```
 
 Beta 标签是公开预览版，不属于稳定版 `latest` 通道。切换现有安装时，先停止并备份完整数据目录，
@@ -212,10 +213,12 @@ Run 方式先移除已停止容器，把 `-v "$PWD:/data"` 替换为
 Compose 的容器 ID 可通过 `docker compose -f compose.yaml ps -q remember-me` 获取。
 保留原镜像和引用供回滚，先阅读所有相关版本的 Upgrade Notes / Breaking Changes。
 
-选择 `latest` 或已发布的完整版本/digest；如使用 `.env`，同步修改其中保存的值，再拉取：
+稳定版选择 `latest`，也可选择已发布的完整版本/digest。下面以升级到 1.1.3 Beta 为例，
+**仅在该版本镜像公开后执行**；若要保持稳定通道，将 `:1.1.3` 改为 `:latest`。
+如使用 `.env`，同步修改其中保存的值，再拉取：
 
 ```bash
-export REMEMBER_ME_IMAGE=ghcr.io/tech-kuiperbelt/remember-me:latest
+export REMEMBER_ME_IMAGE=ghcr.io/tech-kuiperbelt/remember-me:1.1.3
 docker pull --platform linux/amd64 "$REMEMBER_ME_IMAGE"
 ```
 

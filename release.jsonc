@@ -1,24 +1,19 @@
+// Unified four-platform Beta; odd MINOR must not advance Docker latest.
 {
-  // 1.1.2 is the approved unified Beta candidate for Docker, AppImage and Setup.
-  // Odd MINOR releases are Pre-releases and must not move Docker latest.
-  "version": "1.1.2",
+  "version": "1.1.3",
   "new": [
-    "This Beta provides the same Remember Me version through Linux AMD64 Docker, Linux x86_64 AppImage and Windows 11 x64 offline Setup."
+    "Adds macOS 15+ Apple Silicon support with an offline DMG, runtime and BGE-M3 model."
   ],
   "improvements": [
-    "AppImage, Docker and Windows installation guides identify the 1.1.2 Beta while retaining each distribution's existing data-directory rules.",
-    "AppImage update guidance requires an actual Linux AppImage asset, checksum verification, a full data backup and preservation of the selected data directory.",
-    "Windows retains the validated offline runtime, full tray menus, optional current-user login startup, safe shutdown and Web Restart repair."
+    "Linux x86_64 AppImage, Windows x64 Setup, macOS ARM64 DMG and Docker AMD64 share version 1.1.3.",
+    "macOS includes the Remember Me application icon and normal quit/restart support."
   ],
-  "fixes": [
-    "Linux AppImage declares APPIMAGE only when its AppRun marker and canonical payload directory agree, and the backend, version API and Chinese/English version panel recognize that installation method instead of UNKNOWN."
-  ],
+  "fixes": [],
   "upgrade": [
-    "Beta versions require explicit selection. Docker 1.1.2 must not advance the stable latest channel; GitHub v1.1.2 must be a Pre-release.",
-    "Stop normally and back up the complete actual data directory before upgrading. Do not run competing writers or automatically migrate data between installation methods.",
-    "Docker retains its /data mount; AppImage retains the selected XDG/--data-dir location; Windows retains %LOCALAPPDATA%\\remember-me-beta or its existing absolute override.",
-    "Windows uninstall preserves data and shared VC++ by default. Explicit cleanup requires confirmation; deletion is permanent and removing shared VC++ can affect other applications.",
-    "Verify AppImage and Setup SHA256 files. Keep accepted Beta limitations: unsigned packages, potentially slow long-text embedding, incomplete environment/audit coverage and the approved local NTFS persistence limitation on Windows."
+    "Pre-release only; Docker latest must remain unchanged.",
+    "Stop normally and back up the complete data directory before upgrading. Verify package SHA256.",
+    "The macOS Beta has no Developer ID signature or Apple notarization. Follow the installation guide for a per-app opening exception; keep Gatekeeper enabled.",
+    "Installation methods do not automatically migrate data; retain the existing data directory."
   ],
   "breaking": []
 }

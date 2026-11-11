@@ -86,3 +86,41 @@ def test_source_probe_rejects_fully_cached_app_layers(tmp_path, monkeypatch):
 """)
     with pytest.raises(CI.Failure, match="did not rebuild an application layer"):
         CI.check_cached(log, results, expect_model_download=False)
+
+
+@pytest.mark.parametrize('export', [False, True])
+def test_cold_export_retains_only_the_exact_tested_candidate(tmp_path, monkeypatch, export):
+    import json
+    import sys
+    from types import SimpleNamespace
+    sys.path.insert(0, str(ROOT / '.github/scripts'))
+    import archive_docker_candidate as archive
+    monkeypatch.setattr(CI, 'EXPORT_CANDIDATE', export)
+    monkeypatch.setattr(CI, 'ARTIFACTS', tmp_path)
+    identity = {'source_commit': 'a' * 40, 'version': '1.1.3', 'release_sha256': 'b' * 64}
+    monkeypatch.setattr(archive, 'source_identity', lambda: identity)
+    commands, builds, tested = [], [], []
+    monkeypatch.setattr(CI, 'builder_cache_state', lambda: {})
+    monkeypatch.setattr(CI, 'stream_build', lambda args, log: (builds.append(args) or (0, 1)))
+    monkeypatch.setattr(CI, 'check_cached', lambda *a, **k: None)
+    monkeypatch.setattr(CI, 'image_metadata', lambda image: {'id': 'sha256:' + 'c' * 64})
+    monkeypatch.setattr(CI, 'image_content_checks', lambda image, result: tested.append(image))
+    monkeypatch.setattr(CI, 'run_smoke', lambda image, result: tested.append(image))
+    monkeypatch.setattr(CI, 'cache_check_after_cold', lambda *a: None)
+    monkeypatch.setattr(CI, 'privacy_gate', lambda *a: None)
+    def docker(*args, **kwargs):
+        commands.append(args)
+        return SimpleNamespace(stdout=json.dumps({'model_validation': 'offline_inference_passed',
+                                                  'profile': {'profile_id': CI.PROFILE_ID}}))
+    monkeypatch.setattr(CI, 'docker', docker)
+    result = {}
+    CI.run_cold(result, None)
+    assert tested == [CI.IMAGE, CI.IMAGE]
+    assert (('rmi', '-f', CI.IMAGE) in commands) is not export
+    assert ('rmi', '-f', CI.VALIDATION_IMAGE) in commands
+    if export:
+        assert 'org.opencontainers.image.revision=' + identity['source_commit'] in builds[0]
+        assert 'org.opencontainers.image.version=1.1.3' in builds[0]
+        assert result['frozen_candidate'] == identity
+    else:
+        assert '--label' not in builds[0]

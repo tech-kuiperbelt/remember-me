@@ -8,6 +8,10 @@ on:
         type: choice
         options: [cold, warm, source-probe]
         default: cold
+      export_candidate:
+        description: "Archive the exact tested cold candidate as split docker-save files; never publish"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -88,9 +92,17 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EXPORT_CANDIDATE: ${{ inputs.export_candidate || false }}
         run: |
           set -euo pipefail
           python .github/scripts/docker_ci.py
+
+      - name: Archive the exact verified runtime candidate (no publication)
+        if: inputs.export_candidate
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python .github/scripts/archive_docker_candidate.py --image "$IMAGE" --staging-ref "ghcr.io/tech-kuiperbelt/remember-me-buildcache:candidate-$GITHUB_SHA"
 
       - name: Upload evidence
         if: always()

@@ -1,7 +1,9 @@
 name: windows-beta-setup
 on:
+  workflow_dispatch:
   push:
-    branches: [poc/windows-beta-setup]
+    branches: [poc/windows-beta-setup, release/1.1.3-beta]
+    paths-ignore: ['**/*.md']
 permissions:
   contents: read
 concurrency:
@@ -9,7 +11,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   candidate:
-    if: github.repository == 'tech-kuiperbelt/remember-me' && github.ref == 'refs/heads/poc/windows-beta-setup'
+    if: github.repository == 'tech-kuiperbelt/remember-me' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/poc/windows-beta-setup' || github.ref == 'refs/heads/release/1.1.3-beta')
     runs-on: windows-2022
     timeout-minutes: 90
     defaults:
@@ -83,7 +85,7 @@ jobs:
             ${{ runner.temp }}/remember-me-setup-output/remember-me-windows-x64-beta-setup.exe.sha256
             ${{ runner.temp }}/remember-me-setup-output/setup-build-evidence.json
           compression-level: 0
-          retention-days: 14
+          retention-days: 30
           if-no-files-found: error
       - name: Record final resources
         if: always()
@@ -104,5 +106,5 @@ jobs:
             ${{ runner.temp }}/remember-me-setup-runtime/bundle/beta-policy.json
             ${{ runner.temp }}/remember-me-setup-runtime/bundle/models/manifest.json
             ${{ runner.temp }}/remember-me-setup-output/setup-build-evidence.json
-          retention-days: 14
+          retention-days: 30
           if-no-files-found: warn

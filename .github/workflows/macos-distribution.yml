@@ -1,0 +1,39 @@
+name: macos-distribution-s2-step3
+on:
+  push:
+    branches: [poc/macos-s2-step3]
+    paths-ignore: ['**/*.md']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  gui:
+    if: github.repository == 'tech-kuiperbelt/remember-me'
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Retrieve accepted Step 1 artifact (no rebuild)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(uname -m)" = arm64
+          mkdir -p "$RUNNER_TEMP/step1" "$RUNNER_TEMP/gui-evidence"
+          gh run download 42457140969 --repo tech-kuiperbelt/remember-me --name macos-arm64-beta-42457140969 --dir "$RUNNER_TEMP/step1"
+          echo 'dced0eec97d12287f8767c37bdd757ae9d5ec1f91c83bef117f33c7d15ea222c  remember-me-macos-arm64-beta.dmg' | (cd "$RUNNER_TEMP/step1" && shasum -a 256 -c -)
+          { sw_vers; uname -a; launchctl print gui/"$(id -u)" || true; } > "$RUNNER_TEMP/gui-evidence/session.log" 2>&1
+      - name: Inspect unchanged distribution and system policy
+        run: |
+          set -o pipefail
+          python3 packaging/macos/distribution_verify.py --dmg "$RUNNER_TEMP/step1/remember-me-macos-arm64-beta.dmg" --work "$RUNNER_TEMP/gui-check" 2>&1 | tee "$RUNNER_TEMP/gui-evidence/run.log"
+      - name: Save results including unavailable GUI observations
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: macos-distribution-step3-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/gui-evidence/
+            ${{ runner.temp }}/gui-check/evidence/
+          retention-days: 14

@@ -1,10 +1,10 @@
 # Windows 11 x64 Beta 安装、升级与卸载
 
-Windows 对外仅提供完整离线 Setup，不提供 Portable ZIP。本页对应 **1.1.2 Beta 候选**；下载链接仅在维护者批准并公开 Pre-release 后可用。Linux/Docker 的现有发行不因此改变。
+Windows 对外仅提供完整离线 Setup，不提供 Portable ZIP。本页对应 **1.1.3 Beta 候选**；下载链接仅在维护者批准并公开 Pre-release 后可用。Linux/Docker 的现有发行不因此改变。
 
 ## 安装与使用
 
-1. 发布后从 [v1.1.2 Pre-release](https://github.com/tech-kuiperbelt/remember-me/releases/tag/v1.1.2) 下载 `remember-me-windows-x64-beta-setup.exe` 和同名 `.exe.sha256`。安装前核对 SHA256：
+1. 发布后从 [v1.1.3 Pre-release](https://github.com/tech-kuiperbelt/remember-me/releases/tag/v1.1.3) 下载 `remember-me-windows-x64-beta-setup.exe` 和同名 `.exe.sha256`。安装前核对 SHA256：
 
    ```powershell
    Get-FileHash .\remember-me-windows-x64-beta-setup.exe -Algorithm SHA256

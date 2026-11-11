@@ -1,0 +1,91 @@
+name: frozen-beta-release
+run-name: Frozen Beta ${{ inputs.operation }} ${{ inputs.source_commit }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Preflight never publishes; publish requires Mac acceptance and maintainer GO
+        type: choice
+        options: [preflight, publish]
+        default: preflight
+      source_commit:
+        description: Full frozen master commit SHA
+        required: true
+        type: string
+      manifest_sha256:
+        description: SHA256 of the reviewed Draft release-manifest.json
+        required: true
+        type: string
+      confirm_go:
+        description: Maintainer GO after real-Mac acceptance of the frozen DMG
+        type: boolean
+        default: false
+
+permissions: {}
+concurrency:
+  group: remember-me-ghcr-release
+  cancel-in-progress: false
+
+jobs:
+  frozen-release:
+    if: github.repository == 'tech-kuiperbelt/remember-me' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: write
+      packages: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      EXPECTED_SOURCE: ${{ inputs.source_commit }}
+      MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
+      OPERATION: ${{ inputs.operation }}
+      CONFIRM_GO: ${{ inputs.confirm_go }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require the frozen dispatch source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_SHA" = "$EXPECTED_SOURCE"
+          if [[ "$OPERATION" == publish ]]; then test "$CONFIRM_GO" = true; fi
+          mkdir -p artifacts
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift
+          sudo apt-get clean
+          df -h > artifacts/disk.txt
+      - name: Test release controls without production writes
+        run: |
+          python -m pip install --quiet pytest PyYAML httpx
+          python -m pytest -q tests/test_unified_release.py tests/test_archive_docker_candidate.py tests/test_docker_release.py tests/test_docker_ci_script.py tests/test_docker_assets.py tests/test_docker_install_docs.py tests/test_beta_release_policy.py --junitxml=artifacts/tests.xml
+      - name: Set up the pinned Registry copy tool
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
+        with:
+          driver-opts: image=moby/buildkit:v0.33.1
+      - name: Authenticate to the existing Registry package
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify frozen bundle or execute authorized GO
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=("$OPERATION" --manifest-sha256 "$MANIFEST_SHA256" --work "$RUNNER_TEMP/frozen-release")
+          if [[ "$OPERATION" == publish ]]; then args+=(--confirm-go); fi
+          python .github/scripts/unified_release.py "${args[@]}" | tee artifacts/result.log
+      - name: Retain execution evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: frozen-beta-${{ inputs.operation }}-${{ github.run_id }}
+          retention-days: 90
+          path: |
+            artifacts/
+            ${{ runner.temp }}/frozen-release/preflight.json
+            ${{ runner.temp }}/frozen-release/publication.json
+            ${{ runner.temp }}/frozen-release/runtime-verification/
+            ${{ runner.temp }}/frozen-release/public-verification/

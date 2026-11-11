@@ -645,6 +645,10 @@ class SentenceTransformersEmbedder(_BaseEmbedder):
 def create_embedder(provider: str | None = None, *, environment=None,
                     allow_download: bool = False, cache_only: bool = False) -> Embedder:
     env = os.environ if environment is None else environment
+    # Immutable offline distributions must also reject an explicit UI retry.
+    if env.get("MEMORY_OFFLINE_BUNDLE") == "1":
+        allow_download = False
+        cache_only = True
     provider = (provider or env.get("EMBED_PROVIDER", "ollama")).strip().lower()
     max_chars = int(env.get("EMBED_MAX_INPUT_CHARS", str(DEFAULT_MAX_INPUT_CHARS)))
     auto_download = None

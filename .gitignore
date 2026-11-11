@@ -38,3 +38,6 @@ memories.json
 # Local development documents (historical versions remain in Git history).
 /docs/design/
 /docs/project-management/
+
+# Packaging build evidence is internal; tracked packaging scripts remain public.
+/packaging/*/evidence/
