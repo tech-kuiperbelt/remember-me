@@ -6,9 +6,9 @@
 
 ## 下载状态与完整性校验
 
-macOS 包目前是工程候选，**尚未获准公开 Beta 分发**。不要假定现有 Release
+macOS 1.1.3 Beta 包目前是工程候选，**尚未获准公开 Beta 分发**。不要假定现有 Release
 包含 macOS 附件。维护者明确批准发布后，从同一个
-[官方 GitHub Release](https://github.com/tech-kuiperbelt/remember-me/releases)
+[v1.1.3 Beta 发布页](https://github.com/tech-kuiperbelt/remember-me/releases/tag/v1.1.3)（页面及下载仅在发布后可用）
 下载 `remember-me-macos-arm64-beta.dmg` 及对应的 `.dmg.sha256`。
 不要使用 Windows/Linux 文件代替。
 

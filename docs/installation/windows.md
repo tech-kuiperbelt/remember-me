@@ -1,10 +1,10 @@
 # Windows 11 x64 Beta installation, upgrade and uninstall
 
-Windows is distributed only as a complete offline Setup, not a Portable ZIP. This guide targets the **1.1.2 Beta candidate**. Links become available only after the maintainer approves and publishes the Pre-release. Existing Linux/Docker releases are unchanged.
+Windows is distributed only as a complete offline Setup, not a Portable ZIP. This guide targets the **1.1.3 Beta candidate, not yet publicly released**. Links become available only after the maintainer approves and publishes the Pre-release. Existing Linux/Docker releases are unchanged.
 
 ## Install and use
 
-1. After publication, download `remember-me-windows-x64-beta-setup.exe` and its `.exe.sha256` from the [v1.1.2 Pre-release](https://github.com/tech-kuiperbelt/remember-me/releases/tag/v1.1.2). Compare the SHA256 before installation:
+1. After publication, download `remember-me-windows-x64-beta-setup.exe` and its `.exe.sha256` from the [v1.1.3 Pre-release](https://github.com/tech-kuiperbelt/remember-me/releases/tag/v1.1.3). Compare the SHA256 before installation:
 
    ```powershell
    Get-FileHash .\remember-me-windows-x64-beta-setup.exe -Algorithm SHA256

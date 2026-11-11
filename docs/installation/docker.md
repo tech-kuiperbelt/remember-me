@@ -18,13 +18,15 @@ two instances against the same data directory. Paths refer to the Docker daemon'
 local host. Both methods use `latest` by default; a fixed version or digest can be
 selected when needed. Pulling a new image does not update an existing container.
 
-`latest` is the stable channel and does not select Beta releases. Once the
-1.1.2 Beta is published, select it explicitly by replacing `:latest` in a Run
-command with `:1.1.2`, or set the following in Compose's local `.env` before
+**1.1.3 Beta is not yet publicly released.** Its planned release page is
+[v1.1.3 Beta](https://github.com/tech-kuiperbelt/remember-me/releases/tag/v1.1.3),
+available only after publication. `latest` is the stable channel and does not select Beta releases. Once the
+1.1.3 Beta is published, select it explicitly by replacing `:latest` in a Run
+command with `:1.1.3`, or set the following in Compose's local `.env` before
 starting or recreating the container:
 
 ```dotenv
-REMEMBER_ME_IMAGE=ghcr.io/tech-kuiperbelt/remember-me:1.1.2
+REMEMBER_ME_IMAGE=ghcr.io/tech-kuiperbelt/remember-me:1.1.3
 ```
 
 The Beta tag is a public preview, not the stable `latest` channel. When changing
@@ -245,11 +247,12 @@ image digest before pulling: inspect the running container's `.Image` with
 For Compose, obtain its container ID with `docker compose -f compose.yaml ps -q remember-me`.
 Keep that image/reference for rollback. Read all relevant Upgrade Notes / Breaking Changes.
 
-Select `latest` or a published full version/digest; also update the saved value
-in `.env` if used. Then pull:
+Select `latest` for stable or a published full version/digest. The example below
+upgrades to 1.1.3 Beta **only after its image is published**; use `:latest` instead
+if you want the stable channel. Also update the saved value in `.env` if used. Then pull:
 
 ```bash
-export REMEMBER_ME_IMAGE=ghcr.io/tech-kuiperbelt/remember-me:latest
+export REMEMBER_ME_IMAGE=ghcr.io/tech-kuiperbelt/remember-me:1.1.3
 docker pull --platform linux/amd64 "$REMEMBER_ME_IMAGE"
 ```
 
