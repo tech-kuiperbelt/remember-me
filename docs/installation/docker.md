@@ -18,7 +18,7 @@ two instances against the same data directory. Paths refer to the Docker daemon'
 local host. Both methods use `latest` by default; a fixed version or digest can be
 selected when needed. Pulling a new image does not update an existing container.
 
-**1.1.3 Beta is not yet publicly released.** Its planned release page is
+The 1.1.3 Beta release page is
 [v1.1.3 Beta](https://github.com/tech-kuiperbelt/remember-me/releases/tag/v1.1.3),
 available only after publication. `latest` is the stable channel and does not select Beta releases. Once the
 1.1.3 Beta is published, select it explicitly by replacing `:latest` in a Run

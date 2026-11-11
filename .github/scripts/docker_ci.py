@@ -25,6 +25,7 @@ ARTIFACTS = ROOT / "artifacts"
 CACHE_REF = os.environ.get(
     "CACHE_REF", "ghcr.io/tech-kuiperbelt/remember-me-buildcache:amd64")
 MODE = os.environ.get("MODE", "cold")
+EXPORT_CANDIDATE = os.environ.get("EXPORT_CANDIDATE", "false") == "true"
 SHA = os.environ.get("GITHUB_SHA", "local")
 RUN_ID = os.environ.get("GITHUB_RUN_ID", "local")
 RUN_ATTEMPT = os.environ.get("GITHUB_RUN_ATTEMPT", "1")
@@ -141,7 +142,7 @@ def disk_report():
 
 def estimate_peak(mode):
     if mode == "cold":
-        return (IMAGE_BYTES * 2 + MODEL_CACHE_BYTES
+        return (IMAGE_BYTES * (3 if EXPORT_CANDIDATE else 2) + MODEL_CACHE_BYTES
                 + PIP_CACHE_BYTES + OVERHEAD_BYTES)
     return (IMAGE_BYTES + MODEL_CACHE_BYTES + PIP_CACHE_BYTES
             + OVERHEAD_BYTES + 1_000_000_000)
@@ -345,6 +346,14 @@ def run_cold(results, sampler):
         "-t", IMAGE,
         ".",
     ]
+    if EXPORT_CANDIDATE:
+        from archive_docker_candidate import source_identity
+        identity = source_identity()
+        build_command[-1:-1] = [
+            "--label", "org.opencontainers.image.version=" + identity["version"],
+            "--label", "org.opencontainers.image.revision=" + identity["source_commit"],
+        ]
+        results["frozen_candidate"] = identity
     code, seconds = stream_build(build_command, ARTIFACTS / "cold-build.log")
     results["cold_build"] = {"exit_code": code, "seconds": seconds}
     if code:
@@ -353,7 +362,8 @@ def run_cold(results, sampler):
     results["metadata"] = image_metadata(IMAGE)
     image_content_checks(IMAGE, results)
     run_smoke(IMAGE, results)
-    docker("rmi", "-f", IMAGE, check=False)
+    if not EXPORT_CANDIDATE:
+        docker("rmi", "-f", IMAGE, check=False)
 
     validation_command = [
         "docker", "buildx", "build",
@@ -445,6 +455,8 @@ def main():
     }
     sampler = None
     try:
+        if EXPORT_CANDIDATE and MODE != "cold":
+            raise Failure("Candidate export requires a cold build")
         preflight(MODE, results)
         sampler = DiskSampler()
         sampler.start()

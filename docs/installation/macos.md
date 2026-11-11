@@ -6,8 +6,8 @@ no host Python or separate model download is needed.
 
 ## Availability and verification
 
-The macOS 1.1.3 Beta package is currently an engineering candidate, **not yet approved for
-public Beta distribution**. Do not assume an existing release contains a macOS
+This guide accompanies the macOS 1.1.3 Beta candidate. Download it **only after
+maintainer approval and publication**. Do not assume an existing release contains a macOS
 asset. Once a maintainer explicitly approves publication, obtain both
 `remember-me-macos-arm64-beta.dmg` and its `.dmg.sha256` file from the same
 [v1.1.3 Beta release](https://github.com/tech-kuiperbelt/remember-me/releases/tag/v1.1.3)

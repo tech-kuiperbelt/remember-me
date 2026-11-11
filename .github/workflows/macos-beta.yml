@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   candidate:
-    if: github.repository == 'tech-kuiperbelt/remember-me' && (github.ref == 'refs/heads/poc/macos-s1-step1' || github.ref == 'refs/heads/poc/macos-s2-step3' || github.ref == 'refs/heads/release/1.1.3-beta')
+    if: github.repository == 'tech-kuiperbelt/remember-me' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/poc/macos-s1-step1' || github.ref == 'refs/heads/poc/macos-s2-step3' || github.ref == 'refs/heads/release/1.1.3-beta')
     runs-on: macos-15
     timeout-minutes: 90
     defaults:
@@ -49,7 +49,7 @@ jobs:
           name: macos-arm64-beta-${{ github.run_id }}
           path: ${{ runner.temp }}/macos-build/output/
           compression-level: 0
-          retention-days: 14
+          retention-days: 30
           if-no-files-found: error
       - name: Upload build and acceptance evidence
         if: always()
@@ -64,5 +64,5 @@ jobs:
             ${{ runner.temp }}/macos-verify/offline.sb
             ${{ runner.temp }}/macos-gui/evidence/
             ${{ runner.temp }}/macos-distribution/evidence/
-          retention-days: 14
+          retention-days: 30
           if-no-files-found: warn

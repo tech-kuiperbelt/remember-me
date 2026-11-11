@@ -1,6 +1,6 @@
 # Linux AppImage Beta
 
-Remember Me 1.1.3 Beta 是面向 Linux x86_64 的候选版本，**尚未公开发布**。以下下载链接将在 **v1.1.3 Beta 公开发布后**可用。单文件包含 Launcher、Python Runtime、CPU 依赖和完整 BGE-M3 模型；无需安装 Python、pip、Docker 或下载模型。
+Remember Me 1.1.3 Beta 是面向 Linux x86_64 的候选版本。以下下载链接将在 **v1.1.3 Beta 公开发布后**可用。单文件包含 Launcher、Python Runtime、CPU 依赖和完整 BGE-M3 模型；无需安装 Python、pip、Docker 或下载模型。
 
 ## 下载和启动
 
